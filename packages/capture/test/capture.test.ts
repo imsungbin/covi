@@ -145,17 +145,24 @@ describe('checkouts', () => {
     expect(repo.git('stash', 'list')).toBe('');
   });
 
-  it('checks out staged changes as a dangling commit', async () => {
+  it('checks out staged changes as a dangling commit, even without a git identity', async () => {
     repo = createChangeRepo({ 'a.txt': 'base\n' }, {});
     repo.write({ 'a.txt': 'staged\n' });
     repo.git('add', 'a.txt');
     repo.write({ 'a.txt': 'unstaged\n' });
     const change = await resolveChange({ repo: repo.root, scope: 'staged' });
     const ws = await tempWorkspace();
+    // CI runners and fresh containers have no user.name; useConfigOnly stops git from guessing one.
+    dir = mkdtempSync(join(tmpdir(), 'covi-no-identity-'));
+    writeFileSync(join(dir, 'gitconfig'), '[user]\n\tuseConfigOnly = true\n');
+    const saved = { ...process.env };
+    process.env.GIT_CONFIG_GLOBAL = join(dir, 'gitconfig');
+    process.env.GIT_CONFIG_NOSYSTEM = '1';
     try {
       const head = await checkoutRevision(change, 'head', ws.dir);
       expect(readFileSync(join(head.dir, 'a.txt'), 'utf8')).toBe('staged\n');
     } finally {
+      process.env = saved;
       await ws.dispose();
     }
   });

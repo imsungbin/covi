@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { covi, coviAsync } from './helpers/cli.ts';
+import { GIT_ENV } from './helpers/repo.ts';
 
 interface Recorded {
   method: string;
@@ -102,7 +103,7 @@ async function prRepo(name: string) {
   const dir = await materializeExample(examples.find((e) => e.name === name)!);
   dirs.push(dir);
   const git = (...args: string[]) =>
-    execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim();
+    execFileSync('git', args, { cwd: dir, env: GIT_ENV, encoding: 'utf8' }).trim();
   return { dir, base: git('rev-parse', 'main'), head: git('rev-parse', 'HEAD'), git };
 }
 

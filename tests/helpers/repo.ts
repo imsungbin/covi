@@ -13,7 +13,8 @@ export interface TempRepo {
   cleanup(): void;
 }
 
-const GIT_ENV = {
+/** A fixed identity and an empty HOME, so git never depends on the developer's (or runner's) config. */
+export const GIT_ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: 'Covi Test',
   GIT_AUTHOR_EMAIL: 'test@example.com',

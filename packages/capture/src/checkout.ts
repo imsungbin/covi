@@ -27,8 +27,14 @@ export async function checkoutRevision(
   const untracked: string[] = [];
   if (revision === 'head' && change.source.kind === 'staged') {
     const tree = await git.out(['write-tree']);
+    // A throwaway commit that only `git archive` reads. Name its author so it works without a git
+    // identity (CI runners and fresh containers have none); `git stash create` has its own fallback.
     sha = (
       await git.out([
+        '-c',
+        'user.name=Covi',
+        '-c',
+        'user.email=covi@covi.invalid',
         'commit-tree',
         tree.trim(),
         '-p',

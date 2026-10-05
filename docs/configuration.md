@@ -171,6 +171,7 @@ A repository is untrusted input: checking out someone's branch can change `.covi
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `base` | string | detected | Base branch for the default comparison, tried as `origin/<base>` first, then `<base>`. |
+| `language` | `auto`, `en`, `ko`, `ja`, `zh` | `auto` | The language Covi narrates in when the narration does not show one (see [Narration language](video.md#narration-language)). `zh` is Simplified Chinese; `zh-CN` and `zh-Hans` mean the same. `auto` detects the language of the change's title, description, and commit messages; `run.json` records the result and why. |
 | `ignore` | list of globs | `[]` | Files to leave out of the review. They are listed as ignored but not analyzed. |
 
 `ignore` patterns follow `.gitignore` conventions:
@@ -381,16 +382,38 @@ Differences Covi observes become findings in `covi review --demo`, `covi video`,
 | `duration` | `auto` or duration | `auto` | Target length. `auto` uses the mode's range (short: 20–35 s, standard: 60–120 s; a custom size uses the short range unless it is landscape). A number sets the target, and quality checks accept about ±15% (at least ±2 s). |
 | `width`, `height` | integer, 240–3840 | from `mode` | Frame size. For `custom`, a missing side is filled to 16:9, and with neither set the size is 1920×1080. With `short` or `standard`, a value you set replaces that side of the preset. |
 | `fps` | integer, 10–60 | `30` | Frame rate. |
-| `narration` | boolean or object | `true` | `false` makes a captions-only video. The object form has `enabled`, `provider`, `voice`, and `rate`. |
+| `narration` | boolean or object | `true` | `false` makes a captions-only video. The object form has `enabled`, `provider`, `voice`, `rate`, and `pronunciations`. |
 | `narration.provider` | `auto`, `system`, `openai`, `elevenlabs`, `none` | `auto` | `auto` prefers ElevenLabs (`ELEVENLABS_API_KEY`), then OpenAI (`OPENAI_API_KEY`), then the system voice: macOS `say`, `espeak-ng`, or `espeak`. |
 | `narration.voice` | string | per engine | Voice name or id. |
 | `narration.rate` | number, 0.8–1.3 | `1` | Speech rate multiplier. |
+| `narration.pronunciations` | map | `{}` | How the voice should say particular words. See [Pronunciations](#pronunciations). |
 | `captions` | boolean | `true` | Burn captions into the video. Captions are also written as `captions.vtt` and `captions.srt`. |
 | `theme` | `light`, `dark` | `light` | Color theme. |
 | `style` | `concise`, `explanatory` | from `mode` | Guides the narration a model writes. Short videos are concise and standard ones explanatory; a custom video is explanatory when it is longer than 45 seconds. |
 | `mascot` | boolean | `true` | Show the Covi fox narrator. |
 
 See [Video](video.md) for how these shape the storyboard, timing, and quality checks.
+
+#### Pronunciations
+
+Voices for Korean, Japanese, and Chinese misread Latin names. Covi spells out acronyms on its own (see [Spoken form](video.md#spoken-form)); `pronunciations` covers the rest: product names, lowercase identifiers, and words you want said a particular way.
+
+```yaml
+video:
+  narration:
+    pronunciations:
+      CLI: 씨엘아이                 # every language
+      c2: { ko: 씨투, ja: シーツー }  # per language; others keep the default
+      kubectl: cube control
+```
+
+- A key matches exactly and case-sensitively, as a whole token: `c2` matches in `c2-delegate`, not in `c22`. Longer keys win over shorter ones.
+- A value is one spoken form for every language, or a map of `en`, `ko`, `ja`, and `zh`. Keys are up to 64 characters, values up to 128, at most 500 entries.
+- Pronunciations apply in prose, code spans, and paths, but never inside URLs or e-mail addresses. They win over Covi's built-in words and letter spelling, and they apply to English narration too.
+- A spoken form must not contain a key, or the next pass would rewrite it again; Covi rejects such a map.
+- Captions are not affected. `video/speech.json` shows what the voice was given.
+
+The map is replaced as a whole, not merged key by key, when several configuration layers set it.
 
 ### `output`
 
@@ -415,6 +438,7 @@ These variables set configuration keys in the explicit layer. Command-line flags
 
 | Variable | Key |
 |---|---|
+| `COVI_LANGUAGE` | `language` |
 | `COVI_PROVIDER` | `intelligence.provider` |
 | `COVI_MODEL` | `intelligence.model` |
 | `COVI_FAIL_ON` | `review.failOn` |

@@ -26,5 +26,11 @@ Covi narrates like a senior engineer walking a teammate through a change: calm, 
 ## Spoken form
 Captions show `narration`; speech uses `say` when present. Use `say` for identifiers ("use cart totals" for `useCartTotals`), file names ("the cart module" instead of `src/cart/index.ts`), and symbols. Keep the meaning identical.
 
+## Narrating in Korean, Japanese, or Chinese
+- Write the narration in that language and set the storyboard's `language` (`ko`, `ja`, or `zh`). Without it, Covi detects the language from the narration's script.
+- Voices for these languages misread Latin acronyms: a Korean voice says "CLI" as 클리. Before synthesis Covi spells out all-caps acronyms of two to six letters (CLI → 씨엘아이, シーエルアイ, C L I) and the common ones said as words (JSON → 제이슨, ジェイソン). Write particles as you would for the spoken form: `CLI를`, `API는`, `JSON을`.
+- Covi leaves code spans and paths alone, and it cannot guess lowercase names (`c2`, `kubectl`) or long all-caps words. Put their spoken form in `say`, or ask the user to add `video.narration.pronunciations` when the name recurs.
+- After rendering, read `video/speech.json` (the text each scene's voice was given) and the `speech-acronyms` and `voice-language` checks in `video/qc.json`.
+
 ## Budget
 About 2.5 spoken words per second. Leave breathing room: a 30-second video carries roughly 60–75 words of narration.

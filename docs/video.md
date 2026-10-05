@@ -154,13 +154,13 @@ Where questions are asked:
 | Capture | Runs the software at base and head when a video will be made, the project is runnable, and the change has something to show (the same demonstration as `covi demo`, at desktop and mobile unless `demo.viewports` says otherwise) | `demo/captures.json`, `demo/screenshots/`, `demo/diffs/`, `demo/demo.md` |
 | Review | Explains and reviews the change; the story's review note comes from here | `explanation.json`, `review.json`, `review.md`, `summary.md`, … |
 | Storyboard | Drafts scenes from the evidence with a storytelling template, or validates the one you supply, then redacts it | `video/storyboard.json` |
-| Narration | Synthesizes and measures one take per scene, then mixes them | `video/narration.wav` |
+| Narration | Picks the narration language and the voice, rewrites each scene's spoken text for that voice (acronyms spelled out, your pronunciations applied), then synthesizes and measures one take per scene and mixes them | `video/speech.json`, `video/narration.wav` |
 | Timing | Lays scenes out from the measured speech and fits the duration window | (inside the timeline) |
 | Captions | Splits the narration into cues timed to the speech | `video/captions.vtt`, `video/captions.srt` |
 | Timeline | Freezes everything the renderer needs: scenes, timings, captions, mouth movement, theme | `video/timeline.json`, `video/narration.md` |
 | Composition | Writes a self-contained HTML page that can draw any frame | `video/composition/` |
 | Render | Captures every frame in headless Chromium and encodes H.264 | `video/covi-review.mp4`, `video/poster.png`, `video/contact-sheet.jpg` |
-| QC | Checks format, duration, audio, black frames, layout, and caption timing | `video/qc.json` |
+| QC | Checks format, duration, audio, black frames, layout, caption timing, and the text the voice was given | `video/qc.json` |
 
 Two failures do not stop the run:
 
@@ -209,7 +209,7 @@ How beats become scenes:
 
 **Redaction.** Every storyboard, drafted or supplied, passes through the `Redactor` before narration, captions, the timeline, or the composition are made from it, so a secret in a code excerpt or command output does not reach the audio or the frames. Screenshots are images of the running software and are shown as captured.
 
-**Format.** Run `covi schema storyboard` for the full JSON Schema. Top level: `title`, `template`, `draft` (true for Covi's draft), and `scenes`, 2–14 of them. Each scene:
+**Format.** Run `covi schema storyboard` for the full JSON Schema. Top level: `title`, `template`, `draft` (true for Covi's draft), `language` (optional: `en`, `ko`, `ja`, or `zh`; see [Narration language](#narration-language)), and `scenes`, 2–14 of them. Each scene:
 
 | Field | Meaning |
 |---|---|
@@ -217,7 +217,7 @@ How beats become scenes:
 | `beat` | The template beat this scene plays |
 | `eyebrow`, `heading` | Section label (up to 40 characters) and heading (up to 90) |
 | `narration` | What Covi says, also used for captions (up to 600 characters) |
-| `say` | Spoken form, when it differs from the caption text |
+| `say` | Spoken form, when it differs from the caption text. Covi still normalizes it before synthesis (see [Spoken form](#spoken-form)) |
 | `visual` | One of the kinds below |
 | `expression` | Narrator expression: `neutral`, `explaining` (default), `thinking`, `reviewing`, `warning`, `success` |
 | `minSeconds` | Overrides the visual's minimum time on screen (1–30) |
@@ -301,14 +301,14 @@ covi render --run latest --json                    # narrate, compose, render, c
 | `--tts` / `video.narration.provider` | Engine | Default voice |
 |---|---|---|
 | `auto` (default) | ElevenLabs if `ELEVENLABS_API_KEY` is set, else OpenAI if `OPENAI_API_KEY` is set, else the system engine | depends on the engine |
-| `system` | macOS `say`, or `espeak-ng` / `espeak` elsewhere | macOS: the first installed of Ava (Premium), Zoe (Premium), Samantha (Enhanced), Ava, Samantha, Allison, Alex, Daniel. espeak: `en-us` |
+| `system` | macOS `say`, or `espeak-ng` / `espeak` elsewhere | The best installed voice for the [narration language](#narration-language). macOS, English: the first of Ava (Premium), Zoe (Premium), Samantha (Enhanced), Ava, Samantha, Allison, Alex, Daniel; Korean: Yuna, Jian, Suhyun; Japanese: Kyoko, Otoya; Chinese: Tingting, Lili (any voice whose locale matches comes next, mainland China first for Chinese). espeak: `en-us`, `ko`, `ja`, `cmn` |
 | `openai` | OpenAI speech API, model `gpt-4o-mini-tts` (needs `OPENAI_API_KEY`) | `sage` |
 | `elevenlabs` | ElevenLabs, model `eleven_multilingual_v2` (needs `ELEVENLABS_API_KEY`) | `21m00Tcm4TlvDq8ikWAM` |
 | `none` | No speech; captions carry the video | — |
 
 Options:
 
-- **Voice.** `--voice` or `video.narration.voice` picks the voice.
+- **Voice.** `--voice` or `video.narration.voice` picks the voice. Without one, the system engine picks a voice that speaks the narration language.
 - **Rate.** `video.narration.rate` (0.8–1.3) scales the speaking rate:
   - macOS `say`: 172 words per minute × rate;
   - espeak: 165 × rate;
@@ -325,11 +325,38 @@ Covi processes each take before mixing:
 3. It normalizes loudness to −18 LUFS (true peak −2 dB).
 4. It converts the take to 48 kHz mono.
 
-Takes are cached in `.covi/cache/tts/`, keyed by engine, voice, rate, tempo, and text. The cache directory ignores itself for git.
+Takes are cached in `.covi/cache/tts/`, keyed by engine, voice, rate, tempo, and the spoken text (and, for OpenAI, the language). The cache directory ignores itself for git.
 
 With narration audio, the fox's mouth follows the loudness of the voice track. Without it, the mouth follows a talking rhythm inside each scene's speech window.
 
 Hosted engines receive the narration text (already redacted), which can include identifiers and file names from the change. Use `system` or `none` to keep narration on the machine.
+
+#### Narration language
+
+The narration is spoken in the language its text is written in. Covi decides it in this order and records the answer and the reason in `video/speech.json`:
+
+1. `--language` (or `COVI_LANGUAGE`).
+2. The storyboard's `language`.
+3. The script of the narration: Hangul means Korean, any kana means Japanese, Han characters without kana mean Chinese. Identifiers, code, and paths do not count, so "c2-delegate CLI를 추가합니다" is Korean.
+4. `language` in configuration, when it names a language.
+5. The locale of the system voice you chose (`--voice Yuna` is `ko_KR`). Hosted voices are multilingual, so their names say nothing.
+6. English.
+
+The language picks the system voice when you did not choose one. OpenAI is also told the language in its instructions; ElevenLabs' multilingual model detects it from the text.
+
+#### Spoken form
+
+Speech engines for Korean, Japanese, and Chinese read Latin acronyms as if they were words: a Korean voice says "CLI" as 클리 and "JSON" as 질선. Right before synthesis, Covi rewrites each scene's `say` (or its narration, when there is no `say`) into what a person would say, in this order:
+
+1. Your pronunciations (`video.narration.pronunciations`, see [Configuration](configuration.md#pronunciations)): exact, case-sensitive matches, longest first.
+2. Built-in words that are said as words, per language, such as JSON (제이슨, ジェイソン, Jason), YAML, GIF, REST, the HTTP methods, and names voices get wrong (git, GitHub). The tables are data in `templates/speech/`.
+3. All-caps acronyms of two to six letters, spelled letter by letter with the language's letter names: CLI becomes 씨엘아이 in Korean and シーエルアイ in Japanese. Mandarin speakers say Latin letters by their English names, so Chinese spaces them apart instead (C L I). A plural `s` is dropped (APIs), and digits are left to the voice (X1 becomes 엑스1).
+
+A token is a run of ASCII letters and digits, so particles and punctuation around it do not matter: `CLI를` becomes `씨엘아이를`. In Korean, a particle attached to a rewritten word is made to agree with its new final sound (`JSON를` becomes `제이슨을`).
+
+Code spans, file paths, URLs, e-mail addresses, versions (`v1.47.0`), and redaction marks are never rewritten by the built-in steps; your pronunciations still apply inside code spans and paths. Text that is already spelled out stays as written, and normalizing twice changes nothing. English voices spell acronyms themselves, so English narration only gets your pronunciations.
+
+Captions always show the narration as written. `video/speech.json` lists, for every scene, the caption text, the `say` you wrote, the text sent to the voice, and each rewrite with the rule that made it. QC reads it (see `speech-acronyms` below).
 
 ### Captions
 
@@ -419,6 +446,8 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | `images` | Every image loaded in the composition | fail |
 | `caption-timing` | No cue overlaps the next, reads faster than 24 characters per second, or lasts less than 0.7 s | fail on overlap; warn on fast or short cues |
 | `narration-pace` | No scene's narration is faster than 4.2 words per second | warn |
+| `speech-acronyms` | Non-English narration: the text sent to the voice has no all-caps Latin token left (outside URLs, e-mail addresses, and versions). Names the scene and the token | warn: write the spoken form in `say` or add a pronunciation |
+| `voice-language` | The system voice's locale matches the narration language (hosted voices are not checked) | warn, with a voice to choose instead |
 
 Covi samples the layout checks at two frames per scene, 35% and 70% of the way through.
 

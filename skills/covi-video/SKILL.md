@@ -36,7 +36,7 @@ covi render --run <id> --json                           # narrate, compose, rend
 
 `covi render` keeps the size and length chosen at draft time; pass flags only to change them. Or in one step, accepting Covi's draft: `covi video --short --duration 30s`. Use `--standard` for 16:9 reviews of 60–120 seconds, `--custom --width W --height H` for anything else, `--no-narration` for captions only.
 
-After rendering, **check the result yourself**: read `video/qc.json`, open `video/contact-sheet.jpg` (one frame per scene) and `video/poster.png`. Fix the storyboard and re-render if a scene is wrong, crowded, or not grounded in evidence.
+After rendering, **check the result yourself**: read `video/qc.json`, open `video/contact-sheet.jpg` (one frame per scene) and `video/poster.png`. Fix the storyboard and re-render if a scene is wrong, crowded, or not grounded in evidence. For narration in Korean, Japanese, or Chinese, also read `video/speech.json`: it shows the text each scene's voice was given after Covi spelled out acronyms.
 
 ## Method
 
@@ -48,7 +48,7 @@ After rendering, **check the result yourself**: read `video/qc.json`, open `vide
 
 - 4–6 scenes for short-form, 6–9 for standard. First a title scene, last a summary scene.
 - One idea per scene; the visual must match what the narration says at that moment.
-- `narration` is what Covi says and the captions show; `say` is only for the spoken form of identifiers and paths (`useCartTotals` → "use cart totals").
+- `narration` is what Covi says and the captions show; `say` is only for the spoken form of identifiers and paths (`useCartTotals` → "use cart totals"). Set `language` (`en`, `ko`, `ja`, `zh`) when the narration is not in English; see `references/narration.md` for acronyms and particles.
 - Budget about 2.5 spoken words per second: roughly 60–75 words for a 30-second video, 150–250 for 90 seconds. Covi times scenes from the real narration audio and fits the total to the target.
 - Set `optional: true` on scenes that can be dropped to fit the length.
 - Expressions for the narrator: `explaining` (default), `thinking` (problems, before states), `reviewing` (findings), `warning` (serious findings), `success` (fixes that work, summaries).
@@ -68,7 +68,7 @@ After rendering, **check the result yourself**: read `video/qc.json`, open `vide
 
 ## Output files
 
-`video/storyboard.json`, `video/timeline.json`, `video/narration.wav`, `video/captions.vtt` and `.srt`, `video/composition/index.html` (open it in a browser to inspect any frame), `video/covi-review.mp4`, `video/poster.png`, `video/contact-sheet.jpg`, `video/qc.json`.
+`video/storyboard.json`, `video/speech.json`, `video/timeline.json`, `video/narration.wav`, `video/captions.vtt` and `.srt`, `video/composition/index.html` (open it in a browser to inspect any frame), `video/covi-review.mp4`, `video/poster.png`, `video/contact-sheet.jpg`, `video/qc.json`.
 
 ## Related skills
 

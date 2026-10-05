@@ -45,6 +45,7 @@ The manifest records what was asked, what ran, what was produced, and how it end
 | `repository` | Name, remote URL without credentials, branch |
 | `change` | Change id, `base` and `head` (`{ ref, sha }`), merge base, source, title, whether uncommitted work is included, and stats (files, additions, deletions, binary and ignored files) |
 | `config` | `values`: the resolved configuration. `provenance`: for each dotted key, the layer that set it, such as `global` or `repository (.covi/config.yml)` |
+| `language` | The language Covi resolved for the run: `value` (`en`, `ko`, `ja`, `zh`), the `setting` it came from (`auto` or a language), and `source`, why (for `auto`, the script found in the change's title, description, and commit messages) |
 | `options` | The command, range, and flags it was given |
 | `stages` | One entry per stage: `name`, `status` (`ok`, `skipped`, `failed`), `startedAt`, `durationMs`, and a `reason` (skipped) or `error` (failed) |
 | `commands` | Every project command Covi ran: `command`, `cwd` (`.`, or `base` and `head` for the temporary checkouts), `exitCode`, `durationMs`, `timedOut`, and `purpose` (`install`, `start`, `tests`, or `demo: <name>`) |
@@ -98,6 +99,7 @@ Written by `covi video`, `covi render`, and `covi ci` when a video is rendered. 
 |---|---|---|
 | `video/decision.json` | `storyboard` | Whether to render and why, the resolved video spec, and the demonstration assessment (`covi video` only). `covi render` reuses the spec from here. |
 | `video/storyboard.json` | `storyboard` | The title, the template, and the scenes: story beat, labels, narration (also the captions), visual, the narrator's expression. Redacted before narration, captions, and frames are drawn from it. |
+| `video/speech.json` | `narration` | What the voice was given: the narration `language` and why, the voice (`provider`, `name`, `locale`), whether it was `narrated`, and per scene the caption text (`narration`), the authored `say`, the text sent to the voice (`spoken`), and each rewrite (`from`, `to`, and the `rule`: `pronunciation`, `word`, `letters`, or `particle`). QC reads it. |
 | `video/narration.wav` | `narration` | The mixed narration track (only when narrated) |
 | `video/narration.md` | `narration` | The narration script with scene timings |
 | `video/timeline.json` | `timeline` | Frame-exact layout of scenes, speech, captions, and the narrator's mouth movement |
@@ -174,7 +176,7 @@ Dismissing an id that is not in `rule-findings.json` is an error (exit code 2).
 
 ## Schema versions
 
-JSON files that agents write or that later stages read back carry `schemaVersion: 1`: `run.json`, `context.json`, `rule-findings.json`, `explanation.json`, `explanation.draft.json`, `findings.json`, `review.json`, `demo/captures.json`, and `video/storyboard.json`. Agent-authored files may omit it; it defaults to 1. A demo plan has no version field. `video/timeline.json` carries its own `version: 1`, read by the browser runtime; `video/decision.json` and `video/qc.json` are diagnostic records.
+JSON files that agents write or that later stages read back carry `schemaVersion: 1`: `run.json`, `context.json`, `rule-findings.json`, `explanation.json`, `explanation.draft.json`, `findings.json`, `review.json`, `demo/captures.json`, and `video/storyboard.json`. Agent-authored files may omit it; it defaults to 1. A demo plan has no version field. `video/timeline.json` carries its own `version: 1`, read by the browser runtime; `video/speech.json` carries `schemaVersion: 1`; `video/decision.json` and `video/qc.json` are diagnostic records.
 
 Additive changes, such as a new optional field, keep the version. A breaking change to a versioned file bumps `schemaVersion`. The configuration and the demo plan have no version, so they only grow: keys are added, never repurposed. Either way, the skills that describe the file are updated with it.
 
@@ -188,7 +190,7 @@ Repositories and CI environments contain secrets, so Covi redacts before anythin
 
 Masked values become `[REDACTED]`, sometimes after a short recognizable prefix.
 
-The redactor is applied to every file written through the run: the JSON, Markdown, patch, caption, and report files listed above. In `run.json` it covers the change title, configuration values, options, warnings, errors, command lines, and the outcome message. It also covers HTTP response bodies and command output captured during demonstrations, the tail of test output, the brief sent to a model provider for analysis, and the narration-refinement prompt. The video storyboard is redacted before any later stage reads it, so the narration audio, the captions, the composition in `video/composition/`, and the text in video frames carry redacted values too. Commit authors are recorded by display name only, never by e-mail address, and remote URLs are stored without credentials.
+The redactor is applied to every file written through the run: the JSON, Markdown, patch, caption, and report files listed above. In `run.json` it covers the change title, configuration values, options, warnings, errors, command lines, and the outcome message. It also covers HTTP response bodies and command output captured during demonstrations, the tail of test output, the brief sent to a model provider for analysis, and the narration-refinement prompt. The video storyboard is redacted before any later stage reads it, so the narration audio, the captions, the composition in `video/composition/`, and the text in video frames carry redacted values too. The spoken text in `video/speech.json` is redacted again after pronunciations are applied, before it reaches the voice. Commit authors are recorded by display name only, never by e-mail address, and remote URLs are stored without credentials.
 
 Screenshots are pictures of the running software, and the video shows them as captured: Covi cannot redact what a page displays. Do not demonstrate pages that display secrets. Storyboard images must be files inside the run directory, so a storyboard cannot pull other files from the machine into a video.
 

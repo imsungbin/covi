@@ -91,6 +91,7 @@ Details:
 | `--voice <name>` | Voice for the speech engine. |
 | `--tts <provider>` | Speech engine: `auto`, `system`, `openai`, `elevenlabs`, or `none`. |
 | `--theme <theme>` | Color theme: `light` or `dark`. |
+| `--language <code>` | Language of the narration: `auto`, `en`, `ko`, `ja`, or `zh` (Simplified Chinese; `zh-CN` and `zh-Hans` also work). Wins over the storyboard and the narration's own script. See [Narration language](video.md#narration-language). |
 
 Every flag maps to a configuration key. On the command line it is the highest-precedence layer; see [Configuration](configuration.md#precedence).
 
@@ -526,6 +527,7 @@ See [Video](video.md).
 
 | Variable | Effect |
 |---|---|
+| `COVI_LANGUAGE` | `language` |
 | `COVI_PROVIDER`, `COVI_MODEL` | `intelligence.provider`, `intelligence.model` |
 | `COVI_FAIL_ON` | `review.failOn` |
 | `COVI_VIDEO_MODE`, `COVI_VIDEO_DURATION` | `video.mode`, `video.duration` |

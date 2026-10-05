@@ -11,6 +11,23 @@ function syntaxRules(scope: string, c: SyntaxColors): string {
   ].join('\n');
 }
 
+/**
+ * Line breaking and spacing for CJK text: Korean breaks between words, never inside one; Japanese
+ * and Chinese follow strict line-break rules; wide letter-spacing meant for Latin capitals is
+ * tightened, since CJK has no capitals.
+ */
+function languageRules(t: Timeline): string {
+  if (t.language === 'en' || !t.language) return '';
+  return [
+    '/* Language */',
+    t.language === 'ko'
+      ? '#stage { word-break: keep-all; overflow-wrap: anywhere; }'
+      : '#stage { line-break: strict; overflow-wrap: anywhere; }',
+    '.eyebrow, .stat .k { letter-spacing: 0.04em; }',
+    '.title-text, .heading { letter-spacing: 0; }',
+  ].join('\n');
+}
+
 /** The composition stylesheet, derived from the theme and the layout unit. */
 export function stylesheet(t: Timeline, r: Regions): string {
   const c = t.theme;
@@ -148,6 +165,8 @@ ${syntaxRules('.api-panel ', c.surfaceSyntax)}
 .api-panel pre .add { background: ${c.surfaceAdd}; display: block; margin: 0 -${u(20)}; padding: 0 ${u(20)}; }
 .api-panel pre .del { background: ${c.surfaceDel}; display: block; margin: 0 -${u(20)}; padding: 0 ${u(20)}; }
 .status { font-weight: 800; border-radius: 99px; padding: ${u(5)} ${u(12)}; }
+
+${languageRules(t)}
 
 /* Diagram */
 .node { position: absolute; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: ${u(6)};

@@ -1,10 +1,92 @@
-import { formatTimestamp } from '@covi/core';
+import { formatTimestamp, type Language } from '@covi/core';
+import { displayWidth, isCjk, segments } from './text.ts';
 import type { CaptionCue } from './timeline/types.ts';
 
 export interface CaptionOptions {
+  /** Line length in half-width cells: a Latin letter takes one, a CJK character two. */
   maxChars: number;
   maxLines: number;
   minDuration: number;
+  /** The narration's language; decides how sentences and lines break. Default: English. */
+  language?: Language;
+}
+
+/**
+ * How a language breaks into sentences, words, and lines. English splits at spaces and counts
+ * characters, as it always has. Korean also breaks lines at spaces (between words, never inside
+ * one) but counts display width. Japanese and Chinese have no spaces: lines break between words
+ * found by Intl.Segmenter, following line-break rules (kinsoku) for punctuation.
+ */
+interface Layout {
+  join: string;
+  width: (text: string) => number;
+  /** A unit ending a clause, where a cue may break early. */
+  clauseEnd: RegExp;
+  /** A line ending that reads well before a line break. */
+  lineEnd: RegExp;
+}
+
+const ENGLISH: Layout = {
+  join: ' ',
+  width: (text) => text.length,
+  clauseEnd: /[,;:]$/,
+  lineEnd: /[,.;:]$/,
+};
+const KOREAN: Layout = { ...ENGLISH, width: displayWidth };
+const CJK: Layout = {
+  join: '',
+  width: displayWidth,
+  clauseEnd: /[,;:、，；：]\s*$/,
+  lineEnd: /[,.;:、，。；：！？]\s*$/,
+};
+
+function layoutFor(language: Language): Layout {
+  return language === 'en' ? ENGLISH : language === 'ko' ? KOREAN : CJK;
+}
+
+/** Characters that never start a line (closing punctuation, small kana, the long vowel mark). */
+const NO_LINE_START =
+  /^[、。，．,.!?！？)）\]］}｝」』】〕〉》〙〗"'”’ーゝゞ々ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ…‥・：；:;%％‰°]/u;
+/** Characters that never end a line (opening brackets and quotes). */
+const NO_LINE_END = /[(（[［{｛「『【〔〈《〘〖"'“‘]$/u;
+const HIRAGANA_ONLY = /^\p{Script=Hiragana}+$/u;
+const LATINISH = (s: string) => !/\s/.test(s) && ![...s].some(isCjk);
+
+/**
+ * Words a Japanese or Chinese line may break between. Punctuation stays with the word before it,
+ * an opening bracket with the word after it, Latin runs (`c2-delegate`) stay whole, and Japanese
+ * particles and endings written in hiragana stay with the word they follow (CLIを, 追加します).
+ */
+export function lineUnits(sentence: string, language: Language): string[] {
+  const units: string[] = [];
+  for (const seg of segments(sentence, language, 'word')) {
+    const prev = units.at(-1);
+    const glue =
+      prev !== undefined &&
+      (/^\s+$/.test(seg) ||
+        NO_LINE_START.test(seg) ||
+        NO_LINE_END.test(prev) ||
+        (LATINISH(seg) && LATINISH(prev)) ||
+        (HIRAGANA_ONLY.test(seg) && !/\s$/.test(prev)));
+    if (glue) units[units.length - 1] = prev + seg;
+    else units.push(seg);
+  }
+  return units;
+}
+
+function sentencesOf(text: string, language: Language): string[] {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (language === 'en') return clean.split(/(?<=[.!?]["')]?)\s+/).filter(Boolean);
+  return segments(clean, language, 'sentence')
+    .flatMap((s) => s.split(/(?<=[。！？])/))
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function unitsOf(sentence: string, language: Language): string[] {
+  return language === 'en' || language === 'ko'
+    ? sentence.split(' ')
+    : lineUnits(sentence, language);
 }
 
 /**
@@ -13,45 +95,51 @@ export interface CaptionOptions {
  * lines inside each cue. A sentence end always closes a cue.
  */
 export function chunkCaption(text: string, options: CaptionOptions): string[][] {
-  const sentences = text
-    .replace(/\s+/g, ' ')
-    .trim()
-    .split(/(?<=[.!?]["')]?)\s+/)
-    .filter(Boolean);
+  const language = options.language ?? 'en';
+  const layout = layoutFor(language);
   const cues: string[][] = [];
-  for (const sentence of sentences) cues.push(...chunkSentence(sentence.split(' '), options));
+  for (const sentence of sentencesOf(text, language))
+    cues.push(...chunkSentence(unitsOf(sentence, language), options, layout));
   return cues;
 }
 
-function chunkSentence(words: string[], options: CaptionOptions): string[][] {
-  const length = words.join(' ').length;
+function joined(words: readonly string[], layout: Layout): string {
+  return words.join(layout.join).trim();
+}
+
+function chunkSentence(words: string[], options: CaptionOptions, layout: Layout): string[][] {
+  const length = layout.width(joined(words, layout));
   const capacity = options.maxChars * options.maxLines;
   for (let count = Math.max(1, Math.ceil(length / capacity)); count <= words.length; count++) {
-    const groups = splitEvenly(words, count);
-    const cues = groups.map((g) => toLines(g, options));
+    const groups = splitEvenly(words, count, layout);
+    const cues = groups.map((g) => toLines(g, options, layout));
     if (cues.every((c) => c !== undefined)) return cues as string[][];
   }
   // Single words longer than a line: show them as they are.
-  return words.map((w) => [w]);
+  return words.map((w) => [w.trim()]);
 }
 
-/** Splits words into `count` groups of roughly equal character length, preferring comma breaks. */
-function splitEvenly(words: string[], count: number): string[][] {
+/** Splits words into `count` groups of roughly equal length, preferring clause breaks. */
+function splitEvenly(words: string[], count: number, layout: Layout): string[][] {
   if (count <= 1) return [words];
-  const total = words.join(' ').length;
+  const gap = layout.width(layout.join);
+  const total = layout.width(joined(words, layout));
   const groups: string[][] = [];
   let current: string[] = [];
   let used = 0;
   for (const [i, word] of words.entries()) {
     const remainingGroups = count - groups.length;
     const target = (total - used) / remainingGroups;
-    const currentLength = current.join(' ').length;
+    const currentLength = layout.width(joined(current, layout));
     const wordsLeft = words.length - i;
     const mustBreak = remainingGroups > 1 && current.length > 0 && wordsLeft >= remainingGroups - 1;
-    const commaBreak = /[,;:]$/.test(current.at(-1) ?? '') && currentLength >= target * 0.7;
-    if (mustBreak && (currentLength + 1 + word.length > target * 1.15 || commaBreak)) {
+    const commaBreak = layout.clauseEnd.test(current.at(-1) ?? '') && currentLength >= target * 0.7;
+    if (
+      mustBreak &&
+      (currentLength + gap + layout.width(word.trim()) > target * 1.15 || commaBreak)
+    ) {
       groups.push(current);
-      used += currentLength + 1;
+      used += currentLength + gap;
       current = [];
     }
     current.push(word);
@@ -61,24 +149,27 @@ function splitEvenly(words: string[], count: number): string[][] {
 }
 
 /** Lays a group out as one line, or two balanced lines; undefined when it does not fit. */
-function toLines(words: string[], options: CaptionOptions): string[] | undefined {
-  const line = words.join(' ');
-  if (line.length <= options.maxChars) return [line];
+function toLines(words: string[], options: CaptionOptions, layout: Layout): string[] | undefined {
+  const line = joined(words, layout);
+  if (layout.width(line) <= options.maxChars) return [line];
   if (options.maxLines < 2 || words.length < 2) return undefined;
-  const [a, b] = balance(words.slice(0, 1).join(' '), words.slice(1).join(' '), options.maxChars);
-  return a!.length <= options.maxChars && b!.length <= options.maxChars ? [a!, b!] : undefined;
+  const [a, b] = balance(words, options.maxChars, layout);
+  return layout.width(a) <= options.maxChars && layout.width(b) <= options.maxChars
+    ? [a, b]
+    : undefined;
 }
 
-/** Re-splits a two-line cue at its most balanced space so lines read evenly. */
-function balance(a: string, b: string, maxChars: number): string[] {
-  const words = `${a} ${b}`.split(' ');
-  let best: [string, string] = [a, b];
-  let bestScore = Math.abs(a.length - b.length);
+/** Splits a two-line cue at its most balanced break so lines read evenly. */
+function balance(words: string[], maxChars: number, layout: Layout): [string, string] {
+  let best: [string, string] = [joined(words.slice(0, 1), layout), joined(words.slice(1), layout)];
+  let bestScore = Math.abs(layout.width(best[0]) - layout.width(best[1]));
   for (let i = 1; i < words.length; i++) {
-    const left = words.slice(0, i).join(' ');
-    const right = words.slice(i).join(' ');
-    if (left.length > maxChars || right.length > maxChars) continue;
-    const score = Math.abs(left.length - right.length) + (/[,.;:]$/.test(left) ? -4 : 0);
+    const left = joined(words.slice(0, i), layout);
+    const right = joined(words.slice(i), layout);
+    const l = layout.width(left);
+    const r = layout.width(right);
+    if (l > maxChars || r > maxChars) continue;
+    const score = Math.abs(l - r) + (layout.lineEnd.test(left) ? -4 : 0);
     if (score < bestScore) {
       best = [left, right];
       bestScore = score;
@@ -93,10 +184,15 @@ export function buildCaptions(
   options: CaptionOptions,
 ): CaptionCue[] {
   const out: CaptionCue[] = [];
+  const language = options.language ?? 'en';
+  const weigh = (lines: string[]) =>
+    language === 'en'
+      ? lines.join(' ').replace(/\s/g, '').length
+      : displayWidth(lines.join('').replace(/\s/g, ''));
   for (const w of windows) {
     const chunks = chunkCaption(w.text, options);
     if (chunks.length === 0 || w.end <= w.start) continue;
-    const weights = chunks.map((c) => Math.max(4, c.join(' ').replace(/\s/g, '').length));
+    const weights = chunks.map((c) => Math.max(4, weigh(c)));
     const total = weights.reduce((a, b) => a + b, 0);
     const span = w.end - w.start;
     let durations = weights.map((wt) => (span * wt) / total);

@@ -1,8 +1,9 @@
-import { LANGUAGE_NAME, wordCount } from '@covi/core';
+import { LANGUAGE_NAME } from '@covi/core';
 import { localeLanguage, type SpeechRecord, unspokenAcronyms } from './narration/speech.ts';
 import { suggestedVoice } from './narration/tts.ts';
 import type { Media } from './render/ffmpeg.ts';
 import type { VideoSpec } from './spec.ts';
+import { CAPTION_SPEED_LIMIT, captionCharacters, PACE_LIMIT, speechUnits } from './text.ts';
 import type { LayoutReport, Rect, Timeline } from './timeline/types.ts';
 
 export type QcStatus = 'pass' | 'warn' | 'fail';
@@ -61,6 +62,7 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
   const frame = { x: 0, y: 0, width: timeline.width, height: timeline.height };
   const covered: string[] = [];
   const outside: number[] = [];
+  const spilled: number[] = [];
   const overflow = new Set<string>();
   const narratorOverlap = new Set<string>();
   let imagesLoaded = true;
@@ -68,6 +70,7 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
     imagesLoaded &&= report.imagesLoaded;
     if (report.captions) {
       if (!within(report.captions, frame)) outside.push(report.frame);
+      if (report.captionOverflow) spilled.push(report.frame);
       for (const item of report.items) {
         if (item.role !== 'text' && intersects(report.captions, item.rect))
           covered.push(`${report.scene ?? '?'}@${report.frame}`);
@@ -100,7 +103,17 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
           status: 'fail',
           message: `Captions leave the frame at frames ${outside.slice(0, 3).join(', ')}.`,
         }
-      : { id: 'captions-in-frame', status: 'pass', message: 'Captions stay inside the safe area.' },
+      : spilled.length
+        ? {
+            id: 'captions-in-frame',
+            status: 'fail',
+            message: `A caption line is wider than the caption box at frames ${spilled.slice(0, 3).join(', ')}.`,
+          }
+        : {
+            id: 'captions-in-frame',
+            status: 'pass',
+            message: 'Captions stay inside the safe area.',
+          },
   );
   checks.push(
     overflow.size
@@ -136,11 +149,17 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
   return checks;
 }
 
-/** Timing checks on the timeline itself (caption reading speed, narration pace). */
-export function timingChecks(timeline: Timeline): QcCheck[] {
+/**
+ * Timing checks on the timeline itself: caption reading speed and narration pace, in the units
+ * and limits of the video's language. Pace counts the text the voice was given when it is known.
+ */
+export function timingChecks(timeline: Timeline, speech?: SpeechRecord): QcCheck[] {
   const checks: QcCheck[] = [];
+  const language = timeline.language ?? 'en';
   const fast = timeline.captions.filter(
-    (c) => c.lines.join(' ').length / Math.max(0.01, c.end - c.start) > 24,
+    (c) =>
+      captionCharacters(c.lines, language) / Math.max(0.01, c.end - c.start) >
+      CAPTION_SPEED_LIMIT[language],
   );
   const short = timeline.captions.filter((c) => c.end - c.start < 0.7);
   const overlapping = timeline.captions.filter(
@@ -165,9 +184,13 @@ export function timingChecks(timeline: Timeline): QcCheck[] {
       message: `${timeline.captions.length} caption cues, all readable.`,
     });
 
+  const spoken = new Map(speech?.scenes.map((s) => [s.id, s.spoken]));
   const rushed = timeline.scenes.filter(
     (s) =>
-      s.speech && wordCount(s.speech.text) / Math.max(0.1, s.speech.end - s.speech.start) > 4.2,
+      s.speech &&
+      speechUnits(spoken.get(s.id) ?? s.speech.text, language) /
+        Math.max(0.1, s.speech.end - s.speech.start) >
+        PACE_LIMIT[language],
   );
   checks.push(
     rushed.length
@@ -368,7 +391,7 @@ export async function runQc(input: QcInput): Promise<QcReport> {
 
   checks.push(
     ...layoutChecks(input.timeline, input.layouts),
-    ...timingChecks(input.timeline),
+    ...timingChecks(input.timeline, input.speech),
     ...speechChecks(input.speech),
   );
   const status: QcStatus = checks.some((c) => c.status === 'fail')

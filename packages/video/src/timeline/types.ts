@@ -133,8 +133,13 @@ export interface CaptionCue {
 /** The brand theme, carried into the composition so the runtime draws with the same tokens. */
 export type TimelineTheme = Theme;
 
+/** The video's language (`en`, `ko`, `ja`, or `zh` for Simplified Chinese). */
+export type TimelineLanguage = 'en' | 'ko' | 'ja' | 'zh';
+
 export interface Timeline {
   version: 1;
+  /** Language of the narration, captions, and labels; sets `<html lang>` and line breaking. */
+  language: TimelineLanguage;
   title: string;
   width: number;
   height: number;
@@ -143,7 +148,12 @@ export interface Timeline {
   frames: number;
   orientation: 'vertical' | 'landscape' | 'square';
   theme: TimelineTheme;
-  fonts: { sans: string; mono: string };
+  fonts: {
+    sans: string;
+    mono: string;
+    /** CJK fonts the composition embeds (only the slices its text uses), in fallback order. */
+    cjk?: Array<Exclude<TimelineLanguage, 'en'>>;
+  };
   mascot: boolean;
   transition: number;
   scenes: TimelineScene[];
@@ -166,6 +176,8 @@ export interface LayoutReport {
   frame: number;
   scene?: string;
   captions?: Rect;
+  /** A caption line is wider than its box. */
+  captionOverflow?: boolean;
   items: LayoutItem[];
   narrator?: Rect;
   imagesLoaded: boolean;

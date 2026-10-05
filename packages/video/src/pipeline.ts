@@ -266,10 +266,10 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   };
   await synthesizeAll(1);
   const speech = () => new Map([...takes].map(([id, take]) => [id, take.duration]));
-  let fit = fitToDuration(storyboard, speech(), spec);
+  let fit = fitToDuration(storyboard, speech(), spec, language);
   if (fit.tempo > 1.02 && takes.size) {
     await synthesizeAll(fit.tempo);
-    fit = fitToDuration(storyboard, speech(), spec);
+    fit = fitToDuration(storyboard, speech(), spec, language);
   }
   notes.push(...fit.notes);
   for (const n of fit.notes) logger.info(n);
@@ -318,6 +318,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
     spec,
     image: assets.image,
     mouth,
+    language,
   });
   await run.writeJson('video/timeline.json', timeline, 'timeline');
   if (timeline.captions.length) {

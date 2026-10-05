@@ -278,14 +278,17 @@ export class Stage {
 
   report(): LayoutReport {
     const time = this.lastFrame / this.timeline.fps;
+    const shown =
+      Boolean(this.captionBox.textContent) && Number(this.captionBox.style.opacity) > 0.05;
     const active = this.scenes.find((m) => time >= m.scene.start && time < m.scene.end);
     return {
       frame: this.lastFrame,
       scene: active?.scene.id,
-      captions:
-        this.captionBox.textContent && Number(this.captionBox.style.opacity) > 0.05
-          ? rectOf(this.captionBox)
-          : undefined,
+      captions: shown ? rectOf(this.captionBox) : undefined,
+      captionOverflow: shown
+        ? [...this.captionBox.children].some((line) => line.scrollWidth > line.clientWidth + 2) ||
+          this.captionBox.scrollWidth > this.captionBox.clientWidth + 2
+        : undefined,
       items: active ? active.component.report() : [],
       narrator: Number(this.narrator.style.opacity) > 0.05 ? rectOf(this.narrator) : undefined,
       imagesLoaded: this.imagesOk,

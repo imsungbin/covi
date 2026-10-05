@@ -1,8 +1,9 @@
 import { motion, themes, typography } from '@covi/brand';
-import { seedFrom, wordCount } from '@covi/core';
+import { type Language, seedFrom } from '@covi/core';
 import { buildCaptions, captionOptionsFor } from '../captions.ts';
 import { orientationOf, type VideoSpec } from '../spec.ts';
 import type { Scene, Storyboard, Visual } from '../storyboard/schema.ts';
+import { SPEECH_RATE, speechUnits } from '../text.ts';
 import type {
   CaptionCue,
   Expression,
@@ -44,10 +45,10 @@ export function minSecondsFor(visual: Visual): number {
   }
 }
 
-/** Speaking time estimated from text when no audio exists. */
-export function estimateSpeech(text: string): number {
-  const words = wordCount(text);
-  return words === 0 ? 0 : words / 2.5 + 0.25;
+/** Speaking time estimated from text when no audio exists (2.5 words per second in English). */
+export function estimateSpeech(text: string, language: Language = 'en'): number {
+  const units = speechUnits(text, language);
+  return units === 0 ? 0 : units / SPEECH_RATE[language] + 0.25;
 }
 
 export interface SceneTiming {
@@ -68,12 +69,13 @@ export function layoutScenes(
   scenes: readonly Scene[],
   speech: ReadonlyMap<string, number>,
   extraHold: ReadonlyMap<string, number> = new Map(),
+  language: Language = 'en',
 ): Layout {
   const out: SceneTiming[] = [];
   let start = 0;
   scenes.forEach((scene, i) => {
     const id = scene.id ?? `s${i + 1}`;
-    const talk = speech.get(id) ?? estimateSpeech(scene.say ?? scene.narration);
+    const talk = speech.get(id) ?? estimateSpeech(scene.say ?? scene.narration, language);
     const lead = i === 0 ? 0.2 : LEAD_IN;
     const minimum = scene.minSeconds ?? minSecondsFor(scene.visual);
     const length = Math.max(minimum, lead + talk + TAIL) + (extraHold.get(id) ?? 0);
@@ -103,10 +105,11 @@ export function fitToDuration(
   storyboard: Storyboard,
   speech: ReadonlyMap<string, number>,
   spec: VideoSpec,
+  language: Language = 'en',
 ): FitResult {
   const notes: string[] = [];
   let scenes = [...storyboard.scenes];
-  let layout = layoutScenes(scenes, speech);
+  let layout = layoutScenes(scenes, speech, new Map(), language);
   const { min, max } = spec.duration;
 
   while (layout.duration > max && scenes.length > 3) {
@@ -114,7 +117,7 @@ export function fitToDuration(
     if (index === -1) break;
     notes.push(`Dropped optional scene "${scenes[index]!.beat}" to fit ${Math.round(max)}s.`);
     scenes = scenes.filter((_, i) => i !== index);
-    layout = layoutScenes(scenes, speech);
+    layout = layoutScenes(scenes, speech, new Map(), language);
   }
   let tempo = 1;
   if (layout.duration > max) {
@@ -134,7 +137,7 @@ export function fitToDuration(
     // Standard reviews have room to linger on evidence; short-form keeps holds tight.
     const cap = spec.duration.target > 45 ? 7 : 3;
     for (const s of visual) extraHold.set(s.id, Math.min(cap, gap / Math.max(1, visual.length)));
-    layout = layoutScenes(scenes, speech, extraHold);
+    layout = layoutScenes(scenes, speech, extraHold, language);
     notes.push(`Extended visual holds to reach the ${Math.round(min)}s minimum.`);
   }
   return { scenes, layout, extraHold, tempo, notes };
@@ -155,10 +158,13 @@ export interface BuildTimelineInput {
   /** Resolves a run-relative image path to its composition asset. */
   image: (path: string) => ImageAsset;
   mouth?: number[];
+  /** The narration's language: line breaking, reading speed, fonts. Default: English. */
+  language?: Language;
 }
 
 export function buildTimeline(input: BuildTimelineInput): Timeline {
   const { spec, layout } = input;
+  const language = input.language ?? 'en';
   const orientation = orientationOf(spec.width, spec.height);
   const frames = Math.round(layout.duration * spec.fps);
   const scenes: TimelineScene[] = input.scenes.map((scene, i) => {
@@ -188,11 +194,12 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
             start: s.speech!.start,
             end: Math.max(s.speech!.end, s.speech!.start + 0.9),
           })),
-        captionOptionsFor(orientation),
+        { ...captionOptionsFor(orientation), language },
       )
     : [];
   return {
     version: 1,
+    language,
     title: input.title,
     width: spec.width,
     height: spec.height,

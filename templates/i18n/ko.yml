@@ -1,0 +1,798 @@
+# Covi's fixed strings in Korean. Keys and placeholders match en.yml (a test checks it).
+# Particles after a placeholder are written as pairs, {을/를}, {이/가}, {은/는}, {와/과}, {으로/로},
+# and Covi picks the form that agrees with how the text before them is read aloud.
+
+languageName:
+  en: 영어
+  ko: 한국어
+  ja: 일본어
+  zh: 중국어(간체)
+
+verdict:
+  looks-good: 문제 없음
+  needs-attention: 확인 필요
+  needs-changes: 수정 필요
+
+certainty:
+  confirmed: 확인된 문제
+  likely: 가능성 높은 문제
+  risk: 확인할 위험
+  question: 질문
+
+certaintyCount:
+  confirmed: { other: '확인된 문제 {count}건' }
+  likely: { other: '가능성 높은 문제 {count}건' }
+  risk: { other: '확인할 위험 {count}건' }
+  question: { other: '질문 {count}건' }
+
+severity:
+  high: 높음
+  medium: 보통
+  low: 낮음
+
+confidence:
+  high: 높음
+  medium: 보통
+  low: 낮음
+
+category:
+  correctness: 정확성
+  regression: 회귀
+  edge-case: 경계 조건
+  error-handling: 오류 처리
+  state: 상태
+  concurrency: 동시성
+  security: 보안
+  permissions: 권한
+  api-compatibility: API 호환성
+  data-integrity: 데이터 무결성
+  performance: 성능
+  accessibility: 접근성
+  testing: 테스트
+  ui: UI
+  maintainability: 유지보수성
+  complexity: 복잡도
+  intent-mismatch: 의도 불일치
+  dependency: 의존성
+  configuration: 설정
+
+count:
+  files: { other: '파일 {count}개' }
+  findings: { other: '발견 사항 {count}건' }
+  testCases: { other: '테스트 케이스 {count}개' }
+  testFiles: { other: '테스트 파일 {count}개' }
+  checks: { other: '점검 {count}개' }
+  areas: { other: '영역 {count}곳' }
+  packages: { other: '패키지 {count}개' }
+
+report:
+  footer: 'Covi가 생성함 ({provider})'
+  footerChange: 'Covi가 생성함 ({provider}) · {base} {baseSha} → {head} {headSha}'
+  explanation:
+    why: '**이유:**'
+    confidence: '_(확신도: {confidence}.{evidence})_'
+    evidence: ' 근거: {evidence}.'
+    behavior: 동작
+    userVisible: '사용자에게 보이는 변경: {answer}'
+    yes: 예
+    no: 아니요
+    before: '**변경 전:**'
+    after: '**변경 후:**'
+    changes: 변경 내용
+    architecture: 아키텍처
+    details: 구현 세부 사항
+    reviewerNotes: diff를 읽기 전에
+    readingOrder: 추천 읽기 순서
+    ambiguities: 열린 질문
+  review:
+    title: '리뷰: {title}'
+    untitled: 코드 변경
+    findings: 발견 사항
+    evidence: '근거:'
+    suggestion: '**제안:**'
+    tests: 테스트
+    testsPassed: 통과
+    testsTimedOut: 시간 초과
+    testsFailed: '실패(종료 코드 {code})'
+    testsResult: '{command}: {result}, {seconds}초 소요'
+    checked: Covi가 점검한 항목
+    notVerified: 확인하지 못한 부분
+    dismissed: 기각한 항목
+  summary:
+    changes: '**변경 사항**'
+    focus: '**리뷰 포인트**'
+    testing: '**테스트**'
+    commandPasses: '{command} 통과'
+    commandFails: '{command} 실패'
+    testsAdded: '{files}에 {cases} 추가'
+    noTestChanges: 테스트 변경 없음
+    textVerdict: ' 리뷰: {verdict}{findings}.'
+    textFindings: ' ({findings})'
+
+comment:
+  heading: 'Covi 리뷰: {verdict}'
+  watch: '리뷰 영상 보기{duration}'
+  finding: 발견 사항
+  where: 위치
+  details: 발견 사항 자세히
+  suggestion: '제안:'
+  changes: 변경 내용
+  notVerified: 확인하지 못한 부분
+  artifacts: 산출물
+  run: 실행
+  truncated: …(생략됨)
+
+review:
+  noIssues: 'Covi가 점검한 범위에서는 문제를 찾지 못했습니다.{tests}'
+  testsPass: ' 테스트는 통과합니다.'
+  testsFail: ' 테스트가 통과하지 않았습니다.'
+  omitted: { other: ' (우선순위가 낮은 메모 {count}건은 review.json의 "omitted"에 있습니다)' }
+  testsNotRunEnable: '테스트를 실행하지 않았습니다(review.runTests를 켜거나 --run-tests를 쓰세요).'
+  testsNotConfigured: '테스트를 실행하지 않았습니다(test.command가 설정되지 않았습니다).'
+  testsTimedOut: 테스트 명령이 시간 초과되었습니다.
+  testsFailed: '테스트 명령이 실패했습니다(종료 코드 {code}).'
+  notDemonstrated: 사용자에게 보이는 동작은 시연하지 않았고, 코드만 보고 리뷰했습니다.
+  rulesOnly: 로직은 Covi의 내장 규칙으로만 점검했습니다. 추론 기반 리뷰가 필요하면 코딩 에이전트에서 Covi를 실행하거나 모델 제공자를 설정하세요.
+
+brief:
+  title: 'Covi 브리프: {summary}'
+  header: '실행 {runId} · {repository} · {base} {baseSha} → {head} {headSha} · {files}, +{additions} −{deletions} · 규모 {size}'
+  language: '언어: 사람이 읽는 문장은 {language}{으로/로} 작성하세요(explanation.json과 findings.json에 `language: {code}`).'
+  authorDescription: 작성자 설명
+  claim: '> 설명은 작성자의 주장일 뿐 근거가 아닙니다. 코드와 대조해 확인하세요.'
+  commits: 커밋
+  moreCommits: '…외 {count}개'
+  determined: Covi가 파악한 내용
+  intent: '**의도:** {kind}(확신도 {confidence}). {evidence}'
+  noEvidence: 직접적인 근거가 없습니다.
+  ambiguity: '**모호한 점:** {text}'
+  areas: '**영역:** {areas}'
+  internal: 내부
+  surfaces: '**표면:** {surfaces}'
+  demonstration: '**시연 가치:** {value}{kinds} → {recommendation}. {reason}'
+  runnable: '**앱 실행 가능:** {answer}{suggestions}'
+  runnableYes: '예({mode})'
+  runnableNo: 아니요
+  commands: 명령
+  suggestedConfig: '; 추천 설정: {config}'
+  tests: '**테스트:** {tests}{frameworks}'
+  testChanges: '{files} 변경(케이스 +{cases})'
+  noTestChanges: 테스트 변경 없음
+  frameworks: '; 프레임워크: {frameworks}'
+  dependencies: '**의존성:** {list}'
+  envVars: '**환경 변수:** {list}'
+  data: '**데이터 변경:** {list}'
+  signals: 확인할 신호
+  ruleNote: 규칙이 찾은 발견 사항은 근거가 있지만 얕습니다. findings.json에서 하나씩 확정하거나 이유와 함께 기각하세요.
+  readingOrder: 추천 읽기 순서
+  diff: Diff(우선순위순)
+  notInlined: '포함하지 않은 파일:'
+  nextSteps: 에이전트의 다음 단계
+  artifacts: '산출물은 {dir}에 있습니다.'
+  step1: '1. 위 파일들의 주변 코드를 읽으세요. diff만으로는 맥락이 부족합니다.'
+  step2: '2. 실행 디렉터리에 `explanation.json`(스키마: `covi schema explanation`)과 `findings.json`(스키마: `covi schema findings`)을 작성하세요.'
+  step3: '3. `covi report --run {runId}`를 실행해 검증하고 Markdown 보고서를 만드세요.'
+
+intent:
+  kind:
+    feature: 기능
+    bug-fix: 버그 수정
+    refactor: 리팩터링
+    performance: 성능
+    visual: 화면
+    docs: 문서
+    test: 테스트
+    dependency: 의존성
+    config: 설정
+    build: 빌드
+    ci: CI
+    chore: 유지보수
+    security: 보안
+    revert: 되돌리기
+    mixed: 혼합
+    unknown: 알 수 없음
+  evidence:
+    titlePrefix: '제목 "{title}"에 {type} 접두사가 있음'
+    titleMentions: '제목에 "{word}"{이/가} 들어 있음'
+    commit: '커밋 "{subject}"'
+    branch: '브랜치 이름 "{branch}"'
+    onlyDocs: 문서 파일만 바뀜
+    onlyTests: 테스트 파일만 바뀜
+    onlyDependencies: 의존성 매니페스트와 잠금 파일만 바뀜
+    onlyCi: CI 설정만 바뀜
+    onlyStyles: 스타일, 마크업, 에셋만 바뀜
+    onlyBuild: 빌드나 설정 파일만 바뀜
+    mostlyStyles: 변경이 스타일과 마크업에 몰려 있음
+    moved: '파일 {count}개를 옮기거나 이름을 바꿈'
+  ambiguity:
+    both: '신호가 {first}{와/과} {second} 양쪽을 가리킵니다. 서로 다른 관심사를 한 변경에 묶었을 수 있습니다.'
+    uncommitted: 커밋하지 않은 작업에는 커밋 메시지가 없어, 파일만 보고 의도를 추정했습니다.
+    noMessage: 변경을 설명하는 제목, 설명, 커밋 메시지가 없어 파일만 보고 의도를 추정했습니다.
+    mismatch: '{kind}{으로/로} 설명되었지만 {what}도 바꿉니다. 동작 변경이 의도한 것인지 확인하세요.'
+    mismatchRoutes: 'API 라우트({routes})'
+    mismatchMigration: 데이터베이스 마이그레이션
+    mismatchUi: 사용자 인터페이스 파일
+    mismatchSource: 애플리케이션 소스 파일
+    and: ' 및 '
+  summary:
+    changes: 변경
+    kindChanges: '{kind} 변경'
+    in: '{areas}의 {what}'
+
+demonstration:
+  stylesheet:
+    other: '스타일시트 {count}개가 바뀝니다. 직접 보고 판단하는 편이 가장 좋습니다.'
+  ui: '{where}의 사용자 인터페이스 코드가 바뀝니다.'
+  uiFiles: '파일 {count}개'
+  interaction: 이벤트 핸들러, 폼 상태, 요청이 바뀌어서 사용자가 조작할 때의 동작이 달라집니다.
+  routes: 'API 라우트가 바뀝니다: {routes}.'
+  handlers: API 핸들러 코드가 바뀝니다.
+  cli: 명령줄 동작이 바뀝니다. 터미널 출력으로 바로 보여 줄 수 있습니다.
+  architecture: 여러 영역에 걸친 큰 구조 개편입니다. 안내를 따라 둘러보면 리뷰어가 전체 그림을 잡기 쉽습니다.
+  nothingVisible: '사용자에게 보이는 변경이 없습니다. UI, API, CLI 표면을 건드리지 않으므로 데모보다 글로 된 설명이 더 유용합니다.'
+  littleVisible: 데모로 보여 줄 만한 것이 거의 없습니다.
+  cannotRun: Covi는 아직 이 프로젝트를 실행하는 방법을 모릅니다. 실제 동작을 캡처하려면 app.start나 app.static을 설정하세요.
+
+signal:
+  breaking: '커밋이 호환성을 깨는 변경을 선언합니다: "{subject}".'
+  routeRemoved: '라우트 {route}{이/가} 삭제되었습니다.'
+  exportRemoved: '내보낸 {kind} {name}{이/가} 삭제되었습니다.'
+  destructive: '파괴적인 데이터 작업: {statement}'
+  dependencyAdded: '새 런타임 의존성: {name}@{version}.'
+  majorUpgrade: '{name}의 메이저 버전이 바뀝니다({from} → {to}).'
+  envVarAdded: '새 환경 변수: {name}.'
+  envVarUndocumented: '새 환경 변수: {name}(문서화되지 않음).'
+  security: 인증, 권한, 암호화 관련 파일이 바뀌었습니다.
+  mode: '파일 모드가 바뀌었습니다: {from} → {to}.'
+  uncommitted: 이 변경에는 커밋하지 않은 작업이 포함되어 있습니다.
+
+note:
+  lockfiles: { other: '잠금 파일 {count}개가 바뀌었습니다({lines}줄). 기계적인 변경이라 훑어봐도 됩니다.' }
+  skipped: { other: '파일 {count}개를 건너뛰었습니다({reasons}).' }
+  binary: { other: '바이너리 파일 {count}개가 바뀌었습니다: {files}.' }
+  todos: { other: 'TODO/FIXME 주석 {count}개를 추가합니다.' }
+  tests: '테스트: 테스트 케이스 {added}개 추가, {removed}개 삭제.'
+  renamed: { other: '파일 {count}개를 옮기거나 이름을 바꿨습니다.' }
+  ignored:
+    generated: 생성된 파일
+    vendored: 외부 코드
+    config: 설정의 ignore
+
+reading:
+  data: '스키마/데이터 변경: {operations}.'
+  dependencies: '의존성 변경: {names}.'
+  newTests: 이 변경을 위한 새 테스트입니다.
+  testUpdates: 이 변경에 맞춘 테스트 수정입니다.
+  route: '라우트 {change}: {name}{more}.'
+  more: ' 외 {count}개'
+  adds: '{names} 추가'
+  changes: '{names} 변경'
+  removes: '{names} 삭제'
+  styles: '{names}의 스타일.'
+  newFile: '새 {category} 파일.'
+  deletedFile: '삭제된 {category} 파일.'
+  moved: '{path}에서 옮겨 왔습니다.'
+  fileChange: '{category} 변경(+{additions} −{deletions}).'
+  change:
+    added: 추가
+    removed: 삭제
+    modified: 수정
+  operation:
+    create-table: 테이블 생성
+    drop-table: 테이블 삭제
+    rename-table: 테이블 이름 변경
+    add-column: 열 추가
+    drop-column: 열 삭제
+    rename-column: 열 이름 변경
+    alter-column: 열 변경
+    add-index: 인덱스 추가
+    drop-index: 인덱스 삭제
+    data: 데이터
+    other: 기타
+
+explain:
+  kindPhrase:
+    feature: 새 기능
+    bug-fix: 버그 수정
+    refactor: 리팩터링
+    performance: 성능 개선
+    visual: 화면 변경
+    docs: 문서 수정
+    test: 테스트 수정
+    dependency: 의존성 업데이트
+    config: 설정 변경
+    build: 빌드·도구 변경
+    ci: CI 변경
+    chore: 유지보수 작업
+    security: 보안 수정
+    revert: 되돌리기
+    mixed: 여러 변경의 묶음
+    unknown: 변경
+  dataVerb:
+    create-table: 테이블 생성
+    drop-table: 테이블 삭제
+    rename-table: 테이블 이름 변경
+    add-column: 열 추가
+    drop-column: 열 삭제
+    rename-column: 열 이름 변경
+    alter-column: 열 변경
+    add-index: 인덱스 추가
+    drop-index: 인덱스 삭제
+    data: 데이터 수정
+    other: 변경
+  data:
+    columnOnTable: '{table}의 {column} {verb}'
+    single: '{name} {verb}'
+  sentence:
+    scopeIn: '{scope}의 {summary}'
+    imperative: '이 변경은 {clause}'
+    titled: '이 변경은 {kind}입니다. 제목은 “{summary}”입니다.'
+    kind: '이 변경은 {kind}입니다: {summary}'
+  statement:
+    titleKind: '제목은 이 변경을 {kind}{으로/로} 설명합니다: “{title}”.'
+    titleSays: '제목: “{title}”.{fromFiles}'
+    fromFiles: ' {kind}{이라/라}는 판단은 파일을 보고 추정했습니다.'
+    commitSays: '커밋 메시지: “{summary}”.{fromFiles}'
+    commitsDescribe:
+      other: '커밋 메시지 {count}개가 이 변경을 {kind}{으로/로} 설명합니다{summary}.'
+    commitSummary: ': “{summary}”'
+    noPurpose: 목적을 밝힌 설명이나 커밋 메시지가 없고, 파일에서도 목적이 드러나지 않습니다.
+    inferred: '파일만 보고 추정했습니다. {kind}{으로/로} 보입니다.'
+  area:
+    symbolKind:
+      component: 컴포넌트
+      hook: 훅
+      class: 클래스
+      interface: 인터페이스
+      type: 타입
+    others: { other: ' 외 {count}개' }
+    adds: '{names}{more} 추가'
+    changes: '{names}{more} 변경'
+    removes: '{names}{more} 삭제'
+    routeAdded: '라우트 {route} 추가'
+    routeRemoved: '라우트 {route} 삭제'
+    routeChanged: '라우트 {route} 변경'
+    depAdded: '{name} 추가'
+    depRemoved: '{name} 삭제'
+    depUpgraded: '{name} 업그레이드 {from} → {to}{major}'
+    depDowngraded: '{name} 다운그레이드 {from} → {to}{major}'
+    major: '(메이저)'
+    envVar: '새 환경 변수 {name} 사용'
+    styles: '{names}{more}의 스타일 수정'
+    stylesMore: ' 외 {count}개'
+    edits: '{names}{more} 편집'
+    editsMore: ' 외 파일 {count}개'
+  summary:
+    touches: '{where}에 걸쳐 있습니다(+{additions} −{deletions}).'
+    filesAcross: '{areas}{more}의 {files}'
+    andMore: ' 등'
+    filesIn: '{area}의 {files}'
+    userVisible: '사용자에게 보이는 변경입니다({kinds}).'
+    noSurface: 사용자가 보는 표면(UI, API, CLI)은 건드리지 않습니다.
+    lowConfidence: 의도는 제한된 근거로 추정한 것이니 가설로 받아들이세요.
+  notes:
+    startWith: '{path}부터 보세요: {reason}'
+    noTests:
+      other: '수정된 소스 파일 {count}개와 함께 바뀐 테스트가 없습니다.'
+    uncommitted: 작업 트리의 커밋하지 않은 작업이 포함되어 있습니다.
+  architecture:
+    spans: '{areas}에 걸쳐 있습니다: {list}.'
+    internal: 내부
+    dependencies: '의존성 그래프 변경: {packages}.'
+    data: '데이터 모델 변경: {list}.'
+    api: 'API 표면 변경: {list}.'
+  headline: '{area}의 변경'
+  repository: 저장소
+  behavior:
+    canRun: Covi가 이 프로젝트를 실행해 동작을 보여 줄 수 있습니다. 데모 산출물이 있으면 확인하세요.
+    cannotRun: 동작은 관찰하지 못했습니다. Covi가 캡처하도록 app.start나 app.static을 설정하세요.
+  demoKind:
+    ui: UI
+    interaction: 상호작용
+    visual: 화면
+    api: API
+    cli: CLI
+    architecture: 아키텍처
+
+rule:
+  async-foreach:
+    checks: forEach에 넘긴 async 콜백(await되지 않음)
+    title: '{path}에서 forEach에 async 콜백을 넘깁니다'
+    explanation: 'forEach는 콜백이 반환한 프로미스를 무시합니다. 작업이 끝나기 전에 반복이 끝나고, 실패는 처리되지 않은 rejection이 되며, 순서도 보장되지 않습니다.'
+    suggestion: '순차 작업에는 `for (const x of items) await ...`를, 병렬 작업에는 `await Promise.all(items.map(...))`를 쓰세요.'
+  empty-catch:
+    checks: 잡은 뒤 조용히 버리는 오류
+    title: '{path}에서 오류를 조용히 삼킵니다'
+    explanation: 이 블록의 실패는 로그나 복구 없이 사라집니다. 버그가 숨고 장애 원인을 찾기 어려워집니다.
+    suggestion: 오류를 명시적으로 처리하거나, 로그를 남기거나, 전파하세요. 일부러 무시한다면 주석으로 이유를 남기세요.
+  error-handling-removed:
+    checks: 대체 없이 삭제된 오류 처리
+    title: '{path}에서 오류 처리가 삭제되었습니다'
+    evidence: '{removed} 삭제, {added}줄 추가. 처음 삭제된 줄: {line}(이전 {number}행)'
+    lines: { other: '오류 처리 코드 {count}줄' }
+    explanation: 여기서 처리하던 실패가 이제 호출한 쪽으로 전파되거나 작업을 중단시킬 수 있습니다.
+    suggestion: 실패 상황이 여전히 어딘가에서 처리되는지(또는 이제 일어날 수 없는지) 확인하세요.
+  removed-export-still-referenced:
+    checks: 다른 파일이 아직 쓰는, 삭제되거나 이름이 바뀐 export
+    title: '삭제된 export {name}{을/를} 아직 참조합니다'
+    evidence: "{name}{이/가} {path}에서 삭제되었지만 {references}{이/가} 남아 있습니다:\n{sample}"
+    references: { other: '참조 {count}곳' }
+    explanation: 삭제된 심볼을 아직 import하거나 호출하는 코드는 컴파일에 실패하거나 실행 중에 예외를 던집니다.
+    suggestion: '남은 참조를 고치거나, {name}{을/를} deprecated 별칭으로 남겨 두세요.'
+  route-removed:
+    checks: 삭제되거나 이름이 바뀐 API 라우트
+    title: 'API 라우트 {route}{이/가} 삭제되었습니다'
+    evidence: '{file}에서 {route}의 라우트 정의가 사라졌습니다.'
+    explanation: 이 라우트를 호출하는 기존 클라이언트, 연동, 캐시된 프런트엔드가 오류를 받기 시작합니다.
+    suggestion: 의존하는 클라이언트가 없는지 확인하거나, 지원 중단 기간을 두고 유지하세요.
+  destructive-migration:
+    checks: 파괴적인 스키마·데이터 마이그레이션
+    title: '{file}의 파괴적인 마이그레이션'
+    explanation: '{operations}{은/는} 백업 없이는 되돌릴 수 없고, 배포 중 이전 버전을 실행하는 코드가 깨질 수 있습니다.'
+    suggestion: 확장/축소(expand/contract) 방식으로 배포하고(먼저 열을 쓰지 않게 한 뒤 다음 릴리스에서 삭제), 백업을 확인하세요.
+  schema-without-migration:
+    checks: 마이그레이션 없는 ORM 스키마 변경
+    title: '마이그레이션 없이 {kind}{이/가} 바뀌었습니다'
+    prisma: Prisma 스키마
+    django: Django 모델
+    evidence: '{path}{이/가} 모델 필드를 바꾸지만, 이 변경에는 마이그레이션 파일이 추가되지 않았습니다.'
+    explanation: 배포된 데이터베이스는 이전 스키마를 그대로 쓰므로 새 필드를 쓰는 쿼리가 실행 중에 실패합니다.
+    suggestion: 스키마 변경과 함께 마이그레이션을 생성해 커밋하세요.
+  img-missing-alt:
+    checks: 대체 텍스트가 없는 이미지
+    title: '{path}에 대체 텍스트(alt)가 없는 이미지가 있습니다'
+    explanation: 스크린 리더는 alt가 없는 이미지를 파일 이름으로 읽거나 건너뛰므로 이미지의 의미가 전달되지 않습니다.
+    suggestion: 이미지를 설명하는 alt="…"를 추가하거나, 장식용이면 alt=""를 쓰세요.
+  focus-outline-removed:
+    checks: 보이는 대체 없이 제거된 포커스 표시
+    title: '{path}에서 포커스 외곽선을 없앴습니다'
+    explanation: '키보드 사용자는 포커스 외곽선으로 현재 위치를 확인합니다. :focus-visible 대체 없이 없애면 마우스 없이 쓰기 어려워집니다.'
+    suggestion: '보이는 포커스 스타일을 유지하세요. 예: `:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }`.'
+  click-on-static-element:
+    checks: 키보드 지원 없이 상호작용 불가 요소에 단 클릭 핸들러
+    title: '{path}의 클릭 가능한 <{tag}> 요소는 키보드로 쓸 수 없습니다'
+    explanation: '클릭 핸들러만 단 <{tag}> 요소는 Tab으로 이동하거나 Enter/Space로 실행할 수 없고, 스크린 리더도 컨트롤로 알려 주지 않습니다.'
+    suggestion: '<button>을 쓰세요(또는 role="button", tabIndex={0}, 키 핸들러를 추가하세요).'
+  secret-in-diff:
+    checks: 저장소에 추가된 자격 증명이나 개인 키
+    title: '{path}에 {label}{이/가} 커밋되었습니다'
+    evidence: '추가된 줄에 {label} 형식과 일치하는 값이 있습니다: {value}'
+    explanation: 커밋된 내용은 저장소에 접근할 수 있는 모두가 읽을 수 있고, 삭제한 뒤에도 git 기록에 남습니다.
+    suggestion: 지금 자격 증명을 폐기하고 교체한 뒤, 시크릿 저장소나 환경 변수에서 불러오세요.
+    label:
+      private-key: 개인 키
+  merge-conflict-markers:
+    checks: 남아 있는 병합 충돌 표시
+    title: '{path}에 해결하지 않은 병합 충돌이 있습니다'
+    evidence: '추가된 충돌 표시: {line}'
+    explanation: 파일에 충돌한 양쪽 내용이 모두 들어 있어서 파싱되지 않거나 의도대로 동작하지 않습니다.
+    suggestion: '충돌을 해결하고 <<<<<<< / ======= / >>>>>>> 표시를 지우세요.'
+  focused-test:
+    checks: 나머지 테스트를 조용히 건너뛰게 하는 집중 테스트(.only)
+    title: '{path}에 집중 테스트(.only)가 남아 있습니다'
+    explanation: 집중 테스트는 같은 범위의 다른 테스트를 모두 건너뛰게 하므로, 그 테스트들을 실행하지 않고도 CI가 통과할 수 있습니다.
+    suggestion: 머지하기 전에 `.only`를 지우세요.
+  skipped-test:
+    checks: 새로 건너뛰거나 비활성화한 테스트
+    title: '{path}의 테스트를 건너뜁니다'
+    titleMany: '테스트 {count}개를 건너뜁니다'
+    explanation: 건너뛴 테스트는 더 이상 해당 동작을 지켜 주지 않습니다. 의도했을 수 있지만, 신중히 결정해야 합니다.
+    suggestion: 의도한 건너뛰기인지 확인하고, 다시 켜는 일을 추적하세요.
+  debug-leftover:
+    checks: 애플리케이션 코드에 남은 debugger 문과 중단점
+    title: '{path}에 디버거 중단점이 남아 있습니다'
+    explanation: 중단점은 개발자 도구나 디버거가 연결되면 실행을 멈추며, 배포할 생각으로 넣는 경우는 거의 없습니다.
+    suggestion: 중단점을 지우세요.
+  lockfile-out-of-sync:
+    checks: 잠금 파일 없이 바뀐 의존성 매니페스트
+    title: '{manifest}{은/는} 바뀌었지만 {lockfile}{은/는} 바뀌지 않았습니다'
+    evidence: '의존성이 바뀌었지만({dependencies}) {lockfile}{은/는} 갱신되지 않았습니다.'
+    explanation: 재현 가능한 설치(npm ci, cargo build --locked 등)가 실패하거나, 테스트한 것과 다른 버전을 받게 됩니다.
+    suggestion: '패키지 관리자로 설치를 실행하고 갱신된 {lockfile}{을/를} 커밋하세요.'
+  major-dependency-upgrade:
+    checks: 의존성의 메이저 버전 업그레이드
+    title: '{name}의 메이저 업그레이드'
+    titleMany: '의존성 메이저 업그레이드 {count}건'
+    explanation: 메이저 버전은 라이브러리가 호환성을 깨는 변경을 하는 곳입니다. 컴파일이 되어도 동작이 바뀔 수 있습니다.
+    suggestion: 이 프로젝트가 패키지를 쓰는 방식에 영향을 주는 호환성 변경이 있는지 릴리스 노트를 훑어보세요.
+  env-var-undocumented:
+    checks: 환경 변수 예시 파일에 빠진 새 환경 변수
+    title: '새 환경 변수 {name}{이/가} 문서화되지 않았습니다'
+    titleMany: '새 환경 변수 {count}개가 문서화되지 않았습니다'
+    evidence:
+      other: '코드가 {names}{을/를} 읽지만 {file}에는 빠져 있습니다.'
+    explanation: 배포 담당자와 팀원은 예시 파일을 보고 무엇을 설정할지 압니다. 빠진 변수는 보통 실행 중 오류로 드러납니다.
+    suggestion:
+      other: '안전한 예시 값과 함께 {file}에 추가하세요.'
+  missing-tests:
+    checks: 테스트가 함께 오지 않은 동작 변경
+    titleBugFix: 회귀 테스트 없는 버그 수정
+    title: 테스트 없는 동작 변경
+    evidence: '{files}{이/가} 바뀌었고(추가 {lines}줄) 테스트 파일은 바뀌지 않았습니다: {list}.'
+    sourceFiles: { other: '소스 파일 {count}개' }
+    explanationBugFix: 수정 전에 실패하는 테스트가 없으면 버그가 조용히 돌아올 수 있습니다.
+    explanation: 테스트 없는 새 동작은 이후 변경에서 쉽게 깨집니다.
+    suggestionBugFix: 원래 버그를 재현하는 테스트를 추가하세요.
+    suggestion: 새 동작의 주요 경로에 대한 테스트를 추가하세요.
+  intent-mismatch:
+    checks: 밝힌 의도와 실제 변경의 불일치
+    title: '{kind}{으로/로} 설명된 변경이 동작을 바꿉니다'
+    explanation: 리뷰어는 설명을 보고 얼마나 꼼꼼히 읽을지 정합니다. 알리지 않은 동작 변경은 놓치기 쉽습니다.
+    suggestion: 동작 변경이 의도한 것인지 확인하고 설명에 적어 주세요.
+  dangerous-html:
+    checks: 원시 HTML 삽입 지점(innerHTML, dangerouslySetInnerHTML, v-html)
+    title: '{path}에서 정제하지 않은 HTML을 렌더링합니다'
+    explanation: '{api} 부분이 마크업을 HTML로 렌더링합니다. 일부라도 사용자나 외부 데이터에서 온다면 크로스 사이트 스크립팅(XSS) 통로가 됩니다.'
+    suggestion: HTML 대신 텍스트로 렌더링하거나, 삽입하기 전에 마크업을 정제하세요(예를 들어 DOMPurify로).
+  dynamic-code-execution:
+    checks: eval과 동적으로 만든 코드
+    title: '{path}에서 동적으로 코드를 실행합니다'
+    explanation: 문자열을 코드로 실행하면 그 문자열에 들어온 무엇이든 실행되고, 정적 분석이 무력해집니다. 꼭 필요한 경우도 드뭅니다.
+    suggestion: 명시적인 파싱이나 조회 테이블로 바꾸세요.
+  sql-string-building:
+    checks: 매개변수 대신 문자열 보간으로 만든 SQL
+    title: '{path}에서 보간한 값으로 SQL을 만듭니다'
+    explanation: 값을 SQL 텍스트에 보간하면, 그중 하나라도 사용자가 영향을 줄 수 있을 때 SQL 인젝션이 가능해집니다.
+    suggestion: 매개변수화 쿼리(자리표시자와 바인딩한 값)를 쓰세요.
+  workflow-script-injection:
+    checks: 신뢰할 수 없는 이벤트 데이터를 보간하는 GitHub Actions 스크립트
+    title: '{path}에서 {expression}{을/를} 통한 스크립트 인젝션'
+    explanation: '{expression}{은/는} 공격자가 제어할 수 있는 값이고 실행 전에 셸 스크립트에 그대로 들어갑니다. 조작된 제목이나 브랜치 이름으로 워크플로에서 명령을 실행할 수 있습니다.'
+    suggestion: '값을 환경 변수로 넘기고(env: TITLE: ${{ ... }}) 스크립트에서는 "$TITLE"로 참조하세요.'
+  workflow-pull-request-target:
+    checks: 신뢰할 수 없는 PR 코드를 체크아웃하는 pull_request_target 워크플로
+    title: '{path}의 pull_request_target 워크플로가 PR 코드를 체크아웃합니다'
+    explanation: pull_request_target은 쓰기 토큰과 저장소 시크릿을 가진 채 실행됩니다. PR의 코드를 체크아웃해 실행하면 어떤 포크든 그 권한으로 코드를 실행할 수 있습니다.
+    suggestion: PR 코드를 실행하는 작업에는 pull_request 트리거를 쓰고, 댓글 달기처럼 권한이 필요한 단계는 PR 코드를 체크아웃하지 않는 별도의 workflow_run 작업으로 나누세요.
+  workflow-broad-permissions:
+    checks: write-all로 넓힌 워크플로 토큰 권한
+    title: '{path}의 워크플로가 write-all 토큰 권한을 줍니다'
+    explanation: 서드파티 액션을 포함한 모든 단계가 코드를 push하고, 릴리스를 고치고, 설정을 바꿀 수 있는 토큰을 받습니다.
+    suggestion: '작업에 필요한 범위만 주세요(예: contents: read, pull-requests: write).'
+
+capture:
+  trustHint: '`covi trust`로 검토하고 허용하세요.'
+  skip:
+    appStart: 'app.start({command})'
+    command: '명령 "{name}"'
+    demonstration: 시연
+    pagesFlowsRequests: 페이지, 흐름, 요청
+    appAt: '{revision} 리비전의 앱'
+    flow: '흐름 "{name}"'
+  reason:
+    notTrusted: '이 컴퓨터에서 아직 신뢰하지 않았습니다. {hint}'
+    appNotTrusted: '저장소 설정의 앱 설정을 이 컴퓨터에서 아직 신뢰하지 않았습니다. {hint}'
+    cannotRun: 'Covi는 이 프로젝트를 실행하는 방법을 모릅니다. .covi/config.yml에 app.start(필요하면 app.url도)나 app.static을 설정하세요{example}.'
+    example: '(예: {suggestion})'
+    nothing: 시연할 것이 없습니다.
+  finding:
+    appStart:
+      title: 헤드 리비전에서 앱이 시작되지 않습니다
+      explanation: 이 변경을 적용하면 설정된 앱을 시작할 수 없습니다. 시작 과정이나 빌드가 깨졌을 가능성이 큽니다.
+    flow:
+      title: '헤드 리비전에서 흐름 "{name}"{이/가} 실패합니다'
+      explanation: 이 변경을 적용하면 설정된 사용자 흐름을 끝까지 진행할 수 없습니다.
+    pageError:
+      title: '{path}에서 새 JavaScript 오류가 발생합니다'
+      explanation: '{path}({viewport})를 불러오면 베이스 리비전에는 없던 오류가 헤드 리비전에서 로그에 남습니다.'
+    pageStatus:
+      title: '변경 후 {path}{이/가} HTTP {status}{을/를} 반환합니다'
+      evidence: '베이스: HTTP {base}, 헤드: HTTP {head}.'
+      explanation: 베이스 리비전에서는 페이지가 열리지만 이 변경을 적용하면 실패합니다.
+    apiShape:
+      title: '{method} {path}의 응답 형태가 바뀌었습니다'
+      evidence: '두 리비전에서 {method} {path}{을/를} 호출해 확인했습니다: {shape}.'
+      explanation: 이전 형태를 파싱하는 기존 클라이언트는 같은 릴리스에서 함께 고치지 않으면 깨집니다.
+      suggestion: 엔드포인트에 버전을 붙이거나, 이전 형태를 매개변수 뒤에 남겨 두거나, 이 변경에서 모든 클라이언트를 함께 고치세요.
+    apiStatus:
+      title: '{method} {path}{이/가} 이제 HTTP {status}{으로/로} 실패합니다'
+      evidence: '베이스: HTTP {base}, 헤드: HTTP {head}. {body}'
+      explanation: 이 변경 전에는 동작하던 엔드포인트가 이제 서버 오류를 반환합니다.
+    command:
+      title: '`{command}`{이/가} 이제 실패합니다'
+      evidence: "베이스의 종료 코드 {base}, 헤드의 종료 코드 {head}.\n{output}"
+      explanation: 데모 명령이 이 변경 없이는 성공하고, 변경을 적용하면 실패합니다.
+      timeout: 시간 초과
+  shape:
+    kindChanged: '응답이 JSON {from}에서 JSON {to}{으로/로} 바뀌었습니다{keys}'
+    keys: '(키: {keys})'
+    removed: { other: '필드 {fields} 삭제' }
+    retyped: '{fields}의 타입 변경'
+    retypedField: '{path}({from} → {to})'
+    value: 값
+    response: '응답 변경: {parts}'
+    and: ' 및 '
+    kind:
+      array: 배열
+      object: 객체
+      string: 문자열
+      number: 숫자
+      boolean: 불리언
+      'null': 'null'
+      unknown: 알 수 없음
+      bigint: bigint
+      undefined: undefined
+      function: 함수
+      symbol: 심볼
+
+demo:
+  title: 시연
+  page: '페이지 {name}'
+  flowStep: '{flow} · {step}단계: {label}'
+  before: '변경 전:'
+  after: '변경 후:'
+  changedPixels: '바뀐 픽셀: {percent}%{diff}'
+  diffLink: ' ([diff]({path}))'
+  request: '변경 전: {before} · 변경 후: HTTP {after}{changed}'
+  notApplicable: 없음
+  changed: ' · 바뀜'
+  shapeChange: '형태 변경: {shape}.'
+  notDemonstrated: 시연하지 못한 것
+
+video:
+  label:
+    verdict:
+      looks-good: 문제 없음
+      needs-attention: 확인 필요
+      needs-changes: 수정 필요
+    certainty:
+      confirmed: 확인된 문제
+      likely: 가능성 높은 문제
+      risk: 확인할 위험
+      question: 질문
+    severity:
+      high: 심각도 높음
+      medium: 심각도 보통
+      low: 심각도 낮음
+    stats:
+      files: 파일
+      added: 추가
+      removed: 삭제
+    before: 변경 전
+    after: 변경 후
+    response: 응답
+    terminal: 터미널
+  moreLines: { other: '… {count}줄 더' }
+
+narration:
+  meta: '{files} · +{additions} −{deletions}'
+  touches: ' {areas}에 걸친 변경입니다.'
+  changeMap:
+    text: '변경은 {areas}에 걸쳐 있고, 주로 {names}입니다.'
+    heading: '{files} 변경'
+  code:
+    fix: '수정은 {file}에 있습니다.'
+    fixWhat: '수정은 {file}에 있고, {names}{을/를} {verb}.'
+    styles: '스타일은 {file}에 있습니다.'
+    stylesWhat: '스타일은 {file}에 있고, {names}{을/를} {verb}.'
+    key: '핵심 변경은 {file}에 있습니다.'
+    keyWhat: '핵심 변경은 {file}에 있고, {names}{을/를} {verb}.'
+    adds: 추가합니다
+    updates: 수정합니다
+    describedBy: '{description}'
+  screenshot:
+    before: '변경 전 {label}입니다.'
+    after: '변경 후 {label}입니다.{highlighted}'
+    highlighted: ' 바뀐 부분을 강조해 두었습니다.'
+    thePage: 페이지
+  beforeAfter:
+    fix: 수정 전과 후의 동작입니다.
+    page: '{page}변경 전과 후입니다.'
+    pageOf: '{page}의 '
+    stack: 위가 이전 버전, 아래가 새 버전입니다.
+    split: 왼쪽이 이전 버전, 오른쪽이 새 버전입니다.
+  interaction:
+    steps: '새 흐름입니다. {steps}.'
+    plain: 새 흐름을 단계별로 보여 드립니다.
+  terminal:
+    compared: 같은 명령을 변경 전과 후에 실행했습니다.
+    prints: ' 이제 {output}{을/를} 출력합니다.'
+    exits: ' 이제 종료 코드가 {before} 대신 {after}입니다.'
+    none: 없음
+    output: 변경 후 명령의 출력입니다.
+  api:
+    call: '{method} {path}{을/를} 호출합니다.'
+    callCompared: '변경 전과 후에 {method} {path}{을/를} 호출합니다.'
+    sayCompared: '변경 전과 후에 {method} {path}{을/를} 호출합니다.'
+    status: '상태 코드가 {before}에서 {after}{으로/로} 바뀌었습니다.'
+    entries:
+      other: '이전에는 항목 {count}개를 반환했고, 지금은 {now}개를 반환합니다.'
+    listed:
+      other: '이전 응답은 항목 {count}개를 나열했고, 새 {key} 배열에는 {now}개가 있습니다.'
+    includes: '이제 응답에 {keys}도 들어 있습니다.'
+  findings:
+    one: '살펴볼 점이 하나 있습니다. {title}.'
+    oneWhy: '살펴볼 점이 하나 있습니다. {title}. {why}'
+    two: '살펴볼 점이 두 가지 있습니다. 먼저, {title}.'
+    few: '살펴볼 점이 몇 가지 있습니다. 먼저, {title}.'
+    also: ' 또한, {title}.'
+    count:
+      two: 살펴볼 점이 두 가지 있습니다.
+      three: 살펴볼 점이 세 가지 있습니다.
+      few: 살펴볼 점이 몇 가지 있습니다.
+    ordinal:
+      first: '첫째, {title}.'
+      second: '둘째, {title}.'
+      third: '셋째, {title}.'
+    heading:
+      confirmed: 확인된 문제
+      likely: 가능성 높은 문제
+      risk: 확인할 위험
+      question: 열린 질문
+      many: '확인할 점 {count}가지'
+  callout:
+    clean: Covi는 머지를 막을 문제를 찾지 못했습니다.
+    check: '확인할 점: {title}.'
+    noBlocking: 막히는 문제 없음
+    startWith: '{path}부터 리뷰를 시작하세요.'
+    sound: Covi가 점검한 범위에서는 변경이 탄탄해 보입니다.
+  diagram:
+    text: 옮겨진 부분들이 이제 어떻게 연결되는지 보여 드립니다. 강조한 모듈은 모두 이번 diff에서 바뀌었습니다.
+    heading: 모듈 지도
+  summary:
+    looksGood: 전체적으로 머지해도 좋아 보입니다.
+    needsChanges: 머지하기 전에 수정이 필요합니다.
+    needsAttention: '머지하기 전에 {spots}{을/를} 더 자세히 봐야 합니다.'
+    spots: { other: '{count}군데' }
+    tests: ' {tests}도 함께 들어왔습니다.'
+    newTests: { other: '새 테스트 {count}개' }
+    next: ' 다음 단계 제안: {step}'
+    start: ' diff를 읽는다면 {path}부터 시작하세요.'
+    point:
+      confirmed: 확인됨
+      likely: 가능성 높음
+      risk: 위험
+      question: 질문
+    pointLine: '{label}: {title}'
+  roadmap:
+    text: '{first} {stops}{을/를} 차례로 살펴보겠습니다.'
+    api: 변경 전후의 응답
+    apiNew: 새 응답
+    terminal: 변경 전후의 명령
+    terminalNew: 명령의 출력
+    beforeAfter: 변경 전후의 페이지
+    screenshot: 실제 화면
+    interaction: 새 흐름
+    code: 그 뒤의 코드
+    structure: 각 부분이 맞물리는 방식
+    findings: 머지 전에 확인할 점
+  file:
+    phrase: '{name} {noun}'
+    module: 모듈
+    script: 스크립트
+    component: 컴포넌트
+    stylesheet: 스타일시트
+    page: 페이지
+    doc: 문서
+    config: 설정 파일
+    file: 파일
+  slash: ' 슬래시 '
+  to: ' 에서 '
+
+question:
+  mode:
+    header: 영상 종류
+    question: Covi가 어떤 영상을 만들까요?
+    short: 숏폼
+    shortDescription: '세로 9:16, 약 30초, 간결하게'
+    standard: 표준 리뷰
+    standardDescription: '16:9, 60–120초, 더 자세히'
+    custom: 직접 지정
+    customDescription: 크기, 길이, 내레이션을 고릅니다
+  duration:
+    header: 길이
+    question: 얼마나 길게 만들까요?
+    s15: 약 15초
+    s15Description: 핵심 장면만
+    s30: 약 30초
+    s30Description: 변경과 리뷰 포인트 하나
+    s60: 약 60초
+    s60Description: 왜 중요한지 설명할 여유
+    auto: Covi가 결정
+    autoDescription: 변경에 맞춰 길이를 정합니다
+  size:
+    header: 크기
+    question: 직접 지정한 영상의 크기는요?
+    vertical: 세로
+    landscape: 가로
+    square: 정사각형

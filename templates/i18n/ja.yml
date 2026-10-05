@@ -1,0 +1,797 @@
+# Covi's fixed strings in Japanese. Keys and placeholders match en.yml (a test checks it).
+# Sentences join without spaces, so messages that continue a sentence have no leading space.
+
+languageName:
+  en: 英語
+  ko: 韓国語
+  ja: 日本語
+  zh: 中国語（簡体字）
+
+verdict:
+  looks-good: 問題なし
+  needs-attention: 要確認
+  needs-changes: 要修正
+
+certainty:
+  confirmed: 確認済みの問題
+  likely: 問題の可能性が高い
+  risk: 確認すべきリスク
+  question: 質問
+
+certaintyCount:
+  confirmed: { other: '確認済みの問題 {count} 件' }
+  likely: { other: '可能性の高い問題 {count} 件' }
+  risk: { other: '確認すべきリスク {count} 件' }
+  question: { other: '質問 {count} 件' }
+
+severity:
+  high: 高
+  medium: 中
+  low: 低
+
+confidence:
+  high: 高
+  medium: 中
+  low: 低
+
+category:
+  correctness: 正確性
+  regression: リグレッション
+  edge-case: エッジケース
+  error-handling: エラー処理
+  state: 状態
+  concurrency: 並行性
+  security: セキュリティ
+  permissions: 権限
+  api-compatibility: API 互換性
+  data-integrity: データ整合性
+  performance: パフォーマンス
+  accessibility: アクセシビリティ
+  testing: テスト
+  ui: UI
+  maintainability: 保守性
+  complexity: 複雑さ
+  intent-mismatch: 意図との不一致
+  dependency: 依存関係
+  configuration: 設定
+
+count:
+  files: { other: '{count} ファイル' }
+  findings: { other: '指摘 {count} 件' }
+  testCases: { other: 'テストケース {count} 件' }
+  testFiles: { other: 'テストファイル {count} 件' }
+  checks: { other: 'チェック {count} 件' }
+  areas: { other: '{count} 領域' }
+  packages: { other: '{count} パッケージ' }
+
+report:
+  footer: 'Covi が生成（{provider}）'
+  footerChange: 'Covi が生成（{provider}）· {base} {baseSha} → {head} {headSha}'
+  explanation:
+    why: '**理由:**'
+    confidence: '_（確信度: {confidence}。{evidence}）_'
+    evidence: '根拠: {evidence}。'
+    behavior: 動作
+    userVisible: 'ユーザーに見える変更: {answer}'
+    yes: はい
+    no: いいえ
+    before: '**変更前:**'
+    after: '**変更後:**'
+    changes: 変更内容
+    architecture: アーキテクチャ
+    details: 実装の詳細
+    reviewerNotes: diff を読む前に
+    readingOrder: おすすめの読む順番
+    ambiguities: 未解決の疑問
+  review:
+    title: 'レビュー: {title}'
+    untitled: コードの変更
+    findings: 指摘
+    evidence: '根拠:'
+    suggestion: '**提案:**'
+    tests: テスト
+    testsPassed: 成功
+    testsTimedOut: タイムアウト
+    testsFailed: '失敗（終了コード {code}）'
+    testsResult: '{command}: {result}（{seconds} 秒）'
+    checked: Covi が確認した項目
+    notVerified: 確認できなかったこと
+    dismissed: 却下した項目
+  summary:
+    changes: '**変更**'
+    focus: '**レビューのポイント**'
+    testing: '**テスト**'
+    commandPasses: '{command} は成功'
+    commandFails: '{command} は失敗'
+    testsAdded: '{files}に{cases}を追加'
+    noTestChanges: テストの変更なし
+    textVerdict: 'レビュー: {verdict}{findings}。'
+    textFindings: '（{findings}）'
+
+comment:
+  heading: 'Covi レビュー: {verdict}'
+  watch: 'レビュー動画を見る{duration}'
+  finding: 指摘
+  where: 場所
+  details: 指摘の詳細
+  suggestion: '提案:'
+  changes: 変更内容
+  notVerified: 確認できなかったこと
+  artifacts: 成果物
+  run: 実行
+  truncated: …（省略）
+
+review:
+  noIssues: 'Covi が確認した範囲では問題は見つかりませんでした。{tests}'
+  testsPass: テストは成功しています。
+  testsFail: テストが成功していません。
+  omitted: { other: '（優先度の低いメモ {count} 件は review.json の "omitted" にあります）' }
+  testsNotRunEnable: 'テストは実行していません（review.runTests を有効にするか --run-tests を指定してください）。'
+  testsNotConfigured: 'テストは実行していません（test.command が設定されていません）。'
+  testsTimedOut: テストコマンドがタイムアウトしました。
+  testsFailed: 'テストコマンドが失敗しました（終了コード {code}）。'
+  notDemonstrated: ユーザーに見える動作はデモで確認しておらず、コードだけでレビューしました。
+  rulesOnly: ロジックは Covi の組み込みルールでのみ確認しました。推論にもとづくレビューには、コーディングエージェントから Covi を実行するか、モデルプロバイダーを設定してください。
+
+brief:
+  title: 'Covi ブリーフ: {summary}'
+  header: '実行 {runId} · {repository} · {base} {baseSha} → {head} {headSha} · {files}、+{additions} −{deletions} · 規模 {size}'
+  language: '言語: 人が読む文章は{language}で書いてください（explanation.json と findings.json に `language: {code}`）。'
+  authorDescription: 作成者の説明
+  claim: '> 説明は作成者の主張であり、根拠ではありません。コードと照らし合わせて確認してください。'
+  commits: コミット
+  moreCommits: '…ほか {count} 件'
+  determined: Covi が把握したこと
+  intent: '**意図:** {kind}（確信度 {confidence}）。{evidence}'
+  noEvidence: 直接の根拠はありません。
+  ambiguity: '**あいまいな点:** {text}'
+  areas: '**領域:** {areas}'
+  internal: 内部
+  surfaces: '**影響面:** {surfaces}'
+  demonstration: '**デモの価値:** {value}{kinds} → {recommendation}。{reason}'
+  runnable: '**アプリを実行できるか:** {answer}{suggestions}'
+  runnableYes: 'はい（{mode}）'
+  runnableNo: いいえ
+  commands: コマンド
+  suggestedConfig: '。推奨設定: {config}'
+  tests: '**テスト:** {tests}{frameworks}'
+  testChanges: '{files}を変更（ケース +{cases}）'
+  noTestChanges: テストの変更なし
+  frameworks: '。フレームワーク: {frameworks}'
+  dependencies: '**依存関係:** {list}'
+  envVars: '**環境変数:** {list}'
+  data: '**データの変更:** {list}'
+  signals: 確認すべきシグナル
+  ruleNote: ルールによる指摘は根拠にもとづきますが浅いものです。findings.json で一つずつ確定するか、理由を添えて却下してください。
+  readingOrder: おすすめの読む順番
+  diff: Diff（優先度順）
+  notInlined: '含めなかったファイル:'
+  nextSteps: エージェントの次のステップ
+  artifacts: '成果物は {dir} にあります。'
+  step1: '1. 上のファイルの周辺コードを読んでください。diff だけでは文脈が足りません。'
+  step2: '2. 実行ディレクトリに `explanation.json`（スキーマ: `covi schema explanation`）と `findings.json`（スキーマ: `covi schema findings`）を書いてください。'
+  step3: '3. `covi report --run {runId}` を実行して検証し、Markdown のレポートを生成してください。'
+
+intent:
+  kind:
+    feature: 機能
+    bug-fix: バグ修正
+    refactor: リファクタリング
+    performance: パフォーマンス
+    visual: 見た目
+    docs: ドキュメント
+    test: テスト
+    dependency: 依存関係
+    config: 設定
+    build: ビルド
+    ci: CI
+    chore: 保守
+    security: セキュリティ
+    revert: 取り消し
+    mixed: 混在
+    unknown: 不明
+  evidence:
+    titlePrefix: 'タイトル "{title}" に {type} の接頭辞がある'
+    titleMentions: 'タイトルに "{word}" が含まれる'
+    commit: 'コミット "{subject}"'
+    branch: 'ブランチ名 "{branch}"'
+    onlyDocs: ドキュメントだけが変更されている
+    onlyTests: テストファイルだけが変更されている
+    onlyDependencies: 依存関係のマニフェストとロックファイルだけが変更されている
+    onlyCi: CI の設定だけが変更されている
+    onlyStyles: スタイル、マークアップ、アセットだけが変更されている
+    onlyBuild: ビルドや設定のファイルだけが変更されている
+    mostlyStyles: 変更がスタイルとマークアップに集中している
+    moved: '{count} ファイルが移動または名前変更されている'
+  ambiguity:
+    both: 'シグナルが{first}と{second}の両方を示しています。別々の関心事を一つの変更にまとめている可能性があります。'
+    uncommitted: コミットしていない作業にはコミットメッセージがないため、ファイルだけから意図を推定しました。
+    noMessage: 変更を説明するタイトル、説明、コミットメッセージがないため、ファイルから意図を推定しました。
+    mismatch: '{kind}と説明されていますが、{what}も変更しています。動作の変更が意図どおりか確認してください。'
+    mismatchRoutes: 'API ルート（{routes}）'
+    mismatchMigration: データベースのマイグレーション
+    mismatchUi: ユーザーインターフェースのファイル
+    mismatchSource: アプリケーションのソースファイル
+    and: 'と'
+  summary:
+    changes: 変更
+    kindChanges: '{kind}の変更'
+    in: '{areas}の{what}'
+
+demonstration:
+  stylesheet:
+    other: '{count} 個のスタイルシートが変わります。実際に見て判断するのが一番です。'
+  ui: '{where}のユーザーインターフェースのコードが変わります。'
+  uiFiles: '{count} ファイル'
+  interaction: イベントハンドラー、フォームの状態、リクエストが変わるため、操作したときの動作が変わります。
+  routes: 'API ルートが変わります: {routes}。'
+  handlers: API ハンドラーのコードが変わります。
+  cli: コマンドラインの動作が変わります。ターミナルの出力でそのまま見せられます。
+  architecture: 複数の領域にまたがる大きな再構成です。順を追って見て回ると、レビュアーが全体像をつかみやすくなります。
+  nothingVisible: 'ユーザーに見える変更はありません。UI、API、CLI に触れていないため、デモより文章での説明のほうが役に立ちます。'
+  littleVisible: デモで見せられるものはほとんどありません。
+  cannotRun: Covi はまだこのプロジェクトの実行方法を知りません。実際の動作をキャプチャするには app.start か app.static を設定してください。
+
+signal:
+  breaking: 'コミットが互換性を壊す変更を宣言しています: "{subject}"。'
+  routeRemoved: 'ルート {route} が削除されました。'
+  exportRemoved: 'エクスポートされていた {kind} {name} が削除されました。'
+  destructive: '破壊的なデータ操作: {statement}'
+  dependencyAdded: '新しいランタイム依存関係: {name}@{version}。'
+  majorUpgrade: '{name} のメジャーバージョンが変わります（{from} → {to}）。'
+  envVarAdded: '新しい環境変数: {name}。'
+  envVarUndocumented: '新しい環境変数: {name}（未記載）。'
+  security: 認証、認可、暗号化に関わるファイルが変更されました。
+  mode: 'ファイルモードが変わりました: {from} → {to}。'
+  uncommitted: この変更にはコミットしていない作業が含まれています。
+
+note:
+  lockfiles: { other: 'ロックファイル {count} 個が変更されました（{lines} 行）。機械的な変更なので、ざっと見るだけで構いません。' }
+  skipped: { other: '{count} ファイルをスキップしました（{reasons}）。' }
+  binary: { other: 'バイナリファイル {count} 個が変更されました: {files}。' }
+  todos: { other: 'TODO/FIXME コメントを {count} 個追加しています。' }
+  tests: 'テスト: テストケース {added} 件を追加、{removed} 件を削除。'
+  renamed: { other: '{count} ファイルを移動または名前変更しました。' }
+  ignored:
+    generated: 生成されたファイル
+    vendored: 外部のコード
+    config: 設定の ignore
+
+reading:
+  data: 'スキーマ/データの変更: {operations}。'
+  dependencies: '依存関係の変更: {names}。'
+  newTests: この変更のための新しいテストです。
+  testUpdates: この変更に合わせたテストの更新です。
+  route: 'ルートの{change}: {name}{more}。'
+  more: 'ほか {count} 件'
+  adds: '{names}を追加'
+  changes: '{names}を変更'
+  removes: '{names}を削除'
+  styles: '{names}のスタイル。'
+  newFile: '新しい {category} ファイル。'
+  deletedFile: '削除された {category} ファイル。'
+  moved: '{path} から移動しました。'
+  fileChange: '{category} の変更（+{additions} −{deletions}）。'
+  change:
+    added: 追加
+    removed: 削除
+    modified: 変更
+  operation:
+    create-table: テーブル作成
+    drop-table: テーブル削除
+    rename-table: テーブル名の変更
+    add-column: 列の追加
+    drop-column: 列の削除
+    rename-column: 列名の変更
+    alter-column: 列の変更
+    add-index: インデックスの追加
+    drop-index: インデックスの削除
+    data: データ
+    other: その他
+
+explain:
+  kindPhrase:
+    feature: 新機能
+    bug-fix: バグ修正
+    refactor: リファクタリング
+    performance: パフォーマンス改善
+    visual: 見た目の更新
+    docs: ドキュメントの更新
+    test: テストの更新
+    dependency: 依存関係の更新
+    config: 設定の変更
+    build: ビルド・ツールの変更
+    ci: CI の変更
+    chore: 保守作業
+    security: セキュリティ修正
+    revert: 取り消し
+    mixed: 複数の変更のまとまり
+    unknown: 変更
+  dataVerb:
+    create-table: テーブルを作成
+    drop-table: テーブルを削除
+    rename-table: テーブル名を変更
+    add-column: 列を追加
+    drop-column: 列を削除
+    rename-column: 列名を変更
+    alter-column: 列を変更
+    add-index: インデックスを追加
+    drop-index: インデックスを削除
+    data: データを変更
+    other: 変更
+  data:
+    columnOnTable: '{table} の {column} {verb}'
+    single: '{name} {verb}'
+  sentence:
+    scopeIn: '{scope}の{summary}'
+    imperative: 'この変更は{clause}'
+    titled: 'この変更は{kind}で、タイトルは「{summary}」です。'
+    kind: 'この変更は{kind}です: {summary}'
+  statement:
+    titleKind: 'タイトルはこの変更を{kind}と説明しています: 「{title}」。'
+    titleSays: 'タイトル: 「{title}」。{fromFiles}'
+    fromFiles: '{kind}という判断はファイルから推定しました。'
+    commitSays: 'コミットメッセージ: 「{summary}」。{fromFiles}'
+    commitsDescribe:
+      other: '{count} 件のコミットメッセージがこの変更を{kind}と説明しています{summary}。'
+    commitSummary: ': 「{summary}」'
+    noPurpose: 目的を述べた説明やコミットメッセージがなく、ファイルからも目的は読み取れません。
+    inferred: 'ファイルだけから推定しました。{kind}のようです。'
+  area:
+    symbolKind:
+      component: コンポーネント
+      hook: フック
+      class: クラス
+      interface: インターフェース
+      type: 型
+    others: { other: 'ほか {count} 件' }
+    adds: '{names}{more}を追加'
+    changes: '{names}{more}を変更'
+    removes: '{names}{more}を削除'
+    routeAdded: 'ルート {route} を追加'
+    routeRemoved: 'ルート {route} を削除'
+    routeChanged: 'ルート {route} を変更'
+    depAdded: '{name} を追加'
+    depRemoved: '{name} を削除'
+    depUpgraded: '{name} を {from} → {to} に更新{major}'
+    depDowngraded: '{name} を {from} → {to} にダウングレード{major}'
+    major: '（メジャー）'
+    envVar: '新しい環境変数 {name} を読む'
+    styles: '{names}{more}のスタイルを更新'
+    stylesMore: 'ほか {count} 件'
+    edits: '{names}{more}を編集'
+    editsMore: 'ほか {count} ファイル'
+  summary:
+    touches: '{where}にまたがります（+{additions} −{deletions}）。'
+    filesAcross: '{areas}{more}の{files}'
+    andMore: 'など'
+    filesIn: '{area} の{files}'
+    userVisible: 'ユーザーに見える変更です（{kinds}）。'
+    noSurface: ユーザーに見える部分（UI、API、CLI）には触れていません。
+    lowConfidence: 意図は限られた根拠から推定したものなので、仮説として扱ってください。
+  notes:
+    startWith: '{path} から読んでください: {reason}'
+    noTests:
+      other: '変更されたソースファイル {count} 個に対して、テストが変更されていません。'
+    uncommitted: 作業ツリーのコミットしていない作業を含みます。
+  architecture:
+    spans: '{areas}にまたがります: {list}。'
+    internal: 内部
+    dependencies: '依存関係グラフの変更: {packages}。'
+    data: 'データモデルの変更: {list}。'
+    api: 'API の変更: {list}。'
+  headline: '{area} の変更'
+  repository: リポジトリ
+  behavior:
+    canRun: Covi はこのプロジェクトを実行して動作を見せられます。デモの成果物があれば確認してください。
+    cannotRun: 動作は観察できませんでした。Covi がキャプチャできるよう app.start か app.static を設定してください。
+  demoKind:
+    ui: UI
+    interaction: 操作
+    visual: 見た目
+    api: API
+    cli: CLI
+    architecture: アーキテクチャ
+
+rule:
+  async-foreach:
+    checks: forEach に渡した async コールバック（await されない）
+    title: '{path} で forEach に async コールバックを渡しています'
+    explanation: 'forEach はコールバックが返す Promise を無視します。処理が終わる前にループが終わり、失敗は未処理の rejection になり、順序も保証されません。'
+    suggestion: '逐次処理には `for (const x of items) await ...` を、並列処理には `await Promise.all(items.map(...))` を使ってください。'
+  empty-catch:
+    checks: 捕捉したまま黙って捨てられるエラー
+    title: '{path} でエラーを黙って握りつぶしています'
+    explanation: このブロックの失敗はログも復旧もなく消えます。バグが隠れ、障害の原因を追いにくくなります。
+    suggestion: エラーを明示的に処理するか、ログに残すか、呼び出し元に伝えてください。意図的に無視するならコメントで理由を書いてください。
+  error-handling-removed:
+    checks: 代わりなしに削除されたエラー処理
+    title: '{path} でエラー処理が削除されました'
+    evidence: '{removed}を削除、{added} 行を追加。最初に削除された行: {line}（旧 {number} 行目）'
+    lines: { other: 'エラー処理のコード {count} 行' }
+    explanation: ここで処理していた失敗が、呼び出し元に伝わったり処理を止めたりする可能性があります。
+    suggestion: 失敗のケースがまだどこかで処理されている（または起こりえなくなった）ことを確認してください。
+  removed-export-still-referenced:
+    checks: ほかのファイルがまだ使っている、削除または名前変更されたエクスポート
+    title: '削除されたエクスポート {name} がまだ参照されています'
+    evidence: "{name} は {path} から削除されましたが、{references}が残っています:\n{sample}"
+    references: { other: '{count} か所の参照' }
+    explanation: 削除されたシンボルをまだ import または呼び出しているコードは、コンパイルに失敗するか実行時に例外を投げます。
+    suggestion: '残っている参照を更新するか、{name} を非推奨のエイリアスとして残してください。'
+  route-removed:
+    checks: 削除または名前変更された API ルート
+    title: 'API ルート {route} が削除されました'
+    evidence: '{file} から {route} のルート定義がなくなりました。'
+    explanation: このルートを呼んでいる既存のクライアント、連携、キャッシュされたフロントエンドがエラーを受け取り始めます。
+    suggestion: 依存するクライアントがないことを確認するか、非推奨期間を設けて残してください。
+  destructive-migration:
+    checks: 破壊的なスキーマ・データのマイグレーション
+    title: '{file} の破壊的なマイグレーション'
+    explanation: '{operations}はバックアップなしでは元に戻せず、デプロイ中に前のバージョンを動かしているコードが壊れる可能性があります。'
+    suggestion: expand/contract の手順で展開し（先に列を使わないようにしてから、後のリリースで削除する）、バックアップを確認してください。
+  schema-without-migration:
+    checks: マイグレーションのない ORM スキーマの変更
+    title: 'マイグレーションなしで{kind}が変更されています'
+    prisma: Prisma スキーマ
+    django: Django モデル
+    evidence: '{path} はモデルのフィールドを変えていますが、この変更にマイグレーションファイルは追加されていません。'
+    explanation: デプロイ済みのデータベースは古いスキーマのままなので、新しいフィールドを使うクエリが実行時に失敗します。
+    suggestion: スキーマの変更と一緒にマイグレーションを生成してコミットしてください。
+  img-missing-alt:
+    checks: 代替テキストのない画像
+    title: '{path} に代替テキスト（alt）のない画像があります'
+    explanation: スクリーンリーダーは alt のない画像をファイル名で読み上げるか読み飛ばすため、画像の意味が伝わりません。
+    suggestion: 画像を説明する alt="…" を付けるか、装飾だけなら alt="" にしてください。
+  focus-outline-removed:
+    checks: 見える代わりのないまま消されたフォーカス表示
+    title: '{path} でフォーカスのアウトラインを消しています'
+    explanation: 'キーボードの利用者はフォーカスのアウトラインで現在位置を確認します。:focus-visible の代わりなしに消すと、マウスなしでは使いにくくなります。'
+    suggestion: '見えるフォーカススタイルを残してください。例: `:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }`。'
+  click-on-static-element:
+    checks: キーボード操作に対応していない非インタラクティブ要素のクリックハンドラー
+    title: '{path} のクリックできる <{tag}> はキーボードで操作できません'
+    explanation: 'クリックハンドラーだけの <{tag}> は Tab で移動できず Enter/Space でも実行できません。スクリーンリーダーもコントロールとして読み上げません。'
+    suggestion: '<button> を使ってください（または role="button"、tabIndex={0}、キーハンドラーを追加してください）。'
+  secret-in-diff:
+    checks: リポジトリに追加された認証情報や秘密鍵
+    title: '{path} に {label} がコミットされています'
+    evidence: '追加された行に {label} の形式に一致する値があります: {value}'
+    explanation: コミットした内容はリポジトリにアクセスできる全員が読めて、削除しても git の履歴に残ります。
+    suggestion: 今すぐ認証情報を無効にしてローテーションし、シークレットストアか環境変数から読み込んでください。
+    label:
+      private-key: 秘密鍵
+  merge-conflict-markers:
+    checks: 残っているマージコンフリクトのマーカー
+    title: '{path} に未解決のマージコンフリクトがあります'
+    evidence: '追加されたコンフリクトマーカー: {line}'
+    explanation: ファイルにコンフリクトの両側が入っているため、パースできないか意図どおりに動きません。
+    suggestion: 'コンフリクトを解決し、<<<<<<< / ======= / >>>>>>> のマーカーを消してください。'
+  focused-test:
+    checks: スイートの残りを黙ってスキップさせるフォーカスしたテスト（.only）
+    title: '{path} にフォーカスしたテスト（.only）が残っています'
+    explanation: フォーカスしたテストがあると同じ範囲のほかのテストがすべてスキップされるため、それらを実行しないまま CI が通ることがあります。
+    suggestion: マージする前に `.only` を消してください。
+  skipped-test:
+    checks: 新しくスキップまたは無効化されたテスト
+    title: '{path} のテストがスキップされています'
+    titleMany: '{count} 件のテストがスキップされています'
+    explanation: スキップしたテストは、それが守っていた動作をもう守りません。意図的なこともありますが、慎重に決めるべきです。
+    suggestion: スキップが意図どおりか確認し、再び有効にするまで追跡してください。
+  debug-leftover:
+    checks: アプリケーションコードに残った debugger 文やブレークポイント
+    title: '{path} にデバッガーのブレークポイントが残っています'
+    explanation: ブレークポイントは開発者ツールやデバッガーがつながると実行を止めます。リリースする意図で入れることはまずありません。
+    suggestion: ブレークポイントを削除してください。
+  lockfile-out-of-sync:
+    checks: ロックファイルなしで変更された依存関係のマニフェスト
+    title: '{manifest} は変更されていますが {lockfile} は変更されていません'
+    evidence: '依存関係が変わっています（{dependencies}）が、{lockfile} は更新されていません。'
+    explanation: 再現可能なインストール（npm ci、cargo build --locked など）が失敗するか、テストしたものと違うバージョンが入ります。
+    suggestion: 'パッケージマネージャーでインストールを実行し、更新された {lockfile} をコミットしてください。'
+  major-dependency-upgrade:
+    checks: 依存関係のメジャーバージョンアップ
+    title: '{name} のメジャーアップグレード'
+    titleMany: '依存関係のメジャーアップグレード {count} 件'
+    explanation: メジャーバージョンは、ライブラリが互換性を壊す変更を入れるところです。コンパイルが通っても動作が変わることがあります。
+    suggestion: このプロジェクトでのパッケージの使い方に影響する互換性のない変更がないか、リリースノートに目を通してください。
+  env-var-undocumented:
+    checks: 環境変数のサンプルファイルにない新しい環境変数
+    title: '新しい環境変数 {name} が記載されていません'
+    titleMany: '新しい環境変数 {count} 個が記載されていません'
+    evidence:
+      other: 'コードは {names} を読んでいますが、{file} にはありません。'
+    explanation: デプロイ担当者やチームメイトは、何を設定するかをサンプルファイルで知ります。記載のない変数はたいてい実行時のエラーとして表に出ます。
+    suggestion:
+      other: '安全なプレースホルダーの値と一緒に {file} に追加してください。'
+  missing-tests:
+    checks: テストを伴わない動作の変更
+    titleBugFix: リグレッションテストのないバグ修正
+    title: テストのない動作の変更
+    evidence: '{files}が変更され（追加 {lines} 行）、テストファイルは変更されていません: {list}。'
+    sourceFiles: { other: 'ソースファイル {count} 個' }
+    explanationBugFix: 修正前に失敗するテストがないと、バグが気づかれないまま戻ってくることがあります。
+    explanation: テストのない新しい動作は、後の変更で簡単に壊れます。
+    suggestionBugFix: 元のバグを再現するテストを追加してください。
+    suggestion: 新しい動作の主な経路のテストを追加してください。
+  intent-mismatch:
+    checks: 説明された意図と実際の変更の食い違い
+    title: '{kind}と説明された変更が動作を変えています'
+    explanation: レビュアーは説明を見て、どれだけ丁寧に読むかを決めます。知らされていない動作の変更は見落とされがちです。
+    suggestion: 動作の変更が意図どおりか確認し、説明に書いてください。
+  dangerous-html:
+    checks: 生の HTML を差し込む箇所（innerHTML、dangerouslySetInnerHTML、v-html）
+    title: '{path} でサニタイズしていない HTML を描画しています'
+    explanation: '{api} の部分がマークアップを HTML として描画します。一部でもユーザーや外部のデータに由来するなら、クロスサイトスクリプティング（XSS）の入口になります。'
+    suggestion: HTML ではなくテキストとして描画するか、差し込む前にマークアップをサニタイズしてください（たとえば DOMPurify で）。
+  dynamic-code-execution:
+    checks: eval や動的に組み立てたコード
+    title: '{path} で動的にコードを実行しています'
+    explanation: 文字列をコードとして実行すると、そこに届いたものが何でも実行され、静的解析も効かなくなります。必要な場面もまれです。
+    suggestion: 明示的なパースか、ルックアップテーブルに置き換えてください。
+  sql-string-building:
+    checks: パラメーターではなく文字列の埋め込みで組み立てた SQL
+    title: '{path} で埋め込んだ値から SQL を組み立てています'
+    explanation: 値を SQL の文字列に埋め込むと、どれか一つでもユーザーが影響を与えられる場合に SQL インジェクションが可能になります。
+    suggestion: パラメーター化クエリ（プレースホルダーとバインドした値）を使ってください。
+  workflow-script-injection:
+    checks: 信頼できないイベントのデータを埋め込む GitHub Actions のスクリプト
+    title: '{path} で {expression} を通じたスクリプトインジェクション'
+    explanation: '{expression} は攻撃者が制御できる値で、実行前にシェルスクリプトにそのまま埋め込まれます。細工したタイトルやブランチ名でワークフロー内のコマンドを実行できてしまいます。'
+    suggestion: '値は環境変数で渡し（env: TITLE: ${{ ... }}）、スクリプトでは "$TITLE" で参照してください。'
+  workflow-pull-request-target:
+    checks: 信頼できない PR のコードをチェックアウトする pull_request_target ワークフロー
+    title: '{path} の pull_request_target ワークフローが PR のコードをチェックアウトしています'
+    explanation: pull_request_target は書き込みトークンとリポジトリのシークレットを持って実行されます。PR のコードをチェックアウトして実行すると、どのフォークでもその権限でコードを実行できます。
+    suggestion: PR のコードを実行するジョブには pull_request トリガーを使い、コメント投稿のような権限が必要なステップは、PR のコードをチェックアウトしない別の workflow_run ジョブに分けてください。
+  workflow-broad-permissions:
+    checks: write-all に広げたワークフローのトークン権限
+    title: '{path} のワークフローが write-all のトークン権限を与えています'
+    explanation: サードパーティのアクションを含むすべてのステップが、コードの push、リリースの編集、設定の変更ができるトークンを受け取ります。
+    suggestion: 'ジョブに必要なスコープだけを与えてください（例: contents: read、pull-requests: write）。'
+
+capture:
+  trustHint: '`covi trust` で確認して許可してください。'
+  skip:
+    appStart: 'app.start（{command}）'
+    command: 'コマンド "{name}"'
+    demonstration: デモ
+    pagesFlowsRequests: ページ、フロー、リクエスト
+    appAt: '{revision} リビジョンのアプリ'
+    flow: 'フロー "{name}"'
+  reason:
+    notTrusted: 'このマシンではまだ信頼されていません。{hint}'
+    appNotTrusted: 'リポジトリの設定にあるアプリの設定は、このマシンではまだ信頼されていません。{hint}'
+    cannotRun: 'Covi はこのプロジェクトの実行方法を知りません。.covi/config.yml に app.start（必要なら app.url も）か app.static を設定してください{example}。'
+    example: '（例: {suggestion}）'
+    nothing: デモで見せるものはありません。
+  finding:
+    appStart:
+      title: head リビジョンでアプリが起動しません
+      explanation: この変更を適用すると、設定されたアプリを起動できません。起動処理かビルドが壊れている可能性が高いです。
+    flow:
+      title: 'head リビジョンでフロー "{name}" が失敗します'
+      explanation: この変更を適用すると、設定されたユーザーフローを最後まで進められません。
+    pageError:
+      title: '{path} で新しい JavaScript エラーが出ます'
+      explanation: '{path}（{viewport}）を読み込むと、base リビジョンでは出なかったエラーが head リビジョンでログに出ます。'
+    pageStatus:
+      title: '変更後に {path} が HTTP {status} を返します'
+      evidence: 'base: HTTP {base}、head: HTTP {head}。'
+      explanation: base リビジョンではページが開けますが、この変更を適用すると失敗します。
+    apiShape:
+      title: '{method} {path} のレスポンスの形が変わりました'
+      evidence: '両方のリビジョンで {method} {path} を呼び出して確認しました: {shape}。'
+      explanation: 以前の形をパースしている既存のクライアントは、同じリリースで更新しないと壊れます。
+      suggestion: エンドポイントにバージョンを付けるか、以前の形をパラメーターで残すか、この変更ですべてのクライアントを更新してください。
+    apiStatus:
+      title: '{method} {path} が HTTP {status} で失敗するようになりました'
+      evidence: 'base: HTTP {base}、head: HTTP {head}。{body}'
+      explanation: この変更の前は動いていたエンドポイントが、サーバーエラーを返すようになりました。
+    command:
+      title: '`{command}` が失敗するようになりました'
+      evidence: "base の終了コードは {base}、head の終了コードは {head}。\n{output}"
+      explanation: デモのコマンドは、この変更がなければ成功し、変更を適用すると失敗します。
+      timeout: タイムアウト
+  shape:
+    kindChanged: 'レスポンスが JSON の{from}から JSON の{to}に変わりました{keys}'
+    keys: '（キー: {keys}）'
+    removed: { other: 'フィールド {fields} を削除' }
+    retyped: '{fields} の型を変更'
+    retypedField: '{path}（{from} → {to}）'
+    value: 値
+    response: 'レスポンスの変更: {parts}'
+    and: 'と'
+    kind:
+      array: 配列
+      object: オブジェクト
+      string: 文字列
+      number: 数値
+      boolean: 真偽値
+      'null': 'null'
+      unknown: 不明
+      bigint: bigint
+      undefined: undefined
+      function: 関数
+      symbol: シンボル
+
+demo:
+  title: デモ
+  page: 'ページ {name}'
+  flowStep: '{flow} · ステップ {step}: {label}'
+  before: '変更前:'
+  after: '変更後:'
+  changedPixels: '変わったピクセル: {percent}%{diff}'
+  diffLink: ' ([diff]({path}))'
+  request: '変更前: {before} · 変更後: HTTP {after}{changed}'
+  notApplicable: なし
+  changed: ' · 変更あり'
+  shapeChange: '形の変更: {shape}。'
+  notDemonstrated: デモで見せられなかったもの
+
+video:
+  label:
+    verdict:
+      looks-good: 問題なし
+      needs-attention: 要確認
+      needs-changes: 要修正
+    certainty:
+      confirmed: 確認済みの問題
+      likely: 問題の可能性が高い
+      risk: 確認すべきリスク
+      question: 質問
+    severity:
+      high: 重大度 高
+      medium: 重大度 中
+      low: 重大度 低
+    stats:
+      files: ファイル
+      added: 追加
+      removed: 削除
+    before: 変更前
+    after: 変更後
+    response: レスポンス
+    terminal: ターミナル
+  moreLines: { other: '… ほか {count} 行' }
+
+narration:
+  meta: '{files} · +{additions} −{deletions}'
+  touches: '{areas}にまたがる変更です。'
+  changeMap:
+    text: '変更は{areas}にまたがり、主に{names}です。'
+    heading: '{files}を変更'
+  code:
+    fix: '修正は {file} にあります。'
+    fixWhat: '修正は {file} にあり、{names}を{verb}。'
+    styles: 'スタイルは {file} にあります。'
+    stylesWhat: 'スタイルは {file} にあり、{names}を{verb}。'
+    key: '主な変更は {file} にあります。'
+    keyWhat: '主な変更は {file} にあり、{names}を{verb}。'
+    adds: 追加しています
+    updates: 更新しています
+    describedBy: '{description}'
+  screenshot:
+    before: '変更前の{label}です。'
+    after: '変更後の{label}です。{highlighted}'
+    highlighted: 変わった部分を強調しています。
+    thePage: ページ
+  beforeAfter:
+    fix: 修正の前後の動作です。
+    page: '{page}変更の前後です。'
+    pageOf: '{page} の'
+    stack: 上が以前のバージョン、下が新しいバージョンです。
+    split: 左が以前のバージョン、右が新しいバージョンです。
+  interaction:
+    steps: '新しい流れです。{steps}。'
+    plain: 新しい流れを一つずつ見ていきます。
+  terminal:
+    compared: 同じコマンドを変更の前と後で実行しました。
+    prints: '今は {output} と出力します。'
+    exits: '終了コードは {before} から {after} に変わりました。'
+    none: なし
+    output: 変更後のコマンドの出力です。
+  api:
+    call: '{method} {path} を呼び出します。'
+    callCompared: '変更の前と後で {method} {path} を呼び出します。'
+    sayCompared: '変更の前と後で {method} {path} を呼び出します。'
+    status: 'ステータスコードが {before} から {after} に変わりました。'
+    entries:
+      other: '以前は {count} 件を返していましたが、今は {now} 件です。'
+    listed:
+      other: '以前のレスポンスは {count} 件を並べていましたが、新しい {key} 配列には {now} 件あります。'
+    includes: 'レスポンスに {keys} も含まれるようになりました。'
+  findings:
+    one: '確認したい点が一つあります。{title}。'
+    oneWhy: '確認したい点が一つあります。{title}。{why}'
+    two: '確認したい点が二つあります。まず、{title}。'
+    few: '確認したい点がいくつかあります。まず、{title}。'
+    also: 'また、{title}。'
+    count:
+      two: 確認したい点が二つあります。
+      three: 確認したい点が三つあります。
+      few: 確認したい点がいくつかあります。
+    ordinal:
+      first: '一つ目は、{title}。'
+      second: '二つ目は、{title}。'
+      third: '三つ目は、{title}。'
+    heading:
+      confirmed: 確認済みの問題
+      likely: 問題の可能性が高い
+      risk: 確認すべきリスク
+      question: 未解決の疑問
+      many: '確認する点 {count} 件'
+  callout:
+    clean: Covi はマージを妨げる問題を見つけませんでした。
+    check: '確認したい点: {title}。'
+    noBlocking: ブロッキングな問題なし
+    startWith: '{path} からレビューを始めてください。'
+    sound: Covi が確認した範囲では、変更に問題はなさそうです。
+  diagram:
+    text: 移動した部分が今どうつながっているかを示します。強調したモジュールはすべてこの diff で変わっています。
+    heading: モジュールの地図
+  summary:
+    looksGood: 全体として、マージして問題なさそうです。
+    needsChanges: マージする前に修正が必要です。
+    needsAttention: 'マージする前に {spots}をもう少し詳しく見る必要があります。'
+    spots: { other: '{count} か所' }
+    tests: '{tests}も一緒に入っています。'
+    newTests: { other: '新しいテスト {count} 件' }
+    next: '次のステップの提案: {step}'
+    start: 'diff を読むなら {path} から始めてください。'
+    point:
+      confirmed: 確認済み
+      likely: 可能性が高い
+      risk: リスク
+      question: 質問
+    pointLine: '{label}: {title}'
+  roadmap:
+    text: '{first}{stops}を順に見ていきます。'
+    api: 変更前後のレスポンス
+    apiNew: 新しいレスポンス
+    terminal: 変更前後のコマンド
+    terminalNew: コマンドの出力
+    beforeAfter: 変更前後のページ
+    screenshot: 実際の画面
+    interaction: 新しい流れ
+    code: その裏のコード
+    structure: 各部分のつながり
+    findings: マージ前に確認したい点
+  file:
+    phrase: '{name} の{noun}'
+    module: モジュール
+    script: スクリプト
+    component: コンポーネント
+    stylesheet: スタイルシート
+    page: ページ
+    doc: ドキュメント
+    config: 設定ファイル
+    file: ファイル
+  slash: ' スラッシュ '
+  to: ' から '
+
+question:
+  mode:
+    header: 動画の種類
+    question: Covi にどんな動画を作らせますか？
+    short: ショート
+    shortDescription: '縦 9:16、約 30 秒、簡潔に'
+    standard: 標準のレビュー
+    standardDescription: '16:9、60〜120 秒、詳しめに'
+    custom: カスタム
+    customDescription: サイズ、長さ、ナレーションを選びます
+  duration:
+    header: 長さ
+    question: 長さはどのくらいにしますか？
+    s15: 約 15 秒
+    s15Description: 大事な場面だけ
+    s30: 約 30 秒
+    s30Description: 変更とレビューの指摘を一つ
+    s60: 約 60 秒
+    s60Description: なぜ重要かを説明する余裕
+    auto: Covi に任せる
+    autoDescription: 変更に合わせて長さを決めます
+  size:
+    header: サイズ
+    question: カスタム動画のサイズはどれにしますか？
+    vertical: 縦長
+    landscape: 横長
+    square: 正方形

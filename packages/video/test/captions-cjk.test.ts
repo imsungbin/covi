@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildCaptions, captionOptionsFor, chunkCaption, lineUnits } from '../src/captions.ts';
 import { layoutChecks, timingChecks } from '../src/qc.ts';
-import { displayWidth, speechUnits } from '../src/text.ts';
+import { captionCharacters, displayWidth, speechUnits } from '../src/text.ts';
 import { estimateSpeech } from '../src/timeline/build.ts';
 import type { LayoutReport, Timeline } from '../src/timeline/types.ts';
 
@@ -111,6 +111,15 @@ describe('per-language QC', () => {
     // English is unchanged: 24 characters per second, counting spaces.
     const en = [{ start: 0, end: 1, lines: ['abcdefghij klmnopqrst'] }];
     expect(timingChecks(timelineOf('en', en))[0]!.status).toBe('pass');
+  });
+
+  it('counts a half-width character as half in CJK captions', () => {
+    expect(captionCharacters(['HTMLとCSS'], 'ja')).toBe(4.5);
+    expect(captionCharacters(['API는 그대로'], 'ko')).toBe(5.5);
+    expect(captionCharacters(['abc def'], 'en')).toBe(7);
+    // 16 Latin letters and 2 kana in 2 s: 5 per second, under Japanese's 8 (9 if letters counted one).
+    const ja = [{ start: 0, end: 2, lines: ['updateCounterがDOMを'] }];
+    expect(timingChecks(timelineOf('ja', ja))[0]!.status).toBe('pass');
   });
 
   it('measures narration pace in syllables for Korean, using the spoken text when known', () => {

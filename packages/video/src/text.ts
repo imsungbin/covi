@@ -111,8 +111,17 @@ export const PACE_LIMIT: Record<Language, number> = { en: 4.2, ko: 7.5, ja: 7, z
  */
 export const CAPTION_SPEED_LIMIT: Record<Language, number> = { en: 24, ko: 17, ja: 8, zh: 13 };
 
-/** Characters a caption cue asks the viewer to read, counted the way CAPTION_SPEED_LIMIT expects. */
+/**
+ * Characters a caption cue asks the viewer to read, counted the way CAPTION_SPEED_LIMIT expects:
+ * in Korean, Japanese, and Chinese a full-width character counts one and a half-width one (a Latin
+ * letter or digit) half, as subtitle guidelines for those languages count them.
+ */
 export function captionCharacters(lines: readonly string[], language: Language): number {
   if (language === 'en') return lines.join(' ').length;
-  return segments(lines.join(''), language, 'grapheme').filter((g) => !/\s/.test(g)).length;
+  let count = 0;
+  for (const g of segments(lines.join(''), language, 'grapheme')) {
+    if (/\s/.test(g)) continue;
+    count += isWide(g.codePointAt(0)!) ? 1 : 0.5;
+  }
+  return count;
 }

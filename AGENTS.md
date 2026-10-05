@@ -85,7 +85,7 @@ The runs directory ignores itself (it contains a `.gitignore` with `*`); Covi ne
 
 | Derived | Source | Regenerate | Check |
 |---|---|---|---|
-| `assets/covi/*.svg` | `packages/brand/src/mascot.ts` and `assets.ts` | `npm run assets` | `node scripts/generate-assets.ts --check` (also a test) |
+| `assets/covi/*.svg` | `packages/brand/src` (the fox, its tail, the mark, the logo) and `assets.ts` | `npm run assets` | `node scripts/generate-assets.ts --check` (also a test) |
 | `dist/` | `packages/*/src` | `npm run build` (runs on `npm install`) | not committed |
 | `.claude/skills`, `.agents/skills` | `skills/` (symlinks, for Claude Code and for Codex and other clients) | `npm run agents:sync` | `npm run agents:check` |
 

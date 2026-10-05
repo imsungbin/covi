@@ -285,7 +285,7 @@ The renderer splits a video into segments and renders them in parallel browser p
   - no `Math.random()` (use `seeded(timeline.seed)` from `anim.ts`);
   - no network access (fonts and images are copied into the composition).
 - **No CSS transitions or animations.** The stylesheet disables them; compute motion in `update()` instead.
-- **Text must fit its box.** Use `fitText` for text with a size range. Components report their layout, and video QC fails when captions cover demonstrated content. It also flags text overflow and warns when the narrator overlaps content.
+- **Text must fit its box.** Use `fitText` for text with a size range. Components report their layout, and video QC fails when captions cover demonstrated content. It also flags text overflow and warns when the narrator, tail included, covers content, captions, or header text. A component with something highlighted returns it from `target()`, and the narrator's tail points at it.
 - **Use the design tokens** from `packages/brand` through the timeline's theme. Don't hard-code colors (see [visual system](visual-system.md)).
 
 `npm run typecheck` checks the runtime against DOM types. To see a change, render an example. Then open `video/contact-sheet.jpg` (one frame per scene) and `video/poster.png` in the run directory. With ffmpeg and Chromium installed, `npm test` includes a determinism test that renders the same frame from two compositions and compares the bytes.
@@ -323,7 +323,7 @@ Skills in `skills/` are product logic. Agents follow them, and Covi also loads t
 
 | Derived | Source | Regenerate | Check |
 |---|---|---|---|
-| `assets/covi/*.svg` | `packages/brand/src/mascot.ts` (the drawing) and `assets.ts` (the file list) | `npm run assets` | `node scripts/generate-assets.ts --check`; the brand tests compare the files too |
+| `assets/covi/*.svg` | `packages/brand/src`: `mascot.ts` and `tail.ts` (the fox), `mark.ts`, `logo.ts` and `wordmark.ts`, and `assets.ts` (the file list) | `npm run assets` (also removes files no longer generated) | `node scripts/generate-assets.ts --check`; the brand tests compare the files too |
 | `dist/` | `packages/*/src` | `npm run build` (also runs on `npm install`) | Not committed |
 | `.claude/skills`, `.agents/skills` | `skills/` (symlinks for Claude Code, and for Codex and other clients) | `npm run agents:sync` (add `-- --copy` where symlinks are unavailable) | `npm run agents:check` |
 | `.claude-plugin/plugin.json` version | `package.json` | `npm run agents:sync` | `npm run agents:check` |

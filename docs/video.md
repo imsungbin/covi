@@ -466,7 +466,7 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | `captions-clear-of-content` | The caption band never intersects demonstrated content | fail |
 | `captions-in-frame` | The caption band stays inside the frame, and no caption line is wider than its box | fail |
 | `text-fits` | No text element overflows its box | warn |
-| `narrator-clear-of-content` | The narrator never overlaps content | warn |
+| `narrator-clear-of-content` | The narrator, measured as drawn with its tail, never covers demonstrated content, the media region, captions, or header text | warn |
 | `images` | Every image loaded in the composition | fail |
 | `fonts` | Every bundled font face loaded, so no text fell back to the machine's fonts (boxes on a runner without CJK fonts) | fail |
 | `caption-timing` | No cue overlaps the next, reads faster than the language's limit, or lasts less than 0.7 s. Limits, in characters per second: English 24 (counting spaces), Korean 17, Chinese 13, Japanese 8 (not counting spaces; a half-width character such as a Latin letter counts half) | fail on overlap; warn on fast or short cues |

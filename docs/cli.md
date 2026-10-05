@@ -403,8 +403,8 @@ Exports the Covi fox as SVG.
 |---|---|
 | `--expression <name>` | `neutral` (default), `explaining`, `thinking`, `reviewing`, `warning`, or `success`. |
 | `--size <px>` | Size in pixels, 16–4096. Default: 256. |
-| `--mark` | The simplified mark for small icons. |
-| `--logo` | The fox and the wordmark. |
+| `--mark` | The head-only mark for icons, with the detail for `--size` (no ear chevrons at 24 px and below). |
+| `--logo` | The head mark and the wordmark, half as tall as `--size`. |
 | `--out <file>` | Write to a file instead of stdout. |
 
 See [Visual system](visual-system.md).

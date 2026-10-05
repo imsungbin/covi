@@ -38,6 +38,10 @@ export interface Intent {
   scope?: string;
   /** Where the summary came from: the PR/MR title, a commit subject, or the files. */
   basis: 'title' | 'commit' | 'files';
+  /** Where the evidence for `kind` came from (each entry of `evidence` names one). */
+  evidenceFrom?: Array<'title' | 'commits' | 'branch' | 'files'>;
+  /** The described kind (a refactor, docs, …) does not match a behavior change in the files. */
+  mismatch?: boolean;
 }
 
 export type SizeClass = 'trivial' | 'small' | 'medium' | 'large' | 'huge';

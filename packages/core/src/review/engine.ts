@@ -1,10 +1,11 @@
 import type { CoviConfig } from '../config/schema.ts';
 import type { Git } from '../git/git.ts';
 import { RevisionReader } from '../git/reader.ts';
+import { hasMessage, t } from '../i18n/catalog.ts';
+import type { Language } from '../i18n/language.ts';
 import { type CodeChange, reviewableFiles } from '../model/change.ts';
 import type { ReviewContext } from '../model/context.ts';
 import {
-  CERTAINTY_LABEL,
   compareFindings,
   deriveVerdict,
   type Finding,
@@ -16,7 +17,6 @@ import {
   type TestRunResult,
 } from '../model/finding.ts';
 import { type Logger, silentLogger } from '../util/log.ts';
-import { plural } from '../util/text.ts';
 import { RULES } from './rules/index.ts';
 import type { Rule } from './rules/types.ts';
 
@@ -29,8 +29,16 @@ export interface RuleRunResult {
 export async function runRules(
   change: CodeChange,
   context: ReviewContext,
-  options: { git: Git; config: CoviConfig; logger?: Logger; rules?: readonly Rule[] },
+  options: {
+    git: Git;
+    config: CoviConfig;
+    logger?: Logger;
+    rules?: readonly Rule[];
+    /** The language findings are written in. Default: English. */
+    language?: Language;
+  },
 ): Promise<RuleRunResult> {
+  const language = options.language ?? 'en';
   const logger = options.logger ?? silentLogger;
   const disabled = new Set(options.config.review.disableRules);
   const rules = (options.rules ?? RULES).filter((r) => !disabled.has(r.id));
@@ -40,6 +48,7 @@ export async function runRules(
     config: options.config,
     reader: new RevisionReader(options.git, change),
     files: reviewableFiles(change),
+    language,
   };
   const findings: Finding[] = [];
   const errors: RuleRunResult['errors'] = [];
@@ -54,7 +63,11 @@ export async function runRules(
     }
   }
   const unique = [...new Map(findings.map((f) => [f.id, f])).values()].sort(compareFindings);
-  return { findings: unique, checked: rules.map((r) => r.checks), errors };
+  // What each rule checks, in the run's language (a rule outside the catalog keeps its own words).
+  const checked = rules.map((r) =>
+    hasMessage(language, `rule.${r.id}.checks`) ? t(language, `rule.${r.id}.checks`) : r.checks,
+  );
+  return { findings: unique, checked, errors };
 }
 
 export interface BuildReviewInput {
@@ -70,6 +83,8 @@ export interface BuildReviewInput {
   testsNote?: string;
   demonstrated?: boolean;
   generatedBy: GeneratedBy;
+  /** The language of the review's own text. Default: English. */
+  language?: Language;
 }
 
 export interface BuiltReview {
@@ -103,39 +118,39 @@ export function buildReview(input: BuildReviewInput): BuiltReview {
   const findings = all.slice(0, max);
   const omitted = all.slice(max);
 
+  const language = input.language ?? 'en';
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `review.${key}`, params);
   const notVerified = [...(input.authored?.notVerified ?? [])];
   if (!input.tests) {
     notVerified.push(
       input.testsNote ??
-        (input.config.test.command
-          ? 'Tests were not run (enable review.runTests or pass --run-tests).'
-          : 'Tests were not run (no test.command is configured).'),
+        (input.config.test.command ? say('testsNotRunEnable') : say('testsNotConfigured')),
     );
   } else if (!input.tests.passed) {
     notVerified.push(
-      `The test command ${input.tests.timedOut ? 'timed out' : `failed (exit ${input.tests.exitCode})`}.`,
+      input.tests.timedOut
+        ? say('testsTimedOut')
+        : say('testsFailed', { code: String(input.tests.exitCode) }),
     );
   }
   const demo = input.context.demonstration;
   if (!input.demonstrated && demo.value !== 'none' && demo.value !== 'low') {
-    notVerified.push(
-      'User-visible behavior was not demonstrated; it was reviewed from the code only.',
-    );
+    notVerified.push(say('notDemonstrated'));
   }
   if (input.generatedBy.provider === 'heuristic' && authored.length === 0) {
-    notVerified.push(
-      'Logic was checked by Covi’s built-in rules only. Run Covi from a coding agent or configure a model provider for a reasoning review.',
-    );
+    notVerified.push(say('rulesOnly'));
   }
 
   const checked = [...new Set([...(input.authored?.checked ?? []), ...input.checked])];
   const verdict = deriveVerdict(findings);
   const summary =
-    input.authored?.summary ?? summarizeFindings(findings, omitted.length, input.tests);
+    input.authored?.summary ?? summarizeFindings(findings, omitted.length, input.tests, language);
 
   return {
     review: {
       schemaVersion: 1,
+      ...(language === 'en' ? {} : { language }),
       verdict,
       summary,
       findings,
@@ -153,29 +168,19 @@ export function summarizeFindings(
   findings: readonly Finding[],
   omitted: number,
   tests?: TestRunResult,
+  language: Language = 'en',
 ): string {
-  const testNote = tests ? (tests.passed ? ' Tests pass.' : ' Tests did not pass.') : '';
-  if (findings.length === 0) return `No issues found in the areas Covi checked.${testNote}`;
+  const testNote = tests ? t(language, tests.passed ? 'review.testsPass' : 'review.testsFail') : '';
+  if (findings.length === 0) return t(language, 'review.noIssues', { tests: testNote });
   const counts = new Map<string, number>();
   for (const f of findings) counts.set(f.certainty, (counts.get(f.certainty) ?? 0) + 1);
   const parts = (['confirmed', 'likely', 'risk', 'question'] as const)
     .filter((c) => counts.get(c))
-    .map((c) => plural(counts.get(c)!, CERTAINTY_LABEL[c].toLowerCase(), pluralLabel(c)));
-  const extra = omitted
-    ? ` (${omitted} lower-priority ${omitted === 1 ? 'note' : 'notes'} under "omitted" in review.json)`
-    : '';
-  return `${capitalize(parts.join(', '))}${extra}.${testNote}`;
-}
-
-function pluralLabel(c: string): string {
-  return (
-    {
-      confirmed: 'confirmed issues',
-      likely: 'likely issues',
-      risk: 'risks worth checking',
-      question: 'questions',
-    }[c] ?? `${c}s`
-  );
+    .map((c) => t(language, `certaintyCount.${c}`, { count: counts.get(c)! }));
+  const extra = omitted ? t(language, 'review.omitted', { count: omitted }) : '';
+  const stop = language === 'ja' || language === 'zh' ? '。' : '.';
+  const separator = language === 'ja' || language === 'zh' ? '、' : ', ';
+  return `${capitalize(parts.join(separator))}${extra}${stop}${testNote}`;
 }
 
 function capitalize(s: string): string {

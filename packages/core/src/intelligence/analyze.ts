@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { CoviConfig } from '../config/schema.ts';
+import { LANGUAGE_NAME, type Language } from '../i18n/language.ts';
 import type { CodeChange } from '../model/change.ts';
 import type { ReviewContext } from '../model/context.ts';
 import { type Explanation, ExplanationSchema } from '../model/explanation.ts';
@@ -75,14 +76,18 @@ export async function analyzeWithModel(
     redactor: Redactor;
     maxDiffChars: number;
     runId: string;
+    /** The language the explanation and findings are written in. Default: English. */
+    language?: Language;
   },
 ): Promise<ModelAnalysis> {
+  const language = input.language ?? 'en';
   const material = renderBrief(input.change, input.context, input.ruleFindings, {
     runDir: '.',
     runId: input.runId,
     redactor: input.redactor,
     maxDiffChars: input.maxDiffChars,
     audience: 'model',
+    language,
   });
   const rules = input.ruleFindings.map((f) => ({
     id: f.id,
@@ -101,6 +106,7 @@ export async function analyzeWithModel(
     '```',
     '',
     'Produce `explanation` (choose depth to fit the change) and `review` (findings, dismissed, checked, notVerified, summary).',
+    ...(language === 'en' ? [] : ['', outputLanguageInstruction(language)]),
   ].join('\n');
   const result = await provider.generate({
     purpose: 'analysis',
@@ -111,8 +117,17 @@ export async function analyzeWithModel(
   return {
     explanation: {
       ...result.explanation,
+      ...(language === 'en' ? {} : { language }),
       generatedBy: { provider: provider.id, model: provider.model },
     },
-    findings: result.review,
+    findings: language === 'en' ? result.review : { ...result.review, language },
   };
+}
+
+/**
+ * The instruction that sets the language of everything a model writes for people. Identifiers,
+ * paths, code, and quoted evidence stay as they appear in the change.
+ */
+export function outputLanguageInstruction(language: Language): string {
+  return `Write every sentence meant for people (headline, summary, intent, behavior, changes, notes, reading order, finding titles, explanations, suggestions, and the review summary) in ${LANGUAGE_NAME[language]} (language code ${language}). Keep identifiers, file paths, code, commands, and quoted evidence exactly as they appear in the change, and set "language": "${language}" in both explanation and review.`;
 }

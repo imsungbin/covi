@@ -1,4 +1,6 @@
 import type { CoviConfig } from '../config/schema.ts';
+import { t } from '../i18n/catalog.ts';
+import type { Language } from '../i18n/language.ts';
 import type { ChangedFile } from '../model/change.ts';
 import type {
   ChangeSize,
@@ -28,6 +30,8 @@ export interface DemonstrationInput {
   areaCount: number;
   config: CoviConfig;
   repo: RepoShape;
+  /** The language of the reasons. Default: English. */
+  language?: Language;
 }
 
 const INTERACTION_HINT =
@@ -67,6 +71,8 @@ export function assessDemonstration(input: DemonstrationInput): DemonstrationAss
   );
   const kinds = new Set<DemoKind>();
   const reasons: string[] = [];
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(input.language ?? 'en', `demonstration.${key}`, params);
   const candidates: DemoCandidate[] = [];
 
   const styleFiles = reviewable.filter((f) => f.category === 'style');
@@ -81,37 +87,36 @@ export function assessDemonstration(input: DemonstrationInput): DemonstrationAss
 
   if (styleFiles.length) {
     kinds.add('visual');
-    reasons.push(
-      `${styleFiles.length === 1 ? 'A stylesheet changes' : `${styleFiles.length} stylesheets change`}, which is best judged by looking at it.`,
-    );
+    reasons.push(say('stylesheet', { count: styleFiles.length }));
   }
   if (uiFiles.length) {
     kinds.add('ui');
     reasons.push(
-      `User interface code changes in ${uiFiles.length === 1 ? uiFiles[0]!.path : `${uiFiles.length} files`}.`,
+      say('ui', {
+        where: uiFiles.length === 1 ? uiFiles[0]!.path : say('uiFiles', { count: uiFiles.length }),
+      }),
     );
   }
   if (interactive.length) {
     kinds.add('interaction');
-    reasons.push(
-      'Event handlers, form state, or requests change, so behavior differs when someone interacts.',
-    );
+    reasons.push(say('interaction'));
   }
   if (apiRoutes.length || apiFiles.length) {
     kinds.add('api');
     reasons.push(
       apiRoutes.length
-        ? `API routes change: ${apiRoutes
-            .slice(0, 3)
-            .map((r) => (r.method ? `${r.method} ${r.path}` : r.path))
-            .join(', ')}.`
-        : 'API handler code changes.',
+        ? say('routes', {
+            routes: apiRoutes
+              .slice(0, 3)
+              .map((r) => (r.method ? `${r.method} ${r.path}` : r.path))
+              .join(', '),
+          })
+        : say('handlers'),
     );
   }
   if (cliFiles.length || config.demo.commands.length) {
     kinds.add('cli');
-    if (cliFiles.length)
-      reasons.push('Command-line behavior changes; terminal output shows it directly.');
+    if (cliFiles.length) reasons.push(say('cli'));
   }
   const internalOnly = kinds.size === 0;
   if (
@@ -121,9 +126,7 @@ export function assessDemonstration(input: DemonstrationInput): DemonstrationAss
     input.areaCount >= 3
   ) {
     kinds.add('architecture');
-    reasons.push(
-      'A large restructuring across several areas; a guided walkthrough can help reviewers build a mental model.',
-    );
+    reasons.push(say('architecture'));
   }
 
   // Candidates: what concretely could be shown.
@@ -211,15 +214,9 @@ export function assessDemonstration(input: DemonstrationInput): DemonstrationAss
   }
 
   if (value === 'none' || value === 'low') {
-    reasons.push(
-      internalOnly
-        ? 'Nothing user-visible changes: no UI, API, or CLI surface is touched, so a written explanation serves reviewers better than a demo.'
-        : 'Little would be visible in a demonstration.',
-    );
+    reasons.push(internalOnly ? say('nothingVisible') : say('littleVisible'));
   } else if (!runnable.available && (kinds.has('ui') || kinds.has('visual') || kinds.has('api'))) {
-    reasons.push(
-      'Covi does not know how to run this project yet; configure app.start or app.static to capture real behavior.',
-    );
+    reasons.push(say('cannotRun'));
   }
 
   return {

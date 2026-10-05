@@ -23,7 +23,13 @@ export {
   startService,
   which,
 } from './exec/exec.ts';
-export { dataPhrase, depthFor, explainHeuristically, intentSentence } from './explain/heuristic.ts';
+export {
+  dataPhrase,
+  depthFor,
+  explainHeuristically,
+  intentSentence,
+  intentStatement,
+} from './explain/heuristic.ts';
 export { type ParsedFile, parseDiff, unquote } from './git/diff-parser.ts';
 export {
   EMPTY_TREE,
@@ -77,6 +83,7 @@ export {
   renderExplanation,
   renderReview,
   renderSummary,
+  reportLanguage,
   type SummaryFormat,
 } from './report/markdown.ts';
 export {

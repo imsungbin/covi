@@ -1,6 +1,8 @@
 import type { CoviConfig } from '../config/schema.ts';
 import type { Git } from '../git/git.ts';
 import { RevisionReader } from '../git/reader.ts';
+import { endSentence, listOf, t } from '../i18n/catalog.ts';
+import type { Language } from '../i18n/language.ts';
 import {
   type ChangedFile,
   type CodeChange,
@@ -22,7 +24,7 @@ import {
   type TestSummary,
 } from '../model/context.ts';
 import { type Logger, silentLogger } from '../util/log.ts';
-import { code, joinList, plural } from '../util/text.ts';
+import { code } from '../util/text.ts';
 import { groupAreas } from './areas.ts';
 import { assessDemonstration, type RepoShape } from './demonstration.ts';
 import { diffManifest, isDependencyManifest } from './dependencies.ts';
@@ -35,6 +37,8 @@ export interface UnderstandOptions {
   git: Git;
   config: CoviConfig;
   logger?: Logger;
+  /** The language of the context's own text (signals, notes, reasons). Default: English. */
+  language?: Language;
 }
 
 const SYMBOL_CATEGORIES = new Set(['source', 'markup', 'style']);
@@ -46,6 +50,7 @@ export async function understandChange(
   options: UnderstandOptions,
 ): Promise<ReviewContext> {
   const logger = options.logger ?? silentLogger;
+  const language = options.language ?? 'en';
   const reader = new RevisionReader(options.git, change);
   const files = reviewableFiles(change);
 
@@ -72,7 +77,14 @@ export async function understandChange(
   const tests = await summarizeTests(files, options.git, reader);
 
   const size = sizeOf(files);
-  const intent = inferIntent({ change, files, symbols, routes, hasDataChanges: data.length > 0 });
+  const intent = inferIntent({
+    change,
+    files,
+    symbols,
+    routes,
+    hasDataChanges: data.length > 0,
+    language,
+  });
   const areas = groupAreas(files);
   size.areas = areas.length;
   const repo = await repoShape(reader);
@@ -85,6 +97,7 @@ export async function understandChange(
     areaCount: areas.length,
     config: options.config,
     repo,
+    language,
   });
 
   const surfaces: Partial<Record<Surface, string[]>> = {};
@@ -92,15 +105,13 @@ export async function understandChange(
     for (const s of f.surfaces) surfaces[s] = [...(surfaces[s] ?? []), f.path];
   }
 
-  const signals = collectSignals(change, files, {
-    symbols,
-    dependencies,
-    envVars,
-    data,
-    routes,
-    tests,
-  });
-  const notes = collectNotes(change, files, tests);
+  const signals = collectSignals(
+    change,
+    files,
+    { symbols, dependencies, envVars, data, routes, tests },
+    language,
+  );
+  const notes = collectNotes(change, files, tests, language);
   const ambiguities = intent.ambiguity ? [intent.ambiguity] : [];
 
   return {
@@ -118,7 +129,7 @@ export async function understandChange(
     data,
     tests,
     demonstration,
-    readingOrder: readingOrder(files, symbols, data, dependencies),
+    readingOrder: readingOrder(files, symbols, data, dependencies, language),
     signals,
     notes,
     ambiguities,
@@ -409,6 +420,7 @@ function readingOrder(
   symbols: readonly SymbolChange[],
   data: readonly DataChange[],
   deps: readonly DependencyChange[],
+  language: Language,
 ): ReadingStep[] {
   const scored = files
     .filter(
@@ -430,7 +442,7 @@ function readingOrder(
   const tests = scored.filter((s) => s.f.category === 'test');
   return [...nonTests, ...tests]
     .slice(0, 12)
-    .map(({ f, own }) => ({ path: f.path, reason: readingReason(f, own, data, deps) }));
+    .map(({ f, own }) => ({ path: f.path, reason: readingReason(f, own, data, deps, language) }));
 }
 
 function readingReason(
@@ -438,39 +450,55 @@ function readingReason(
   own: readonly SymbolChange[],
   data: readonly DataChange[],
   deps: readonly DependencyChange[],
+  language: Language,
 ): string {
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `reading.${key}`, params);
+  const list = (items: string[]) => listOf(language, items);
   const ops = data.filter((d) => d.file === f.path);
   if (ops.length)
-    return `Schema/data change: ${joinList(ops.slice(0, 3).map((d) => d.operation.replace('-', ' ') + (d.table ? ` ${d.table}` : '')))}.`;
+    return say('data', {
+      operations: list(
+        ops
+          .slice(0, 3)
+          .map((d) => say(`operation.${d.operation}`) + (d.table ? ` ${d.table}` : '')),
+      ),
+    });
   if (f.category === 'manifest') {
     const mine = deps.filter((d) => d.manifest === f.path);
     if (mine.length)
-      return `Dependency changes: ${joinList(mine.slice(0, 4).map((d) => code(d.name)))}.`;
+      return say('dependencies', { names: list(mine.slice(0, 4).map((d) => code(d.name))) });
   }
-  if (f.category === 'test') {
-    return f.status === 'added' ? 'New tests for this change.' : 'Test updates for this change.';
-  }
+  if (f.category === 'test') return say(f.status === 'added' ? 'newTests' : 'testUpdates');
   const routes = own.filter((s) => s.kind === 'route');
   if (routes.length)
-    return `Route ${routes[0]!.change}: ${code(routes[0]!.name)}${routes.length > 1 ? ` and ${routes.length - 1} more` : ''}.`;
+    return say('route', {
+      change: say(`change.${routes[0]!.change}`),
+      name: code(routes[0]!.name),
+      more: routes.length > 1 ? say('more', { count: routes.length - 1 }) : '',
+    });
   const addedSyms = own.filter((s) => s.change === 'added' && s.kind !== 'selector');
   const modified = own.filter((s) => s.change === 'modified' && s.kind !== 'selector');
   const removed = own.filter((s) => s.change === 'removed' && s.kind !== 'selector');
   const parts: string[] = [];
   if (addedSyms.length)
-    parts.push(`adds ${joinList(addedSyms.slice(0, 3).map((s) => code(s.name)))}`);
+    parts.push(say('adds', { names: list(addedSyms.slice(0, 3).map((s) => code(s.name))) }));
   if (modified.length)
-    parts.push(`changes ${joinList(modified.slice(0, 3).map((s) => code(s.name)))}`);
+    parts.push(say('changes', { names: list(modified.slice(0, 3).map((s) => code(s.name))) }));
   if (removed.length)
-    parts.push(`removes ${joinList(removed.slice(0, 2).map((s) => code(s.name)))}`);
-  if (parts.length) return `${capitalize(joinList(parts))}.`;
+    parts.push(say('removes', { names: list(removed.slice(0, 2).map((s) => code(s.name))) }));
+  if (parts.length) return endSentence(language, capitalize(list(parts)));
   const selectors = own.filter((s) => s.kind === 'selector');
   if (selectors.length)
-    return `Styles for ${joinList(selectors.slice(0, 3).map((s) => code(s.name)))}.`;
-  if (f.status === 'added') return `New ${f.category} file.`;
-  if (f.status === 'deleted') return `Deleted ${f.category} file.`;
-  if (f.status === 'renamed') return `Moved from ${f.oldPath}.`;
-  return `${capitalize(f.category)} change (+${f.additions} −${f.deletions}).`;
+    return say('styles', { names: list(selectors.slice(0, 3).map((s) => code(s.name))) });
+  if (f.status === 'added') return say('newFile', { category: f.category });
+  if (f.status === 'deleted') return say('deletedFile', { category: f.category });
+  if (f.status === 'renamed') return say('moved', { path: f.oldPath ?? '' });
+  return say('fileChange', {
+    category: capitalize(f.category),
+    additions: f.additions,
+    deletions: f.deletions,
+  });
 }
 
 function capitalize(s: string): string {
@@ -490,7 +518,10 @@ function collectSignals(
   change: CodeChange,
   files: readonly ChangedFile[],
   s: SignalInput,
+  language: Language,
 ): Signal[] {
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `signal.${key}`, params);
   const out: Signal[] = [];
   const breaking = change.commits.find(
     (c) => cleanSubject(c.subject).breaking || /BREAKING[ -]CHANGE/.test(c.body),
@@ -498,12 +529,12 @@ function collectSignals(
   if (breaking)
     out.push({
       id: 'breaking-commit',
-      message: `A commit declares a breaking change: "${breaking.subject}".`,
+      message: say('breaking', { subject: breaking.subject }),
     });
   for (const r of s.routes.filter((r) => r.change === 'removed')) {
     out.push({
       id: 'route-removed',
-      message: `Route ${r.method ? `${r.method} ` : ''}${r.path} was removed.`,
+      message: say('routeRemoved', { route: `${r.method ? `${r.method} ` : ''}${r.path}` }),
       path: r.file,
       line: r.line,
     });
@@ -513,7 +544,7 @@ function collectSignals(
   )) {
     out.push({
       id: 'export-removed',
-      message: `Exported ${sym.kind} ${sym.name} was removed.`,
+      message: say('exportRemoved', { kind: sym.kind, name: sym.name }),
       path: sym.path,
       line: sym.line,
     });
@@ -521,7 +552,7 @@ function collectSignals(
   for (const d of s.data.filter((x) => x.destructive)) {
     out.push({
       id: 'destructive-migration',
-      message: `Destructive data operation: ${d.statement}`,
+      message: say('destructive', { statement: d.statement }),
       path: d.file,
       line: d.line,
     });
@@ -529,21 +560,21 @@ function collectSignals(
   for (const dep of s.dependencies.filter((d) => d.change === 'added' && !d.dev)) {
     out.push({
       id: 'dependency-added',
-      message: `New runtime dependency ${dep.name}@${dep.to}.`,
+      message: say('dependencyAdded', { name: dep.name, version: dep.to ?? '' }),
       path: dep.manifest,
     });
   }
   for (const dep of s.dependencies.filter((d) => d.major)) {
     out.push({
       id: 'major-upgrade',
-      message: `${dep.name} changes major version (${dep.from} → ${dep.to}).`,
+      message: say('majorUpgrade', { name: dep.name, from: dep.from ?? '', to: dep.to ?? '' }),
       path: dep.manifest,
     });
   }
   for (const env of s.envVars.filter((e) => e.change === 'added')) {
     out.push({
       id: 'env-var-added',
-      message: `New environment variable ${env.name}${env.documented ? '' : ' (not documented)'}.`,
+      message: say(env.documented ? 'envVarAdded' : 'envVarUndocumented', { name: env.name }),
       path: env.path,
       line: env.line,
     });
@@ -551,18 +582,17 @@ function collectSignals(
   if (files.some((f) => f.surfaces.includes('security'))) {
     out.push({
       id: 'security-surface',
-      message: 'Authentication, authorization, or crypto-related files changed.',
+      message: say('security'),
     });
   }
   const exec = files.filter((f) => f.oldMode && f.newMode && f.oldMode !== f.newMode);
   for (const f of exec)
     out.push({
       id: 'mode-changed',
-      message: `File mode changed ${f.oldMode} → ${f.newMode}.`,
+      message: say('mode', { from: f.oldMode ?? '', to: f.newMode ?? '' }),
       path: f.path,
     });
-  if (change.includesUncommitted)
-    out.push({ id: 'uncommitted', message: 'The change includes uncommitted work.' });
+  if (change.includesUncommitted) out.push({ id: 'uncommitted', message: say('uncommitted') });
   return out;
 }
 
@@ -570,37 +600,43 @@ function collectNotes(
   change: CodeChange,
   files: readonly ChangedFile[],
   tests: TestSummary,
+  language: Language,
 ): string[] {
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `note.${key}`, params);
   const notes: string[] = [];
   const lock = change.files.filter((f) => f.category === 'lockfile');
   if (lock.length) {
     const lines = lock.reduce((n, f) => n + f.additions + f.deletions, 0);
-    notes.push(
-      `${plural(lock.length, 'lockfile')} changed (${lines} lines); these are mechanical and can be skimmed.`,
-    );
+    notes.push(say('lockfiles', { count: lock.length, lines }));
   }
   const ignored = change.files.filter((f) => f.ignored);
   if (ignored.length) {
-    const reasons = [...new Set(ignored.map((f) => f.ignoreReason))].join(', ');
-    notes.push(`${plural(ignored.length, 'file')} skipped as ${reasons}.`);
+    const reasons = [...new Set(ignored.map((f) => f.ignoreReason))]
+      .map((r) => (r && ['generated', 'vendored', 'config'].includes(r) ? say(`ignored.${r}`) : r))
+      .join(', ');
+    notes.push(say('skipped', { count: ignored.length, reasons }));
   }
   const binary = files.filter((f) => f.binary);
   if (binary.length)
     notes.push(
-      `${plural(binary.length, 'binary file')} changed: ${joinList(binary.slice(0, 3).map((f) => code(f.path)))}.`,
+      say('binary', {
+        count: binary.length,
+        files: listOf(
+          language,
+          binary.slice(0, 3).map((f) => code(f.path)),
+        ),
+      }),
     );
   const todos = files.flatMap((f) =>
     f.hunks.flatMap((h) =>
       h.lines.filter((l) => l.kind === 'add' && /\b(TODO|FIXME|HACK|XXX)\b/.test(l.text)),
     ),
   );
-  if (todos.length) notes.push(`Adds ${plural(todos.length, 'TODO/FIXME comment')}.`);
-  if (tests.addedTestCases || tests.removedTestCases) {
-    notes.push(
-      `Tests: ${tests.addedTestCases} test case(s) added, ${tests.removedTestCases} removed.`,
-    );
-  }
+  if (todos.length) notes.push(say('todos', { count: todos.length }));
+  if (tests.addedTestCases || tests.removedTestCases)
+    notes.push(say('tests', { added: tests.addedTestCases, removed: tests.removedTestCases }));
   const renamed = files.filter((f) => f.status === 'renamed');
-  if (renamed.length) notes.push(`${plural(renamed.length, 'file')} renamed or moved.`);
+  if (renamed.length) notes.push(say('renamed', { count: renamed.length }));
   return notes;
 }

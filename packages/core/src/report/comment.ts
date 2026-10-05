@@ -1,6 +1,8 @@
+import { t } from '../i18n/catalog.ts';
+import type { Language } from '../i18n/language.ts';
 import type { ReviewContext } from '../model/context.ts';
 import type { Explanation } from '../model/explanation.ts';
-import { CERTAINTY_LABEL, type Finding, type Review, VERDICT_LABEL } from '../model/finding.ts';
+import type { Finding, Review } from '../model/finding.ts';
 import { escapeMarkdownKeepCode, fence, truncate } from '../util/text.ts';
 
 /** Hidden marker used to find and update Covi's own comment instead of posting duplicates. */
@@ -39,36 +41,42 @@ export function renderComment(
   explanation: Explanation,
   context: ReviewContext,
   links: CommentLinks = {},
+  language: Language = explanation.language ?? review.language ?? 'en',
 ): string {
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `comment.${key}`, params);
   const out: string[] = [COMMENT_MARKER];
-  out.push(`### ${VERDICT_ICON[review.verdict]} Covi review: ${VERDICT_LABEL[review.verdict]}`, '');
+  out.push(
+    `### ${VERDICT_ICON[review.verdict]} ${say('heading', { verdict: t(language, `verdict.${review.verdict}`) })}`,
+    '',
+  );
   out.push(`**${inline(explanation.headline, 200)}**`, '');
   out.push(inline(explanation.summary, 700), '');
 
   if (links.video) {
     const duration = links.video.seconds ? ` (${Math.round(links.video.seconds)}s)` : '';
     out.push(
-      links.video.markdown ?? `▶️ [Watch the review video${duration}](${safeUrl(links.video.url)})`,
+      links.video.markdown ?? `▶️ [${say('watch', { duration })}](${safeUrl(links.video.url)})`,
       '',
     );
   }
 
   if (review.findings.length) {
-    out.push('| | Finding | Where |', '|---|---|---|');
+    out.push(`| | ${say('finding')} | ${say('where')} |`, '|---|---|---|');
     for (const f of review.findings) {
       const where = f.location
         ? codeSpan(f.location.line ? `${f.location.path}:${f.location.line}` : f.location.path)
         : '';
       out.push(
-        `| ${SEVERITY_ICON[f.severity]} ${CERTAINTY_LABEL[f.certainty]} | ${inline(f.title, 160)} | ${where} |`,
+        `| ${SEVERITY_ICON[f.severity]} ${t(language, `certainty.${f.certainty}`)} | ${inline(f.title, 160)} | ${where} |`,
       );
     }
     out.push('');
-    out.push('<details><summary>Finding details</summary>', '');
+    out.push(`<details><summary>${say('details')}</summary>`, '');
     for (const f of review.findings) {
       out.push(`**${inline(f.title, 160)}**: ${inline(f.explanation, 500)}`, '');
       out.push(fence(truncate(f.evidence, 800)), '');
-      if (f.suggestion) out.push(`Suggestion: ${inline(f.suggestion, 300)}`, '');
+      if (f.suggestion) out.push(`${say('suggestion')} ${inline(f.suggestion, 300)}`, '');
     }
     out.push('</details>', '');
   } else {
@@ -76,13 +84,13 @@ export function renderComment(
   }
 
   if (explanation.changes.length) {
-    out.push('<details><summary>What changed</summary>', '');
+    out.push(`<details><summary>${say('changes')}</summary>`, '');
     for (const c of explanation.changes.slice(0, 10))
       out.push(`- **${inline(c.area, 80)}**: ${inline(c.description, 300)}`);
     out.push('', '</details>', '');
   }
   if (review.notVerified.length) {
-    out.push('<details><summary>Not verified</summary>', '');
+    out.push(`<details><summary>${say('notVerified')}</summary>`, '');
     for (const n of review.notVerified) out.push(`- ${inline(n, 300)}`);
     out.push('', '</details>', '');
   }
@@ -95,11 +103,13 @@ export function renderComment(
     `${sha(context.change?.base?.sha)}…${sha(context.change?.head?.sha)}`,
     inline([review.generatedBy.provider, review.generatedBy.model].filter(Boolean).join(' · '), 80),
   ];
-  if (links.artifacts) meta.push(`[artifacts](${safeUrl(links.artifacts)})`);
-  if (links.run) meta.push(`[run](${safeUrl(links.run)})`);
+  if (links.artifacts) meta.push(`[${say('artifacts')}](${safeUrl(links.artifacts)})`);
+  if (links.run) meta.push(`[${say('run')}](${safeUrl(links.run)})`);
   out.push(`<sub>Covi · ${meta.join(' · ')}</sub>`);
   const body = out.join('\n');
-  return body.length > MAX_COMMENT ? `${body.slice(0, MAX_COMMENT - 40)}\n\n…(truncated)` : body;
+  return body.length > MAX_COMMENT
+    ? `${body.slice(0, MAX_COMMENT - 40)}\n\n${say('truncated')}`
+    : body;
 }
 
 /** Only http(s) URLs without characters that could break out of Markdown link syntax. */

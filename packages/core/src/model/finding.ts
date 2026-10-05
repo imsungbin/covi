@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import type { Language } from '../i18n/language.ts';
+import { LanguageSchema } from '../i18n/schema.ts';
 import { shortHash } from '../util/hash.ts';
 
 /**
@@ -88,6 +90,9 @@ export const DismissalSchema = z.strictObject({
 /** Shape of an agent- or model-authored `findings.json`. */
 export const FindingsFileSchema = z.strictObject({
   schemaVersion: z.literal(1).default(1),
+  language: LanguageSchema.optional().describe(
+    'The language the findings are written in: en, ko, ja, or zh (Simplified Chinese).',
+  ),
   summary: z.string().optional(),
   findings: z.array(FindingSchema).default([]),
   /** Rule findings the author examined and rejected, with the reason. */
@@ -117,6 +122,8 @@ export interface TestRunResult {
 
 export interface Review {
   schemaVersion: 1;
+  /** The language of the review's own text (summary, notes, rule findings). */
+  language?: Language;
   verdict: Verdict;
   summary: string;
   findings: Finding[];
@@ -183,6 +190,7 @@ export function gateFailures(findings: readonly Finding[], failOn: FailThreshold
 /** Validates a review.json read back from disk (e.g. an artifact from an untrusted CI job). */
 export const ReviewFileSchema = z.object({
   schemaVersion: z.literal(1),
+  language: LanguageSchema.optional(),
   verdict: z.enum(['looks-good', 'needs-attention', 'needs-changes']),
   summary: z.string(),
   findings: z.array(

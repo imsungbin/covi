@@ -1,8 +1,9 @@
+import { listOf, t } from '../i18n/catalog.ts';
+import type { Language } from '../i18n/language.ts';
 import type { CodeChange } from '../model/change.ts';
 import type { ReviewContext } from '../model/context.ts';
-import { CERTAINTY_LABEL, type Finding } from '../model/finding.ts';
+import type { Finding } from '../model/finding.ts';
 import type { Redactor } from '../security/redact.ts';
-import { joinList, plural } from '../util/text.ts';
 import { renderDiffDigest } from './digest.ts';
 import { locationText } from './markdown.ts';
 
@@ -13,6 +14,8 @@ export interface BriefOptions {
   maxDiffChars: number;
   /** Agents get next-step instructions; models get only the material. */
   audience?: 'agent' | 'model';
+  /** The language agents should write in; the brief itself is written in it too. */
+  language?: Language;
 }
 
 /**
@@ -26,88 +29,145 @@ export function renderBrief(
   options: BriefOptions,
 ): string {
   const { intent, demonstration, size } = context;
+  const language = options.language ?? 'en';
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `brief.${key}`, params);
   const out: string[] = [];
-  out.push(`# Covi brief: ${intent.summary}`, '');
+  out.push(`# ${say('title', { summary: intent.summary })}`, '');
   out.push(
-    `Run \`${options.runId}\` · ${change.repository.name} · ${change.base.ref} \`${change.base.sha.slice(0, 7)}\` → ${change.head.ref} \`${change.head.sha.slice(0, 7)}\` · ${plural(change.stats.files, 'file')}, +${change.stats.additions} −${change.stats.deletions} · size ${size.class}`,
+    say('header', {
+      runId: `\`${options.runId}\``,
+      repository: change.repository.name,
+      base: change.base.ref,
+      baseSha: `\`${change.base.sha.slice(0, 7)}\``,
+      head: change.head.ref,
+      headSha: `\`${change.head.sha.slice(0, 7)}\``,
+      files: t(language, 'count.files', { count: change.stats.files }),
+      additions: change.stats.additions,
+      deletions: change.stats.deletions,
+      size: size.class,
+    }),
     '',
   );
+  if (language !== 'en' && options.audience !== 'model')
+    out.push(
+      say('language', { language: t(language, `languageName.${language}`), code: language }),
+      '',
+    );
   if (change.metadata.title || change.metadata.description) {
-    out.push('## Author description', '');
+    out.push(`## ${say('authorDescription')}`, '');
     if (change.metadata.title)
       out.push(`**${options.redactor.redact(change.metadata.title)}**`, '');
     if (change.metadata.description)
       out.push(options.redactor.redact(change.metadata.description.slice(0, 4000)), '');
-    out.push(
-      '> The description is the author’s claim, not evidence. Verify it against the code.',
-      '',
-    );
+    out.push(say('claim'), '');
   }
   if (change.commits.length) {
-    out.push('## Commits', '');
+    out.push(`## ${say('commits')}`, '');
     for (const c of change.commits.slice(0, 15))
       out.push(`- \`${c.sha.slice(0, 7)}\` ${options.redactor.redact(c.subject)}`);
-    if (change.commits.length > 15) out.push(`- …and ${change.commits.length - 15} more`);
+    if (change.commits.length > 15)
+      out.push(`- ${say('moreCommits', { count: change.commits.length - 15 })}`);
     out.push('');
   }
 
-  out.push('## What Covi determined', '');
+  out.push(`## ${say('determined')}`, '');
   out.push(
-    `- **Intent:** ${intent.kind} (${intent.confidence} confidence). ${intent.evidence.slice(0, 3).join('; ') || 'No direct evidence.'}`,
+    `- ${say('intent', {
+      kind: intent.kind,
+      confidence: t(language, `confidence.${intent.confidence}`),
+      evidence: intent.evidence.slice(0, 3).join('; ') || say('noEvidence'),
+    })}`,
   );
-  if (intent.ambiguity) out.push(`- **Ambiguity:** ${intent.ambiguity}`);
+  if (intent.ambiguity) out.push(`- ${say('ambiguity', { text: intent.ambiguity })}`);
   out.push(
-    `- **Areas:** ${context.areas.map((a) => `${a.name} (${a.surfaces.join(', ') || 'internal'})`).join('; ')}`,
+    `- ${say('areas', {
+      areas: context.areas
+        .map((a) => `${a.name} (${a.surfaces.join(', ') || say('internal')})`)
+        .join('; '),
+    })}`,
   );
   const surfaceList = Object.entries(context.surfaces).map(
     ([s, files]) => `${s} (${files?.length})`,
   );
-  if (surfaceList.length) out.push(`- **Surfaces:** ${surfaceList.join(', ')}`);
+  if (surfaceList.length) out.push(`- ${say('surfaces', { surfaces: surfaceList.join(', ') })}`);
   out.push(
-    `- **Demonstration value:** ${demonstration.value}${demonstration.kinds.length ? ` (${demonstration.kinds.join(', ')})` : ''} → ${demonstration.recommendation}. ${demonstration.reasons[0] ?? ''}`,
+    `- ${say('demonstration', {
+      value: demonstration.value,
+      kinds: demonstration.kinds.length ? ` (${demonstration.kinds.join(', ')})` : '',
+      recommendation: demonstration.recommendation,
+      reason: demonstration.reasons[0] ?? '',
+    })}`,
   );
   out.push(
-    `- **Can run the app:** ${demonstration.runnable.available ? `yes (${demonstration.runnable.mode ?? 'commands'})` : 'no'}${demonstration.runnable.suggestions.length ? `; suggested config: ${demonstration.runnable.suggestions.join('; ')}` : ''}`,
+    `- ${say('runnable', {
+      answer: demonstration.runnable.available
+        ? say('runnableYes', { mode: demonstration.runnable.mode ?? say('commands') })
+        : say('runnableNo'),
+      suggestions: demonstration.runnable.suggestions.length
+        ? say('suggestedConfig', { config: demonstration.runnable.suggestions.join('; ') })
+        : '',
+    })}`,
   );
-  const t = context.tests;
+  const tests = context.tests;
   out.push(
-    `- **Tests:** ${t.changedTestFiles.length ? `${plural(t.changedTestFiles.length, 'test file')} changed (+${t.addedTestCases} cases)` : 'no test changes'}${t.frameworks.length ? `; frameworks: ${t.frameworks.join(', ')}` : ''}`,
+    `- ${say('tests', {
+      tests: tests.changedTestFiles.length
+        ? say('testChanges', {
+            files: t(language, 'count.testFiles', { count: tests.changedTestFiles.length }),
+            cases: tests.addedTestCases,
+          })
+        : say('noTestChanges'),
+      frameworks: tests.frameworks.length
+        ? say('frameworks', { frameworks: tests.frameworks.join(', ') })
+        : '',
+    })}`,
   );
   if (context.dependencies.length)
     out.push(
-      `- **Dependencies:** ${joinList(context.dependencies.slice(0, 6).map((d) => `${d.name} ${d.change}${d.to ? ` ${d.to}` : ''}`))}`,
+      `- ${say('dependencies', {
+        list: listOf(
+          language,
+          context.dependencies
+            .slice(0, 6)
+            .map((d) => `${d.name} ${d.change}${d.to ? ` ${d.to}` : ''}`),
+        ),
+      })}`,
     );
   if (context.envVars.length)
     out.push(
-      `- **Environment variables:** ${joinList(context.envVars.map((e) => `${e.name} (${e.change})`))}`,
+      `- ${say('envVars', {
+        list: listOf(
+          language,
+          context.envVars.map((e) => `${e.name} (${e.change})`),
+        ),
+      })}`,
     );
   if (context.data.length)
     out.push(
-      `- **Data changes:** ${context.data
-        .slice(0, 5)
-        .map((d) => d.statement)
-        .join('; ')}`,
+      `- ${say('data', {
+        list: context.data
+          .slice(0, 5)
+          .map((d) => d.statement)
+          .join('; '),
+      })}`,
     );
   out.push('');
 
   if (context.signals.length || ruleFindings.length) {
-    out.push('## Signals worth checking', '');
+    out.push(`## ${say('signals')}`, '');
     for (const f of ruleFindings) {
       out.push(
-        `- **[${f.id}]** ${CERTAINTY_LABEL[f.certainty]} · ${f.severity}: ${f.title}${locationText(f) ? ` (\`${locationText(f)}\`)` : ''}`,
+        `- **[${f.id}]** ${t(language, `certainty.${f.certainty}`)} · ${t(language, `severity.${f.severity}`)}: ${f.title}${locationText(f) ? ` (\`${locationText(f)}\`)` : ''}`,
       );
     }
     for (const s of context.signals)
       out.push(`- ${s.message}${s.path ? ` (\`${s.path}${s.line ? `:${s.line}` : ''}\`)` : ''}`);
-    out.push(
-      '',
-      'Rule findings are evidence-based but shallow. Confirm or dismiss each one (with a reason) in findings.json.',
-      '',
-    );
+    out.push('', say('ruleNote'), '');
   }
 
   if (context.readingOrder.length) {
-    out.push('## Suggested reading order', '');
+    out.push(`## ${say('readingOrder')}`, '');
     for (const [i, s] of context.readingOrder.entries())
       out.push(`${i + 1}. \`${s.path}\`: ${s.reason}`);
     out.push('');
@@ -117,27 +177,21 @@ export function renderBrief(
     maxChars: options.maxDiffChars,
     redactor: options.redactor,
   });
-  out.push('## Diff (prioritized)', '');
+  out.push(`## ${say('diff')}`, '');
   out.push(digest.text);
   if (digest.omitted.length) {
-    out.push('Not inlined:', '');
+    out.push(say('notInlined'), '');
     for (const o of digest.omitted) out.push(`- \`${o.path}\`: ${o.reason}`);
     out.push('');
   }
 
   if (options.audience === 'model') return out.join('\n');
-  out.push('## Next steps for the agent', '');
-  out.push(`Artifacts live in \`${options.runDir}\`.`);
+  out.push(`## ${say('nextSteps')}`, '');
+  out.push(say('artifacts', { dir: `\`${options.runDir}\`` }));
   out.push('');
-  out.push(
-    '1. Read the surrounding code for the files above; the diff alone is not enough context.',
-  );
-  out.push(
-    '2. Write `explanation.json` (schema: `covi schema explanation`) and `findings.json` (schema: `covi schema findings`) into the run directory.',
-  );
-  out.push(
-    `3. Run \`covi report --run ${options.runId}\` to validate them and render the Markdown reports.`,
-  );
+  out.push(say('step1'));
+  out.push(say('step2'));
+  out.push(say('step3', { runId: options.runId }));
   out.push('');
   return out.join('\n');
 }

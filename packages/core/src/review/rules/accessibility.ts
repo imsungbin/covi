@@ -1,5 +1,5 @@
 import type { FindingInput } from '../../model/finding.ts';
-import { addedLines, quote, type Rule } from './types.ts';
+import { addedLines, messages, quote, type Rule } from './types.ts';
 
 const MARKUP = (path: string) =>
   /\.(html?|jsx|tsx|vue|svelte|astro|hbs|ejs|erb|njk|twig|liquid)$/.test(path);
@@ -7,7 +7,8 @@ const MARKUP = (path: string) =>
 export const imgMissingAlt: Rule = {
   id: 'img-missing-alt',
   checks: 'images without alternative text',
-  run({ files }) {
+  run({ files, language }) {
+    const say = messages(language, 'img-missing-alt');
     const out: FindingInput[] = [];
     for (const file of files.filter((f) => MARKUP(f.path) && f.category !== 'test')) {
       const lines = addedLines([file]);
@@ -20,15 +21,14 @@ export const imgMissingAlt: Rule = {
         tag = tag.slice(0, tag.indexOf('>') + 1 || undefined);
         if (/\balt\s*=|\{\s*\.\.\.|v-bind\s*=|:alt\s*=/i.test(tag)) return;
         out.push({
-          title: `Image without alt text in ${file.path}`,
+          title: say('title', { path: file.path }),
           certainty: 'likely',
           severity: 'medium',
           category: 'accessibility',
           location: { path: file.path, line: line.newLine },
           evidence: quote(tag),
-          explanation:
-            'Screen readers announce images without alt text as a file name or skip them, so their meaning is lost.',
-          suggestion: 'Add alt="…" describing the image, or alt="" if it is purely decorative.',
+          explanation: say('explanation'),
+          suggestion: say('suggestion'),
         });
       });
     }
@@ -39,7 +39,8 @@ export const imgMissingAlt: Rule = {
 export const focusOutlineRemoved: Rule = {
   id: 'focus-outline-removed',
   checks: 'focus indicators removed without a visible replacement',
-  async run({ files, reader }) {
+  async run({ files, reader, language }) {
+    const say = messages(language, 'focus-outline-removed');
     const out: FindingInput[] = [];
     for (const file of files.filter(
       (f) => f.category === 'style' || /\.(html?|vue|svelte|astro)$/.test(f.path),
@@ -55,16 +56,14 @@ export const focusOutlineRemoved: Rule = {
       )
         continue;
       out.push({
-        title: `Focus outline removed in ${file.path}`,
+        title: say('title', { path: file.path }),
         certainty: 'likely',
         severity: 'medium',
         category: 'accessibility',
         location: { path: file.path, line: hit.line.newLine },
         evidence: quote(hit.line.text),
-        explanation:
-          'Keyboard users rely on the focus outline to see where they are. Removing it without a :focus-visible replacement makes the interface hard to use without a mouse.',
-        suggestion:
-          'Keep a visible focus style, for example `:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }`.',
+        explanation: say('explanation'),
+        suggestion: say('suggestion'),
       });
     }
     return out;
@@ -74,7 +73,8 @@ export const focusOutlineRemoved: Rule = {
 export const clickOnStaticElement: Rule = {
   id: 'click-on-static-element',
   checks: 'click handlers on non-interactive elements without keyboard support',
-  run({ files }) {
+  run({ files, language }) {
+    const say = messages(language, 'click-on-static-element');
     const out: FindingInput[] = [];
     for (const { file, line } of addedLines(
       files,
@@ -92,14 +92,14 @@ export const clickOnStaticElement: Rule = {
       )
         continue;
       out.push({
-        title: `Clickable <${m[1]}> is not keyboard accessible in ${file.path}`,
+        title: say('title', { tag: m[1]!, path: file.path }),
         certainty: 'likely',
         severity: 'medium',
         category: 'accessibility',
         location: { path: file.path, line: line.newLine },
         evidence: quote(line.text),
-        explanation: `A <${m[1]}> with a click handler cannot be reached with Tab or activated with Enter/Space, and screen readers do not announce it as a control.`,
-        suggestion: 'Use a <button> (or add role="button", tabIndex={0}, and a key handler).',
+        explanation: say('explanation', { tag: m[1]! }),
+        suggestion: say('suggestion'),
       });
     }
     return out.slice(0, 3);

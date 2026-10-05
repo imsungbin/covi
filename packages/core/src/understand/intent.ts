@@ -1,3 +1,5 @@
+import { listOf, t } from '../i18n/catalog.ts';
+import type { Language } from '../i18n/language.ts';
 import type { ChangedFile, CodeChange, Surface } from '../model/change.ts';
 import type {
   Confidence,
@@ -95,12 +97,17 @@ export interface IntentInput {
   symbols: readonly SymbolChange[];
   routes: readonly RouteChange[];
   hasDataChanges: boolean;
+  /** The language of the evidence and ambiguity text. Default: English. */
+  language?: Language;
 }
+
+type EvidenceSource = NonNullable<Intent['evidenceFrom']>[number];
 
 interface Score {
   points: number;
   sources: Set<string>;
   evidence: string[];
+  evidenceFrom: Set<EvidenceSource>;
 }
 
 /** Strips conventional-commit prefixes and trailing issue references. */
@@ -126,12 +133,22 @@ export function cleanSubject(subject: string): {
 
 export function inferIntent(input: IntentInput): Intent {
   const scores = new Map<IntentKind, Score>();
+  const language = input.language ?? 'en';
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `intent.${key}`, params);
   const add = (kind: IntentKind, points: number, source: string, evidence?: string) => {
-    const s = scores.get(kind) ?? { points: 0, sources: new Set<string>(), evidence: [] };
+    const s = scores.get(kind) ?? {
+      points: 0,
+      sources: new Set<string>(),
+      evidence: [],
+      evidenceFrom: new Set<EvidenceSource>(),
+    };
     s.points += points;
     s.sources.add(source);
-    if (evidence && !s.evidence.includes(evidence) && s.evidence.length < 4)
+    if (evidence && !s.evidence.includes(evidence) && s.evidence.length < 4) {
       s.evidence.push(evidence);
+      s.evidenceFrom.add(source as EvidenceSource);
+    }
     scores.set(kind, s);
   };
 
@@ -142,9 +159,10 @@ export function inferIntent(input: IntentInput): Intent {
   if (title) {
     const t = cleanSubject(title);
     const kind = t.type ? kindForType(t.type, input.files) : undefined;
-    if (kind) add(kind, 4, 'title', `title "${title}" uses the ${t.type} prefix`);
+    if (kind) add(kind, 4, 'title', say('evidence.titlePrefix', { title, type: t.type! }));
     for (const [k, re] of KEYWORDS)
-      if (re.test(t.text)) add(k, 1.5, 'title', `title mentions "${re.exec(t.text)?.[0]}"`);
+      if (re.test(t.text))
+        add(k, 1.5, 'title', say('evidence.titleMentions', { word: re.exec(t.text)?.[0] ?? '' }));
   }
   const typed = commits
     .map((c) => cleanSubject(c.subject))
@@ -155,14 +173,14 @@ export function inferIntent(input: IntentInput): Intent {
       kind,
       3 / Math.max(1, typed.length) + 1,
       'commits',
-      `commit "${c.type}${c.scope ? `(${c.scope})` : ''}: ${c.text}"`,
+      say('evidence.commit', { subject: `${c.type}${c.scope ? `(${c.scope})` : ''}: ${c.text}` }),
     );
   }
   for (const commit of commits.slice(0, 20)) {
     const text = `${cleanSubject(commit.subject).text} ${commit.body}`;
     for (const [k, re] of KEYWORDS) if (re.test(text)) add(k, 0.6, 'commits');
     if (/^revert\b/i.test(commit.subject))
-      add('revert', 4, 'commits', `commit "${commit.subject}"`);
+      add('revert', 4, 'commits', say('evidence.commit', { subject: commit.subject }));
   }
   if (metadata.description) {
     for (const [k, re] of KEYWORDS) if (re.test(metadata.description)) add(k, 0.5, 'description');
@@ -172,7 +190,7 @@ export function inferIntent(input: IntentInput): Intent {
   const branch = metadata.sourceBranch;
   if (branch) {
     for (const [re, kind] of BRANCH_PREFIX) {
-      if (re.test(branch)) add(kind, 2, 'branch', `branch name "${branch}"`);
+      if (re.test(branch)) add(kind, 2, 'branch', say('evidence.branch', { branch }));
     }
   }
 
@@ -181,21 +199,19 @@ export function inferIntent(input: IntentInput): Intent {
   const cats = new Set(files.map((f) => f.category));
   const only = (...allowed: string[]) =>
     files.length > 0 && [...cats].every((c) => allowed.includes(c));
-  if (only('docs')) add('docs', 5, 'files', 'only documentation files changed');
-  else if (only('test')) add('test', 5, 'files', 'only test files changed');
+  if (only('docs')) add('docs', 5, 'files', say('evidence.onlyDocs'));
+  else if (only('test')) add('test', 5, 'files', say('evidence.onlyTests'));
   else if (only('manifest', 'lockfile'))
-    add('dependency', 5, 'files', 'only dependency manifests and lockfiles changed');
-  else if (only('ci')) add('ci', 5, 'files', 'only CI configuration changed');
-  else if (only('style', 'markup', 'asset'))
-    add('visual', 4, 'files', 'only styles, markup, or assets changed');
-  else if (only('build', 'infra', 'config'))
-    add('build', 3, 'files', 'only build or configuration files changed');
+    add('dependency', 5, 'files', say('evidence.onlyDependencies'));
+  else if (only('ci')) add('ci', 5, 'files', say('evidence.onlyCi'));
+  else if (only('style', 'markup', 'asset')) add('visual', 4, 'files', say('evidence.onlyStyles'));
+  else if (only('build', 'infra', 'config')) add('build', 3, 'files', say('evidence.onlyBuild'));
   else if (only('style', 'markup', 'asset', 'test', 'docs') && cats.has('style'))
-    add('visual', 2, 'files', 'changes are concentrated in styles and markup');
+    add('visual', 2, 'files', say('evidence.mostlyStyles'));
 
   const renames = files.filter((f) => f.status === 'renamed' && (f.similarity ?? 0) >= 80);
   if (renames.length >= 2 && renames.length >= files.length * 0.5)
-    add('refactor', 2, 'files', `${renames.length} files were moved or renamed`);
+    add('refactor', 2, 'files', say('evidence.moved', { count: renames.length }));
   const added = input.symbols.filter(
     (s) => s.change === 'added' && s.exported && s.kind !== 'selector',
   );
@@ -209,6 +225,7 @@ export function inferIntent(input: IntentInput): Intent {
   let kind: IntentKind = top?.[0] ?? 'unknown';
   let confidence: Confidence = 'low';
   const evidence = top ? [...top[1].evidence] : [];
+  const evidenceFrom = top ? [...top[1].evidenceFrom] : [];
   let ambiguity: string | undefined;
 
   if (top) {
@@ -227,28 +244,42 @@ export function inferIntent(input: IntentInput): Intent {
       } else {
         kind = 'mixed';
         confidence = s.points >= 5 ? 'medium' : 'low';
-        ambiguity = `Signals point to both ${label(top[0])} and ${label(second[0])}; the change may combine separate concerns.`;
+        ambiguity = say('ambiguity.both', {
+          first: label(top[0], language),
+          second: label(second[0], language),
+        });
       }
     }
   }
   if (!hasMessages) {
     ambiguity ??= input.change.includesUncommitted
-      ? 'Uncommitted work has no commit message, so intent is inferred from the files alone.'
-      : 'No title, description, or commit message describes the change; intent is inferred from the files.';
+      ? say('ambiguity.uncommitted')
+      : say('ambiguity.noMessage');
     if (confidence === 'high') confidence = 'medium';
   }
 
-  const mismatch = detectMismatch(kind, files, input);
+  const mismatch = detectMismatch(kind, files, input, language);
   if (mismatch) ambiguity = mismatch;
 
-  const { summary, scope, basis } = summarize(input, kind);
+  const { summary, scope, basis } = summarize(input, kind, language);
   const secondary = ranked
     .slice(1)
     .filter(([k, s]) => k !== kind && s.points >= 2)
     .map(([k]) => k)
     .slice(0, 3);
 
-  return { kind, summary, confidence, evidence, ambiguity, secondary, scope, basis };
+  return {
+    kind,
+    summary,
+    confidence,
+    evidence,
+    ambiguity,
+    secondary,
+    scope,
+    basis,
+    ...(evidenceFrom.length ? { evidenceFrom } : {}),
+    ...(mismatch ? { mismatch: true } : {}),
+  };
 }
 
 function isCompatible(a: IntentKind, b: IntentKind): boolean {
@@ -268,8 +299,8 @@ function isCompatible(a: IntentKind, b: IntentKind): boolean {
   return pairs.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
 }
 
-function label(kind: IntentKind): string {
-  return kind.replace('-', ' ');
+function label(kind: IntentKind, language: Language): string {
+  return t(language, `intent.kind.${kind}`);
 }
 
 /** "Mismatch between implementation and apparent intent": refactors that change behavior, etc. */
@@ -277,30 +308,39 @@ function detectMismatch(
   kind: IntentKind,
   files: readonly ChangedFile[],
   input: IntentInput,
+  language: Language,
 ): string | undefined {
   if (!['refactor', 'chore', 'docs', 'test'].includes(kind)) return undefined;
+  const say = (key: string, params?: Record<string, string>) =>
+    t(language, `intent.ambiguity.${key}`, params);
   const behavioral: string[] = [];
   const routeChanges = input.routes.filter((r) => r.change !== 'modified');
   if (routeChanges.length) {
     behavioral.push(
-      `API routes (${routeChanges
-        .slice(0, 2)
-        .map((r) => `${r.change} ${r.path}`)
-        .join(', ')})`,
+      say('mismatchRoutes', {
+        routes: routeChanges
+          .slice(0, 2)
+          .map((r) => `${t(language, `reading.change.${r.change}`)} ${r.path}`)
+          .join(', '),
+      }),
     );
   }
-  if (input.hasDataChanges) behavioral.push('a database migration');
+  if (input.hasDataChanges) behavioral.push(say('mismatchMigration'));
   const ui = files.filter((f) => f.surfaces.includes('ui' as Surface) && f.category !== 'test');
-  if (kind === 'docs' && ui.length) behavioral.push('user interface files');
+  if (kind === 'docs' && ui.length) behavioral.push(say('mismatchUi'));
   if (kind === 'test' && files.some((f) => f.category === 'source'))
-    behavioral.push('application source files');
+    behavioral.push(say('mismatchSource'));
   if (behavioral.length === 0) return undefined;
-  return `Described as ${label(kind)}, but it also changes ${behavioral.join(' and ')}; confirm the behavior change is intended.`;
+  return say('mismatch', {
+    kind: label(kind, language),
+    what: language === 'en' ? behavioral.join(say('and')) : listOf(language, behavioral),
+  });
 }
 
 function summarize(
   input: IntentInput,
   kind: IntentKind,
+  language: Language,
 ): { summary: string; scope?: string; basis: Intent['basis'] } {
   const { metadata, commits } = input.change;
   if (metadata.title) {
@@ -324,8 +364,15 @@ function summarize(
     .slice(0, 3)
     .map(([dir]) => dir);
   const what =
-    kind === 'unknown' || kind === 'mixed' ? 'Changes' : `${sentenceCase(label(kind))} changes`;
-  return { summary: areas.length ? `${what} in ${areas.join(', ')}` : what, basis: 'files' };
+    kind === 'unknown' || kind === 'mixed'
+      ? t(language, 'intent.summary.changes')
+      : t(language, 'intent.summary.kindChanges', { kind: sentenceCase(label(kind, language)) });
+  return {
+    summary: areas.length
+      ? t(language, 'intent.summary.in', { what, areas: areas.join(', ') })
+      : what,
+    basis: 'files',
+  };
 }
 
 function topDir(path: string): string {

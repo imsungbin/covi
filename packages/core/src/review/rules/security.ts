@@ -1,12 +1,13 @@
 import type { FindingInput } from '../../model/finding.ts';
-import { addedLines, isAppCode, quote, type Rule } from './types.ts';
+import { addedLines, isAppCode, messages, quote, type Rule } from './types.ts';
 
 const SANITIZER = /\b(DOMPurify|sanitize\w*|escapeHtml|escape_html|bleach\.clean|xss\(|purify)\b/i;
 
 export const dangerousHtml: Rule = {
   id: 'dangerous-html',
   checks: 'raw HTML injection points (innerHTML, dangerouslySetInnerHTML, v-html)',
-  async run({ files, reader }) {
+  async run({ files, reader, language }) {
+    const say = messages(language, 'dangerous-html');
     const out: FindingInput[] = [];
     for (const { file, line } of addedLines(files, isAppCode)) {
       const m =
@@ -20,15 +21,14 @@ export const dangerousHtml: Rule = {
       const content = await reader.readOne('head', file.path);
       if (content && SANITIZER.test(content)) continue;
       out.push({
-        title: `Unsanitized HTML rendering in ${file.path}`,
+        title: say('title', { path: file.path }),
         certainty: 'risk',
         severity: 'medium',
         category: 'security',
         location: { path: file.path, line: line.newLine },
         evidence: quote(line.text),
-        explanation: `${m[0].trim()} renders markup as HTML. If any part of it comes from users or external data, this is a cross-site scripting vector.`,
-        suggestion:
-          'Render text instead of HTML, or sanitize the markup (for example with DOMPurify) before inserting it.',
+        explanation: say('explanation', { api: m[0].trim() }),
+        suggestion: say('suggestion'),
       });
       if (out.length >= 3) break;
     }
@@ -39,7 +39,8 @@ export const dangerousHtml: Rule = {
 export const dynamicCodeExecution: Rule = {
   id: 'dynamic-code-execution',
   checks: 'eval and dynamically constructed code',
-  run({ files }) {
+  run({ files, language }) {
+    const say = messages(language, 'dynamic-code-execution');
     const out: FindingInput[] = [];
     for (const { file, line } of addedLines(files, isAppCode)) {
       if (/^\s*(\/\/|#|\*)/.test(line.text)) continue;
@@ -54,15 +55,14 @@ export const dynamicCodeExecution: Rule = {
           : null;
       if (!hit) continue;
       out.push({
-        title: `Dynamic code execution in ${file.path}`,
+        title: say('title', { path: file.path }),
         certainty: 'likely',
         severity: 'medium',
         category: 'security',
         location: { path: file.path, line: line.newLine },
         evidence: quote(line.text),
-        explanation:
-          'Evaluating strings as code executes whatever reaches it, defeats static analysis, and is rarely necessary.',
-        suggestion: 'Replace with explicit parsing or a lookup table.',
+        explanation: say('explanation'),
+        suggestion: say('suggestion'),
       });
     }
     return out.slice(0, 2);
@@ -90,20 +90,20 @@ const SQL_PATTERNS = [
 export const sqlStringBuilding: Rule = {
   id: 'sql-string-building',
   checks: 'SQL built by string interpolation instead of parameters',
-  run({ files }) {
+  run({ files, language }) {
+    const say = messages(language, 'sql-string-building');
     const out: FindingInput[] = [];
     for (const { file, line } of addedLines(files, isAppCode)) {
       if (!SQL_PATTERNS.some((re) => re.test(line.text))) continue;
       out.push({
-        title: `SQL built from interpolated values in ${file.path}`,
+        title: say('title', { path: file.path }),
         certainty: 'likely',
         severity: 'high',
         category: 'security',
         location: { path: file.path, line: line.newLine },
         evidence: quote(line.text),
-        explanation:
-          'Interpolating values into SQL text allows SQL injection whenever any value can be influenced by a user.',
-        suggestion: 'Use parameterized queries (placeholders with bound values).',
+        explanation: say('explanation'),
+        suggestion: say('suggestion'),
       });
     }
     return out.slice(0, 3);
@@ -145,7 +145,8 @@ export function scriptLines(content: string): Set<number> {
 export const workflowScriptInjection: Rule = {
   id: 'workflow-script-injection',
   checks: 'GitHub Actions scripts that interpolate untrusted event data',
-  async run({ files, reader }) {
+  async run({ files, reader, language }) {
+    const say = messages(language, 'workflow-script-injection');
     const out: FindingInput[] = [];
     for (const file of files.filter((f) => isWorkflow(f.path) && f.status !== 'deleted')) {
       const content = await reader.readOne('head', file.path);
@@ -155,15 +156,14 @@ export const workflowScriptInjection: Rule = {
         const m = UNTRUSTED_EXPR.exec(line.text);
         if (!m || !scripts.has(line.newLine ?? -1)) continue;
         out.push({
-          title: `Script injection via ${m[1]} in ${file.path}`,
+          title: say('title', { expression: m[1]!, path: file.path }),
           certainty: 'likely',
           severity: 'high',
           category: 'security',
           location: { path: file.path, line: line.newLine },
           evidence: quote(line.text),
-          explanation: `${m[0]} is attacker-controlled and is substituted into the shell script before it runs, so a crafted title or branch name executes commands in the workflow.`,
-          suggestion:
-            'Pass the value through an environment variable (env: TITLE: ${{ ... }}) and reference "$TITLE" in the script.',
+          explanation: say('explanation', { expression: m[0] }),
+          suggestion: say('suggestion'),
         });
       }
     }
@@ -174,7 +174,8 @@ export const workflowScriptInjection: Rule = {
 export const workflowPullRequestTarget: Rule = {
   id: 'workflow-pull-request-target',
   checks: 'pull_request_target workflows that check out untrusted pull request code',
-  async run({ files, reader }) {
+  async run({ files, reader, language }) {
+    const say = messages(language, 'workflow-pull-request-target');
     const out: FindingInput[] = [];
     for (const file of files.filter((f) => isWorkflow(f.path) && f.status !== 'deleted')) {
       const content = await reader.readOne('head', file.path);
@@ -194,16 +195,14 @@ export const workflowPullRequestTarget: Rule = {
       );
       if (!touched) continue;
       out.push({
-        title: `pull_request_target workflow checks out pull request code in ${file.path}`,
+        title: say('title', { path: file.path }),
         certainty: 'likely',
         severity: 'high',
         category: 'security',
         location: { path: file.path, line: lineNo },
         evidence: quote(lines[index]!),
-        explanation:
-          'pull_request_target runs with a write token and repository secrets. Checking out and running code from the pull request lets any fork execute code with those privileges.',
-        suggestion:
-          'Use the pull_request trigger for jobs that run PR code, and a separate workflow_run job (without checkout of PR code) for privileged steps like commenting.',
+        explanation: say('explanation'),
+        suggestion: say('suggestion'),
       });
     }
     return out;
@@ -213,21 +212,20 @@ export const workflowPullRequestTarget: Rule = {
 export const workflowBroadPermissions: Rule = {
   id: 'workflow-broad-permissions',
   checks: 'workflow token permissions broadened to write-all',
-  run({ files }) {
+  run({ files, language }) {
+    const say = messages(language, 'workflow-broad-permissions');
     const out: FindingInput[] = [];
     for (const { file, line } of addedLines(files, (f) => isWorkflow(f.path))) {
       if (!/^\s*permissions:\s*write-all\s*$/.test(line.text)) continue;
       out.push({
-        title: `Workflow grants write-all token permissions in ${file.path}`,
+        title: say('title', { path: file.path }),
         certainty: 'risk',
         severity: 'medium',
         category: 'permissions',
         location: { path: file.path, line: line.newLine },
         evidence: quote(line.text),
-        explanation:
-          'Every step, including third-party actions, receives a token that can push code, edit releases, and change settings.',
-        suggestion:
-          'Grant only the scopes the job needs (for example contents: read, pull-requests: write).',
+        explanation: say('explanation'),
+        suggestion: say('suggestion'),
       });
     }
     return out;

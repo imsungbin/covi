@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LanguageSchema } from '../i18n/schema.ts';
 
 export const DEPTHS = ['brief', 'standard', 'deep'] as const;
 export type Depth = (typeof DEPTHS)[number];
@@ -6,6 +7,9 @@ export type Depth = (typeof DEPTHS)[number];
 /** Shape of `explanation.json`, authored by Covi's heuristics, a model, or a coding agent. */
 export const ExplanationSchema = z.strictObject({
   schemaVersion: z.literal(1).default(1),
+  language: LanguageSchema.optional().describe(
+    'The language the prose is written in: en, ko, ja, or zh (Simplified Chinese). Covi writes the report headings in it.',
+  ),
   depth: z.enum(DEPTHS),
   headline: z.string().min(3).max(200).describe('One sentence a reviewer can read in two seconds.'),
   summary: z

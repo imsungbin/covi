@@ -1,26 +1,25 @@
+import { listOf, t } from '../../i18n/catalog.ts';
 import type { ChangedFile } from '../../model/change.ts';
 import type { FindingInput } from '../../model/finding.ts';
-import { joinList, plural } from '../../util/text.ts';
-import { addedLines, isAppCode, quote, type Rule, removedLines } from './types.ts';
+import { addedLines, isAppCode, messages, quote, type Rule, removedLines } from './types.ts';
 
 export const asyncForEach: Rule = {
   id: 'async-foreach',
   checks: 'async callbacks passed to forEach (never awaited)',
-  run({ files }) {
+  run({ files, language }) {
+    const say = messages(language, 'async-foreach');
     const out: FindingInput[] = [];
     for (const { file, line } of addedLines(files, isAppCode)) {
       if (!/\.forEach\(\s*async\b/.test(line.text)) continue;
       out.push({
-        title: `forEach with an async callback in ${file.path}`,
+        title: say('title', { path: file.path }),
         certainty: 'likely',
         severity: 'medium',
         category: 'concurrency',
         location: { path: file.path, line: line.newLine },
         evidence: quote(line.text),
-        explanation:
-          'forEach ignores the promises its callback returns: the loop finishes before the work does, failures become unhandled rejections, and ordering is not guaranteed.',
-        suggestion:
-          'Use `for (const x of items) await ...` for sequential work or `await Promise.all(items.map(...))` for parallel work.',
+        explanation: say('explanation'),
+        suggestion: say('suggestion'),
       });
     }
     return out.slice(0, 2);
@@ -30,7 +29,8 @@ export const asyncForEach: Rule = {
 export const emptyCatch: Rule = {
   id: 'empty-catch',
   checks: 'errors that are caught and silently discarded',
-  run({ files }) {
+  run({ files, language }) {
+    const say = messages(language, 'empty-catch');
     const out: FindingInput[] = [];
     for (const file of files.filter(isAppCode)) {
       for (const h of file.hunks) {
@@ -52,16 +52,14 @@ export const emptyCatch: Rule = {
                 /^\s*pass\s*$/.test(next.text)));
           if (!oneLine && !twoLine) continue;
           out.push({
-            title: `Error silently swallowed in ${file.path}`,
+            title: say('title', { path: file.path }),
             certainty: 'risk',
             severity: 'medium',
             category: 'error-handling',
             location: { path: file.path, line: l.newLine },
             evidence: twoLine ? `${quote(l.text, 100)} ⏎ ${quote(next!.text, 40)}` : quote(l.text),
-            explanation:
-              'Failures in this block disappear without logging or recovery, which hides bugs and makes incidents hard to diagnose.',
-            suggestion:
-              'Handle the error explicitly, log it, or let it propagate; if ignoring is intentional, say why in a comment.',
+            explanation: say('explanation'),
+            suggestion: say('suggestion'),
           });
         }
       }
@@ -76,7 +74,8 @@ const ERROR_HANDLING =
 export const errorHandlingRemoved: Rule = {
   id: 'error-handling-removed',
   checks: 'error handling removed without replacement',
-  run({ files }) {
+  run({ files, language }) {
+    const say = messages(language, 'error-handling-removed');
     const out: FindingInput[] = [];
     for (const file of files.filter((f) => f.category === 'source' && f.status === 'modified')) {
       const removed = removedLines([file]).filter(
@@ -86,16 +85,19 @@ export const errorHandlingRemoved: Rule = {
       if (removed.length === 0 || removed.length <= added.length) continue;
       const first = removed[0]!;
       out.push({
-        title: `Error handling removed in ${file.path}`,
+        title: say('title', { path: file.path }),
         certainty: 'risk',
         severity: 'medium',
         category: 'error-handling',
         location: { path: file.path },
-        evidence: `${plural(removed.length, 'error-handling line')} removed, ${added.length} added. First removed: ${quote(first.line.text, 120)} (old line ${first.line.oldLine})`,
-        explanation:
-          'Failures that used to be handled here may now propagate to callers or crash the operation.',
-        suggestion:
-          'Confirm the failure cases are still handled somewhere (or are impossible now).',
+        evidence: say('evidence', {
+          removed: say('lines', { count: removed.length }),
+          added: added.length,
+          line: quote(first.line.text, 120),
+          number: String(first.line.oldLine),
+        }),
+        explanation: say('explanation'),
+        suggestion: say('suggestion'),
       });
     }
     return out.slice(0, 2);
@@ -105,7 +107,8 @@ export const errorHandlingRemoved: Rule = {
 export const removedExportStillReferenced: Rule = {
   id: 'removed-export-still-referenced',
   checks: 'removed or renamed exports that other files still use',
-  async run({ context, reader }) {
+  async run({ context, reader, language }) {
+    const say = messages(language, 'removed-export-still-referenced');
     const out: FindingInput[] = [];
     const removed = context.symbols.filter(
       (s) =>
@@ -132,15 +135,19 @@ export const removedExportStillReferenced: Rule = {
       if (callers.length === 0) continue;
       const sample = callers.slice(0, 3).map((h) => `${h.path}:${h.line}: ${quote(h.text, 90)}`);
       out.push({
-        title: `Removed export ${sym.name} is still referenced`,
+        title: say('title', { name: sym.name }),
         certainty: 'likely',
         severity: 'high',
         category: 'api-compatibility',
         location: { path: sym.path, line: sym.line },
-        evidence: `${sym.name} was removed from ${sym.path}, but ${plural(callers.length, 'reference')} remain:\n${sample.join('\n')}`,
-        explanation:
-          'Code that still imports or calls the removed symbol will fail to compile or throw at runtime.',
-        suggestion: `Update the remaining references, or keep ${sym.name} as a deprecated alias.`,
+        evidence: say('evidence', {
+          name: sym.name,
+          path: sym.path,
+          references: say('references', { count: callers.length }),
+          sample: sample.join('\n'),
+        }),
+        explanation: say('explanation'),
+        suggestion: say('suggestion', { name: sym.name }),
       });
     }
     return out;
@@ -150,21 +157,22 @@ export const removedExportStillReferenced: Rule = {
 export const routeRemoved: Rule = {
   id: 'route-removed',
   checks: 'API routes removed or renamed',
-  run({ context }) {
+  run({ context, language }) {
+    const say = messages(language, 'route-removed');
     const out: FindingInput[] = [];
     const added = new Set(context.routes.filter((r) => r.change === 'added').map((r) => r.path));
     for (const r of context.routes.filter((r) => r.change === 'removed')) {
       if (added.has(r.path)) continue;
+      const route = `${r.method ? `${r.method} ` : ''}${r.path}`;
       out.push({
-        title: `API route ${r.method ? `${r.method} ` : ''}${r.path} removed`,
+        title: say('title', { route }),
         certainty: 'risk',
         severity: 'high',
         category: 'api-compatibility',
         location: { path: r.file, line: r.line },
-        evidence: `The route definition for ${r.method ? `${r.method} ` : ''}${r.path} is gone from ${r.file}.`,
-        explanation:
-          'Existing clients, integrations, or cached frontends calling this route will start receiving errors.',
-        suggestion: 'Confirm no clients depend on it, or keep it with a deprecation period.',
+        evidence: say('evidence', { route, file: r.file }),
+        explanation: say('explanation'),
+        suggestion: say('suggestion'),
       });
     }
     return out;
@@ -174,13 +182,14 @@ export const routeRemoved: Rule = {
 export const destructiveMigration: Rule = {
   id: 'destructive-migration',
   checks: 'destructive schema and data migrations',
-  run({ context }) {
+  run({ context, language }) {
+    const say = messages(language, 'destructive-migration');
     const destructive = context.data.filter((d) => d.destructive);
     if (destructive.length === 0) return [];
     const byFile = new Map<string, typeof destructive>();
     for (const d of destructive) byFile.set(d.file, [...(byFile.get(d.file) ?? []), d]);
     return [...byFile.entries()].map(([file, ops]) => ({
-      title: `Destructive migration in ${file}`,
+      title: say('title', { file }),
       certainty: 'risk' as const,
       severity: 'high' as const,
       category: 'data-integrity' as const,
@@ -189,9 +198,13 @@ export const destructiveMigration: Rule = {
         .slice(0, 3)
         .map((o) => o.statement)
         .join('\n'),
-      explanation: `${joinList(ops.slice(0, 3).map((o) => o.operation.replace('-', ' ')))} cannot be undone without a backup, and code still running the previous version during deploy may break.`,
-      suggestion:
-        'Use an expand/contract rollout (stop using the column first, drop it in a later release) and confirm backups.',
+      explanation: say('explanation', {
+        operations: listOf(
+          language ?? 'en',
+          ops.slice(0, 3).map((o) => t(language ?? 'en', `reading.operation.${o.operation}`)),
+        ),
+      }),
+      suggestion: say('suggestion'),
     }));
   },
 };
@@ -199,7 +212,8 @@ export const destructiveMigration: Rule = {
 export const schemaWithoutMigration: Rule = {
   id: 'schema-without-migration',
   checks: 'ORM schema changes without a migration',
-  run({ files }) {
+  run({ files, language }) {
+    const say = messages(language, 'schema-without-migration');
     const out: FindingInput[] = [];
     const migrationAdded = (dir: RegExp) =>
       files.some((f) => f.status === 'added' && dir.test(f.path));
@@ -207,14 +221,14 @@ export const schemaWithoutMigration: Rule = {
       (f) => /(^|\/)schema\.prisma$/.test(f.path) && f.status !== 'deleted',
     );
     if (prisma && prismaModelChanged(prisma) && !migrationAdded(/prisma\/migrations\//)) {
-      out.push(missingMigration(prisma, 'Prisma schema'));
+      out.push(missingMigration(prisma, say('prisma'), say));
     }
     for (const f of files.filter((x) => /(^|\/)models\.py$/.test(x.path))) {
       const fieldChange = f.hunks.some((h) =>
         h.lines.some((l) => l.kind !== 'context' && /=\s*models\.\w+\(/.test(l.text)),
       );
       if (fieldChange && !migrationAdded(/(^|\/)migrations\/\d+_[\w]+\.py$/))
-        out.push(missingMigration(f, 'Django model'));
+        out.push(missingMigration(f, say('django'), say));
     }
     return out;
   },
@@ -229,17 +243,20 @@ function prismaModelChanged(file: ChangedFile): boolean {
   );
 }
 
-function missingMigration(file: ChangedFile, kind: string): FindingInput {
+function missingMigration(
+  file: ChangedFile,
+  kind: string,
+  say: ReturnType<typeof messages>,
+): FindingInput {
   const line = file.hunks.flatMap((h) => h.lines).find((l) => l.kind === 'add')?.newLine;
   return {
-    title: `${kind} changed without a migration`,
+    title: say('title', { kind }),
     certainty: 'likely',
     severity: 'medium',
     category: 'data-integrity',
     location: { path: file.path, line },
-    evidence: `${file.path} changes model fields, and no migration file is added in this change.`,
-    explanation:
-      'Deployed databases keep the old schema, so queries for the new fields fail at runtime.',
-    suggestion: 'Generate and commit the migration alongside the schema change.',
+    evidence: say('evidence', { path: file.path }),
+    explanation: say('explanation'),
+    suggestion: say('suggestion'),
   };
 }

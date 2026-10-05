@@ -1,6 +1,7 @@
+import { listOf, t } from '../../i18n/catalog.ts';
 import type { FindingInput } from '../../model/finding.ts';
-import { code, joinList, plural } from '../../util/text.ts';
-import type { Rule } from './types.ts';
+import { code } from '../../util/text.ts';
+import { messages, type Rule } from './types.ts';
 
 const LOCKFILES: Record<string, string[]> = {
   'package.json': [
@@ -20,7 +21,8 @@ const LOCKFILES: Record<string, string[]> = {
 export const lockfileOutOfSync: Rule = {
   id: 'lockfile-out-of-sync',
   checks: 'dependency manifests changed without their lockfile',
-  async run({ context, files, reader }) {
+  async run({ context, files, reader, language }) {
+    const say = messages(language, 'lockfile-out-of-sync');
     const out: FindingInput[] = [];
     const manifests = new Set(
       context.dependencies
@@ -47,15 +49,20 @@ export const lockfileOutOfSync: Rule = {
       if (!present) continue;
       const deps = context.dependencies.filter((d) => d.manifest === manifest);
       out.push({
-        title: `${manifest} changed but ${present} did not`,
+        title: say('title', { manifest, lockfile: present }),
         certainty: 'likely',
         severity: 'medium',
         category: 'dependency',
         location: { path: manifest },
-        evidence: `Dependency changes (${joinList(deps.slice(0, 4).map((d) => code(`${d.name}${d.to ? `@${d.to}` : ''}`)))}) with no update to ${present}.`,
-        explanation:
-          'Reproducible installs (npm ci, cargo build --locked, …) will fail or resolve versions different from the ones that were tested.',
-        suggestion: `Run the package manager's install and commit the updated ${present}.`,
+        evidence: say('evidence', {
+          dependencies: listOf(
+            language ?? 'en',
+            deps.slice(0, 4).map((d) => code(`${d.name}${d.to ? `@${d.to}` : ''}`)),
+          ),
+          lockfile: present,
+        }),
+        explanation: say('explanation'),
+        suggestion: say('suggestion', { lockfile: present }),
       });
     }
     return out;
@@ -65,15 +72,16 @@ export const lockfileOutOfSync: Rule = {
 export const majorDependencyUpgrade: Rule = {
   id: 'major-dependency-upgrade',
   checks: 'major-version dependency upgrades',
-  run({ context }) {
+  run({ context, language }) {
+    const say = messages(language, 'major-dependency-upgrade');
     const majors = context.dependencies.filter((d) => d.major && !d.dev);
     if (majors.length === 0) return [];
     return [
       {
         title:
           majors.length === 1
-            ? `Major upgrade of ${majors[0]!.name}`
-            : `${majors.length} major dependency upgrades`,
+            ? say('title', { name: majors[0]!.name })
+            : say('titleMany', { count: majors.length }),
         certainty: 'risk',
         severity: 'low',
         category: 'dependency',
@@ -82,10 +90,8 @@ export const majorDependencyUpgrade: Rule = {
           .slice(0, 5)
           .map((d) => `${d.name}: ${d.from} → ${d.to}`)
           .join('\n'),
-        explanation:
-          'Major versions are where libraries make breaking changes; behavior can change even when the code compiles.',
-        suggestion:
-          'Skim the release notes for breaking changes that affect how this project uses the package.',
+        explanation: say('explanation'),
+        suggestion: say('suggestion'),
       },
     ];
   },
@@ -94,7 +100,8 @@ export const majorDependencyUpgrade: Rule = {
 export const envVarUndocumented: Rule = {
   id: 'env-var-undocumented',
   checks: 'new environment variables missing from env examples',
-  async run({ context, reader }) {
+  async run({ context, reader, language }) {
+    const say = messages(language, 'env-var-undocumented');
     const missing = context.envVars.filter((e) => e.change === 'added' && !e.documented);
     if (missing.length === 0) return [];
     // Only meaningful when the repository documents its environment somewhere.
@@ -115,16 +122,22 @@ export const envVarUndocumented: Rule = {
       {
         title:
           missing.length === 1
-            ? `New environment variable ${first.name} is not documented`
-            : `${missing.length} new environment variables are not documented`,
+            ? say('title', { name: first.name })
+            : say('titleMany', { count: missing.length }),
         certainty: 'risk',
         severity: 'low',
         category: 'configuration',
         location: { path: first.path, line: first.line },
-        evidence: `${joinList(missing.map((e) => code(e.name)))} ${missing.length === 1 ? 'is' : 'are'} read by the code but missing from ${examples[0]!.path}.`,
-        explanation:
-          'Deployments and teammates rely on the example file to know what to set; a missing variable usually surfaces as a runtime failure.',
-        suggestion: `Add ${missing.length === 1 ? 'it' : 'them'} to ${examples[0]!.path} with a safe placeholder value.`,
+        evidence: say('evidence', {
+          count: missing.length,
+          names: listOf(
+            language ?? 'en',
+            missing.map((e) => code(e.name)),
+          ),
+          file: examples[0]!.path,
+        }),
+        explanation: say('explanation'),
+        suggestion: say('suggestion', { count: missing.length, file: examples[0]!.path }),
       },
     ];
   },
@@ -133,7 +146,8 @@ export const envVarUndocumented: Rule = {
 export const missingTests: Rule = {
   id: 'missing-tests',
   checks: 'behavior changes without accompanying tests',
-  run({ context, files }) {
+  run({ context, files, language }) {
+    const say = messages(language, 'missing-tests');
     const { tests, intent } = context;
     if (
       !tests.repoHasTests ||
@@ -149,18 +163,21 @@ export const missingTests: Rule = {
     const bugFix = intent.kind === 'bug-fix';
     return [
       {
-        title: bugFix ? 'Bug fix without a regression test' : 'Behavior change without tests',
+        title: say(bugFix ? 'titleBugFix' : 'title'),
         certainty: 'risk',
         severity: bugFix ? 'medium' : 'low',
         category: 'testing',
         location: { path: untested[0]!.path },
-        evidence: `${plural(untested.length, 'source file')} changed (${lines} added lines) and no test files changed: ${joinList(untested.slice(0, 3).map((f) => code(f.path)))}.`,
-        explanation: bugFix
-          ? 'Without a test that fails before the fix, the bug can quietly return.'
-          : 'New behavior without tests is easy to break in later changes.',
-        suggestion: bugFix
-          ? 'Add a test that reproduces the original bug.'
-          : 'Add tests for the main paths of the new behavior.',
+        evidence: say('evidence', {
+          files: say('sourceFiles', { count: untested.length }),
+          lines,
+          list: listOf(
+            language ?? 'en',
+            untested.slice(0, 3).map((f) => code(f.path)),
+          ),
+        }),
+        explanation: say(bugFix ? 'explanationBugFix' : 'explanation'),
+        suggestion: say(bugFix ? 'suggestionBugFix' : 'suggestion'),
       },
     ];
   },
@@ -169,19 +186,20 @@ export const missingTests: Rule = {
 export const intentMismatch: Rule = {
   id: 'intent-mismatch',
   checks: 'mismatch between the stated intent and what the change does',
-  run({ context }) {
+  run({ context, language }) {
+    const say = messages(language, 'intent-mismatch');
     const ambiguity = context.intent.ambiguity;
-    if (!ambiguity?.startsWith('Described as')) return [];
+    const mismatch = context.intent.mismatch ?? ambiguity?.startsWith('Described as');
+    if (!ambiguity || !mismatch) return [];
     return [
       {
-        title: `Change is described as ${context.intent.kind.replace('-', ' ')} but changes behavior`,
+        title: say('title', { kind: t(language ?? 'en', `intent.kind.${context.intent.kind}`) }),
         certainty: 'question',
         severity: 'low',
         category: 'intent-mismatch',
         evidence: [ambiguity, ...context.intent.evidence.slice(0, 2)].join('\n'),
-        explanation:
-          'Reviewers calibrate how closely they read based on the description; an unannounced behavior change is easy to miss.',
-        suggestion: 'Confirm the behavior change is intended and mention it in the description.',
+        explanation: say('explanation'),
+        suggestion: say('suggestion'),
       },
     ];
   },

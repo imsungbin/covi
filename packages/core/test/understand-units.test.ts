@@ -363,4 +363,29 @@ describe('groupAreas', () => {
     expect(areas.length).toBeLessThanOrEqual(8);
     expect(areas.flatMap((a) => a.files).sort()).toEqual(files.map((f) => f.path).sort());
   });
+
+  it('names the root, GitHub, and catch-all areas in the run language', async () => {
+    const { groupAreas } = await import('../src/understand/areas.ts');
+    const file = (path: string) =>
+      ({
+        path,
+        status: 'modified',
+        binary: false,
+        additions: 1,
+        deletions: 0,
+        hunks: [],
+        category: 'config',
+        surfaces: [],
+        ignored: false,
+      }) as ChangedFile;
+    const files = [file('package.json'), file('README.md'), file('.github/workflows/ci.yml')];
+    const names = (language: 'en' | 'ko' | 'ja' | 'zh') =>
+      groupAreas(files, 8, language)
+        .map((a) => a.name)
+        .sort();
+    expect(names('en')).toEqual(['GitHub configuration', 'project root']);
+    expect(names('ko')).toEqual(['GitHub 설정', '프로젝트 루트']);
+    expect(names('ja')).toEqual(['GitHub の設定', 'プロジェクトのルート']);
+    expect(names('zh')).toEqual(['GitHub 配置', '项目根目录']);
+  });
 });

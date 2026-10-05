@@ -9,6 +9,12 @@ languageName:
   ja: Japanese
   zh: Simplified Chinese
 
+# Names of change areas Covi groups files into.
+area:
+  root: project root
+  github: GitHub configuration
+  other: other files
+
 verdict:
   looks-good: Looks good
   needs-attention: Needs attention

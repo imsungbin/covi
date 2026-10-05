@@ -1,3 +1,5 @@
+import { t } from '../i18n/catalog.ts';
+import type { Language } from '../i18n/language.ts';
 import type { ChangedFile, Surface } from '../model/change.ts';
 import type { Area } from '../model/context.ts';
 import { shortHash } from '../util/hash.ts';
@@ -49,7 +51,11 @@ export function areaKey(path: string): string {
   return out.join('/') || parts[0]!;
 }
 
-export function groupAreas(files: readonly ChangedFile[], maxAreas = 8): Area[] {
+export function groupAreas(
+  files: readonly ChangedFile[],
+  maxAreas = 8,
+  language: Language = 'en',
+): Area[] {
   const groups = new Map<string, ChangedFile[]>();
   for (const f of files) {
     const key = areaKey(f.path);
@@ -74,7 +80,7 @@ export function groupAreas(files: readonly ChangedFile[], maxAreas = 8): Area[] 
       for (const f of group) for (const s of f.surfaces) surfaces.add(s);
       return {
         id: shortHash(key).slice(0, 8),
-        name: displayName(key, group),
+        name: displayName(key, group, language),
         path: key,
         surfaces: [...surfaces],
         files: group.map((f) => f.path),
@@ -89,9 +95,9 @@ function weight(files: readonly ChangedFile[]): number {
   return files.reduce((n, f) => n + f.additions + f.deletions + 1, 0);
 }
 
-function displayName(key: string, files: readonly ChangedFile[]): string {
-  if (key === '(root)') return files.length === 1 ? files[0]!.path : 'project root';
-  if (key === '.github') return 'GitHub configuration';
-  if (key === 'other') return 'other files';
+function displayName(key: string, files: readonly ChangedFile[], language: Language): string {
+  if (key === '(root)') return files.length === 1 ? files[0]!.path : t(language, 'area.root');
+  if (key === '.github') return t(language, 'area.github');
+  if (key === 'other') return t(language, 'area.other');
   return key;
 }

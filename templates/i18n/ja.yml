@@ -7,6 +7,12 @@ languageName:
   ja: 日本語
   zh: 中国語（簡体字）
 
+# Names of change areas Covi groups files into.
+area:
+  root: プロジェクトのルート
+  github: GitHub の設定
+  other: その他のファイル
+
 verdict:
   looks-good: 問題なし
   needs-attention: 要確認

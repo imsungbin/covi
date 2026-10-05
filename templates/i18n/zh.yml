@@ -7,6 +7,12 @@ languageName:
   ja: 日语
   zh: 简体中文
 
+# Names of change areas Covi groups files into.
+area:
+  root: 项目根目录
+  github: GitHub 配置
+  other: 其他文件
+
 verdict:
   looks-good: 没有问题
   needs-attention: 需要关注

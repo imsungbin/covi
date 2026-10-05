@@ -85,7 +85,7 @@ export async function understandChange(
     hasDataChanges: data.length > 0,
     language,
   });
-  const areas = groupAreas(files);
+  const areas = groupAreas(files, 8, language);
   size.areas = areas.length;
   const repo = await repoShape(reader);
   const demonstration = assessDemonstration({

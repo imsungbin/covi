@@ -88,6 +88,8 @@ export class Stage {
   private progress: HTMLDivElement[] = [];
   private blinkTimes: number[] = [];
   private imagesOk = true;
+  /** Families of declared font faces that failed to load. */
+  private fontsFailed: string[] = [];
   private lastFrame = 0;
 
   constructor(root: HTMLElement, timeline: Timeline) {
@@ -109,6 +111,10 @@ export class Stage {
     });
     await Promise.all(faces.map((face) => face.load().catch(() => undefined)));
     await document.fonts.ready;
+    // Text whose face did not load falls back to the machine's fonts: other shapes and metrics,
+    // or boxes on a runner without CJK fonts. QC fails the render instead of shipping that.
+    const failed = faces.filter((face) => face.status === 'error');
+    this.fontsFailed = [...new Set(failed.map((face) => face.family.replace(/^["']|["']$/g, '')))];
     const t = this.timeline;
     const r = this.regions;
     const u = (n: number) => n * r.unit;
@@ -299,6 +305,7 @@ export class Stage {
       items: active ? active.component.report() : [],
       narrator: Number(this.narrator.style.opacity) > 0.05 ? rectOf(this.narrator) : undefined,
       imagesLoaded: this.imagesOk,
+      fontsFailed: this.fontsFailed.length ? this.fontsFailed : undefined,
     };
   }
 }

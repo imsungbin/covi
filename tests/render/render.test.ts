@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseConfigInput, resolveConfig } from '@covi/core';
@@ -123,81 +123,100 @@ describe.skipIf(!available)('rendering', () => {
     expect(readFileSync(result.contactSheet!).length).toBeGreaterThan(1000);
   });
 
-  for (const [language, narration, title] of [
-    [
-      'ja',
+  const CJK = {
+    ja: [
       'この変更は、カートの数量がゼロ未満にならないようにします。CLIのテストも追加しました。',
       'カートの数量をゼロで止める',
     ],
-    [
-      'zh',
+    zh: [
       '这个改动让购物车数量不会低于零。还为命令行工具 CLI 添加了测试，“结算”按钮保持不变。',
       '购物车数量最低为零',
     ],
-  ] as const) {
-    it(`renders ${language} captions inside the frame with the bundled fonts`, async () => {
-      const dir = mkdtempSync(join(tmpdir(), `covi-render-${language}-`));
-      dirs.push(dir);
-      const { config } = resolveConfig([
-        {
-          name: 'explicit',
-          values: parseConfigInput(
-            { video: { mode: 'custom', width: 360, height: 640, fps: 10, duration: 8 } },
-            't',
-          ),
-        },
-      ]);
-      const spec = resolveVideoSpec(config);
-      const scenes = StoryboardSchema.parse({
-        ...storyboard,
-        language,
-        title,
-        scenes: storyboard.scenes.map((s, i) =>
-          i === 0
-            ? { ...s, narration, visual: { kind: 'title', title, meta: ['acme/shop'] } }
-            : i === 2
-              ? { ...s, narration, visual: { ...s.visual, headline: title } }
-              : s,
+  } as const;
+
+  /** Renders a short Japanese or Chinese video; `breakFonts` deletes its Noto slices first. */
+  async function renderCjk(language: keyof typeof CJK, options: { breakFonts?: boolean } = {}) {
+    const [narration, title] = CJK[language];
+    const dir = mkdtempSync(join(tmpdir(), `covi-render-${language}-`));
+    dirs.push(dir);
+    const { config } = resolveConfig([
+      {
+        name: 'explicit',
+        values: parseConfigInput(
+          { video: { mode: 'custom', width: 360, height: 640, fps: 10, duration: 8 } },
+          't',
         ),
-      }).scenes;
-      const layout = layoutScenes(scenes, new Map(), new Map(), language);
-      const timeline = buildTimeline({
-        title,
-        scenes,
-        layout,
-        spec,
-        image: new AssetCollector(dir).image,
-        language,
-      });
+      },
+    ]);
+    const spec = resolveVideoSpec(config);
+    const scenes = StoryboardSchema.parse({
+      ...storyboard,
+      language,
+      title,
+      scenes: storyboard.scenes.map((s, i) =>
+        i === 0
+          ? { ...s, narration, visual: { kind: 'title', title, meta: ['acme/shop'] } }
+          : i === 2
+            ? { ...s, narration, visual: { ...s.visual, headline: title } }
+            : s,
+      ),
+    }).scenes;
+    const layout = layoutScenes(scenes, new Map(), new Map(), language);
+    const timeline = buildTimeline({
+      title,
+      scenes,
+      layout,
+      spec,
+      image: new AssetCollector(dir).image,
+      language,
+    });
+    const composition = join(dir, 'composition');
+    await writeComposition(composition, timeline, new Map());
+    const html = readFileSync(join(composition, 'index.html'), 'utf8');
+    const fonts = join(composition, 'assets', 'fonts');
+    if (options.breakFonts)
+      for (const file of readdirSync(fonts))
+        if (file.startsWith('noto-sans-')) rmSync(join(fonts, file));
+    const media = await Media.locate();
+    const out = join(dir, 'video.mp4');
+    const result = await renderComposition({
+      compositionDir: composition,
+      output: out,
+      timeline,
+      media,
+      workers: 2,
+    });
+    const qc = await runQc({
+      video: out,
+      spec,
+      timeline,
+      layouts: result.layouts,
+      narrated: false,
+      media,
+    });
+    return { timeline, html, result, qc };
+  }
+
+  for (const language of ['ja', 'zh'] as const) {
+    it(`renders ${language} captions inside the frame with the bundled fonts`, async () => {
+      const { timeline, html, result, qc } = await renderCjk(language);
       expect(timeline.fonts.cjk?.[0]).toBe(language);
-      const composition = join(dir, 'composition');
-      await writeComposition(composition, timeline, new Map());
-      const html = readFileSync(join(composition, 'index.html'), 'utf8');
       expect(html).toContain(`<html lang="${language === 'zh' ? 'zh-Hans' : 'ja'}">`);
       expect(html).toContain(language === 'zh' ? 'Noto Sans SC Variable' : 'Noto Sans JP Variable');
-      const media = await Media.locate();
-      const out = join(dir, 'video.mp4');
-      const result = await renderComposition({
-        compositionDir: composition,
-        output: out,
-        timeline,
-        media,
-        workers: 2,
-      });
       expect(result.pageErrors).toEqual([]);
-      const qc = await runQc({
-        video: out,
-        spec,
-        timeline,
-        layouts: result.layouts,
-        narrated: false,
-        media,
-      });
       const failing = qc.checks.filter((c) => c.status === 'fail' && c.id !== 'duration');
       expect(failing).toEqual([]);
       expect(qc.checks.find((c) => c.id === 'text-fits')!.status).toBe('pass');
+      expect(qc.checks.find((c) => c.id === 'fonts')!.status).toBe('pass');
     });
   }
+
+  it('fails QC when a bundled font does not load', async () => {
+    const { qc } = await renderCjk('ja', { breakFonts: true });
+    const fonts = qc.checks.find((c) => c.id === 'fonts')!;
+    expect(fonts.status).toBe('fail');
+    expect(fonts.message).toMatch(/Noto Sans JP Variable did not load/);
+  });
 
   it('is deterministic: the same timeline renders the same frame bytes', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'covi-det-'));

@@ -131,6 +131,18 @@ describe('per-language QC', () => {
     expect(timingChecks(rushed)[1]!.status).toBe('warn');
   });
 
+  it('fails when a bundled font did not load', () => {
+    const fonts = (fontsFailed?: string[]) =>
+      layoutChecks(timelineOf('ja', []), [
+        { frame: 3, items: [], imagesLoaded: true, fontsFailed },
+      ]).find((c) => c.id === 'fonts')!;
+    expect(fonts().status).toBe('pass');
+    expect(fonts(['Noto Sans JP Variable'])).toMatchObject({
+      status: 'fail',
+      message: expect.stringMatching(/Noto Sans JP Variable did not load/),
+    });
+  });
+
   it('fails when a caption line is wider than its box', () => {
     const report: LayoutReport = {
       frame: 12,

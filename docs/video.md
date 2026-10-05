@@ -468,6 +468,7 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | `text-fits` | No text element overflows its box | warn |
 | `narrator-clear-of-content` | The narrator never overlaps content | warn |
 | `images` | Every image loaded in the composition | fail |
+| `fonts` | Every bundled font face loaded, so no text fell back to the machine's fonts (boxes on a runner without CJK fonts) | fail |
 | `caption-timing` | No cue overlaps the next, reads faster than the language's limit, or lasts less than 0.7 s. Limits, in characters per second: English 24 (counting spaces), Korean 17, Chinese 13, Japanese 8 (not counting spaces; a half-width character such as a Latin letter counts half) | fail on overlap; warn on fast or short cues |
 | `narration-pace` | No scene's narration is faster than 4.2 words per second in English, 7.5 syllables per second in Korean, 7 characters per second in Japanese, or 5.5 in Chinese, counted with `Intl.Segmenter` on the text the voice was given | warn |
 | `speech-acronyms` | Non-English narration: the text sent to the voice has no all-caps Latin token left (outside URLs, e-mail addresses, and versions). Names the scene and the token | warn: write the spoken form in `say` or add a pronunciation |

@@ -66,8 +66,10 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
   const overflow = new Set<string>();
   const narratorOverlap = new Set<string>();
   let imagesLoaded = true;
+  const fontsFailed = new Set<string>();
   for (const report of layouts) {
     imagesLoaded &&= report.imagesLoaded;
+    for (const family of report.fontsFailed ?? []) fontsFailed.add(family);
     if (report.captions) {
       if (!within(report.captions, frame)) outside.push(report.frame);
       if (report.captionOverflow) spilled.push(report.frame);
@@ -145,6 +147,15 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
           status: 'fail',
           message: 'At least one image failed to load in the composition.',
         },
+  );
+  checks.push(
+    fontsFailed.size
+      ? {
+          id: 'fonts',
+          status: 'fail',
+          message: `The bundled font ${[...fontsFailed].join(', ')} did not load, so text fell back to this machine's fonts (boxes where it has none).`,
+        }
+      : { id: 'fonts', status: 'pass', message: 'Every bundled font loaded.' },
   );
   return checks;
 }

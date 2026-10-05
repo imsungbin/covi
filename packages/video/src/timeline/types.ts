@@ -195,6 +195,8 @@ export interface LayoutReport {
   items: LayoutItem[];
   narrator?: Rect;
   imagesLoaded: boolean;
+  /** Font families with a declared face that failed to load. */
+  fontsFailed?: string[];
 }
 
 /** The API a composition page exposes on `window.covi`. */

@@ -58,7 +58,7 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
 .progress .fill { position: absolute; inset: 0; transform-origin: left center; background: ${c.primary}; border-radius: 99px; }
 
 .narrator { position: absolute; will-change: transform, opacity; filter: drop-shadow(0 ${u(6)} ${u(14)} rgba(31,36,48,0.18)); }
-.narrator svg { width: 100%; height: 100%; display: block; }
+.narrator svg { width: 100%; height: 100%; display: block; overflow: visible; }
 
 .captions { position: absolute; display: flex; justify-content: center; align-items: flex-start; pointer-events: none; }
 .caption-box { display: inline-block; max-width: 100%; background: ${c.captionBackground}; color: ${c.captionText};

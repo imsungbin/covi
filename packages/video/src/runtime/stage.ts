@@ -1,5 +1,5 @@
-import { foxPose, foxSvg } from '@covi/brand';
-import type { LayoutReport, Timeline, TimelineScene } from '../timeline/types.ts';
+import { blendPoses, type FoxOptions, foxPose, foxSvg, type Pose } from '@covi/brand';
+import type { LayoutReport, Rect, Timeline, TimelineScene } from '../timeline/types.ts';
 import { clamp, easeInOutCubic, easeOutCubic, seeded, seg, spring } from './anim.ts';
 import { summary, title } from './components/cards.ts';
 import {
@@ -17,13 +17,45 @@ import {
 import { type Component, type ComponentContext, rectOf } from './components/types.ts';
 import { el, fitText, place } from './dom.ts';
 import { computeRegions, type Regions } from './layout.ts';
+import {
+  aimAt,
+  clearAim,
+  fitTail,
+  type NarratorPlacement,
+  narratorParts,
+  toFox,
+  union,
+} from './narrator.ts';
 import { stylesheet } from './styles.ts';
 
 interface MountedScene {
   scene: TimelineScene;
+  index: number;
   root: HTMLDivElement;
   header?: HTMLDivElement;
   component: Component;
+  /** The header's text as laid out (stage pixels): the narrator's tail stays off it. */
+  headerText: Rect[];
+}
+
+/**
+ * Boxes around each line of an element's visible text, as laid out (without transforms). Text
+ * that overflows is clipped to the element's box, as it is drawn.
+ */
+function textBoxes(node: HTMLElement, fromLeftEdge = false): Rect[] {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  const box = node.getBoundingClientRect();
+  return [...range.getClientRects()]
+    .map((r) => {
+      // The eyebrow's dot sits before its text, so its box starts at the element's edge.
+      const left = fromLeftEdge ? box.left : Math.max(box.left, r.left);
+      const right = Math.min(box.right, r.right);
+      const top = Math.max(box.top, r.top);
+      const bottom = Math.min(box.bottom, r.bottom);
+      return { x: left, y: top, width: right - left, height: bottom - top };
+    })
+    .filter((r) => r.width > 0 && r.height > 0);
 }
 
 function mountComponent(scene: TimelineScene, ctx: ComponentContext): Component {
@@ -56,8 +88,7 @@ function mountComponent(scene: TimelineScene, ctx: ComponentContext): Component 
   }
 }
 
-/** Where the narrator looks for each kind of scene: toward the content it is talking about. */
-/** Scenes whose content the narrator points at (it leans toward the highlighted part). */
+/** Scenes whose content the narrator points at with its tail. */
 const POINTS_AT = new Set<TimelineScene['visual']['kind']>([
   'code',
   'screenshot',
@@ -70,10 +101,16 @@ const POINTS_AT = new Set<TimelineScene['visual']['kind']>([
   'change-map',
 ]);
 
+/** Where the narrator looks when nothing in the scene is highlighted: toward the content. */
 function gazeFor(scene: TimelineScene, vertical: boolean): { x: number; y: number } {
   if (scene.visual.kind === 'title' || scene.visual.kind === 'summary') return { x: 0, y: 0 };
   return vertical ? { x: -0.55, y: 0.75 } : { x: -0.7, y: 0.45 };
 }
+
+/** The fox's eyes in view-box units; gaze is measured from here. */
+const EYES = { x: 70, y: 52 };
+/** Room kept between the tail and what it must not cover, in view-box units. */
+const TAIL_MARGIN = 4;
 
 export class Stage {
   readonly timeline: Timeline;
@@ -91,6 +128,8 @@ export class Stage {
   /** Families of declared font faces that failed to load. */
   private fontsFailed: string[] = [];
   private lastFrame = 0;
+  /** The narrator's pose and placement in the last frame drawn, for the layout report. */
+  private drawn?: { fox: FoxOptions; placement: NarratorPlacement };
 
   constructor(root: HTMLElement, timeline: Timeline) {
     this.root = root;
@@ -128,16 +167,17 @@ export class Stage {
       this.progress.push(el('div', 'fill', segEl));
     }
 
-    for (const scene of t.scenes) {
+    for (const [index, scene] of t.scenes.entries()) {
       const root = el('div', 'scene', this.root);
       root.dataset.scene = scene.id;
       const ctx: ComponentContext = { timeline: t, regions: r, u, root };
       const component = mountComponent(scene, ctx);
       let header: HTMLDivElement | undefined;
+      const headerText: Rect[] = [];
       if (component.header !== false) {
         header = el('div', 'scene-header', root);
         place(header, r.header);
-        el('div', 'eyebrow', header, scene.eyebrow);
+        const eyebrow = el('div', 'eyebrow', header, scene.eyebrow);
         if (scene.heading) {
           const h = el('div', 'heading', header, scene.heading);
           fitText(h, {
@@ -146,9 +186,11 @@ export class Stage {
             maxHeight: r.header.height - u(50),
             maxWidth: r.header.width,
           });
+          headerText.push(...textBoxes(h));
         }
+        headerText.push(...textBoxes(eyebrow, true));
       }
-      this.scenes.push({ scene, root, header, component });
+      this.scenes.push({ scene, index, root, header, component, headerText });
     }
 
     this.narrator = el('div', 'narrator', this.root);
@@ -191,13 +233,76 @@ export class Stage {
     return 0;
   }
 
+  /** The narrator's pose for one scene at this moment (a pure function of the frame). */
+  private poseFor(
+    m: MountedScene,
+    time: number,
+    frame: number,
+    mouth: number,
+    blink: number,
+  ): Pose {
+    const { scene } = m;
+    const t = time - scene.start;
+    const duration = scene.end - scene.start;
+    const pointing = POINTS_AT.has(scene.visual.kind);
+    const target = pointing
+      ? m.component.target?.({ t, duration, p: clamp(t / duration), frame, fox: { mouth, blink } })
+      : undefined;
+    const { aim, reach, gaze } = this.aimFor(m, target);
+    return foxPose({
+      expression: scene.expression,
+      t,
+      time,
+      mouth,
+      blink,
+      gaze,
+      pointing,
+      aim,
+      reach,
+      seed: this.timeline.seed,
+    });
+  }
+
+  /**
+   * Where the narrator looks and points in a scene: at the highlighted target when there is one,
+   * else toward the content. The tail may leave the narrator's box only into empty space, so it
+   * takes the nearest direction that keeps it off the header text, captions, and media region.
+   */
+  private aimFor(
+    m: MountedScene,
+    target: Rect | undefined,
+  ): { aim: number; reach: number; gaze: { x: number; y: number } } {
+    const placement = this.regions.narrator;
+    let gaze = gazeFor(m.scene, this.timeline.orientation === 'vertical');
+    let desired = Math.atan2(gaze.y, gaze.x) * (180 / Math.PI);
+    if (target) {
+      const box = toFox(target, placement);
+      const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      const dx = point.x - EYES.x;
+      const dy = point.y - EYES.y;
+      const length = Math.hypot(dx, dy) || 1;
+      gaze = { x: (dx / length) * 0.9, y: (dy / length) * 0.9 };
+      desired = aimAt(point);
+    }
+    const r = this.regions;
+    const keepOut = [...m.headerText, r.captions, r.media, r.progress].map((rect) => {
+      const box = toFox(rect, placement);
+      return {
+        x: box.x - TAIL_MARGIN,
+        y: box.y - TAIL_MARGIN,
+        width: box.width + 2 * TAIL_MARGIN,
+        height: box.height + 2 * TAIL_MARGIN,
+      };
+    });
+    return { ...clearAim(desired, keepOut), gaze };
+  }
+
   seek(frame: number): void {
     const t = this.timeline;
     const time = frame / t.fps;
     this.lastFrame = frame;
     const mouth = t.mouth[frame] ?? 0;
     const blink = this.blink(time);
-    let lead: { scene: TimelineScene; weight: number } | undefined;
 
     this.scenes.forEach((m, i) => {
       const { scene } = m;
@@ -233,36 +338,44 @@ export class Stage {
           heading.style.transform = `translateY(${((1 - e) * 14 * this.regions.unit).toFixed(2)}px)`;
         }
       }
-      if (!lead || presence > lead.weight) lead = { scene, weight: presence };
     });
 
     // Narrator: present in scenes that do not feature the fox themselves.
-    if (lead && t.mascot) {
-      const scene = lead.scene;
-      const shown = this.scenes
-        .filter((m) => m.scene.narrator && time >= m.scene.start && time <= m.scene.end)
-        .reduce((w, m) => Math.max(w, Number(m.root.style.opacity)), 0);
-      this.narrator.style.opacity = shown.toFixed(3);
-      if (shown > 0.001) {
-        const local = time - scene.start;
-        const enter = clamp(spring(local, 2.4, 7), 0, 1.06);
-        const bob = Math.sin(time * 2.1 + t.seed) * 1.2;
-        const pose = foxPose({
-          expression: scene.expression,
-          t: local,
-          time,
-          mouth,
-          blink,
-          gaze: gazeFor(scene, t.orientation === 'vertical'),
-          pointing: POINTS_AT.has(scene.visual.kind),
-          seed: t.seed,
-        });
-        const px = this.regions.narrator.size / 128;
-        this.narrator.style.transform = `translate(${(pose.lean.x * px).toFixed(2)}px, ${bob.toFixed(2)}px) rotate(${pose.lean.rotate.toFixed(2)}deg) scale(${(0.9 + 0.1 * enter).toFixed(4)})`;
-        this.narrator.innerHTML = foxSvg({ ...pose.fox, size: this.regions.narrator.size });
-      }
-    } else {
-      this.narrator.style.opacity = '0';
+    const narrated = this.scenes.filter(
+      (m) => m.scene.narrator && m.root.style.display === 'block',
+    );
+    const shown = narrated.reduce((w, m) => Math.max(w, Number(m.root.style.opacity)), 0);
+    this.narrator.style.opacity = t.mascot ? shown.toFixed(3) : '0';
+    this.drawn = undefined;
+    const current = narrated.at(-1);
+    if (t.mascot && current && shown > 0.001) {
+      // The incoming scene leads; across a cut the pose eases out of the outgoing one.
+      const previous = narrated.at(-2);
+      let pose = this.poseFor(current, time, frame, mouth, blink);
+      if (previous)
+        pose = blendPoses(
+          this.poseFor(previous, time, frame, mouth, blink),
+          pose,
+          easeInOutCubic(seg(time, current.scene.start, current.scene.start + t.transition)),
+        );
+      // The narrator springs in when it appears, not between scenes it narrates in a row.
+      const appears = !this.scenes[current.index - 1]?.scene.narrator;
+      const enter = appears ? clamp(spring(time - current.scene.start, 2.4, 7), 0, 1.06) : 1;
+      const placement: NarratorPlacement = {
+        ...this.regions.narrator,
+        bob: Math.sin(time * 2.1 + t.seed) * 1.2,
+        scale: 0.9 + 0.1 * enter,
+      };
+      // Whatever the tail is doing, it leaves the box only into empty space.
+      const r = this.regions;
+      const fox = fitTail(
+        pose.fox,
+        [...narrated.flatMap((m) => m.headerText), r.captions, r.media, r.progress],
+        placement,
+      );
+      this.narrator.style.transform = `translate(0px, ${placement.bob!.toFixed(2)}px) scale(${placement.scale!.toFixed(4)})`;
+      this.narrator.innerHTML = foxSvg({ ...fox, size: r.narrator.size, theme: t.theme.name });
+      this.drawn = { fox, placement };
     }
 
     // Captions.
@@ -294,6 +407,11 @@ export class Stage {
     const shown =
       Boolean(this.captionBox.textContent) && Number(this.captionBox.style.opacity) > 0.05;
     const active = this.scenes.find((m) => time >= m.scene.start && time < m.scene.end);
+    // The fox as drawn, tail included: it can reach past its box when it points.
+    const parts =
+      this.drawn && Number(this.narrator.style.opacity) > 0.05
+        ? narratorParts(this.drawn.fox, this.drawn.placement)
+        : undefined;
     return {
       frame: this.lastFrame,
       scene: active?.scene.id,
@@ -303,7 +421,9 @@ export class Stage {
           this.captionBox.scrollWidth > this.captionBox.clientWidth + 2
         : undefined,
       items: active ? active.component.report() : [],
-      narrator: Number(this.narrator.style.opacity) > 0.05 ? rectOf(this.narrator) : undefined,
+      narrator: parts ? union(parts) : undefined,
+      narratorParts: parts,
+      headerText: active?.headerText.length ? active.headerText : undefined,
       imagesLoaded: this.imagesOk,
       fontsFailed: this.fontsFailed.length ? this.fontsFailed : undefined,
     };

@@ -2,6 +2,7 @@ import { LANGUAGE_NAME } from '@covi/core';
 import { localeLanguage, type SpeechRecord, unspokenAcronyms } from './narration/speech.ts';
 import { suggestedVoice } from './narration/tts.ts';
 import type { Media } from './render/ffmpeg.ts';
+import { computeRegions } from './runtime/layout.ts';
 import type { VideoSpec } from './spec.ts';
 import { CAPTION_SPEED_LIMIT, captionCharacters, PACE_LIMIT, speechUnits } from './text.ts';
 import type { LayoutReport, Rect, Timeline } from './timeline/types.ts';
@@ -60,11 +61,12 @@ function within(inner: Rect, outer: Rect, tolerance = 4): boolean {
 export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[]): QcCheck[] {
   const checks: QcCheck[] = [];
   const frame = { x: 0, y: 0, width: timeline.width, height: timeline.height };
+  const regions = computeRegions(timeline);
   const covered: string[] = [];
   const outside: number[] = [];
   const spilled: number[] = [];
   const overflow = new Set<string>();
-  const narratorOverlap = new Set<string>();
+  const narratorOverlap = new Map<string, Set<string>>();
   let imagesLoaded = true;
   const fontsFailed = new Set<string>();
   for (const report of layouts) {
@@ -79,11 +81,22 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
       }
     }
     for (const item of report.items) if (item.overflow) overflow.add(report.scene ?? '?');
-    if (report.narrator) {
-      for (const item of report.items)
-        if (item.role !== 'text' && intersects(report.narrator, item.rect, 6))
-          narratorOverlap.add(report.scene ?? '?');
-    }
+    // The fox's real shapes: its tail can reach past its box, but only into empty space.
+    const fox = report.narratorParts ?? (report.narrator ? [report.narrator] : []);
+    const covers = (rects: readonly Rect[], what: string) => {
+      if (fox.some((part) => rects.some((rect) => intersects(part, rect)))) {
+        const scenes = narratorOverlap.get(what) ?? new Set<string>();
+        scenes.add(report.scene ?? '?');
+        narratorOverlap.set(what, scenes);
+      }
+    };
+    covers(
+      report.items.map((item) => item.rect),
+      'demonstrated content',
+    );
+    covers([regions.media], 'the media region');
+    covers(report.captions ? [report.captions] : [], 'captions');
+    covers(report.headerText ?? [], 'header text');
   }
   checks.push(
     covered.length
@@ -131,12 +144,14 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
       ? {
           id: 'narrator-clear-of-content',
           status: 'warn',
-          message: `The narrator overlaps content in scene(s) ${[...narratorOverlap].join(', ')}.`,
+          message: `The narrator covers ${[...narratorOverlap]
+            .map(([what, scenes]) => `${what} in scene(s) ${[...scenes].join(', ')}`)
+            .join('; ')}.`,
         }
       : {
           id: 'narrator-clear-of-content',
           status: 'pass',
-          message: 'The narrator never covers the product.',
+          message: 'The narrator, tail included, never covers the product, captions, or headers.',
         },
   );
   checks.push(

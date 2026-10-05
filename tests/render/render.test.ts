@@ -18,6 +18,7 @@ import {
 import { chromium } from 'playwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../../packages/cli/src/examples.ts';
+import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import { canRenderVideo, fullRenders } from '../helpers/env.ts';
 
 const available = await canRenderVideo();
@@ -121,6 +122,13 @@ describe.skipIf(!available)('rendering', () => {
     const failing = qc.checks.filter((c) => c.status === 'fail' && c.id !== 'duration');
     expect(failing).toEqual([]);
     expect(readFileSync(result.contactSheet!).length).toBeGreaterThan(1000);
+    // In the code scene the narrator points at the highlighted line: its tail reaches past its
+    // box into empty space, and QC measures the fox as drawn.
+    const box = computeRegions(timeline).narrator;
+    const pointing = result.layouts.filter((l) => l.scene === 's2' && l.narratorParts);
+    expect(pointing.length).toBeGreaterThan(0);
+    expect(pointing.some((l) => l.narrator!.x < box.x - 0.05 * box.size)).toBe(true);
+    expect(qc.checks.find((c) => c.id === 'narrator-clear-of-content')!.status).toBe('pass');
   });
 
   const CJK = {

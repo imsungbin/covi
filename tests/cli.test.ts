@@ -265,6 +265,13 @@ describe('covi CLI', () => {
     ).toContain('covi-review');
     expect(covi(['examples', '--json']).json()).toHaveLength(5);
     expect(covi(['mascot', '--expression', 'success']).stdout).toMatch(/^<svg/);
+    // Files frame the pointing tail; marks step their detail down with size.
+    expect(covi(['mascot', '--expression', 'reviewing']).stdout).toContain(
+      'viewBox="-20 -12 154 154"',
+    );
+    expect(covi(['mascot', '--mark', '--size', '16']).stdout).not.toContain('M46.8 15');
+    expect(covi(['mascot', '--mark', '--size', '32']).stdout).toContain('M46.8 15');
+    expect(covi(['mascot', '--logo', '--size', '128']).stdout).toMatch(/height="64"/);
   });
 
   it('initializes configuration from what it detects', async () => {

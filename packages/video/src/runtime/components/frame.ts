@@ -93,12 +93,12 @@ export class Frame {
     return this.img.decode().catch(() => undefined);
   }
 
-  /** Image pixels → stage pixels under the current camera. */
-  map(rect: Rect): Rect {
-    const s = (this.base.width / this.image.width) * this.camera.z;
+  /** Image pixels → stage pixels under the current camera (or a given one). */
+  map(rect: Rect, camera = this.camera): Rect {
+    const s = (this.base.width / this.image.width) * camera.z;
     return {
-      x: this.viewport.x + this.camera.ox + rect.x * s,
-      y: this.viewport.y + this.camera.oy + rect.y * s,
+      x: this.viewport.x + camera.ox + rect.x * s,
+      y: this.viewport.y + camera.oy + rect.y * s,
       width: rect.width * s,
       height: rect.height * s,
     };
@@ -111,6 +111,17 @@ export class Frame {
 
   /** Zoom toward `focus` (image px) by progress `k` (0–1). */
   setCamera(focus: Rect | undefined, k: number, maxZoom = 1.9): void {
+    const { z, ox, oy } = this.cameraFor(focus, k, maxZoom);
+    this.camera = { z, ox, oy };
+    this.img.style.transform = `translate(${(ox - this.base.x).toFixed(2)}px, ${(oy - this.base.y).toFixed(2)}px) scale(${z.toFixed(4)})`;
+  }
+
+  /** The camera `setCamera` would set, without setting it. */
+  cameraFor(
+    focus: Rect | undefined,
+    k: number,
+    maxZoom = 1.9,
+  ): { z: number; ox: number; oy: number } {
     const s0 = this.base.width / this.image.width;
     let z = 1;
     let fx = this.image.width / 2;
@@ -143,8 +154,7 @@ export class Frame {
       h > this.viewport.height
         ? clamp(oy, this.viewport.height - h, 0)
         : (this.viewport.height - h) / 2;
-    this.camera = { z, ox, oy };
-    this.img.style.transform = `translate(${(ox - this.base.x).toFixed(2)}px, ${(oy - this.base.y).toFixed(2)}px) scale(${z.toFixed(4)})`;
+    return { z, ox, oy };
   }
 
   /** Dims everything outside the focus and draws a ring around it. */

@@ -5,6 +5,8 @@
 export const palette = {
   cobalt: '#3B5BFF',
   cobaltDeep: '#2A43D1',
+  /** Cobalt lifted for dark backgrounds. */
+  cobaltLight: '#6B84FF',
   sky: '#EAF0FF',
   charcoal: '#1F2430',
   graphite: '#4A5163',
@@ -123,7 +125,7 @@ export const themes: Record<ThemeName, Theme> = {
     text: '#EEF1F8',
     textMuted: '#A3AAB9',
     line: '#2F3646',
-    primary: '#6B84FF',
+    primary: palette.cobaltLight,
     primarySoft: '#242B4A',
     accent: palette.accent,
     success: '#2CC489',

@@ -1,7 +1,8 @@
-import type { Rect, TimelineVisual } from '../../timeline/types.ts';
+import type { Point, Rect, TimelineVisual } from '../../timeline/types.ts';
 import { clamp, easeOutCubic, fade, lerp, rise, seg } from '../anim.ts';
 import { el, escapeHtml } from '../dom.ts';
 import { highlightLine } from '../highlight.ts';
+import { union } from '../narrator.ts';
 import { choreograph, Frame } from './frame.ts';
 import {
   type Component,
@@ -25,6 +26,17 @@ function frameItems(frames: Frame[]): LayoutItem[] {
   return frames.map((f) => ({ role: 'media' as const, rect: rectOf(f.root) }));
 }
 
+/** What a frame highlights, in stage pixels: the focus box, else the click point. */
+function frameTarget(
+  frame: Frame,
+  focus: Rect | undefined,
+  click: Point | undefined,
+  camera?: ReturnType<Frame['cameraFor']>,
+): Rect | undefined {
+  if (focus) return frame.map(focus, camera);
+  return click ? frame.map({ x: click.x, y: click.y, width: 0, height: 0 }, camera) : undefined;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Screenshot
 // ---------------------------------------------------------------------------------------------
@@ -45,6 +57,7 @@ export function screenshot(v: V<'screenshot'>, ctx: ComponentContext): Component
       ...frameItems([frame]),
       ...(v.focus ? [{ role: 'focus' as const, rect: frame.map(v.focus) }] : []),
     ],
+    target: () => frameTarget(frame, v.focus, v.click),
   };
 }
 
@@ -119,6 +132,8 @@ export function beforeAfter(v: V<'before-after'>, ctx: ComponentContext): Compon
       ...frameItems(frames),
       ...(v.focus ? frames.map((f) => ({ role: 'focus' as const, rect: f.map(v.focus!) })) : []),
     ],
+    // The change is on the "after" side.
+    target: () => frameTarget(frames[1]!, v.focus, undefined),
   };
 }
 
@@ -168,6 +183,7 @@ function wipe(v: V<'before-after'>, ctx: ComponentContext): Component {
       after.spotlight(v.focus, v.focus ? seg(t, duration * 0.7, duration * 0.85) : 0);
     },
     report: () => frameItems([before]),
+    target: () => frameTarget(after, v.focus, undefined),
   };
 }
 
@@ -215,6 +231,32 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
       fade(label, seg(t - active * slot, 0, 0.3));
     },
     report: () => frameItems(frames.slice(0, 1)),
+    target({ t, duration }) {
+      const slot = duration / v.steps.length;
+      // Each step's camera recomputed for this moment, so no frame depends on an earlier one.
+      const of = (i: number) => {
+        const step = v.steps[i]!;
+        const local = t - i * slot;
+        const camera = frames[i]!.cameraFor(
+          step.focus,
+          seg(local, slot * 0.15, slot * 0.45) * 0.7,
+          1.5,
+        );
+        return frameTarget(frames[i]!, step.focus, step.click, camera);
+      };
+      const active = Math.min(v.steps.length - 1, Math.floor(t / slot));
+      const now = of(active);
+      const prev = active > 0 ? of(active - 1) : undefined;
+      // Glide from the previous step's target to this one's, so the tail never jumps at a cut.
+      const k = easeOutCubic(seg(t, active * slot, active * slot + 0.4));
+      if (!prev || !now || k >= 1) return now ?? prev;
+      return {
+        x: lerp(prev.x, now.x, k),
+        y: lerp(prev.y, now.y, k),
+        width: lerp(prev.width, now.width, k),
+        height: lerp(prev.height, now.height, k),
+      };
+    },
   };
 }
 
@@ -269,6 +311,10 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
       });
     },
     report: () => [{ role: 'media', rect: rectOf(panel) }],
+    target: () => {
+      const highlighted = rows.filter((r) => r.hl).map((r) => rectOf(r.row));
+      return highlighted.length ? union(highlighted) : undefined;
+    },
   };
 }
 
@@ -548,6 +594,8 @@ export function findings(v: V<'findings'>, ctx: ComponentContext): Component {
         rect: rectOf(card),
         overflow: overflows(body),
       })),
+    // The first finding is the one the narration leads with.
+    target: () => (cards[0] ? rectOf(cards[0].card) : undefined),
   };
 }
 
@@ -727,5 +775,9 @@ export function diagram(v: V<'diagram'>, ctx: ComponentContext): Component {
     },
     report: () =>
       nodes.map((n) => ({ role: 'text' as const, rect: rectOf(n), overflow: overflows(n) })),
+    target: () => {
+      const changed = v.nodes.findIndex((n) => n.changed);
+      return changed >= 0 ? rectOf(nodes[changed]!) : undefined;
+    },
   };
 }

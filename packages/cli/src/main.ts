@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { relative, resolve } from 'node:path';
-import { foxMarkSvg, foxSvg, logoSvg } from '@covi/brand';
+import { FOX_FRAME, foxMarkSvg, foxSvg, logoSvg } from '@covi/brand';
 import { DemoPlanSchema } from '@covi/capture';
 import {
   ConfigInputSchema,
@@ -1185,11 +1185,12 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
         out?: string;
       }) => {
         const size = o.size;
+        // A file clips to its view box, so the fox gets the frame that fits a pointing tail.
         const svg = o.logo
           ? logoSvg({ height: size / 2 })
           : o.mark
             ? foxMarkSvg({ size })
-            : foxSvg({ expression: o.expression, size });
+            : foxSvg({ expression: o.expression, size, frame: FOX_FRAME });
         if (o.out) await writeFile(o.out, `${svg}\n`);
         else process.stdout.write(`${svg}\n`);
       },

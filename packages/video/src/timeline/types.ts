@@ -193,7 +193,12 @@ export interface LayoutReport {
   /** A caption line is wider than its box. */
   captionOverflow?: boolean;
   items: LayoutItem[];
+  /** The narrator fox's bounds as drawn, its tail included (which can reach past its box). */
   narrator?: Rect;
+  /** Boxes covering the narrator's shapes, tighter than `narrator` when the tail points. */
+  narratorParts?: Rect[];
+  /** The scene header's lines of text. */
+  headerText?: Rect[];
   imagesLoaded: boolean;
   /** Font families with a declared face that failed to load. */
   fontsFailed?: string[];

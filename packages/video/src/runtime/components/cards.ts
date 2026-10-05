@@ -58,6 +58,7 @@ export function title(v: V<'title'>, ctx: ComponentContext, expression: Expressi
         fox.innerHTML = foxSvg({
           ...pose.fox,
           size: foxSize,
+          theme: ctx.timeline.theme.name,
           props: expression !== 'explaining',
         });
       }
@@ -208,7 +209,7 @@ export function summary(v: V<'summary'>, ctx: ComponentContext): Component {
           pointing: false,
           seed: ctx.timeline.seed,
         });
-        foxBox.innerHTML = foxSvg({ ...pose.fox, size: foxSize });
+        foxBox.innerHTML = foxSvg({ ...pose.fox, size: foxSize, theme: ctx.timeline.theme.name });
       }
       rise(panel, seg(t, 0.1, 0.6), ctx.u(26));
       rise(badge, seg(t, 0.3, 0.7), ctx.u(10));

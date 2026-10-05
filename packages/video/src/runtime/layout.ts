@@ -3,8 +3,13 @@ import type { Rect, Timeline } from '../timeline/types.ts';
 /**
  * Safe-area layout per orientation. Regions never overlap: captions get their own band, the
  * narrator sits in the header, and the product being demonstrated owns the media region.
+ *
+ * The narrator is the largest square that fits both the column the header leaves free on its
+ * right and the band between the progress bar and the media region, with 8 units to spare: the
+ * whole column on vertical (190) and square (150) video, the band's height on landscape (142).
  */
 export interface Regions {
+  /** Pixels per design unit (1/1080 of the frame's short side). */
   unit: number;
   progress: Rect;
   header: Rect;
@@ -14,6 +19,15 @@ export interface Regions {
   captions: Rect;
   narrator: { x: number; y: number; size: number };
   captionFont: number;
+}
+
+/**
+ * The narrator's box, right-aligned in its column and nudged 4 view-box units into the side
+ * margin: the resting tail curls a couple of units past the left edge of the fox's 128-unit box,
+ * and the nudge keeps it out of the header's column. The badge side has margin to spare.
+ */
+function narratorBox(right: number, size: number, y: number): Regions['narrator'] {
+  return { x: right - size + (4 * size) / 128, y, size };
 }
 
 export function computeRegions(t: Pick<Timeline, 'width' | 'height' | 'orientation'>): Regions {
@@ -36,7 +50,7 @@ export function computeRegions(t: Pick<Timeline, 'width' | 'height' | 'orientati
       media,
       full: { x: side, y: 112 * u, width: W - 2 * side, height: captions.y - 36 * u - 112 * u },
       captions,
-      narrator: { x: W - side - 156 * u, y: 96 * u, size: 156 * u },
+      narrator: narratorBox(W - side, 190 * u, 96 * u),
       captionFont: 50 * u,
     };
   }
@@ -58,7 +72,7 @@ export function computeRegions(t: Pick<Timeline, 'width' | 'height' | 'orientati
       media,
       full: { x: side, y: 92 * u, width: W - 2 * side, height: captions.y - 24 * u - 92 * u },
       captions,
-      narrator: { x: W - side - 128 * u, y: 76 * u, size: 128 * u },
+      narrator: narratorBox(W - side, 150 * u, 76 * u),
       captionFont: 42 * u,
     };
   }
@@ -79,7 +93,7 @@ export function computeRegions(t: Pick<Timeline, 'width' | 'height' | 'orientati
     media,
     full: { x: side, y: 74 * u, width: W - 2 * side, height: captions.y - 26 * u - 74 * u },
     captions,
-    narrator: { x: W - side - 132 * u, y: 52 * u, size: 132 * u },
+    narrator: narratorBox(W - side, 142 * u, 56 * u),
     captionFont: 38 * u,
   };
 }

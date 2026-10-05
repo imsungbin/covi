@@ -1,7 +1,7 @@
 import type { LayoutItem, Rect, Timeline } from '../../timeline/types.ts';
 import type { Regions } from '../layout.ts';
 
-export type { LayoutItem };
+export type { LayoutItem, Rect };
 
 export interface SceneClock {
   /** Seconds since the scene started. */
@@ -27,6 +27,12 @@ export interface Component {
   update(clock: SceneClock): void;
   /** Boxes used by QC to verify captions never cover the product and text never overflows. */
   report(): LayoutItem[];
+  /**
+   * The highlighted part the narrator's tail points at (a focus box, highlighted lines, a click
+   * point, a finding), in stage pixels; called after `update` with the same clock. Without one
+   * the narrator points the way its eyes look.
+   */
+  target?(clock: SceneClock): Rect | undefined;
   /** Whether the component wants the scene header (title and summary draw their own). */
   header?: boolean;
 }

@@ -246,7 +246,13 @@ export function speechChecks(speech: SpeechRecord | undefined): QcCheck[] {
   }
   const voice = speech.voice;
   const speaks = localeLanguage(voice?.locale);
-  if (!voice?.locale || !speaks)
+  if (voice?.provider === 'system' && !voice.locale && speech.language !== 'en')
+    checks.push({
+      id: 'voice-language',
+      status: 'warn',
+      message: `Covi could not read the system voice list, so it could not confirm that ${voice.name} speaks ${name}. Check the narration, or choose a voice with --voice.`,
+    });
+  else if (!voice?.locale || !speaks)
     checks.push({
       id: 'voice-language',
       status: 'pass',

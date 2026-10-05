@@ -158,11 +158,22 @@ export class SystemTts implements TtsProvider {
     language: Language = 'en',
   ): Promise<SystemTts | undefined> {
     if (process.platform === 'darwin' && (await which(['say']))) {
-      const listing = await exec('say', ['-v', '?'], {
-        cwd: process.cwd(),
-        timeoutMs: 10_000,
-      }).catch(() => undefined);
-      const voice = pickMacVoice(parseSayVoices(listing?.stdout ?? ''), language, preferredVoice);
+      // Listing voices can take seconds on a busy machine; a missing list must not silently turn
+      // into an English voice reading Korean.
+      let voices: SystemVoice[] = [];
+      for (const timeoutMs of [20_000, 60_000]) {
+        const listing = await exec('say', ['-v', '?'], { cwd: process.cwd(), timeoutMs }).catch(
+          () => undefined,
+        );
+        voices = parseSayVoices(listing?.stdout ?? '');
+        if (voices.length) break;
+      }
+      if (!voices.length)
+        return new SystemTts(
+          'say',
+          preferredVoice ?? MAC_VOICES[language].find((v) => !v.includes('(')) ?? 'Samantha',
+        );
+      const voice = pickMacVoice(voices, language, preferredVoice);
       return new SystemTts('say', voice?.name ?? preferredVoice ?? 'Samantha', voice?.locale);
     }
     for (const bin of ['espeak-ng', 'espeak'] as const) {

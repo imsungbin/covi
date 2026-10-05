@@ -128,3 +128,14 @@ describe('voices', () => {
     expect(new OpenAiTts('k', 'sage', fetchImpl, 'en').variant).toBeUndefined();
   });
 });
+
+describe('unverified voices', () => {
+  it('warns when a system voice speaks an unknown language for non-English narration', () => {
+    const unknown = speechChecks({
+      ...record({ JSON: '제이슨', GRAPHQL: '그래프큐엘' }),
+      voice: { provider: 'system', name: 'Tingting' },
+    })[1]!;
+    expect(unknown.status).toBe('warn');
+    expect(unknown.message).toMatch(/could not confirm that Tingting speaks Korean/);
+  });
+});

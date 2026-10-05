@@ -1,0 +1,68 @@
+{
+  "name": "covi",
+  "version": "0.1.0",
+  "description": "Understand, explain, demonstrate, and review code changes.",
+  "keywords": [
+    "code-review",
+    "agent",
+    "skills",
+    "git",
+    "video",
+    "ci",
+    "github-action",
+    "gitlab-ci"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "covi": "bin/covi.mjs"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "skills",
+    "templates",
+    "assets",
+    "examples",
+    "AGENTS.md",
+    "README.md"
+  ],
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "covi": "node bin/covi.mjs",
+    "build": "node scripts/build.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:render": "COVI_TEST_RENDER=1 vitest run tests/render",
+    "typecheck": "tsc -p tsconfig.json && tsc -p packages/video/src/runtime/tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "assets": "node scripts/generate-assets.ts",
+    "agents:sync": "node scripts/sync-agents.ts",
+    "agents:check": "node scripts/sync-agents.ts --check",
+    "check": "npm run lint && npm run typecheck && npm run agents:check && npm test",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/noto-sans-jp": "^5.3.0",
+    "@fontsource-variable/noto-sans-kr": "^5.3.0",
+    "@fontsource-variable/noto-sans-sc": "^5.3.0",
+    "playwright": "1.63.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^22.18.0",
+    "@types/pngjs": "^6.0.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

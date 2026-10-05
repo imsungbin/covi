@@ -1,0 +1,17 @@
+# Static site: served as-is, no project code runs on the server side.
+app:
+  static: .
+demo:
+  viewports: [desktop, mobile]   # the composer is responsive; vertical videos show the phone layout
+  flows:
+    - name: Write a comment
+      path: /
+      steps:
+        - fill: "#comment"
+          text: "Love the new layout! Could the rollout start with the beta group first?"
+          note: Type a comment
+        - screenshot: Counter updates as you type
+          focus: ".composer"
+        - click: "#post"
+          note: Post the comment
+        - wait: 300

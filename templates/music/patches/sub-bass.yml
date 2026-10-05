@@ -1,0 +1,10 @@
+id: sub-bass
+description: Clean sub bass. Sine with a quiet octave triangle so it still reads on phone speakers. Bass lines in octaves 1–2.
+algo: subtractive
+oscs:
+  - { wave: sine, level: 1 }
+  - { wave: triangle, octave: 1, level: 0.15 }
+filter: { type: lowpass, cutoff: 240, q: 0.7, keytrack: 0.8 }
+highpass: 32
+drive: 0.1
+amp: { a: 0.006, d: 0.2, s: 0.9, r: 0.1 }

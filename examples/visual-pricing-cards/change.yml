@@ -1,0 +1,12 @@
+title: Refresh the pricing cards
+description: A visual change to a static pricing page. Cards get a new look and a "Most popular" badge, but the button styles remove the focus outline without a replacement, which breaks keyboard navigation. Covi should capture before/after at desktop and mobile and flag the accessibility regression.
+branch: design/pricing-refresh
+commits:
+  - message: "style(pricing): refresh plan cards and highlight the popular plan"
+expect:
+  intent: visual
+  demonstration: high
+  video: true
+  template: before-after
+  rules: [focus-outline-removed]
+  verdict: needs-attention

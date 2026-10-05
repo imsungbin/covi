@@ -1,0 +1,7 @@
+id: rim-soft
+description: Side-stick / rim click, short and woody.
+algo: drum
+kind: rim
+freq: 1650
+decay: 0.03
+noise: 0.5

@@ -1,0 +1,257 @@
+name: Covi
+description: Understand, explain, demonstrate, and review code changes. Posts a review summary and, when seeing the change helps, a short review video.
+author: Covi
+branding:
+  icon: eye
+  color: blue
+
+# Inputs that mirror Covi settings default to empty: Covi then uses .covi/config.yml from the base
+# revision, and its own defaults after that. Set an input only to override the repository.
+inputs:
+  command:
+    description: "review runs Covi on the pull request; publish posts the comment for an earlier run (see examples/fork-safe-comment.yml)."
+    default: review
+  fail-on:
+    description: "Fail the job on confirmed or likely findings at or above this severity: none, low, medium, or high. Empty: review.failOn from the repository config, else none."
+    default: ""
+  video:
+    description: "Render a review video: auto (only when the change is worth seeing), always, or never. Empty: video.when, else auto."
+    default: ""
+  video-mode:
+    description: "short (9:16, about 30 s), standard (16:9, 60-120 s), or custom. Empty: video.mode, else short."
+    default: ""
+  duration:
+    description: "Target video length, for example 30s, or auto. Empty: video.duration, else auto."
+    default: ""
+  narration:
+    description: "true or false. Narrates with OpenAI or ElevenLabs voices when their keys are set, otherwise espeak-ng. Empty: video.narration, else on."
+    default: ""
+  captions:
+    description: "true or false: burn captions into the video. Empty: video.captions, else on."
+    default: ""
+  language:
+    description: "Language of the review, comment, and video narration: auto (detected from the pull request), en, ko, ja, or zh (Simplified Chinese). Empty: language from the repository config, else auto."
+    default: ""
+  annotations:
+    description: "true or false: annotate findings inline on the diff. Empty: publish.annotations, else on."
+    default: ""
+  provider:
+    description: "Reasoning provider: auto, heuristic, anthropic, or command. Empty: intelligence.provider, else auto."
+    default: ""
+  model:
+    description: "Model id for the anthropic provider (default claude-opus-5-5)."
+    default: ""
+  comment:
+    description: "Post or update a summary comment on the pull request (needs pull-requests: write)."
+    default: "true"
+  anthropic-api-key:
+    description: "Optional. Enables model-written explanations, findings, and narration."
+    default: ""
+  openai-api-key:
+    description: "Optional. Higher-quality narration voices."
+    default: ""
+  elevenlabs-api-key:
+    description: "Optional. Higher-quality narration voices."
+    default: ""
+  github-token:
+    description: "Token used only to post the comment."
+    default: ${{ github.token }}
+  config:
+    description: "Config file path. A path inside the repository is read from the base revision, like .covi/config.yml."
+    default: ""
+  working-directory:
+    description: "Repository directory."
+    default: "."
+  artifact-name:
+    description: "Name of the uploaded run artifact."
+    default: covi-review
+  upload-artifact:
+    description: "Upload the run directory (reports, screenshots, video) as a workflow artifact."
+    default: "true"
+  install-browser:
+    description: "Install the Chromium build Covi uses, for demonstrations and videos. Set false when the repository has nothing to show in a browser."
+    default: "true"
+  run-dir:
+    description: "publish only: the downloaded run directory."
+    default: ""
+  pr-number:
+    description: "publish only: the pull request to comment on. Usually unnecessary: Covi finds it from the workflow_run event and checks that its head is the reviewed commit."
+    default: ""
+  expect-head:
+    description: "publish only: refuse to publish unless the run reviewed this commit. Defaults to the workflow_run event's head commit."
+    default: ""
+  node-version:
+    description: "Node.js version used to run Covi."
+    default: "22"
+  covi-package:
+    description: "Install Covi from this npm package spec or tarball URL instead of building the action's own source. Use a package you publish and control."
+    default: ""
+
+outputs:
+  run-dir:
+    description: Directory with every artifact of the run.
+    value: ${{ steps.covi.outputs.run-dir }}
+  verdict:
+    description: looks-good, needs-attention, or needs-changes.
+    value: ${{ steps.covi.outputs.verdict }}
+  findings-count:
+    description: Number of findings in the review.
+    value: ${{ steps.covi.outputs.findings-count }}
+  gate-failures:
+    description: Findings that failed the fail-on gate.
+    value: ${{ steps.covi.outputs.gate-failures }}
+  video-path:
+    description: Path of the rendered video, when one was made.
+    value: ${{ steps.covi.outputs.video-path }}
+  summary-path:
+    description: Markdown summary suitable for a PR description.
+    value: ${{ steps.covi.outputs.summary-path }}
+  sarif-path:
+    description: SARIF report for code scanning upload.
+    value: ${{ steps.covi.outputs.sarif-path }}
+  artifact-url:
+    description: URL of the uploaded artifact.
+    value: ${{ steps.upload.outputs.artifact-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install Covi
+      shell: bash
+      env:
+        COVI_SOURCE: ${{ github.action_path }}/../..
+        COVI_PACKAGE: ${{ inputs.covi-package }}
+      run: |
+        if [ -n "$COVI_PACKAGE" ]; then
+          npm install --global --no-audit --no-fund "$COVI_PACKAGE"
+          echo "COVI_BIN=covi" >> "$GITHUB_ENV"
+        else
+          cd "$COVI_SOURCE"
+          npm ci --no-audit --no-fund
+          echo "COVI_BIN=$COVI_SOURCE/bin/covi.mjs" >> "$GITHUB_ENV"
+          echo "COVI_USE_DIST=1" >> "$GITHUB_ENV"
+        fi
+
+    - name: Install the browser and video tools
+      if: inputs.command == 'review'
+      shell: bash
+      env:
+        VIDEO: ${{ inputs.video }}
+        INSTALL_BROWSER: ${{ inputs.install-browser }}
+      run: |
+        if [ "$VIDEO" != "never" ]; then
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            missing=""
+            command -v ffmpeg >/dev/null || missing="$missing ffmpeg"
+            command -v espeak-ng >/dev/null || missing="$missing espeak-ng"
+            # shellcheck disable=SC2086 # $missing is a list of package names
+            if [ -n "$missing" ]; then sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends $missing; fi
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            command -v ffmpeg >/dev/null || brew install ffmpeg
+          fi
+        fi
+        if [ "$INSTALL_BROWSER" = "true" ]; then
+          # The Chromium build that matches Covi's own Playwright version. On Linux, Playwright
+          # installs the system libraries too (it asks sudo for them itself).
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            "$COVI_BIN" doctor --install-browser --with-deps
+          else
+            "$COVI_BIN" doctor --install-browser
+          fi
+        fi
+
+    - name: Review
+      id: covi
+      if: inputs.command == 'review'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        RUN_DIR: ${{ runner.temp }}/covi-run
+        FAIL_ON: ${{ inputs.fail-on }}
+        VIDEO: ${{ inputs.video }}
+        VIDEO_MODE: ${{ inputs.video-mode }}
+        DURATION: ${{ inputs.duration }}
+        NARRATION: ${{ inputs.narration }}
+        CAPTIONS: ${{ inputs.captions }}
+        LANGUAGE: ${{ inputs.language }}
+        ANNOTATIONS: ${{ inputs.annotations }}
+        PROVIDER: ${{ inputs.provider }}
+        MODEL: ${{ inputs.model }}
+        CONFIG: ${{ inputs.config }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        ELEVENLABS_API_KEY: ${{ inputs.elevenlabs-api-key }}
+      run: |
+        # Only inputs that were set become flags, so the repository's configuration keeps precedence.
+        args=(ci --platform github --out "$RUN_DIR" --no-comment)
+        if [ -n "$FAIL_ON" ]; then args+=(--fail-on "$FAIL_ON"); fi
+        if [ -n "$VIDEO" ]; then args+=(--video "$VIDEO"); fi
+        if [ -n "$VIDEO_MODE" ]; then args+=(--mode "$VIDEO_MODE"); fi
+        if [ -n "$DURATION" ]; then args+=(--duration "$DURATION"); fi
+        if [ "$NARRATION" = "true" ]; then args+=(--narration); fi
+        if [ "$NARRATION" = "false" ]; then args+=(--no-narration); fi
+        if [ "$CAPTIONS" = "false" ]; then args+=(--no-captions); fi
+        if [ -n "$LANGUAGE" ]; then args+=(--language "$LANGUAGE"); fi
+        if [ "$ANNOTATIONS" = "false" ]; then args+=(--no-annotations); fi
+        if [ -n "$PROVIDER" ]; then args+=(--provider "$PROVIDER"); fi
+        if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
+        if [ -n "$CONFIG" ]; then args=(--config "$CONFIG" "${args[@]}"); fi
+        set +e
+        "$COVI_BIN" "${args[@]}"
+        code=$?
+        set -e
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        # 1 means the review gate failed: keep going so artifacts and the comment are published.
+        if [ "$code" -gt 1 ]; then exit "$code"; fi
+
+    - name: Upload artifacts
+      id: upload
+      if: always() && inputs.command == 'review' && inputs.upload-artifact == 'true' && steps.covi.outputs.run-dir != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.covi.outputs.run-dir }}
+        if-no-files-found: warn
+        retention-days: 14
+
+    - name: Comment
+      if: always() && inputs.command == 'review' && inputs.comment == 'true' && steps.covi.outputs.run-dir != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        COVI_GITHUB_TOKEN: ${{ inputs.github-token }}
+        RUN_DIR: ${{ steps.covi.outputs.run-dir }}
+        ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+      run: |
+        args=(publish --platform github --run "$RUN_DIR")
+        if [ -n "$ARTIFACT_URL" ]; then args+=(--artifact-url "$ARTIFACT_URL"); fi
+        # Commenting is best effort: fork pull requests get a read-only token.
+        "$COVI_BIN" "${args[@]}" || echo "::warning::Covi could not post the comment."
+
+    - name: Publish comment for an earlier run
+      if: inputs.command == 'publish'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        COVI_GITHUB_TOKEN: ${{ inputs.github-token }}
+        RUN_DIR: ${{ inputs.run-dir }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        EXPECT_HEAD: ${{ inputs.expect-head }}
+      run: |
+        # The pull request and the expected head come from the workflow_run event unless given here.
+        args=(publish --platform github --run "$RUN_DIR")
+        if [ -n "$PR_NUMBER" ]; then args+=(--number "$PR_NUMBER"); fi
+        if [ -n "$EXPECT_HEAD" ]; then args+=(--expect-head "$EXPECT_HEAD"); fi
+        "$COVI_BIN" "${args[@]}"
+
+    - name: Enforce the review gate
+      if: inputs.command == 'review' && steps.covi.outputs.exit-code == '1'
+      shell: bash
+      run: |
+        echo "::error title=Covi review gate::Confirmed or likely findings reached the fail-on severity. See the review summary."
+        exit 1

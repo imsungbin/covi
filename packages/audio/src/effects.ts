@@ -1,0 +1,156 @@
+import { z } from 'zod';
+
+/*
+ * Sound effects follow only what happens on screen: a pointer click, the before/after reveal, a
+ * finding card landing (heavier for high severity), the verdict appearing, and the outro card
+ * settling. If an effect is noticeable, it is too loud: they sit well under the voice, and density
+ * limits keep a busy stretch from turning into a rattle. The outro's sign-off plays only when no
+ * music does: with music, the music's own sonic logo lands on that moment.
+ */
+
+const Recipe = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
+
+/** templates/music/sound-effects.yml */
+export const SoundEffectsSchema = z.strictObject({
+  /** Level of every effect relative to the voice-normalized stems (dB), its recipe at −3 dBFS. */
+  gainDb: z.number().min(-40).max(0),
+  /** Extra level for the verdict, the one moment the effects mark the story (dB). */
+  verdictBoostDb: z.number().min(0).max(6),
+  /** Extra level for the outro's sign-off, which plays in the quiet after the narration (dB). */
+  outroBoostDb: z.number().min(0).max(6),
+  /** Seconds between any two effects at least. */
+  minSpacing: z.number().min(0).max(2),
+  /** Effects in any one-second window at most. */
+  maxPerSecond: z.number().int().min(1).max(10),
+  /** Cue → recipe id (templates/music/sfx). */
+  recipes: z.strictObject({
+    click: Recipe,
+    reveal: Recipe,
+    finding: Recipe,
+    'finding-high': Recipe,
+    'verdict-looks-good': Recipe,
+    'verdict-needs-attention': Recipe,
+    'verdict-needs-changes': Recipe,
+    'outro-looks-good': Recipe,
+    'outro-needs-attention': Recipe,
+    'outro-needs-changes': Recipe,
+  }),
+});
+
+export type SoundEffectsConfig = z.output<typeof SoundEffectsSchema>;
+
+/** A moment with a sound (the timeline's cues). */
+export interface EffectCue {
+  t: number;
+  kind: 'click' | 'reveal' | 'finding' | 'verdict' | 'outro';
+  scene: string;
+  /** `high` for a high-severity finding; the verdict for a verdict or outro cue. */
+  detail?: string;
+}
+
+export interface PlacedEffect {
+  t: number;
+  kind: EffectCue['kind'];
+  recipe: string;
+  gainDb: number;
+}
+
+export interface DroppedEffect {
+  t: number;
+  kind: EffectCue['kind'];
+  recipe: string;
+  reason: string;
+}
+
+/** The recipe a cue plays, and how much it matters when cues compete. */
+export function effectRecipe(
+  cue: EffectCue,
+  config: SoundEffectsConfig,
+): { recipe: string; priority: number } {
+  const r = config.recipes;
+  const verdict =
+    cue.detail === 'needs-changes' || cue.detail === 'needs-attention' ? cue.detail : 'looks-good';
+  switch (cue.kind) {
+    case 'outro':
+      return { recipe: r[`outro-${verdict}`], priority: 4 };
+    case 'verdict':
+      return { recipe: r[`verdict-${verdict}`], priority: 3 };
+    case 'finding':
+      return cue.detail === 'high'
+        ? { recipe: r['finding-high'], priority: 2 }
+        : { recipe: r.finding, priority: 1 };
+    default:
+      return { recipe: r[cue.kind], priority: 1 };
+  }
+}
+
+/**
+ * Chooses which cues sound. The outro and the verdict first, then high-severity findings, then
+ * the rest, each in time order; a cue is dropped when it would come within `minSpacing` of a
+ * placed one or make any second hold more than `maxPerSecond`.
+ */
+export function placeEffects(
+  cues: readonly EffectCue[],
+  config: SoundEffectsConfig,
+): { placed: PlacedEffect[]; dropped: DroppedEffect[] } {
+  const ranked = cues
+    .map((cue, order) => ({ cue, order, ...effectRecipe(cue, config) }))
+    .sort((a, b) => b.priority - a.priority || a.cue.t - b.cue.t || a.order - b.order);
+  const kept: number[] = [];
+  const placed: PlacedEffect[] = [];
+  const dropped: DroppedEffect[] = [];
+  for (const { cue, recipe } of ranked) {
+    const crowded = kept.some((t) => Math.abs(t - cue.t) < config.minSpacing - 1e-9);
+    const times = [...kept, cue.t].sort((a, b) => a - b);
+    const max = config.maxPerSecond;
+    const dense = times.some((t, i) => i >= max && t - times[i - max]! < 1 - 1e-9);
+    if (crowded || dense) {
+      dropped.push({
+        t: cue.t,
+        kind: cue.kind,
+        recipe,
+        reason: crowded
+          ? `within ${config.minSpacing} s of a more important effect`
+          : `more than ${max} per second`,
+      });
+      continue;
+    }
+    kept.push(cue.t);
+    placed.push({
+      t: cue.t,
+      kind: cue.kind,
+      recipe,
+      gainDb:
+        config.gainDb +
+        (cue.kind === 'verdict'
+          ? config.verdictBoostDb
+          : cue.kind === 'outro'
+            ? config.outroBoostDb
+            : 0),
+    });
+  }
+  const byTime = (a: { t: number }, b: { t: number }) => a.t - b.t;
+  return { placed: placed.sort(byTime), dropped: dropped.sort(byTime) };
+}
+
+/** How far each mode's tonic sits above the tonic of the major scale with the same notes. */
+const PARENT_MAJOR: Record<string, number> = {
+  major: 0,
+  dorian: 2,
+  phrygian: 4,
+  lydian: 5,
+  mixolydian: 7,
+  minor: 9,
+  'harmonic-minor': 9,
+  'melodic-minor': 9,
+  locrian: 11,
+};
+
+/**
+ * Semitones that move an effect written in C into the music's key: to the major scale sharing
+ * the score's notes (A minor and D dorian keep C), by the nearest octave (−5 to +6).
+ */
+export function effectTranspose(key: { tonic: number; mode: string }): number {
+  const shift = (((key.tonic - (PARENT_MAJOR[key.mode] ?? 0)) % 12) + 12) % 12;
+  return shift > 6 ? shift - 12 : shift;
+}

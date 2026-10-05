@@ -1,0 +1,8 @@
+id: snap-soft
+description: Finger snap — a single bright band-passed burst.
+algo: drum
+kind: clap
+bursts: 1
+decay: 0.07
+color: 2300
+q: 1.6

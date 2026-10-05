@@ -1,0 +1,6 @@
+{
+  "name": "tiny-fetch-retry",
+  "version": "2.1.0",
+  "type": "module",
+  "scripts": { "test": "node --test" }
+}

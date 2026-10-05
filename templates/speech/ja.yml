@@ -1,0 +1,66 @@
+# How Covi spells out Latin text for a Japanese voice. Japanese speech engines often read Latin
+# acronyms as words ("CLI" as クリー), so narration is rewritten before synthesis. Captions keep the
+# original text. See packages/video/src/narration/speech.ts.
+language: ja
+# Spelled letters are joined directly: CLI → シーエルアイ.
+separator: ''
+letters:
+  A: エー
+  B: ビー
+  C: シー
+  D: ディー
+  E: イー
+  F: エフ
+  G: ジー
+  H: エイチ
+  I: アイ
+  J: ジェイ
+  K: ケー
+  L: エル
+  M: エム
+  N: エヌ
+  O: オー
+  P: ピー
+  Q: キュー
+  R: アール
+  S: エス
+  T: ティー
+  U: ユー
+  V: ブイ
+  W: ダブリュー
+  X: エックス
+  Y: ワイ
+  Z: ゼット
+# Acronyms and names said as words, and common cases voices get wrong. Exact, case-sensitive.
+words:
+  JSON: ジェイソン
+  YAML: ヤムル
+  NASA: ナサ
+  GIF: ジフ
+  JPEG: ジェイペグ
+  REST: レスト
+  CRUD: クラッド
+  CORS: コルス
+  DOM: ドム
+  RAM: ラム
+  ASCII: アスキー
+  AJAX: エイジャックス
+  WASM: ワズム
+  'NULL': ヌル
+  README: リードミー
+  TODO: トゥードゥー
+  GET: ゲット
+  POST: ポスト
+  PUT: プット
+  PATCH: パッチ
+  DELETE: デリート
+  HEAD: ヘッド
+  EC2: イーシーツー
+  S3: エススリー
+  MP3: エムピースリー
+  MP4: エムピーフォー
+  CI/CD: シーアイ シーディー
+  I/O: アイオー
+  git: ギット
+  GitHub: ギットハブ
+  GitLab: ギットラボ

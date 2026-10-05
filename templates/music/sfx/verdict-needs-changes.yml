@@ -1,0 +1,17 @@
+# Needs changes: calm, not a buzzer. Two low e-piano notes settle from the tonic down to the sixth
+# (the relative minor's root), the logo's gentle-minor landing, with a marimba knock for warmth.
+id: verdict-needs-changes
+description: Calm two-note settle (1 down to 6) for a verdict that needs changes.
+license: original
+duration: 1.3
+layers:
+  - gen: notes
+    notes:
+      - { note: C5, at: 0, dur: 0.14, patch: e-piano, velocity: 0.55 }
+      - { note: A4, at: 0.11, dur: 0.55, patch: e-piano, velocity: 0.6 }
+  - gen: notes
+    notes:
+      - { note: A3, at: 0.11, dur: 0.3, patch: marimba, velocity: 0.5 }
+    gain: -9
+fx:
+  reverb: { size: 0.5, damp: 0.55, mix: 0.14, width: 1 }

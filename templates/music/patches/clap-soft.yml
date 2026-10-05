@@ -1,0 +1,9 @@
+id: clap-soft
+description: Airy hand clap — three quick bursts and a short band-passed tail.
+algo: drum
+kind: clap
+bursts: 3
+spacing: 0.01
+decay: 0.18
+color: 1250
+q: 1

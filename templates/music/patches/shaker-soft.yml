@@ -1,0 +1,9 @@
+id: shaker-soft
+description: Soft shaker — band-passed noise with a rounded swell and quick fall.
+algo: drum
+kind: shaker
+decay: 0.07
+attack: 0.012
+color: 5800
+q: 1.1
+lowpass: 10500

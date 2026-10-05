@@ -1,0 +1,45 @@
+id: feature-demo
+name: Feature demo
+description: The previous workflow, the new behavior, the key interaction, and an implementation note.
+use_when: The change adds or changes user-facing behavior in a UI.
+beats:
+  - id: context
+    eyebrow: New behavior
+    eyebrows: { ko: '새 동작', ja: '新しい動作', zh: '新行为' }
+    goal: Say what users can do now that they could not before.
+    visuals: [title]
+    expression: explaining
+  - id: before
+    eyebrow: Before
+    eyebrows: { ko: '변경 전', ja: '変更前', zh: '变更前' }
+    goal: Show the previous workflow briefly.
+    visuals: [screenshot:before]
+    expression: thinking
+    optional: true
+  - id: interaction
+    eyebrow: See it
+    eyebrows: { ko: '직접 보기', ja: '実際の動き', zh: '实际效果' }
+    goal: Walk through the key interaction on the head revision.
+    visuals: [interaction, before-after, screenshot:after]
+    expression: success
+  - id: implementation
+    eyebrow: How it works
+    eyebrows: { ko: '동작 방식', ja: '仕組み', zh: '工作原理' }
+    goal: The one implementation detail a reviewer should understand.
+    visuals: [code]
+    expression: explaining
+  - id: review
+    eyebrow: Worth a look
+    eyebrows: { ko: '살펴볼 점', ja: '確認ポイント', zh: '值得一看' }
+    goal: The most important finding or edge case to check.
+    visuals: [findings, callout]
+    expression: reviewing
+  - id: summary
+    eyebrow: Summary
+    eyebrows: { ko: '요약', ja: 'まとめ', zh: '总结' }
+    goal: The verdict and the next step.
+    visuals: [summary]
+    expression: success
+short: [context, interaction, implementation, review, summary]
+# Where the music lifts: the first scene playing one of these beats, in order.
+hero: [interaction]

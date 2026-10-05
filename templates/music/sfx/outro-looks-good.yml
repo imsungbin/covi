@@ -1,0 +1,36 @@
+# Covi's sign-off when no music plays: the sonic logo on its own as the outro card settles, on the
+# theme's bell doubled by its glass pluck. A pickup of 5 (an octave below) and 1 lands on 3 over a
+# warm add9 tonic on e-piano, voiced low like the theme's resolved ending, with a soft root under
+# it. Written in C at the logo's own pace (a sixteenth and an eighth at 100 bpm): the landing is
+# 0.45 s in, the moment that meets the cue. Every note's release ends inside the sound, so it is
+# silent before the shortest outro does.
+id: outro-looks-good
+description: Covi's sign-off without music - the sonic logo (5, 1, landing on 3) on bell and pluck over a warm tonic.
+license: original
+duration: 1.85
+anchor: 0.45
+layers:
+  - gen: notes
+    notes:
+      - { note: G4, at: 0, dur: 0.14, patch: bell, velocity: 0.62 }
+      - { note: C5, at: 0.15, dur: 0.2, patch: bell, velocity: 0.68 }
+      - { note: E5, at: 0.45, dur: 0.15, patch: bell, velocity: 0.8 }
+  - gen: notes
+    notes:
+      - { note: G4, at: 0, dur: 0.12, patch: glass-pluck, velocity: 0.45 }
+      - { note: C5, at: 0.15, dur: 0.2, patch: glass-pluck, velocity: 0.5 }
+      - { note: E5, at: 0.45, dur: 0.35, patch: glass-pluck, velocity: 0.55 }
+    gain: -9
+  - gen: notes
+    notes:
+      - { note: E3, at: 0.45, dur: 0.8, patch: e-piano, velocity: 0.4 }
+      - { note: G3, at: 0.45, dur: 0.8, patch: e-piano, velocity: 0.38 }
+      - { note: C4, at: 0.45, dur: 0.8, patch: e-piano, velocity: 0.4 }
+      - { note: D4, at: 0.45, dur: 0.8, patch: e-piano, velocity: 0.34 }
+    gain: -9
+  - gen: notes
+    notes:
+      - { note: C3, at: 0.45, dur: 0.6, patch: round-bass, velocity: 0.6 }
+    gain: -13
+fx:
+  reverb: { size: 0.55, damp: 0.55, mix: 0.16, width: 1 }

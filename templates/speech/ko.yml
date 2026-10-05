@@ -1,0 +1,66 @@
+# How Covi spells out Latin text for a Korean voice. Korean speech engines often read Latin
+# acronyms as words ("CLI" as 클리), so narration is rewritten before synthesis. Captions keep the
+# original text. See packages/video/src/narration/speech.ts.
+language: ko
+# Spelled letters are joined directly: CLI → 씨엘아이.
+separator: ''
+letters:
+  A: 에이
+  B: 비
+  C: 씨
+  D: 디
+  E: 이
+  F: 에프
+  G: 지
+  H: 에이치
+  I: 아이
+  J: 제이
+  K: 케이
+  L: 엘
+  M: 엠
+  N: 엔
+  O: 오
+  P: 피
+  Q: 큐
+  R: 알
+  S: 에스
+  T: 티
+  U: 유
+  V: 브이
+  W: 더블유
+  X: 엑스
+  Y: 와이
+  Z: 제트
+# Acronyms and names said as words, and common cases voices get wrong. Exact, case-sensitive.
+words:
+  JSON: 제이슨
+  YAML: 야믈
+  NASA: 나사
+  GIF: 지프
+  JPEG: 제이펙
+  REST: 레스트
+  CRUD: 크루드
+  CORS: 코스
+  DOM: 돔
+  RAM: 램
+  ASCII: 아스키
+  AJAX: 에이잭스
+  WASM: 와즘
+  'NULL': 널
+  README: 리드미
+  TODO: 투두
+  GET: 겟
+  POST: 포스트
+  PUT: 풋
+  PATCH: 패치
+  DELETE: 딜리트
+  HEAD: 헤드
+  EC2: 이씨투
+  S3: 에스쓰리
+  MP3: 엠피쓰리
+  MP4: 엠피포
+  CI/CD: 씨아이 씨디
+  I/O: 아이오
+  git: 깃
+  GitHub: 깃허브
+  GitLab: 깃랩

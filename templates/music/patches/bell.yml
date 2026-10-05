@@ -1,0 +1,10 @@
+id: bell
+description: 'Clear FM bell (1 : 3.5 inharmonic pair) with a soft octave shimmer. Chimes, reveals, sonic-logo sparkle.'
+algo: fm
+ops:
+  - { ratio: 3.5, index: 2.4, indexDecay: 0.7, level: 1 }
+  - { ratio: 2, carrier: 2, index: 0.8, indexDecay: 0.3, level: 0.22, decay: 1.2 }
+amp: { a: 0.002, d: 2.6, s: 0, r: 1.2 }
+velocityIndex: 0.6
+keyDecay: 0.3
+lowpass: 9000

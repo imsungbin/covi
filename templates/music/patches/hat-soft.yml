@@ -1,0 +1,9 @@
+id: hat-soft
+description: Gentle closed hi-hat — high-passed noise with a hint of metallic partials, rolled off above 10 kHz.
+algo: drum
+kind: hat
+decay: 0.045
+color: 6800
+tone: 0.2
+noise: 0.8
+lowpass: 10000

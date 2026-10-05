@@ -1,0 +1,10 @@
+id: celesta
+description: 'Sweet celesta (FM): a near-pure fundamental with a quick, bright hammer partial two octaves up. Music-box melodies and sparkles in octaves 5–6.'
+algo: fm
+ops:
+  - { ratio: 1, index: 0.45, indexDecay: 0.12, level: 1 }
+  - { ratio: 4, carrier: 4, index: 0.9, indexDecay: 0.05, level: 0.18, decay: 0.35 }
+amp: { a: 0.002, d: 1.6, s: 0, r: 0.6 }
+velocityIndex: 0.5
+keyDecay: 0.3
+lowpass: 10000

@@ -1,0 +1,21 @@
+# .gitlab-ci.yml: run Covi on every merge request.
+#
+# Settings > CI/CD > Variables:
+#   COVI_GITLAB_TOKEN  project access token with the api scope (masked, protected as appropriate).
+#                      Without it Covi still reviews and uploads artifacts; it just skips the MR note.
+#   ANTHROPIC_API_KEY  optional, for model-written explanations and findings.
+#
+# If the Covi project is private, allow this project's job token to read it:
+#   Covi project > Settings > CI/CD > Job token permissions > add this project.
+stages: [test]
+
+include:
+  - project: 'your-org/covi'        # replace with where Covi lives on your GitLab instance
+    ref: v1
+    file: '/integrations/gitlab-ci/covi.yml'
+    inputs:
+      covi-project: your-org/covi   # the same project, cloned by the job to install Covi
+      covi-ref: v1                  # the same ref as above
+      fail-on: high                 # fail on confirmed/likely high-severity findings
+      video-mode: short
+      duration: 30s

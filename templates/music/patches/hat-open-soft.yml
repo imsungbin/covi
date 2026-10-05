@@ -1,0 +1,9 @@
+id: hat-open-soft
+description: Soft open hi-hat — a longer, slightly darker wash than hat-soft, for off-beats and lifts.
+algo: drum
+kind: hat
+decay: 0.28
+color: 6500
+tone: 0.25
+noise: 0.8
+lowpass: 9500

@@ -1,0 +1,6 @@
+id: woodblock-lo
+description: Low woodblock "tok".
+algo: drum
+kind: woodblock
+freq: 820
+decay: 0.1

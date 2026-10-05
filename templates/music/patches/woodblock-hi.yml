@@ -1,0 +1,6 @@
+id: woodblock-hi
+description: High woodblock "tok".
+algo: drum
+kind: woodblock
+freq: 1150
+decay: 0.08

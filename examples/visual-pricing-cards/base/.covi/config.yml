@@ -1,0 +1,7 @@
+app:
+  static: .
+demo:
+  pages: [/]
+  viewports: [desktop, mobile]
+video:
+  mode: short

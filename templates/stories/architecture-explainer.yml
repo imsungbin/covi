@@ -1,0 +1,38 @@
+id: architecture-explainer
+name: Architecture explainer
+description: A guided walkthrough of a structural change when there is nothing to click.
+use_when: A large internal change (refactor, restructuring) where reviewers need a mental model.
+beats:
+  - id: context
+    eyebrow: Restructuring
+    eyebrows: { ko: '구조 개편', ja: '構造の再編', zh: '结构重组' }
+    goal: Why the structure changed.
+    visuals: [title]
+    expression: explaining
+  - id: map
+    eyebrow: The shape
+    eyebrows: { ko: '전체 구조', ja: '全体像', zh: '整体结构' }
+    goal: Which modules moved and how they relate now.
+    visuals: [diagram, change-map]
+    expression: explaining
+  - id: core
+    eyebrow: Key seam
+    eyebrows: { ko: '핵심 경계', ja: '要となる境界', zh: '关键衔接点' }
+    goal: The interface or boundary that matters most.
+    visuals: [code]
+    expression: explaining
+  - id: review
+    eyebrow: Worth a look
+    eyebrows: { ko: '살펴볼 점', ja: '確認ポイント', zh: '值得一看' }
+    goal: Where behavior could have changed by accident.
+    visuals: [findings, callout]
+    expression: reviewing
+  - id: summary
+    eyebrow: Summary
+    eyebrows: { ko: '요약', ja: 'まとめ', zh: '总结' }
+    goal: The verdict and a suggested reading order.
+    visuals: [summary]
+    expression: success
+short: [context, map, review, summary]
+# Where the music lifts: the first scene playing one of these beats, in order.
+hero: [map]

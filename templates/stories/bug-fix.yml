@@ -1,0 +1,45 @@
+id: bug-fix
+name: Bug fix
+description: Problem, reproduction, fix, and the regression concern.
+use_when: The change fixes incorrect behavior (bug fixes and security fixes).
+beats:
+  - id: context
+    eyebrow: The bug
+    eyebrows: { ko: '버그', ja: 'バグ', zh: '缺陷' }
+    goal: Name what was broken and where, in one sentence.
+    visuals: [title]
+    expression: explaining
+  - id: problem
+    eyebrow: Before
+    eyebrows: { ko: '변경 전', ja: '変更前', zh: '变更前' }
+    goal: Reproduce or describe the broken behavior on the base revision.
+    visuals: [before-after, terminal, api, screenshot:before]
+    expression: thinking
+  - id: fix
+    eyebrow: The fix
+    eyebrows: { ko: '수정', ja: '修正', zh: '修复' }
+    goal: Point at the lines that fix it and say why they work.
+    visuals: [code]
+    expression: explaining
+  - id: proof
+    eyebrow: After
+    eyebrows: { ko: '변경 후', ja: '変更後', zh: '变更后' }
+    goal: Show the corrected behavior.
+    visuals: [interaction, screenshot:after]
+    expression: success
+    optional: true
+  - id: review
+    eyebrow: Worth a look
+    eyebrows: { ko: '살펴볼 점', ja: '確認ポイント', zh: '值得一看' }
+    goal: The regression concern or the most important finding.
+    visuals: [findings, callout]
+    expression: reviewing
+  - id: summary
+    eyebrow: Summary
+    eyebrows: { ko: '요약', ja: 'まとめ', zh: '总结' }
+    goal: The verdict and what to check before merging.
+    visuals: [summary]
+    expression: success
+short: [context, problem, fix, review, summary]
+# Where the music lifts: the first scene playing one of these beats, in order.
+hero: [proof, fix]

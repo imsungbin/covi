@@ -1,0 +1,51 @@
+# How Covi spells out Latin text for a Mandarin voice. Mandarin speakers read Latin letters by
+# their English names, but voices run acronyms together ("CLI" as one syllable), so letters are
+# spaced apart before synthesis. Captions keep the original text.
+# See packages/video/src/narration/speech.ts.
+language: zh
+# Spelled letters are separated by spaces: CLI → C L I.
+separator: ' '
+letters:
+  A: A
+  B: B
+  C: C
+  D: D
+  E: E
+  F: F
+  G: G
+  H: H
+  I: I
+  J: J
+  K: K
+  L: L
+  M: M
+  N: N
+  O: O
+  P: P
+  Q: Q
+  R: R
+  S: S
+  T: T
+  U: U
+  V: V
+  W: W
+  X: X
+  Y: Y
+  Z: Z
+# Acronyms said as English words (checked with macOS Tingting). Mixed case keeps them from being
+# spelled; spelling works better for the rest (YAML, ASCII, RAM).
+words:
+  JSON: Jason
+  NASA: Nasa
+  AJAX: Ajax
+  WASM: Wasm
+  REST: Rest
+  GET: Get
+  POST: Post
+  PUT: Put
+  PATCH: Patch
+  DELETE: Delete
+  HEAD: Head
+  'NULL': 'Null'
+  README: read me
+  TODO: to do

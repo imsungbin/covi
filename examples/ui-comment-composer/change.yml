@@ -1,0 +1,12 @@
+title: Add a character counter to the comment composer
+description: A user-facing UI feature in a small static site. The composer now shows how many characters are left, blocks posting empty or overlong comments, and warns as the limit approaches. Covi should demonstrate the interaction and recommend a video.
+branch: feat/comment-counter
+commits:
+  - message: "feat(comments): show remaining characters and block overlong comments"
+expect:
+  intent: feature
+  demonstration: high
+  video: true
+  template: feature-demo
+  rules: []
+  verdict: looks-good

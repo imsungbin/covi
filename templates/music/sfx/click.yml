@@ -1,0 +1,11 @@
+# A soft trackpad click for an on-screen press: a short bright transient with a small tonal tick,
+# then a quieter release click. Written in Hz: a click has no pitch, so it never transposes.
+id: click
+description: Soft trackpad click for a pointer press.
+license: original
+duration: 0.12
+layers:
+  - { gen: noise-sweep, color: white, filter: highpass, from: 3000, q: 0.8, env: { a: 0.0005, d: 0.009 } }
+  - { gen: tone, wave: sine, from: 1700, to: 1200, env: { a: 0.001, d: 0.018 }, gain: -6 }
+  - { gen: tone, wave: triangle, from: 480, to: 360, env: { a: 0.001, d: 0.015 }, gain: -12 }
+  - { gen: noise-sweep, color: white, filter: bandpass, from: 4500, q: 1.4, env: { a: 0.0005, d: 0.006 }, gain: -13, delay: 0.055 }

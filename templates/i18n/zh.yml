@@ -1,0 +1,822 @@
+# Covi's fixed strings in Simplified Chinese. Keys and placeholders match en.yml (a test checks it).
+# Sentences join without spaces, so messages that continue a sentence have no leading space.
+
+languageName:
+  en: 英语
+  ko: 韩语
+  ja: 日语
+  zh: 简体中文
+
+# Names of change areas Covi groups files into.
+area:
+  root: 项目根目录
+  github: GitHub 配置
+  other: 其他文件
+
+verdict:
+  looks-good: 没有问题
+  needs-attention: 需要关注
+  needs-changes: 需要修改
+
+certainty:
+  confirmed: 已确认的问题
+  likely: 可能的问题
+  risk: 值得检查的风险
+  question: 疑问
+
+certaintyCount:
+  confirmed: { other: '{count} 个已确认的问题' }
+  likely: { other: '{count} 个可能的问题' }
+  risk: { other: '{count} 个值得检查的风险' }
+  question: { other: '{count} 个疑问' }
+
+severity:
+  high: 高
+  medium: 中
+  low: 低
+
+confidence:
+  high: 高
+  medium: 中
+  low: 低
+
+category:
+  correctness: 正确性
+  regression: 回归
+  edge-case: 边界情况
+  error-handling: 错误处理
+  state: 状态
+  concurrency: 并发
+  security: 安全
+  permissions: 权限
+  api-compatibility: API 兼容性
+  data-integrity: 数据完整性
+  performance: 性能
+  accessibility: 无障碍
+  testing: 测试
+  ui: UI
+  maintainability: 可维护性
+  complexity: 复杂度
+  intent-mismatch: 意图不符
+  dependency: 依赖
+  configuration: 配置
+
+count:
+  files: { other: '{count} 个文件' }
+  findings: { other: '{count} 个发现' }
+  testCases: { other: '{count} 个测试用例' }
+  testFiles: { other: '{count} 个测试文件' }
+  checks: { other: '{count} 项检查' }
+  areas: { other: '{count} 个区域' }
+  packages: { other: '{count} 个包' }
+
+report:
+  footer: '由 Covi 生成（{provider}）'
+  footerChange: '由 Covi 生成（{provider}）· {base} {baseSha} → {head} {headSha}'
+  explanation:
+    why: '**原因：**'
+    confidence: '_（置信度：{confidence}。{evidence}）_'
+    evidence: '依据：{evidence}。'
+    behavior: 行为
+    userVisible: '用户可见：{answer}'
+    yes: 是
+    no: 否
+    before: '**变更前：**'
+    after: '**变更后：**'
+    changes: 变更内容
+    architecture: 架构
+    details: 实现细节
+    reviewerNotes: 阅读 diff 之前
+    readingOrder: 建议的阅读顺序
+    ambiguities: 待解答的问题
+  review:
+    title: '审查：{title}'
+    untitled: 代码变更
+    findings: 发现
+    evidence: '依据：'
+    suggestion: '**建议：**'
+    tests: 测试
+    testsPassed: 通过
+    testsTimedOut: 超时
+    testsFailed: '失败（退出码 {code}）'
+    testsResult: '{command}：{result}，用时 {seconds} 秒'
+    checked: Covi 检查了什么
+    notVerified: 未能验证的内容
+    dismissed: 已驳回
+  summary:
+    changes: '**变更**'
+    focus: '**审查重点**'
+    testing: '**测试**'
+    commandPasses: '{command} 通过'
+    commandFails: '{command} 失败'
+    testsAdded: '在{files}中新增{cases}'
+    noTestChanges: 没有测试变更
+    textVerdict: '审查：{verdict}{findings}。'
+    textFindings: '（{findings}）'
+
+comment:
+  heading: 'Covi 审查：{verdict}'
+  watch: '观看审查视频{duration}'
+  finding: 发现
+  where: 位置
+  details: 发现详情
+  suggestion: '建议：'
+  changes: 变更内容
+  notVerified: 未能验证的内容
+  artifacts: 产物
+  run: 运行
+  truncated: …（已截断）
+
+review:
+  noIssues: '在 Covi 检查的范围内没有发现问题。{tests}'
+  testsPass: 测试通过。
+  testsFail: 测试没有通过。
+  omitted: { other: '（另有 {count} 条优先级较低的说明，见 review.json 的 "omitted"）' }
+  testsNotRunEnable: '未运行测试（请启用 review.runTests 或使用 --run-tests）。'
+  testsNotConfigured: '未运行测试（没有配置 test.command）。'
+  testsTimedOut: 测试命令超时。
+  testsFailed: '测试命令失败（退出码 {code}）。'
+  notDemonstrated: 用户可见的行为没有经过演示，只根据代码进行了审查。
+  rulesOnly: 逻辑只经过 Covi 内置规则的检查。如需基于推理的审查，请在编码代理中运行 Covi，或配置模型提供方。
+
+brief:
+  title: 'Covi 简报：{summary}'
+  header: '运行 {runId} · {repository} · {base} {baseSha} → {head} {headSha} · {files}，+{additions} −{deletions} · 规模 {size}'
+  language: '语言：面向人的文字请用{language}书写（在 explanation.json 和 findings.json 中设置 `language: {code}`）。'
+  authorDescription: 作者的描述
+  claim: '> 描述只是作者的说法，不是证据。请对照代码核实。'
+  commits: 提交
+  moreCommits: '…另有 {count} 个'
+  determined: Covi 的判断
+  intent: '**意图：**{kind}（置信度{confidence}）。{evidence}'
+  noEvidence: 没有直接依据。
+  ambiguity: '**不明确之处：**{text}'
+  areas: '**区域：**{areas}'
+  internal: 内部
+  surfaces: '**影响面：**{surfaces}'
+  demonstration: '**演示价值：**{value}{kinds} → {recommendation}。{reason}'
+  runnable: '**能否运行应用：**{answer}{suggestions}'
+  runnableYes: '能（{mode}）'
+  runnableNo: 否
+  commands: 命令
+  suggestedConfig: '；建议配置：{config}'
+  tests: '**测试：**{tests}{frameworks}'
+  testChanges: '变更了{files}（新增 {cases} 个用例）'
+  noTestChanges: 没有测试变更
+  frameworks: '；框架：{frameworks}'
+  dependencies: '**依赖：**{list}'
+  envVars: '**环境变量：**{list}'
+  data: '**数据变更：**{list}'
+  signals: 值得检查的信号
+  ruleNote: 规则发现有依据，但比较浅。请在 findings.json 中逐条确认，或说明理由后驳回。
+  readingOrder: 建议的阅读顺序
+  diff: Diff（按优先级排序）
+  notInlined: '未内联的文件：'
+  nextSteps: 代理的下一步
+  artifacts: '产物位于 {dir}。'
+  step1: '1. 阅读上述文件周围的代码；只看 diff 无法获得足够的上下文。'
+  step2: '2. 在运行目录中写入 `explanation.json`（模式：`covi schema explanation`）和 `findings.json`（模式：`covi schema findings`）。'
+  step3: '3. 运行 `covi report --run {runId}` 进行验证并生成 Markdown 报告。'
+
+intent:
+  kind:
+    feature: 功能
+    bug-fix: 缺陷修复
+    refactor: 重构
+    performance: 性能
+    visual: 视觉
+    docs: 文档
+    test: 测试
+    dependency: 依赖
+    config: 配置
+    build: 构建
+    ci: CI
+    chore: 维护
+    security: 安全
+    revert: 回退
+    mixed: 混合
+    unknown: 未知
+  evidence:
+    titlePrefix: '标题“{title}”使用了 {type} 前缀'
+    titleMentions: '标题提到了“{word}”'
+    commit: '提交“{subject}”'
+    branch: '分支名“{branch}”'
+    onlyDocs: 只改动了文档
+    onlyTests: 只改动了测试文件
+    onlyDependencies: 只改动了依赖清单和锁文件
+    onlyCi: 只改动了 CI 配置
+    onlyStyles: 只改动了样式、标记或资源文件
+    onlyBuild: 只改动了构建或配置文件
+    mostlyStyles: 改动集中在样式和标记上
+    moved: '{count} 个文件被移动或重命名'
+  ambiguity:
+    both: '信号同时指向{first}和{second}；这个变更可能混合了不同的关注点。'
+    uncommitted: 未提交的工作没有提交信息，因此只能根据文件推断意图。
+    noMessage: 没有标题、描述或提交信息说明这个变更；意图是根据文件推断的。
+    mismatch: '描述为{kind}，但也改动了{what}；请确认行为变化是有意为之。'
+    mismatchRoutes: 'API 路由（{routes}）'
+    mismatchMigration: 数据库迁移
+    mismatchUi: 用户界面文件
+    mismatchSource: 应用源文件
+    and: '和'
+  summary:
+    changes: 变更
+    kindChanges: '{kind}变更'
+    in: '{areas}中的{what}'
+
+demonstration:
+  stylesheet:
+    other: '{count} 个样式表有变化，最好亲眼看一看再判断。'
+  ui: '{where}中的用户界面代码有变化。'
+  uiFiles: '{count} 个文件'
+  interaction: 事件处理、表单状态或请求有变化，因此用户操作时的行为会不同。
+  routes: 'API 路由有变化：{routes}。'
+  handlers: API 处理代码有变化。
+  cli: 命令行行为有变化；终端输出可以直接展示。
+  architecture: 这是一次跨多个区域的大规模重构；跟着导览走一遍，有助于审查者建立整体认识。
+  nothingVisible: '没有用户可见的变化：没有涉及 UI、API 或 CLI，因此书面说明比演示更有用。'
+  littleVisible: 演示中几乎看不到什么。
+  cannotRun: Covi 还不知道如何运行这个项目；请配置 app.start 或 app.static，以便捕获真实行为。
+
+signal:
+  breaking: '有提交声明了破坏性变更：“{subject}”。'
+  routeRemoved: '路由 {route} 已被删除。'
+  exportRemoved: '导出的{kind} {name} 已被删除。'
+  destructive: '破坏性数据操作：{statement}'
+  dependencyAdded: '新增运行时依赖：{name}@{version}。'
+  majorUpgrade: '{name} 的主版本有变化（{from} → {to}）。'
+  envVarAdded: '新增环境变量：{name}。'
+  envVarUndocumented: '新增环境变量：{name}（未写入文档）。'
+  security: 与身份验证、授权或加密相关的文件有变化。
+  mode: '文件模式已变化：{from} → {to}。'
+  uncommitted: 这个变更包含未提交的工作。
+
+note:
+  lockfiles: { other: '{count} 个锁文件有变化（{lines} 行）；这些是机械性的改动，可以略读。' }
+  skipped: { other: '跳过了 {count} 个文件（{reasons}）。' }
+  binary: { other: '{count} 个二进制文件有变化：{files}。' }
+  todos: { other: '新增了 {count} 条 TODO/FIXME 注释。' }
+  tests: '测试：新增 {added} 个测试用例，删除 {removed} 个。'
+  renamed: { other: '{count} 个文件被重命名或移动。' }
+  ignored:
+    generated: 生成的文件
+    vendored: 第三方代码
+    config: 配置中的 ignore
+
+reading:
+  data: '模式/数据变更：{operations}。'
+  dependencies: '依赖变更：{names}。'
+  newTests: 为这个变更新增的测试。
+  testUpdates: 为这个变更更新的测试。
+  route: '路由{change}：{name}{more}。'
+  more: '等 {count} 个'
+  adds: '新增 {names}'
+  changes: '修改 {names}'
+  removes: '删除 {names}'
+  styles: '{names} 的样式。'
+  newFile: '新的{category}文件。'
+  deletedFile: '已删除的{category}文件。'
+  moved: '从 {path} 移来。'
+  fileChange: '{category}变更（+{additions} −{deletions}）。'
+  change:
+    added: 新增
+    removed: 删除
+    modified: 修改
+  operation:
+    create-table: 创建表
+    drop-table: 删除表
+    rename-table: 重命名表
+    add-column: 添加列
+    drop-column: 删除列
+    rename-column: 重命名列
+    alter-column: 修改列
+    add-index: 添加索引
+    drop-index: 删除索引
+    data: 数据
+    other: 其他
+
+explain:
+  kindPhrase:
+    feature: 一项新功能
+    bug-fix: 一次缺陷修复
+    refactor: 一次重构
+    performance: 一次性能改进
+    visual: 一次视觉更新
+    docs: 一次文档更新
+    test: 一次测试更新
+    dependency: 一次依赖更新
+    config: 一次配置变更
+    build: 一次构建/工具变更
+    ci: 一次 CI 变更
+    chore: 维护工作
+    security: 一次安全修复
+    revert: 一次回退
+    mixed: 多种变更的组合
+    unknown: 一次变更
+  dataVerb:
+    create-table: 创建表
+    drop-table: 删除表
+    rename-table: 重命名表
+    add-column: 添加列
+    drop-column: 删除列
+    rename-column: 重命名列
+    alter-column: 修改列
+    add-index: 添加索引
+    drop-index: 删除索引
+    data: 修改数据
+    other: 修改
+  data:
+    columnOnTable: '在 {table} 上{verb} {column}'
+    single: '{verb} {name}'
+  sentence:
+    scopeIn: '{scope}中的{summary}'
+    imperative: '这个变更{clause}'
+    titled: '这个变更是{kind}，标题为“{summary}”。'
+    kind: '这个变更是{kind}：{summary}'
+  statement:
+    titleKind: '标题将其描述为{kind}：“{title}”。'
+    titleSays: '标题是“{title}”。{fromFiles}'
+    fromFiles: '“{kind}”这一判断是根据文件推断的。'
+    commitSays: '提交信息是“{summary}”。{fromFiles}'
+    commitsDescribe:
+      other: '{count} 条提交信息将其描述为{kind}{summary}。'
+    commitSummary: '：“{summary}”'
+    noPurpose: 没有描述或提交信息说明目的，文件也看不出目的。
+    inferred: '仅根据文件推断：看起来是{kind}。'
+  area:
+    symbolKind:
+      component: 组件
+      hook: Hook
+      class: 类
+      interface: 接口
+      type: 类型
+    others: { other: '等 {count} 个' }
+    adds: '新增 {names}{more}'
+    changes: '修改 {names}{more}'
+    removes: '删除 {names}{more}'
+    routeAdded: '新增路由 {route}'
+    routeRemoved: '删除路由 {route}'
+    routeChanged: '修改路由 {route}'
+    depAdded: '新增 {name}'
+    depRemoved: '删除 {name}'
+    depUpgraded: '将 {name} 从 {from} 升级到 {to}{major}'
+    depDowngraded: '将 {name} 从 {from} 降级到 {to}{major}'
+    major: '（主版本）'
+    envVar: '读取新的环境变量 {name}'
+    styles: '更新 {names}{more} 的样式'
+    stylesMore: '等 {count} 个'
+    edits: '编辑 {names}{more}'
+    editsMore: '等 {count} 个文件'
+  summary:
+    touches: '涉及{where}（+{additions} −{deletions}）。'
+    filesAcross: '{areas}{more}中的{files}'
+    andMore: '等'
+    filesIn: '{area} 中的{files}'
+    userVisible: '这是用户可见的变更（{kinds}）。'
+    noSurface: 没有涉及面向用户的部分（UI、API 或 CLI）。
+    lowConfidence: 意图是根据有限的依据推断的，请把它当作假设。
+  notes:
+    startWith: '从 {path} 开始看：{reason}'
+    noTests:
+      other: '{count} 个被修改的源文件没有配套的测试变更。'
+    uncommitted: 包含工作区中未提交的工作。
+  architecture:
+    spans: '涉及{areas}：{list}。'
+    internal: 内部
+    dependencies: '依赖关系图变更：{packages}。'
+    data: '数据模型变更：{list}。'
+    api: 'API 变更：{list}。'
+  headline: '{area} 中的变更'
+  repository: 仓库
+  behavior:
+    canRun: Covi 可以运行这个项目来展示行为；如有演示产物，请查看。
+    cannotRun: 没有观察到行为；请配置 app.start 或 app.static，让 Covi 能够捕获。
+  demoKind:
+    ui: UI
+    interaction: 交互
+    visual: 视觉
+    api: API
+    cli: CLI
+    architecture: 架构
+
+rule:
+  async-foreach:
+    checks: 传给 forEach 的 async 回调（不会被 await）
+    title: '{path} 中把 async 回调传给了 forEach'
+    explanation: 'forEach 会忽略回调返回的 Promise：循环会在工作完成前结束，失败会变成未处理的 rejection，顺序也无法保证。'
+    suggestion: '顺序执行请用 `for (const x of items) await ...`，并行执行请用 `await Promise.all(items.map(...))`。'
+  empty-catch:
+    checks: 被捕获后又被悄悄丢弃的错误
+    title: '{path} 中的错误被悄悄吞掉了'
+    explanation: 这个代码块中的失败会在没有日志、没有恢复的情况下消失，既会隐藏缺陷，也会让故障难以排查。
+    suggestion: 显式处理错误、记录日志，或让它继续向上抛出；如果是有意忽略，请在注释中说明原因。
+  error-handling-removed:
+    checks: 被删除且没有替代的错误处理
+    title: '{path} 中删除了错误处理'
+    evidence: '删除了{removed}，新增了 {added} 行。第一处删除：{line}（原第 {number} 行）'
+    lines: { other: '{count} 行错误处理代码' }
+    explanation: 原本在这里处理的失败，现在可能会传到调用方，或使操作崩溃。
+    suggestion: 确认这些失败情况仍在别处得到处理（或者现在已不可能发生）。
+  removed-export-still-referenced:
+    checks: 其他文件仍在使用的已删除或已重命名的导出
+    title: '已删除的导出 {name} 仍被引用'
+    evidence: "{name} 已从 {path} 中删除，但仍有{references}：\n{sample}"
+    references: { other: ' {count} 处引用' }
+    explanation: 仍在导入或调用被删除符号的代码会编译失败，或在运行时抛出异常。
+    suggestion: '更新剩余的引用，或把 {name} 保留为已弃用的别名。'
+  route-removed:
+    checks: 被删除或重命名的 API 路由
+    title: 'API 路由 {route} 已删除'
+    evidence: '{file} 中已不再有 {route} 的路由定义。'
+    explanation: 调用这个路由的现有客户端、集成或缓存的前端将开始收到错误。
+    suggestion: 确认没有客户端依赖它，或者保留它并设置弃用期。
+  destructive-migration:
+    checks: 破坏性的模式和数据迁移
+    title: '{file} 中的破坏性迁移'
+    explanation: '{operations}在没有备份的情况下无法撤销，部署期间仍在运行旧版本的代码也可能出错。'
+    suggestion: 采用扩展/收缩（expand/contract）的方式上线（先停止使用该列，在之后的版本中再删除），并确认备份。
+  schema-without-migration:
+    checks: 没有迁移的 ORM 模式变更
+    title: '{kind}有变化，但没有迁移'
+    prisma: Prisma 模式
+    django: Django 模型
+    evidence: '{path} 修改了模型字段，但这个变更中没有新增迁移文件。'
+    explanation: 已部署的数据库仍保留旧模式，因此使用新字段的查询会在运行时失败。
+    suggestion: 生成迁移，并与模式变更一起提交。
+  img-missing-alt:
+    checks: 没有替代文本的图片
+    title: '{path} 中有没有替代文本（alt）的图片'
+    explanation: 屏幕阅读器会把没有 alt 的图片读成文件名或直接跳过，图片的含义就丢失了。
+    suggestion: 添加描述图片内容的 alt="…"；如果只是装饰，请用 alt=""。
+  focus-outline-removed:
+    checks: 被移除且没有可见替代的焦点指示
+    title: '{path} 中移除了焦点轮廓'
+    explanation: '键盘用户依靠焦点轮廓判断当前位置。没有 :focus-visible 替代就移除它，会让界面在没有鼠标时难以使用。'
+    suggestion: '保留可见的焦点样式，例如 `:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }`。'
+  click-on-static-element:
+    checks: 加在非交互元素上、没有键盘支持的点击处理
+    title: '{path} 中可点击的 <{tag}> 无法通过键盘访问'
+    explanation: '只有点击处理的 <{tag}> 无法用 Tab 聚焦，也无法用 Enter/Space 激活，屏幕阅读器也不会把它读作控件。'
+    suggestion: '请使用 <button>（或添加 role="button"、tabIndex={0} 和按键处理）。'
+  secret-in-diff:
+    checks: 添加到仓库中的凭据或私钥
+    title: '{path} 中提交了{label}'
+    evidence: '新增的行中有一个值符合{label}的格式：{value}'
+    explanation: 提交的内容对所有能访问仓库的人都可见，即使删除后也会留在 git 历史中。
+    suggestion: 立即吊销并轮换这个凭据，然后改为从密钥存储或环境变量中读取。
+    label:
+      private-key: 私钥
+  merge-conflict-markers:
+    checks: 遗留的合并冲突标记
+    title: '{path} 中有未解决的合并冲突'
+    evidence: '新增了冲突标记：{line}'
+    explanation: 文件中同时包含冲突的双方内容，将无法解析或无法按预期运行。
+    suggestion: '解决冲突，并删除 <<<<<<< / ======= / >>>>>>> 标记。'
+  focused-test:
+    checks: 会悄悄跳过其余测试的聚焦测试（.only）
+    title: '{path} 中遗留了聚焦测试（.only）'
+    explanation: 聚焦测试会让运行器跳过同一范围内的其他所有测试，因此 CI 可能在没有运行它们的情况下通过。
+    suggestion: 合并前请删除 `.only`。
+  skipped-test:
+    checks: 新跳过或被禁用的测试
+    title: '{path} 中的测试被跳过'
+    titleMany: '{count} 个测试被跳过'
+    explanation: 被跳过的测试不再保护它所覆盖的行为。这可能是有意的，但应当经过慎重考虑。
+    suggestion: 确认跳过是有意为之，并跟踪何时重新启用。
+  debug-leftover:
+    checks: 应用代码中遗留的 debugger 语句和断点
+    title: '{path} 中遗留了调试断点'
+    explanation: 只要连接了开发者工具或调试器，断点就会暂停执行，几乎从来不是有意要发布的。
+    suggestion: 删除这个断点。
+  lockfile-out-of-sync:
+    checks: 依赖清单有变化但锁文件没有同步
+    title: '{manifest} 有变化，但 {lockfile} 没有'
+    evidence: '依赖有变化（{dependencies}），但 {lockfile} 没有更新。'
+    explanation: 可复现的安装（npm ci、cargo build --locked 等）会失败，或解析出与测试时不同的版本。
+    suggestion: '运行包管理器的安装命令，并提交更新后的 {lockfile}。'
+  major-dependency-upgrade:
+    checks: 依赖的主版本升级
+    title: '{name} 的主版本升级'
+    titleMany: '{count} 个依赖的主版本升级'
+    explanation: 主版本是库引入破坏性变更的地方；即使代码能编译，行为也可能改变。
+    suggestion: 浏览发行说明，看看有没有影响本项目用法的破坏性变更。
+  env-var-undocumented:
+    checks: 环境变量示例文件中缺少的新环境变量
+    title: '新的环境变量 {name} 没有写入文档'
+    titleMany: '{count} 个新的环境变量没有写入文档'
+    evidence:
+      other: '代码会读取 {names}，但 {file} 中没有。'
+    explanation: 部署人员和队友依靠示例文件了解需要设置什么；缺少的变量通常会表现为运行时错误。
+    suggestion:
+      other: '把它们连同安全的占位值一起加到 {file} 中。'
+  missing-tests:
+    checks: 没有配套测试的行为变化
+    titleBugFix: 没有回归测试的缺陷修复
+    title: 没有测试的行为变化
+    evidence: '{files}有变化（新增 {lines} 行），但没有测试文件变化：{list}。'
+    sourceFiles: { other: '{count} 个源文件' }
+    explanationBugFix: 如果没有在修复前会失败的测试，这个缺陷可能会悄悄回来。
+    explanation: 没有测试的新行为，在之后的变更中很容易被破坏。
+    suggestionBugFix: 添加一个能复现原始缺陷的测试。
+    suggestion: 为新行为的主要路径添加测试。
+  intent-mismatch:
+    checks: 声明的意图与实际变更不一致
+    title: '描述为{kind}的变更改变了行为'
+    explanation: 审查者会根据描述决定读得多仔细；没有说明的行为变化很容易被忽略。
+    suggestion: 确认行为变化是有意为之，并在描述中写明。
+  dangerous-html:
+    checks: 原始 HTML 注入点（innerHTML、dangerouslySetInnerHTML、v-html）
+    title: '{path} 中渲染了未经清理的 HTML'
+    explanation: '{api} 会把标记当作 HTML 渲染。只要其中有一部分来自用户或外部数据，就会成为跨站脚本（XSS）的入口。'
+    suggestion: 改为以文本渲染，或在插入前清理标记（例如使用 DOMPurify）。
+  dynamic-code-execution:
+    checks: eval 和动态构造的代码
+    title: '{path} 中动态执行代码'
+    explanation: 把字符串当作代码执行，会执行传入的任何内容，也会让静态分析失效，而且很少真的需要。
+    suggestion: 改用显式解析或查找表。
+  sql-string-building:
+    checks: 用字符串插值而不是参数构造的 SQL
+    title: '{path} 中用插值构造 SQL'
+    explanation: 把值插入 SQL 文本时，只要其中任何一个值可能受用户影响，就有 SQL 注入的风险。
+    suggestion: 使用参数化查询（占位符加绑定值）。
+  workflow-script-injection:
+    checks: 插入了不可信事件数据的 GitHub Actions 脚本
+    title: '{path} 中通过 {expression} 的脚本注入'
+    explanation: '{expression} 可被攻击者控制，并且会在执行前被代入 shell 脚本，因此精心构造的标题或分支名就能在工作流中执行命令。'
+    suggestion: '通过环境变量传递这个值（env: TITLE: ${{ ... }}），并在脚本中引用 "$TITLE"。'
+  workflow-pull-request-target:
+    checks: 检出不可信 PR 代码的 pull_request_target 工作流
+    title: '{path} 中的 pull_request_target 工作流检出了 PR 代码'
+    explanation: pull_request_target 运行时带有写权限令牌和仓库密钥。检出并运行 PR 中的代码，会让任何 fork 都能以这些权限执行代码。
+    suggestion: 运行 PR 代码的作业请使用 pull_request 触发器；评论等需要权限的步骤，放到另一个不检出 PR 代码的 workflow_run 作业中。
+  workflow-broad-permissions:
+    checks: 放宽为 write-all 的工作流令牌权限
+    title: '{path} 中的工作流授予了 write-all 令牌权限'
+    explanation: 每个步骤（包括第三方 action）都会拿到可以推送代码、编辑发行版和修改设置的令牌。
+    suggestion: '只授予作业需要的范围（例如 contents: read、pull-requests: write）。'
+
+capture:
+  trustHint: '请运行 `covi trust` 审阅并允许它们。'
+  skip:
+    appStart: 'app.start（{command}）'
+    command: '命令“{name}”'
+    demonstration: 演示
+    pagesFlowsRequests: 页面、流程和请求
+    appAt: '{revision} 版本的应用'
+    flow: '流程“{name}”'
+  reason:
+    notTrusted: '这台机器上尚未信任它。{hint}'
+    appNotTrusted: '这台机器上尚未信任仓库配置中的应用设置。{hint}'
+    cannotRun: 'Covi 不知道如何运行这个项目。请在 .covi/config.yml 中设置 app.start（必要时加上 app.url）或 app.static{example}。'
+    example: '，例如 {suggestion}'
+    nothing: 没有可以演示的内容。
+  finding:
+    appStart:
+      title: 应用在 head 版本无法启动
+      explanation: 应用这个变更后，Covi 无法启动配置好的应用，因此这个变更很可能破坏了启动或构建。
+    flow:
+      title: '流程“{name}”在 head 版本失败'
+      explanation: 应用这个变更后，配置的用户流程无法完成。
+    pageError:
+      title: '{path} 出现新的 JavaScript 错误'
+      explanation: '加载 {path}（{viewport}）时，head 版本会记录 base 版本没有的错误。'
+    pageStatus:
+      title: '变更后 {path} 返回 HTTP {status}'
+      evidence: 'base：HTTP {base}；head：HTTP {head}。'
+      explanation: 页面在 base 版本可以加载，应用这个变更后却失败了。
+    apiShape:
+      title: '{method} {path} 的响应结构变了'
+      evidence: '在两个版本中调用 {method} {path} 观察到：{shape}。'
+      explanation: 解析旧结构的现有客户端，如果不在同一个版本中一起更新，就会出错。
+      suggestion: 为接口加上版本号、用参数保留旧结构，或在这个变更中更新所有客户端。
+    apiStatus:
+      title: '{method} {path} 现在以 HTTP {status} 失败'
+      evidence: 'base：HTTP {base}；head：HTTP {head}。{body}'
+      explanation: 这个接口在变更前可以工作，应用变更后返回服务器错误。
+    command:
+      title: '`{command}` 现在失败了'
+      evidence: "base 的退出码为 {base}，head 的退出码为 {head}。\n{output}"
+      explanation: 演示命令在没有这个变更时成功，应用变更后失败。
+      timeout: 超时
+  shape:
+    kindChanged: '响应从 JSON {from}变成了 JSON {to}{keys}'
+    keys: '，键为 {keys}'
+    removed: { other: '删除了字段 {fields}' }
+    retyped: '改变了 {fields} 的类型'
+    retypedField: '{path}（{from} → {to}）'
+    value: 值
+    response: '响应{parts}'
+    and: '，并'
+    kind:
+      array: 数组
+      object: 对象
+      string: 字符串
+      number: 数字
+      boolean: 布尔值
+      'null': 'null'
+      unknown: 未知
+      bigint: bigint
+      undefined: undefined
+      function: 函数
+      symbol: 符号
+
+demo:
+  title: 演示
+  page: '页面 {name}'
+  flowStep: '{flow} · 第 {step} 步：{label}'
+  before: '变更前：'
+  after: '变更后：'
+  changedPixels: '变化的像素：{percent}%{diff}'
+  diffLink: ' ([diff]({path}))'
+  request: '变更前：{before} · 变更后：HTTP {after}{changed}'
+  notApplicable: 无
+  changed: ' · 有变化'
+  shapeChange: '结构变化：{shape}。'
+  notDemonstrated: 未能演示的内容
+
+video:
+  label:
+    verdict:
+      looks-good: 没有问题
+      needs-attention: 需要关注
+      needs-changes: 需要修改
+    certainty:
+      confirmed: 已确认的问题
+      likely: 可能的问题
+      risk: 值得检查的风险
+      question: 疑问
+    severity:
+      high: 严重程度高
+      medium: 严重程度中
+      low: 严重程度低
+    stats:
+      files: 文件
+      added: 新增
+      removed: 删除
+    before: 变更前
+    after: 变更后
+    response: 响应
+    terminal: 终端
+    signOff: 使用 Covi 完成审查
+  moreLines: { other: '… 另有 {count} 行' }
+  musicHint: '音乐：Covi 主题曲。如需更改，请运行 `covi render --run {run} --music none` 或 `--music compose`。'
+
+narration:
+  meta: '{files} · +{additions} −{deletions}'
+  touches: '涉及{areas}。'
+  changeMap:
+    text: '这个变更涉及{areas}，主要是{names}。'
+    heading: '改动了{files}'
+  code:
+    fix: '修复位于 {file}。'
+    fixWhat: '修复位于 {file}，{verb}了 {names}。'
+    styles: '样式位于 {file}。'
+    stylesWhat: '样式位于 {file}，{verb}了 {names}。'
+    key: '关键改动在 {file}。'
+    keyWhat: '关键改动在 {file}，{verb}了 {names}。'
+    adds: 新增
+    updates: 更新
+    describedBy: '{description}'
+  screenshot:
+    before: '这是变更前的{label}。'
+    after: '这是变更后的{label}。{highlighted}'
+    highlighted: 变化的区域已经高亮。
+    thePage: 页面
+  beforeAfter:
+    fix: 这是修复前后的行为。
+    page: '这是{page}变更前后的对比。'
+    pageOf: '{page} '
+    stack: 上面是旧版本，下面是新版本。
+    split: 左边是旧版本，右边是新版本。
+  interaction:
+    steps: '这是新的流程。{steps}。'
+    plain: 下面一步一步看新的流程。
+  terminal:
+    compared: 这是同一条命令在变更前后的运行结果。
+    prints: '现在它输出 {output}。'
+    exits: '现在退出码是 {after}，原来是 {before}。'
+    none: 无
+    output: 这是变更后命令的输出。
+  api:
+    call: '调用 {method} {path}。'
+    callCompared: '在变更前后分别调用 {method} {path}。'
+    sayCompared: '在变更前后，分别调用 {method} {path}。'
+    status: '状态码从 {before} 变成了 {after}。'
+    entries:
+      other: '之前返回 {count} 条，现在返回 {now} 条。'
+    listed:
+      other: '旧响应列出 {count} 条，新的 {key} 数组中有 {now} 条。'
+    includes: '响应中现在还包含 {keys}。'
+  findings:
+    one: '有一点值得审查：{title}。'
+    oneWhy: '有一点值得审查：{title}。{why}'
+    two: '有两点值得一看。首先，{title}。'
+    few: '有几点值得一看。首先，{title}。'
+    also: '另外，{title}。'
+    count:
+      two: 有两点值得一看。
+      three: 有三点值得一看。
+      few: 有几点值得一看。
+    ordinal:
+      first: '第一，{title}。'
+      second: '第二，{title}。'
+      third: '第三，{title}。'
+    heading:
+      confirmed: 已确认的问题
+      likely: 可能的问题
+      risk: 值得检查的风险
+      question: 待解答的问题
+      many: '{count} 个需要检查的地方'
+  callout:
+    clean: Covi 没有发现阻碍合并的问题。
+    check: '值得检查：{title}。'
+    noBlocking: 没有阻碍合并的问题
+    startWith: '请从 {path} 开始审查。'
+    sound: 在 Covi 检查的范围内，这个变更看起来没有问题。
+  diagram:
+    text: 这里展示移动后的各部分现在如何关联；高亮的模块都在这次 diff 中有改动。
+    heading: 模块关系图
+  summary:
+    looksGood: 总体来看，可以合并。
+    needsChanges: 合并前需要修改。
+    needsAttention: '合并前需要再仔细看看{spots}。'
+    spots: { other: '{count} 个地方' }
+    tests: '还附带了{tests}。'
+    newTests: { other: '{count} 个新测试' }
+    next: '建议的下一步：{step}'
+    start: '如果要读 diff，请从 {path} 开始。'
+    point:
+      confirmed: 已确认
+      likely: 可能
+      risk: 风险
+      question: 疑问
+    pointLine: '{label}：{title}'
+  roadmap:
+    text: '{first}接下来依次看看{stops}。'
+    api: 变更前后的响应
+    apiNew: 新的响应
+    terminal: 变更前后的命令
+    terminalNew: 命令的输出
+    beforeAfter: 变更前后的页面
+    screenshot: 实际的样子
+    interaction: 新的流程
+    code: 背后的代码
+    structure: 各部分如何配合
+    findings: 合并前需要检查的地方
+  file:
+    phrase: '{name} {noun}'
+    module: 模块
+    script: 脚本
+    component: 组件
+    stylesheet: 样式表
+    page: 页面
+    doc: 文档
+    config: 配置文件
+    file: 文件
+  slash: ' 斜杠 '
+  to: ' 到 '
+
+question:
+  mode:
+    header: 视频类型
+    question: 要让 Covi 制作什么样的视频？
+    short: 短视频
+    shortDescription: '竖屏 9:16，约 30 秒，简洁'
+    standard: 标准审查
+    standardDescription: '16:9，60–120 秒，讲解更详细'
+    custom: 自定义
+    customDescription: 选择尺寸、长度和旁白
+  duration:
+    header: 时长
+    question: 视频要多长？
+    s15: 约 15 秒
+    s15Description: 只讲关键的一幕
+    s30: 约 30 秒
+    s30Description: 变更加上一条审查意见
+    s60: 约 60 秒
+    s60Description: 有空间解释为什么重要
+    auto: 由 Covi 决定
+    autoDescription: 按变更的大小决定时长
+  size:
+    header: 尺寸
+    question: 自定义视频用什么尺寸？
+    vertical: 竖屏
+    landscape: 横屏
+    square: 方形
+  music:
+    header: 音乐
+    question: 视频要配什么音乐？
+    theme: Covi 主题曲（默认）
+    themeDescription: 按故事和审查结论编排
+    compose: 为这个视频作曲
+    composeDescription: 为这次变更写一段新的配乐，稍慢一些
+    none: 不要音乐
+    noneDescription: 只有旁白和轻柔的音效
+    noneDescriptionNoNarration: 只有轻柔的音效
+    noneDescriptionNoEffects: 只有旁白
+    noneDescriptionSilent: 完全无声
+    where:
+      bookends: '{what}；主要出现在开头、停顿处、关键时刻和结尾'
+      continuous: '{what}；在旁白下方轻轻铺底，停顿时稍稍抬起'
+      throughout: '{what}；贯穿整个视频'
+      byMode: '{what}；短视频中在旁白下方轻轻铺底，标准审查中出现在旁白之间'

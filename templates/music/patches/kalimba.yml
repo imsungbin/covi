@@ -1,0 +1,12 @@
+id: kalimba
+description: 'Kalimba / thumb piano (modal tine: strong fundamental, bright inharmonic mode near 5.95×, short click). Gentle ostinatos in octaves 4–5.'
+algo: modal
+partials:
+  - { ratio: 1, gain: 1, decay: 1.6 }
+  - { ratio: 5.95, gain: 0.22, decay: 0.25 }
+  - { ratio: 11.8, gain: 0.05, decay: 0.08 }
+strike: { noise: 0.12, ms: 0.5, freq: 3000, q: 0.8 }
+keyDecay: 0.35
+hardness: 0.5
+lowpass: 10000
+amp: { r: 0.3 }

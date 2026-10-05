@@ -1,0 +1,13 @@
+# Drum voices a score's drum rows can name, each mapped to a drum patch in ../patches.
+id: soft-acoustic
+description: Soft acoustic percussion — felt kick, brush, shaker, woodblocks, finger snap (warm storybook beds).
+voices:
+  kick: kick-felt
+  snare: snare-brush
+  hat: hat-soft
+  shaker: shaker-soft
+  woodblock: woodblock-hi
+  woodblock-lo: woodblock-lo
+  rim: rim-soft
+  snap: snap-soft
+  crash: crash-soft

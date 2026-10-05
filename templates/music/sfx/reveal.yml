@@ -1,0 +1,12 @@
+# The after state appears next to the before: an airy swipe that peaks a little after it starts,
+# with a faint glass note on the fifth (G in C), which sits in any major or minor key.
+id: reveal
+description: Airy swipe for the before/after reveal, with a faint glass note in the music's key.
+license: original
+duration: 0.55
+layers:
+  - { gen: noise-sweep, color: pink, filter: bandpass, from: 800, to: 3400, q: 1.2, env: { a: 0.12, d: 0.22 }, gain: -2, pan: [-0.35, 0.35] }
+  - { gen: noise-sweep, color: white, filter: highpass, from: 3500, to: 7000, q: 0.7, env: { a: 0.11, d: 0.12 }, gain: -18, pan: [-0.5, 0.5] }
+  - { gen: fm, freq: G5, ratio: 3.5, index: 0.6, indexDecay: 0.08, env: { a: 0.004, d: 0.32 }, gain: -15, delay: 0.1 }
+fx:
+  reverb: { size: 0.45, damp: 0.55, mix: 0.12, width: 1 }

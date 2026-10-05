@@ -1,0 +1,166 @@
+import { describe, expect, it } from 'vitest';
+import {
+  AUDIBLE,
+  audibleSeconds,
+  dbfs,
+  integratedLoudness,
+  kWeightingCoefficients,
+  measureLoudness,
+  truePeak,
+  weightedLevel,
+} from '../src/loudness.ts';
+
+const SR = 48_000;
+
+/** A sine with peak `dbfs` (AES17: a full-scale sine is 0 dBFS). */
+function sine(freq: number, seconds: number, peakDb: number, phase = 0): Float32Array {
+  const out = new Float32Array(Math.round(seconds * SR));
+  const a = 10 ** (peakDb / 20);
+  for (let i = 0; i < out.length; i++) out[i] = a * Math.sin((2 * Math.PI * freq * i) / SR + phase);
+  return out;
+}
+
+function concat(...parts: Float32Array[]): Float32Array {
+  const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+describe('K-weighting', () => {
+  it('reproduces the 48 kHz coefficients tabled in BS.1770-4', () => {
+    const { shelf, highpass } = kWeightingCoefficients(SR);
+    const close = (got: number[], want: number[]) => {
+      for (const [i, g] of got.entries()) expect(g).toBeCloseTo(want[i]!, 9);
+    };
+    close(shelf.b, [1.53512485958697, -2.69169618940638, 1.19839281085285]);
+    close(shelf.a, [1, -1.69065929318241, 0.73248077421585]);
+    close(highpass.b, [1, -2, 1]);
+    close(highpass.a, [1, -1.99004745483398, 0.99007225036621]);
+  });
+});
+
+describe('integrated loudness (EBU Tech 3341)', () => {
+  it('reads a 1 kHz stereo sine at −23 dBFS per channel as −23.0 LUFS', () => {
+    const x = sine(1000, 20, -23);
+    expect(integratedLoudness([x, x], SR)).toBeCloseTo(-23, 1);
+    expect(Math.abs(integratedLoudness([x, x], SR) + 23)).toBeLessThanOrEqual(0.1);
+  });
+
+  it('reads a 1 kHz stereo sine at −33 dBFS per channel as −33.0 LUFS', () => {
+    const x = sine(1000, 20, -33);
+    expect(Math.abs(integratedLoudness([x, x], SR) + 33)).toBeLessThanOrEqual(0.1);
+  });
+
+  it('gates quiet passages relative to the program (−36/−23/−36 dBFS, 10/60/10 s)', () => {
+    const x = concat(sine(1000, 10, -36), sine(1000, 60, -23), sine(1000, 10, -36));
+    expect(Math.abs(integratedLoudness([x, x], SR) + 23)).toBeLessThanOrEqual(0.1);
+  });
+
+  it('gates both ways (−72/−36/−23/−36/−72 dBFS, 10/10/60/10/10 s)', () => {
+    const x = concat(
+      sine(1000, 10, -72),
+      sine(1000, 10, -36),
+      sine(1000, 60, -23),
+      sine(1000, 10, -36),
+      sine(1000, 10, -72),
+    );
+    expect(Math.abs(integratedLoudness([x, x], SR) + 23)).toBeLessThanOrEqual(0.1);
+  });
+
+  it('ignores digital silence: more of it changes nothing', () => {
+    const padded = (seconds: number) => {
+      const x = concat(new Float32Array(seconds * SR), sine(1000, 10, -30), new Float32Array(SR));
+      return integratedLoudness([x, x], SR);
+    };
+    // Blocks straddling the edges count, as BS.1770 says (ffmpeg's ebur128 reads −30.1 too).
+    expect(padded(2)).toBeCloseTo(-30.12, 1);
+    expect(padded(40)).toBeCloseTo(padded(2), 9);
+  });
+
+  it('sums channels: one channel of a stereo pair reads 3 dB quieter', () => {
+    const x = sine(1000, 5, -20);
+    expect(integratedLoudness([x], SR) - integratedLoudness([x, x], SR)).toBeCloseTo(-3.01, 1);
+  });
+
+  it('is −Infinity for silence and for audio shorter than one block', () => {
+    expect(integratedLoudness([new Float32Array(SR)], SR)).toBe(Number.NEGATIVE_INFINITY);
+    expect(integratedLoudness([sine(1000, 0.3, -10)], SR)).toBe(Number.NEGATIVE_INFINITY);
+  });
+});
+
+describe('audible music', () => {
+  /** A sine of RMS `db` dBFS for `seconds`, on both channels. */
+  const tone = (db: number, seconds: number) => {
+    const n = Math.round(seconds * SR);
+    const a = Math.SQRT2 * 10 ** (db / 20);
+    return Float32Array.from({ length: n }, (_, i) => a * Math.sin((2 * Math.PI * 440 * i) / SR));
+  };
+  const join = (...parts: Float32Array[]) => {
+    const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return out;
+  };
+
+  it('counts quarter-second windows above −45 dBFS, before a moment', () => {
+    expect(AUDIBLE).toEqual({ thresholdDbfs: -45, window: 0.25 });
+    const music = join(tone(-30, 2), tone(-50, 1), tone(-20, 1));
+    const stereo = [music, music];
+    expect(audibleSeconds(stereo, SR, 4)).toBe(3);
+    // Only the windows before the logo count.
+    expect(audibleSeconds(stereo, SR, 3.5)).toBe(2.5);
+    expect(audibleSeconds(stereo, SR, 1.1)).toBe(1);
+    // A bed 20 dB under the voice is heard; music 40 dB under it is not.
+    expect(audibleSeconds([tone(-36, 2), tone(-36, 2)], SR, 2)).toBe(2);
+    expect(audibleSeconds([tone(-56, 2), tone(-56, 2)], SR, 2)).toBe(0);
+  });
+});
+
+describe('true peak (4× oversampling)', () => {
+  it('finds the peak between samples of a quarter-rate sine (EBU Tech 3341 case 16)', () => {
+    // 12 kHz with a 45° phase: every sample sits 3 dB below the waveform's peak.
+    const x = sine(SR / 4, 1, -6.02, Math.PI / 4);
+    expect(dbfs(Math.max(...x.map(Math.abs)))).toBeCloseTo(-9.03, 1);
+    const tp = truePeak([x, x], SR);
+    expect(tp).toBeGreaterThanOrEqual(-6.02 - 0.4);
+    expect(tp).toBeLessThanOrEqual(-6.02 + 0.2);
+  });
+
+  it('is never below the sample peak', () => {
+    const x = sine(997, 1, -1, 0.3);
+    expect(truePeak([x], SR)).toBeGreaterThanOrEqual(dbfs(Math.max(...x.map(Math.abs))) - 1e-9);
+  });
+
+  it('is −Infinity for silence', () => {
+    expect(truePeak([new Float32Array(1000)], SR)).toBe(Number.NEGATIVE_INFINITY);
+  });
+});
+
+describe('measureLoudness and weightedLevel', () => {
+  it('reports integrated loudness, true peak, and sample peak together', () => {
+    const x = sine(1000, 5, -23);
+    const m = measureLoudness([x, x], SR);
+    expect(m.integrated).toBeCloseTo(-23, 1);
+    expect(m.samplePeak).toBeCloseTo(-23, 2);
+    expect(m.truePeak).toBeGreaterThanOrEqual(m.samplePeak - 1e-9);
+  });
+
+  it('measures K-weighted level over chosen windows only', () => {
+    const x = concat(sine(1000, 2, -20), new Float32Array(2 * SR), sine(1000, 2, -40));
+    const loud = weightedLevel([x, x], SR, [[0.5, 1.5]]);
+    const quiet = weightedLevel([x, x], SR, [[4.5, 5.5]]);
+    expect(loud - quiet).toBeCloseTo(20, 1);
+    // Same scale as integrated loudness for a steady sine.
+    expect(loud).toBeCloseTo(integratedLoudness([sine(1000, 2, -20), sine(1000, 2, -20)], SR), 1);
+    // Between the sines only the filters' decaying tails remain.
+    expect(weightedLevel([x, x], SR, [[2.2, 3.8]])).toBeLessThan(-150);
+    expect(weightedLevel([x, x], SR, [])).toBe(Number.NEGATIVE_INFINITY);
+  });
+});

@@ -1,0 +1,29 @@
+# Which recipe plays for each on-screen event, and how loud. Effects follow only what the viewer
+# sees: a pointer press, the before/after reveal, a finding card landing, the verdict, and the
+# outro card settling. If an effect is noticeable, it is too loud. The outro's sign-off plays only
+# without music: with music, the music's own sonic logo lands on that moment.
+#
+# gainDb is relative to the voice-normalized stems (the voice at −16 LUFS), with every recipe
+# rendered to a −3 dBFS peak: −14 dB puts an effect's peak around 10 dB under the voice's.
+
+gainDb: -14
+# The verdict is the one moment the effects mark the story itself.
+verdictBoostDb: 2
+# The sign-off plays in the quiet after the last line, where nothing else sounds.
+outroBoostDb: 2
+# Seconds between two effects at least, and effects in any one second at most. When cues compete,
+# the verdict wins, then a high-severity finding, then the rest.
+minSpacing: 0.15
+maxPerSecond: 3
+
+recipes:
+  click: click
+  reveal: reveal
+  finding: finding
+  finding-high: finding-high
+  verdict-looks-good: verdict-looks-good
+  verdict-needs-attention: verdict-needs-attention
+  verdict-needs-changes: verdict-needs-changes
+  outro-looks-good: outro-looks-good
+  outro-needs-attention: outro-needs-attention
+  outro-needs-changes: outro-needs-changes

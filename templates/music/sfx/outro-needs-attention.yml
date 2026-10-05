@@ -1,0 +1,32 @@
+# Covi's sign-off when no music plays and the change needs attention: the sonic logo lands on 2,
+# left open over a sus4 on the fifth, like the theme's open ending. A question, not an alarm.
+# Same shape and timing as outro-looks-good: the landing is 0.45 s in.
+id: outro-needs-attention
+description: Covi's sign-off without music - the sonic logo (5, 1, landing on 2) on bell and pluck over an open sus4.
+license: original
+duration: 1.85
+anchor: 0.45
+layers:
+  - gen: notes
+    notes:
+      - { note: G4, at: 0, dur: 0.14, patch: bell, velocity: 0.62 }
+      - { note: C5, at: 0.15, dur: 0.2, patch: bell, velocity: 0.68 }
+      - { note: D5, at: 0.45, dur: 0.15, patch: bell, velocity: 0.78 }
+  - gen: notes
+    notes:
+      - { note: G4, at: 0, dur: 0.12, patch: glass-pluck, velocity: 0.45 }
+      - { note: C5, at: 0.15, dur: 0.2, patch: glass-pluck, velocity: 0.5 }
+      - { note: D5, at: 0.45, dur: 0.35, patch: glass-pluck, velocity: 0.55 }
+    gain: -9
+  - gen: notes
+    notes:
+      - { note: G3, at: 0.45, dur: 0.8, patch: e-piano, velocity: 0.38 }
+      - { note: C4, at: 0.45, dur: 0.8, patch: e-piano, velocity: 0.38 }
+      - { note: D4, at: 0.45, dur: 0.8, patch: e-piano, velocity: 0.36 }
+    gain: -9
+  - gen: notes
+    notes:
+      - { note: G2, at: 0.45, dur: 0.6, patch: round-bass, velocity: 0.6 }
+    gain: -13
+fx:
+  reverb: { size: 0.55, damp: 0.55, mix: 0.16, width: 1 }

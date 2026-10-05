@@ -1,0 +1,14 @@
+# Drum voices a score's drum rows can name, each mapped to a drum patch in ../patches.
+id: soft-electro
+description: Light electronic kit — round soft kick, airy clap, gentle hats and shaker (editorial beds).
+voices:
+  kick: kick-soft
+  snare: snare-soft
+  clap: clap-soft
+  snap: snap-soft
+  hat: hat-soft
+  openhat: hat-open-soft
+  shaker: shaker-soft
+  rim: rim-soft
+  tom: tom-soft
+  crash: crash-soft

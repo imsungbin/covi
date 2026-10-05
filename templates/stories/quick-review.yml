@@ -1,0 +1,39 @@
+id: quick-review
+name: Quick review
+description: A short tour of what changed and the one thing worth a reviewer's attention.
+use_when: The change has no strong visual story, or nothing more specific fits.
+beats:
+  - id: context
+    eyebrow: The change
+    eyebrows: { ko: '변경 사항', ja: '変更内容', zh: '变更内容' }
+    goal: Say what the change does and why, in one sentence.
+    visuals: [title]
+    expression: explaining
+  - id: scope
+    eyebrow: What changed
+    eyebrows: { ko: '바뀐 곳', ja: '変更箇所', zh: '改动范围' }
+    goal: Show where the change lands so reviewers know its shape.
+    visuals: [change-map]
+    expression: explaining
+    optional: true
+  - id: core
+    eyebrow: The key lines
+    eyebrows: { ko: '핵심 코드', ja: '要となるコード', zh: '关键代码' }
+    goal: Point at the lines that carry the change and explain what they do.
+    visuals: [code]
+    expression: explaining
+  - id: review
+    eyebrow: Worth a look
+    eyebrows: { ko: '살펴볼 점', ja: '確認ポイント', zh: '值得一看' }
+    goal: The most important finding, or what to check if nothing stands out.
+    visuals: [findings, callout]
+    expression: reviewing
+  - id: summary
+    eyebrow: Summary
+    eyebrows: { ko: '요약', ja: 'まとめ', zh: '总结' }
+    goal: The verdict and the next step for the reviewer.
+    visuals: [summary]
+    expression: success
+short: [context, core, review, summary]
+# Where the music lifts: the first scene playing one of these beats, in order.
+hero: [core]

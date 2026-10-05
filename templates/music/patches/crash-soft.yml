@@ -1,0 +1,8 @@
+id: crash-soft
+description: Soft, dark crash wash for section accents (accent sections play it on beat 1).
+algo: drum
+kind: crash-soft
+decay: 1.8
+attack: 0.008
+color: 3500
+lowpass: 9000

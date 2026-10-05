@@ -1,0 +1,43 @@
+# Post Covi's comment on pull requests from forks without running untrusted code with a write token.
+#
+# 1. pull-request.yml runs Covi under `pull_request` (no secrets, read-only token for forks) and
+#    uploads the run as an artifact.
+# 2. This workflow runs afterwards under `workflow_run` with a write token. It never checks out or
+#    runs the pull request's code. It downloads the artifact, and `covi publish`:
+#      - takes the target from this trusted event, never from the artifact (GitHub leaves
+#        `pull_requests` empty for forks, so Covi finds the open pull request by its head commit),
+#      - refuses a run that reviewed any other commit, and skips if the pull request has moved on,
+#      - re-renders the comment from schema-validated files with every dynamic string escaped.
+name: Covi comment
+
+on:
+  workflow_run:
+    workflows: [Covi]   # the `name:` of pull-request.yml
+    types: [completed]
+
+permissions:
+  pull-requests: write
+  actions: read
+
+jobs:
+  comment:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion != 'cancelled' &&
+      github.event.workflow_run.conclusion != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - id: download
+        uses: actions/download-artifact@v4
+        continue-on-error: true   # no artifact: the review did not get far enough to upload one
+        with:
+          name: covi-review
+          path: covi-run
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - if: steps.download.outcome == 'success'
+        uses: imsungbin/covi/integrations/github-action@v1   # or your fork; pin a tag or commit SHA
+        with:
+          command: publish
+          run-dir: covi-run

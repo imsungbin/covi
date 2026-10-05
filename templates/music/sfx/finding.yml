@@ -1,0 +1,16 @@
+# A finding card lands: a felt thump and a muted wooden knock on the tonic. Soft enough to sit
+# under the narration that names the finding.
+id: finding
+description: Soft landing of a finding card - a felt thump and a muted wooden knock.
+license: original
+duration: 0.35
+layers:
+  - { gen: tone, wave: sine, from: 150, to: 90, glide: 0.06, env: { a: 0.002, d: 0.16 } }
+  - gen: modal
+    freq: C5
+    partials:
+      - { ratio: 1, gain: 1, decay: 0.12 }
+      - { ratio: 2.76, gain: 0.25, decay: 0.05 }
+    strike: { noise: 0.2, ms: 0.8 }
+    gain: -6
+  - { gen: noise-sweep, color: pink, filter: lowpass, from: 3000, to: 600, q: 0.7, env: { a: 0.001, d: 0.06 }, gain: -14 }

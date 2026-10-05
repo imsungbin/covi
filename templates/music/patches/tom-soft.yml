@@ -1,0 +1,6 @@
+id: tom-soft
+description: Soft electronic tom with a gently falling pitch, for fills.
+algo: drum
+kind: tom
+freq: 150
+decay: 0.32

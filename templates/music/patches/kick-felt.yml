@@ -1,0 +1,11 @@
+id: kick-felt
+description: Very soft, felt-mallet-like kick for acoustic beds; low and short with almost no click.
+algo: drum
+kind: kick
+freq: 95
+freqEnd: 52
+pitchDecay: 0.03
+decay: 0.3
+click: 0.04
+drive: 0.05
+lowpass: 2200

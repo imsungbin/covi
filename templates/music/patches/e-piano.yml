@@ -1,0 +1,10 @@
+id: e-piano
+description: 'Tine electric piano (FM). A 1:1 body stack plus a short high "tine" stack; brighter when played harder. Chords and gentle comping.'
+algo: fm
+ops:
+  - { ratio: 1, index: 1.3, indexDecay: 0.5, indexSustain: 0.15, level: 1 }
+  - { ratio: 14, index: 0.5, indexDecay: 0.03, level: 0.3, decay: 0.3 }
+amp: { a: 0.002, d: 1.8, s: 0.25, r: 0.35 }
+velocityIndex: 0.7
+keyDecay: 0.25
+lowpass: 8000

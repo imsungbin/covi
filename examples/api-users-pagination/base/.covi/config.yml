@@ -1,0 +1,13 @@
+app:
+  start: node server.js
+  url: http://127.0.0.1:{port}
+  readyPath: /health
+demo:
+  requests:
+    - name: List users
+      method: GET
+      path: /api/users
+test:
+  command: node --test
+video:
+  mode: short

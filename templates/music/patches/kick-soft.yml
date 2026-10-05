@@ -1,0 +1,11 @@
+id: kick-soft
+description: Round, soft electronic kick — short sine drop with a gentle click and light saturation.
+algo: drum
+kind: kick
+freq: 115
+freqEnd: 50
+pitchDecay: 0.035
+decay: 0.36
+click: 0.12
+drive: 0.2
+lowpass: 3800

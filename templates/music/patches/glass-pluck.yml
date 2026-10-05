@@ -1,0 +1,11 @@
+id: glass-pluck
+description: Glassy synth pluck for arpeggios. Saw plus a thin octave pulse and a faint two-octave sine, with a fast resonant filter decay. Pair it with a tempo-synced delay send.
+algo: subtractive
+gain: -2.5
+oscs:
+  - { wave: saw, level: 0.6 }
+  - { wave: pulse, duty: 0.3, octave: 1, detune: 4, level: 0.2 }
+  - { wave: sine, octave: 2, level: 0.1 }
+filter: { type: lowpass, cutoff: 700, q: 1.3, env: 3.2, keytrack: 0.6, velocity: 1.2, adsr: { a: 0.001, d: 0.22, s: 0, r: 0.2 } }
+highpass: 180
+amp: { a: 0.003, d: 0.55, s: 0, r: 0.25 }

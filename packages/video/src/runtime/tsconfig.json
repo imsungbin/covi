@@ -1,0 +1,14 @@
+{
+  "extends": "../../../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": []
+  },
+  "include": [
+    "./**/*.ts",
+    "../timeline/types.ts",
+    "../timeline/cues.ts",
+    "../../../brand/src/**/*.ts"
+  ],
+  "exclude": []
+}

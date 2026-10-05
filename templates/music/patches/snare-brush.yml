@@ -1,0 +1,12 @@
+id: snare-brush
+description: Brushed-snare swish for acoustic beds — slow attack, mostly noise, dark.
+algo: drum
+kind: snare
+gain: 5
+freq: 200
+decay: 0.22
+attack: 0.006
+tone: 0.2
+noise: 0.5
+color: 2500
+lowpass: 7000

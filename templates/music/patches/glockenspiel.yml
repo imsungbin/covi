@@ -1,0 +1,13 @@
+id: glockenspiel
+description: Glockenspiel (modal steel bar, partials 1 / 2.76 / 5.40 / 8.93). Sparkles and reveals; play in octaves 5–7.
+algo: modal
+partials:
+  - { ratio: 1, gain: 1, decay: 2.4 }
+  - { ratio: 2.76, gain: 0.32, decay: 0.9 }
+  - { ratio: 5.40, gain: 0.16, decay: 0.35 }
+  - { ratio: 8.93, gain: 0.07, decay: 0.15 }
+strike: { noise: 0.15, ms: 0.25, freq: 6000, q: 0.7 }
+keyDecay: 0.25
+hardness: 0.6
+lowpass: 12000
+amp: { r: 0.8 }

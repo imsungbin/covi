@@ -1,0 +1,17 @@
+# Looks good: a warm, resolved chime, the fifth rising to the tonic on celesta over a soft
+# e-piano tonic, like the logo's resolved landing.
+id: verdict-looks-good
+description: Warm, resolved two-note chime (5 to 1) for a verdict that looks good.
+license: original
+duration: 1.3
+layers:
+  - gen: notes
+    notes:
+      - { note: G5, at: 0, dur: 0.12, patch: celesta, velocity: 0.6 }
+      - { note: C6, at: 0.09, dur: 0.5, patch: celesta, velocity: 0.72 }
+  - gen: notes
+    notes:
+      - { note: C5, at: 0.09, dur: 0.6, patch: e-piano, velocity: 0.45 }
+    gain: -8
+fx:
+  reverb: { size: 0.55, damp: 0.5, mix: 0.16, width: 1 }

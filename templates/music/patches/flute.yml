@@ -1,0 +1,11 @@
+id: flute
+description: Soft flute. Sine with 2nd/3rd harmonics, breath noise, an attack chiff, a small scoop into pitch and delayed vibrato. Melodies in octaves 4–6.
+algo: wind
+harmonics: [1, 0.42, 0.16, 0.07, 0.03]
+breath: 0.045
+chiff: 0.22
+scoop: 18
+vibrato: { rate: 5.2, depth: 14, delay: 0.22, fade: 0.35 }
+tremolo: 0.12
+amp: { a: 0.055, d: 0.18, s: 0.85, r: 0.14 }
+lowpass: 7000

@@ -1,0 +1,17 @@
+# Needs attention: an open chime that does not resolve, the tonic stepping up to the second over
+# a soft fifth. A question, not an alarm.
+id: verdict-needs-attention
+description: Open, unresolved two-note chime (1 to 2 over 5) for a verdict that needs attention.
+license: original
+duration: 1.3
+layers:
+  - gen: notes
+    notes:
+      - { note: C6, at: 0, dur: 0.12, patch: celesta, velocity: 0.6 }
+      - { note: D6, at: 0.09, dur: 0.5, patch: celesta, velocity: 0.68 }
+  - gen: notes
+    notes:
+      - { note: G4, at: 0.09, dur: 0.6, patch: e-piano, velocity: 0.42 }
+    gain: -8
+fx:
+  reverb: { size: 0.55, damp: 0.5, mix: 0.16, width: 1 }

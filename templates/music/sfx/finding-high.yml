@@ -1,0 +1,19 @@
+# A high-severity finding lands heavier: a deeper thump and a lower knock on the fifth, with a
+# short room. Firm, never alarming: no rising pitch, no dissonance.
+id: finding-high
+description: Heavier landing for a high-severity finding - a deeper thump and a lower knock.
+license: original
+duration: 0.5
+layers:
+  - { gen: tone, wave: sine, from: 120, to: 62, glide: 0.08, env: { a: 0.002, d: 0.26 } }
+  - gen: modal
+    freq: G4
+    partials:
+      - { ratio: 1, gain: 1, decay: 0.18 }
+      - { ratio: 2.76, gain: 0.3, decay: 0.07 }
+      - { ratio: 5.4, gain: 0.08, decay: 0.03 }
+    strike: { noise: 0.25, ms: 1 }
+    gain: -5
+  - { gen: noise-sweep, color: pink, filter: lowpass, from: 2500, to: 400, q: 0.7, env: { a: 0.001, d: 0.09 }, gain: -12 }
+fx:
+  reverb: { size: 0.35, damp: 0.6, mix: 0.1, width: 1 }

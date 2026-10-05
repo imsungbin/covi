@@ -1,0 +1,648 @@
+# Video
+
+This page explains how Covi decides whether a change deserves a review video and how a request becomes a concrete video spec, including which questions get asked and when. It then walks through each pipeline stage and what it writes: storyboard, capture, narration, captions, timeline, the outro, sound, composition, render, and quality checks.
+
+A Covi video explains a change. It is not a screen recording. It follows the review loop (what changed, see it, how it works, what to check) and is built from real captures of the software, real code from the diff, and real findings.
+
+## When Covi makes a video
+
+Covi does not make a video just because it can. `decideVideo` (`packages/video/src/pipeline.ts`) bases the decision on the demonstration assessment that the Understand phase writes to `context.json` → `demonstration`:
+
+| `demonstration.recommendation` | Typical change | Decision |
+|---|---|---|
+| `video` | New or changed interactions, UI changes of more than 12 lines, API changes Covi can run, CLI changes with configured `demo.commands`, other UI/API/CLI changes, large restructurings across several areas | Render |
+| `screenshots` | A small visual-only change (styles or UI, 12 changed lines or fewer) | Decline: a before/after screenshot shows it better |
+| `text-only` | Nothing user-visible: refactors, tests, CI, docs, configuration, dependency bumps | Decline: the explanation and review serve reviewers better |
+
+When Covi declines, the result says why. For example, the `refactor-retry-helper` example returns:
+
+```
+Nothing user-visible changes: no UI, API, or CLI surface is touched, so a written explanation serves
+reviewers better than a demo. The explanation and review cover it better than a video. Pass --force
+to render an explainer anyway.
+```
+
+Overrides:
+
+| Setting | Effect |
+|---|---|
+| `covi video --force` | Render regardless of the assessment |
+| `covi video --storyboard <file>` | Render the given storyboard regardless of the assessment |
+| `video.when: never` (config) | `covi video` and `covi ci` decline, unless `--force` is passed to `covi video` |
+| `video.when: always` (config), `covi ci --video always` | `covi video` and `covi ci` render for every change |
+| `video.when: auto` (default), `covi ci --video auto` | Follow the assessment |
+
+`covi video` writes its decision, the resolved spec, and the demonstration assessment to `video/decision.json`; `covi render` reads the spec back from there. Producing a video never fails on findings: review gates belong to `covi review` and `covi ci`.
+
+## Modes
+
+| Mode | Flag | Size | Duration when `auto` | Narration style |
+|---|---|---|---|---|
+| Short-form (default) | `--short` (or `--mode short`) | 1080×1920, 9:16 | target 28 s, accepted 20–35 s | concise |
+| Standard review | `--standard` (or `--mode standard`) | 1920×1080, 16:9 | target 80 s, accepted 60–120 s | explanatory |
+| Custom | `--custom --width W --height H` (or `--mode custom`) | any size from 240 to 3840 px | the short-form window when vertical or square, the standard window when landscape | concise up to a 45 s target, explanatory above |
+
+Durations:
+
+- `--duration` accepts seconds (`90`), unit forms (`30s`, `1m30s`, `2 minutes`), or `auto`.
+- A specific duration becomes a window: the target is clamped to 5–600 s, and the accepted range is the target ± max(2 s, 15%), never below 4 s. For example, `30s` becomes 25.5–34.5 s.
+- In short-form mode, or with a target of 45 s or less, Covi tells the story with the template's short beat list.
+
+Sizes for custom videos:
+
+- Given only one side, Covi fills in the other for a 16:9 frame. Given neither, it uses 1920×1080.
+- Odd dimensions are rounded to even numbers, because H.264 with 4:2:0 chroma needs them.
+
+Other spec fields:
+
+- `--fps` (default 30, 10–60)
+- `--narration` / `--no-narration`
+- `--no-captions`
+- `--theme light|dark`
+- `--voice`
+- `--tts`
+- `--music theme|compose|none`, `--music-placement auto|continuous|bookends`, and `--no-sound-effects` (see [Sound](#sound))
+- `--no-outro` (and `--outro`): end without the branded outro (see [The outro](#the-outro))
+- `video.style` and `video.mascot` in the config
+
+The `video` configuration section:
+
+| Key | Default | Notes |
+|---|---|---|
+| `video.when` | `auto` | `auto`, `always`, `never` |
+| `video.mode` | `short` | `short`, `standard`, `custom` |
+| `video.duration` | `auto` | seconds, a duration string, or `auto` |
+| `video.width`, `video.height` | — | 240–3840 |
+| `video.fps` | `30` | 10–60 |
+| `video.narration` | `{ enabled: true, provider: auto, rate: 1 }` | `false` turns narration off. Fields: `enabled`, `provider` (`auto`, `system`, `openai`, `elevenlabs`, `none`), `voice`, and `rate` (0.8–1.3) |
+| `video.captions` | `true` | burned-in captions and caption files |
+| `video.theme` | `light` | `light`, `dark` |
+| `video.style` | — | `concise`, `explanatory`; when unset, the mode decides |
+| `video.mascot` | `true` | show the fox narrator |
+| `video.music.use` | `theme` | `theme`, `compose`, `none`; see [Sound](#sound) |
+| `video.music.placement` | `auto` | where music plays: `auto` (the kind of video decides), `continuous`, `bookends`; see [Where the music plays](#where-the-music-plays) |
+| `video.soundEffects.enabled` | `true` | subtle sound effects for clicks, reveals, findings, the verdict, and the outro |
+| `video.outro` | `true` | end with the branded outro; `false` holds the last scene for 1 s instead |
+| `publish.video` | `link` | how CI comments reference the video: `link`, `upload`, `none` |
+
+Environment variables can set the same values: `COVI_VIDEO_MODE`, `COVI_VIDEO_DURATION`, `COVI_NARRATION`, `COVI_TTS_PROVIDER`, `COVI_TTS_VOICE`, `COVI_CAPTIONS`, `COVI_MUSIC`, `COVI_MUSIC_PLACEMENT`, `COVI_SOUND_EFFECTS`, and `COVI_OUTRO`. See [Configuration](configuration.md) for how flags, environment, repository configuration, and defaults combine.
+
+## From a request to a spec
+
+### Reading the request
+
+`covi video --request "<words>"` reads the request in plain language. Covi interprets only phrases that are unambiguous:
+
+| Phrase | Result |
+|---|---|
+| A size such as `1280x720` or `1080×1080` | custom mode at that size |
+| vertical, portrait, 9:16, short-form, shorts, reel, TikTok, mobile | short-form |
+| horizontal, landscape, 16:9, widescreen, standard, full-length, walkthrough, in-depth | standard |
+| square, 1:1 | custom, 1080×1080 |
+| 30-second, 45 s, 2 minutes, 1.5 min, fifteen-second, a minute | duration |
+| A duration with no shape word | short-form at 45 s or less, standard above |
+| no narration, without voiceover / narrated, voiceover | narration off / on |
+| a silent video, make it silent, mute the video, no audio, without sound | no sound at all: narration, music, and effects off |
+| no sound effects, without sfx, sound effects off | sound effects off |
+| no music, without music, no bgm, music off | no music |
+| compose music, compose for this video, original music, an original score | a score composed for this video |
+| with music, add background music, bgm | the Covi theme |
+| no captions, without subtitles | captions off |
+| dark, dark mode / light mode, light theme | theme |
+| in Korean, Japanese video, Chinese narration, 한국어로, 日本語で, 用中文 | the video's language (a passing mention such as "the Korean locale" does not count) |
+
+The same fields are read in Korean, Japanese, and Chinese:
+
+| Field | Korean | Japanese | Chinese |
+|---|---|---|---|
+| Duration | 30초, 1분 30초, 2분 | 30秒, 1分半, 2分 | 30秒, 1分钟30秒, 2分钟 |
+| Short-form | 세로, 숏폼, 쇼츠, 릴스 | 縦, ショート動画, リール | 竖屏, 竖版, 短视频 |
+| Standard | 가로, 와이드 | 横長, 横向き, 横型 | 横屏, 横版, 宽屏 |
+| Square | 정사각 | 正方形 | 正方形, 方形 |
+| No narration / narration | 내레이션 없이, 음성 없이 / 내레이션 | ナレーションなし, 音声なし / ナレーション | 无旁白, 无配音 / 旁白, 配音 |
+| No sound at all | 무음, 소리 없이 | 無音 | 静音, 无声, 没有声音 |
+| No sound effects | 효과음 없이, 효과음 빼고 | 効果音なし | 不要音效, 无音效 |
+| No music | 음악 없이, 음악 빼고, BGM 없이 | 音楽なし, BGMなし | 不要音乐, 无音乐, 没有背景音乐 |
+| Composed music | 작곡해 줘, 영상에 맞춰 작곡 | 作曲して, この動画のために作曲 | 为这个视频作曲, 配上原创音乐 |
+| The theme | 음악 넣어, BGM 넣어 | 音楽付き | 背景音乐, 加上音乐 |
+| No captions | 자막 없이 | 字幕なし | 无字幕, 不要字幕 |
+| Theme | 다크, 라이트 모드 | ダーク, ライトモード | 深色, 浅色 |
+
+Words that only name what a change is about decide nothing: "a video about the music app", "the fix for no music after resume", "the silent failure in uploads", "작곡을 돕는 기능" (a feature that helps composing), and "无声模式的问题" (a silent-mode problem) leave the sound to configuration. Each phrase must be shaped like a request. In English it follows the start of a clause, the video, or a request verb ("no music, please", "a video with no audio", "make it silent"). In Korean, Japanese, and Chinese it is followed by a request ending, the video, or another sound request ("음악 없이 만들어줘", "無音の動画で", "静音视频"). A phrase whose clause names a bug, a fix, a condition, a feature, or the pull request decides nothing: English and Chinese put those words before the phrase ("the fix for no music"), and Korean, Japanese, and Chinese after it ("무음으로 재생되는 버그"). Quoted text, such as a PR title, decides nothing either. A request for no sound at all is read most strictly, because a wrong guess would cost the narration. In English it has to open its clause ("make it silent", "a silent video", "no audio, please"), or follow "a video with". Any word about the change on either side of it, in any language, keeps the narration on: "make a silent video of the fix" keeps it, while "make a silent video, it's for the fix" turns the sound off. So "make a 30-second video of the login fix, no music" turns the music off, while "make a video of this bug fix without music" leaves it to configuration. Put a sound request in its own clause, or pass `--music` and `--no-sound-effects`. A phrase about music is more specific than "silent", so "a silent video with background music" turns off the narration and the effects but keeps the theme.
+
+Explicit flags override anything inferred from the words. "Make a 30-second vertical review video" resolves completely: short-form, 1080×1920, 25.5–34.5 s.
+
+### Which questions are asked
+
+`planVideo` (`packages/video/src/spec.ts`) decides what is still open. A field counts as decided when it comes from the request, a flag, the environment, or the repository configuration. Built-in defaults do not count. Covi asks only about mode, length, (for custom videos) size, and music:
+
+| Still undecided | Questions |
+|---|---|
+| Mode and length | Both, together: "What kind of video should Covi create?" (Short-form · Standard review · Custom) and "How long?" (~15 sec · ~30 sec · ~60 sec · Let Covi decide) |
+| Only the length, for short-form or standard | None: the mode's `auto` window applies |
+| Only the length, for a custom size (for example "a square video") | "How long?": a size implies no length |
+| A custom mode without a size | "Which size should the custom video be?" (1080×1920 · 1920×1080 · 1080×1080) |
+| Nothing | None |
+
+When Covi asks any of these and nothing decided the music, it adds "What music should the video have?" (Covi theme (default) · Compose for this video · No music). The theme's and the score's descriptions say where the music would play: in a narrated standard review (bookends) "mainly at the opening, in the pauses, under the key moment, and at the end"; under short-form narration "a quiet bed under the narration that rises in the pauses"; without narration "under the whole video". While the kind of video is still being asked, they describe both. Music alone never triggers a question: "make a 30-second vertical video" still gets none, the theme plays, and the result carries `video.music.hint` ("Music: Covi theme. To change it, run `covi render --run <id> --music none` or `--music compose`.") in the run's language. At a terminal, "Compose for this video" is offered only when a model provider can write the score. Without narration, "No music" is described as "Subtle sound effects only".
+
+The questions are asked in the language of the request when it is written in Korean, Japanese, or Chinese, else in the run's language (message keys `question.*` in `templates/i18n/`).
+
+Choosing Custom in the mode question leads to the size question, unless a size is already known from the request, flags, or configuration (`followUpQuestions`). At a terminal Covi asks it next; an agent runs the dry run again with `--custom` to get it.
+
+Where questions are asked:
+
+- **At a terminal.** `covi video` asks the questions as numbered prompts on stderr; pressing Enter picks the first option.
+- **Never, in non-interactive runs.** That means runs with `--json` or `--yes`, runs with `CI` or `COVI_NONINTERACTIVE` set, and runs without a TTY. Configuration and defaults decide. `covi ci` never asks.
+- **Through an agent.** The agent passes the user's words to a dry run, which plans and returns the open questions without rendering:
+
+  ```bash
+  covi video --dry-run --request "make a review video" --json
+  ```
+
+  The result's `data` contains the resolved `spec`, what was `inferred` and from which phrase, what is `missing`, the `questions` with option values, the `decision`, and the `demonstration` assessment. Trimmed:
+
+  ```json
+  {
+    "spec": { "mode": "short", "width": 1080, "height": 1920, "fps": 30,
+              "duration": { "target": 28, "min": 20, "max": 35, "auto": true }, "...": "..." },
+    "inferred": {},
+    "missing": ["mode", "duration"],
+    "questions": [
+      { "id": "mode", "header": "Video type", "question": "What kind of video should Covi create?",
+        "options": [{ "value": "short", "label": "Short-form", "description": "Vertical 9:16, about 30 seconds, concise" }, "..."] },
+      { "id": "duration", "header": "Length", "question": "How long?", "options": ["..."] }
+    ],
+    "decision": { "render": true, "reason": "A stylesheet changes, which is best judged by looking at it." }
+  }
+  ```
+
+  The agent asks with its own question tool, then passes the answers as flags (`--short`, `--standard`, `--custom`, or `--mode <mode>`, plus `--duration`, `--width`, `--height`, and `--music`). `--dry-run --yes` returns no questions. The `covi-video` skill describes this protocol for agents ([Skills](skills.md)).
+
+## The pipeline
+
+`covi video` runs these stages in one run directory (`.covi/runs/<run-id>/`). Each stage writes files that the next reads.
+
+| Stage | What happens | Writes |
+|---|---|---|
+| Decide | Applies the decision rules above | `video/decision.json` |
+| Capture | Runs the software at base and head when a video will be made, the project is runnable, and the change has something to show (the same demonstration as `covi demo`, at desktop and mobile unless `demo.viewports` says otherwise) | `demo/captures.json`, `demo/screenshots/`, `demo/diffs/`, `demo/demo.md` |
+| Review | Explains and reviews the change; the story's review note comes from here | `explanation.json`, `review.json`, `review.md`, `summary.md`, … |
+| Storyboard | Drafts scenes from the evidence with a storytelling template, or validates the one you supply, then redacts it | `video/storyboard.json` |
+| Narration | Picks the narration language and the voice, rewrites each scene's spoken text for that voice (acronyms spelled out, your pronunciations applied), then synthesizes and measures one take per scene and places them on the voice stem, at −16 LUFS | `video/speech.json`, `video/narration.wav` |
+| Timing | Lays scenes out from the measured speech, with breathing room in narrated standard reviews and the outro at the end, and fits the duration window | (inside the timeline) |
+| Captions | Splits the narration into cues timed to the speech | `video/captions.vtt`, `video/captions.srt` |
+| Timeline | Freezes everything the renderer needs: scenes (Covi's outro last), timings, captions, mouth movement, the moments that carry a sound (`cues`), theme, the language, and the labels the runtime draws (verdicts, stats, Before/After, the sign-off) in that language | `video/timeline.json`, `video/narration.md` |
+| Sound | Picks the music (the theme, the run's score, a model's score, or none), fits it to the timeline, renders it (cached), places the sound effects, and mixes everything under the narration (see [Sound](#sound)) | `video/audio.json`, `video/music.wav`, `video/score.json` |
+| Composition | Writes a self-contained HTML page that can draw any frame | `video/composition/` |
+| Render | Captures every frame in headless Chromium, encodes H.264, and muxes the mix; or, when only the sound changed, keeps the frames and muxes the new mix | `video/covi-review.mp4`, `video/poster.png`, `video/contact-sheet.jpg`, `video/frames.json` |
+| QC | Checks format, duration, audio and the mix, black frames, layout, caption timing, and the text the voice was given | `video/qc.json` |
+
+Two failures do not stop the run:
+
+- If the demonstration fails, or the project's commands are not trusted on this machine yet (see [Security](security.md)), the run records a warning, and the story is told with code excerpts, findings, and callouts instead.
+- If speech synthesis fails, the video renders with captions only.
+- If the music cannot be rendered, the video keeps its voice and sound effects, and QC's `music-fit` says why.
+
+All artifacts are listed with their SHA-256 in `run.json` (see [Artifacts](artifacts.md)).
+
+### Storyboard
+
+The storyboard is the editable script. It lists scenes, each with narration and a visual. Timing is never authored; it is derived from the narration audio.
+
+**Drafting.** `selectTemplate` (`packages/video/src/templates.ts`) picks a storytelling template from the change. The first rule that matches wins:
+
+| Rule | Template |
+|---|---|
+| intent `bug-fix` or `security` | `bug-fix` |
+| a large structural change with nothing to click | `architecture-explainer` |
+| mostly visual, no interaction | `before-after` |
+| UI or interaction changes | `feature-demo` |
+| API behavior changes | `api-change` |
+| CLI behavior changes | `cli-change` |
+| anything else | `quick-review` |
+
+Override the choice with `--template <id>`.
+
+How beats become scenes:
+
+- **Choosing a visual.** Each beat lists preferred visuals, and the drafter uses the first one the evidence supports:
+  - screenshots, before/after pairs, and interaction steps come from captures;
+  - terminal and API visuals come from command and request captures;
+  - code comes from the diff;
+  - findings come from the review.
+- **Missing evidence.** Optional beats without evidence are dropped. Required ones fall back to a callout with the explanation's summary.
+- **Language.** Covi drafts in the run's language, or in a language the request names, and records it as the storyboard's `language`. Narration sentences, headings, eyebrows (each template beat carries them in Korean, Japanese, and Chinese), Before/After labels, and the "… more lines" marker come from the message catalogs; text taken from the change (titles, commit messages, area names, findings) stays as written.
+- **Narration budget.** Narration runs at about 2.5 words per second in English, 4.3 syllables per second in Korean, 4 characters per second in Japanese, and 3 in Chinese, scaled from measured voice rates with the same margin English has. It gets 80% of the target duration in short-form and 85% in standard, split by beat weight. The same idea takes more syllables in Korean, Japanese, and Chinese, so a short video says less; when a short video's findings lead does not fit, Covi keeps the finding ("Worth checking: …") instead of the lead.
+- **Depth for longer videos.** Standard-length videos say more, and only what the evidence supports:
+  - the title scene adds a one-line map of the scenes that follow ("We'll look at the response before and after, the code behind it, and what to check before merging.") when it fits the budget;
+  - an API scene adds what the captured bodies show, such as a status change or sizes ("The old response listed 5 entries; the new items array holds 2.");
+  - a terminal scene adds a changed exit code;
+  - a code scene uses the explanation's own description of the file's area;
+  - the findings scene names up to three findings with why the first ones matter, and announces only a count it covers;
+  - the summary adds "Suggested next step: …" from the top finding when the verdict is not "looks good", or where to start reading the diff when it is.
+- **Spoken form.** The `say` field holds the spoken form when it differs from the caption text. Identifiers and file names are spelled out for speech, for example `app.js` becomes "the app script" (in Korean "app 스크립트"), and in Korean, Japanese, and Chinese routes are said segment by segment ("API 슬래시 users").
+
+**Model refinement.** If a model provider is configured (`intelligence.provider: anthropic` or `command`, or `auto` with an Anthropic key or a trusted `intelligence.command`), it rewrites the drafted narration within each scene's word budget, following the `covi-video` methodology. The prompt is redacted before it is sent. Visuals stay as drafted, because they are grounded in captured evidence. If refinement fails, Covi keeps the draft and records a warning.
+
+**Redaction.** Every storyboard, drafted or supplied, passes through the `Redactor` before narration, captions, the timeline, or the composition are made from it, so a secret in a code excerpt or command output does not reach the audio or the frames. Screenshots are images of the running software and are shown as captured.
+
+**Format.** Run `covi schema storyboard` for the full JSON Schema. Top level: `title`, `template`, `draft` (true for Covi's draft), `language` (optional: `en`, `ko`, `ja`, or `zh`; see [Narration language](#narration-language)), and `scenes`, 2–14 of them. Each scene:
+
+| Field | Meaning |
+|---|---|
+| `id` | Optional; defaults to `s1`, `s2`, … |
+| `beat` | The template beat this scene plays |
+| `eyebrow`, `heading` | Section label (up to 40 characters) and heading (up to 90) |
+| `narration` | What Covi says, also used for captions (up to 600 characters) |
+| `say` | Spoken form, when it differs from the caption text. Covi still normalizes it before synthesis (see [Spoken form](#spoken-form)) |
+| `visual` | One of the kinds below |
+| `expression` | Narrator expression: `neutral`, `explaining` (default), `thinking`, `reviewing`, `warning`, `success` |
+| `minSeconds` | Overrides the visual's minimum time on screen (1–30) |
+| `optional` | May be dropped to fit the duration |
+
+| Visual `kind` | Shows |
+|---|---|
+| `title` | Title card with subtitle, eyebrow, and meta chips |
+| `change-map` | Up to 8 areas with their surfaces and line counts |
+| `code` | Up to 40 diff lines (`add`, `del`, `context`) with highlighted line indexes |
+| `screenshot` | One capture, with an optional `focus` region to zoom toward, a `click` point, and a `device` frame |
+| `before-after` | Two captures in a `split`, `stack`, or `wipe` layout, with an optional focus region |
+| `interaction` | 1–8 flow steps, each with a capture, click point, focus, and label |
+| `terminal` | A command with its output, and optionally the base revision's output |
+| `api` | A request with the base and head status and body, highlighted in colors that stay readable on the light cards |
+| `findings` | 1–3 findings with certainty, severity, and location |
+| `callout` | An `info`, `warning`, or `success` card |
+| `diagram` | 2–8 nodes (marked changed or not) and edges |
+| `summary` | Verdict, headline, up to 4 points, and change stats |
+
+Image paths are relative to the run directory (for example `demo/screenshots/home-desktop-after.png`) and must resolve inside it, so a storyboard cannot pull other files from the machine into a video. If an image is missing, rendering stops with an error that lists it.
+
+The narrator, Covi's fox, appears in the header corner of content scenes. Title and summary cards draw it large instead, and the outro takes the summary's fox over (see [The outro](#the-outro)). See [Visual system](visual-system.md).
+
+### Storytelling templates
+
+Templates are data in `templates/stories/*.yml`. Each one is an ordered list of beats, and each beat has:
+
+- a goal;
+- preferred visuals;
+- a narrator expression;
+- an optional flag.
+
+A template also has a shorter beat list (`short`) for short-form videos. Covi validates templates when it loads them.
+
+| Template | Use when | Beats (short-form beats in bold) |
+|---|---|---|
+| `bug-fix` | The change fixes incorrect behavior | **context** → **problem** → **fix** → proof → **review** → **summary** |
+| `feature-demo` | User-facing UI behavior is added or changed | **context** → before → **interaction** → **implementation** → **review** → **summary** |
+| `before-after` | The change is mostly styles or markup | **context** → **compare** → detail → styles → **review** → **summary** |
+| `api-change` | HTTP routes, handlers, or response shapes change | **context** → **exchange** → implementation → **review** → **summary** |
+| `cli-change` | Command-line behavior or output changes | **context** → **run** → **implementation** → review → **summary** |
+| `architecture-explainer` | A large internal restructuring that reviewers need a mental model for | **context** → **map** → core → **review** → **summary** |
+| `quick-review` | Nothing more specific fits | **context** → scope → **core** → **review** → **summary** |
+
+```bash
+covi templates                 # ids, descriptions, and beats
+covi templates show bug-fix    # one template as JSON
+```
+
+**Template format:**
+
+- Top-level keys: `id`, `name`, `description`, `use_when`, `beats`, `short` (beat ids, in order), and `hero` (the payoff beats, in priority order: the music lifts on a downbeat at the first scene that plays one of them).
+- Each beat has an `id`, an `eyebrow` (up to 40 characters), a `goal`, a list of `visuals`, an `expression`, and an `optional` flag.
+- A visual is a visual kind (`title`, `change-map`, `code`, `screenshot`, `before-after`, `interaction`, `terminal`, `api`, `findings`, `callout`, `diagram`, `summary`), optionally with `:before` or `:after` for screenshots.
+
+To add a template:
+
+1. Add a YAML file to `templates/stories/`.
+2. Give its first beat a `title` visual and its last beat a `summary` visual. The template tests in `tests/examples.test.ts` require both, list the template ids, and draft a storyboard with every template.
+
+The reasoning behind each pattern is in `skills/covi-video/references/storytelling.md`.
+
+### Editing a storyboard before rendering
+
+```bash
+covi video --short --duration 30s --draft --json   # capture, review, write video/storyboard.json
+# edit .covi/runs/<run-id>/video/storyboard.json
+covi render --run latest --json                    # narrate, compose, render, check
+```
+
+- `--draft` stops after writing `video/storyboard.json`. The result's `video.reason` says so.
+- `covi render` reuses the spec saved in `video/decision.json` when the storyboard was drafted: mode, size, length, style, captions, narration on or off, theme, frame rate, voice, music and its placement, sound effects, and the outro. Flags you pass now (and `COVI_*` variables) change only what they name; a different mode (`--short`, `--standard`, `--custom`, `--mode`) resets the size, length, and style that came with the old one.
+- `covi render` reads `explanation.json`, `review.json`, and `demo/captures.json` from the run.
+- `covi render --storyboard <file>` renders a storyboard stored elsewhere. Image paths inside it are still relative to the run directory.
+- `covi video --storyboard <file>` skips drafting and renders the given storyboard.
+- Re-rendering after an edit only synthesizes the lines that changed; the rest come from the narration cache.
+
+### Narration
+
+| `--tts` / `video.narration.provider` | Engine | Default voice |
+|---|---|---|
+| `auto` (default) | ElevenLabs if `ELEVENLABS_API_KEY` is set, else OpenAI if `OPENAI_API_KEY` is set, else the system engine | depends on the engine |
+| `system` | macOS `say`, or `espeak-ng` / `espeak` elsewhere | The best installed voice for the [narration language](#narration-language). macOS, English: the first of Ava (Premium), Zoe (Premium), Samantha (Enhanced), Ava, Samantha, Allison, Alex, Daniel; Korean: Yuna, Jian, Suhyun; Japanese: Kyoko, Otoya; Chinese: Tingting, Lili (any voice whose locale matches comes next, mainland China first for Chinese). espeak: `en-us`, `ko`, `ja`, `cmn` |
+| `openai` | OpenAI speech API, model `gpt-4o-mini-tts` (needs `OPENAI_API_KEY`) | `sage` |
+| `elevenlabs` | ElevenLabs, model `eleven_multilingual_v2` (needs `ELEVENLABS_API_KEY`) | `21m00Tcm4TlvDq8ikWAM` |
+| `none` | No speech; captions carry the video | — |
+
+Options:
+
+- **Voice.** `--voice` or `video.narration.voice` picks the voice. Without one, the system engine picks a voice that speaks the narration language.
+- **Rate.** `video.narration.rate` (0.8–1.3) scales the speaking rate:
+  - macOS `say`: 172 words per minute × rate;
+  - espeak: 165 × rate;
+  - OpenAI: the speed parameter;
+  - ElevenLabs: speed, clamped to 0.7–1.2.
+- **Turning it off.** `--no-narration` or `video.narration: false` turns narration off.
+
+If narration is on but no engine is available, or synthesis fails, Covi renders with captions only, records a warning, and QC's `audio` check warns. `covi doctor` shows which engine Covi would use.
+
+Covi processes each take before mixing:
+
+1. It trims silence at both ends.
+2. It applies a 70 Hz high-pass filter.
+3. It normalizes loudness to −18 LUFS (true peak −2 dB).
+4. It converts the take to 48 kHz mono.
+
+The placed takes then make the voice stem, brought to −16 LUFS for the mix (see [The mix](#the-mix)).
+
+Takes are cached in `.covi/cache/tts/`, keyed by engine, voice, rate, tempo, and the spoken text (and, for OpenAI, the language). The cache directory ignores itself for git.
+
+With narration audio, the fox's mouth follows the loudness of the voice track. Without it, the mouth follows a talking rhythm inside each scene's speech window.
+
+Hosted engines receive the narration text (already redacted), which can include identifiers and file names from the change. Use `system` or `none` to keep narration on the machine.
+
+#### Narration language
+
+The narration is spoken in the language its text is written in. Covi decides it in this order and records the answer and the reason in `video/speech.json`:
+
+1. `--language` (or `COVI_LANGUAGE`).
+2. The storyboard's `language`.
+3. The script of the narration: Hangul means Korean, any kana means Japanese, Han characters without kana mean Chinese. Identifiers, code, and paths do not count, so "c2-delegate CLI를 추가합니다" is Korean.
+4. `language` in configuration, when it names a language.
+5. The locale of the system voice you chose (`--voice Yuna` is `ko_KR`). Hosted voices are multilingual, so their names say nothing.
+6. English.
+
+The language picks the system voice when you did not choose one. OpenAI is also told the language in its instructions; ElevenLabs' multilingual model detects it from the text.
+
+#### Spoken form
+
+Speech engines for Korean, Japanese, and Chinese read Latin acronyms as if they were words: a Korean voice says "CLI" as 클리 and "JSON" as 질선. Right before synthesis, Covi rewrites each scene's `say` (or its narration, when there is no `say`) into what a person would say, in this order:
+
+1. Your pronunciations (`video.narration.pronunciations`, see [Configuration](configuration.md#pronunciations)): exact, case-sensitive matches, longest first.
+2. Built-in words that are said as words, per language, such as JSON (제이슨, ジェイソン, Jason), YAML, GIF, REST, the HTTP methods, and names voices get wrong (git, GitHub). The tables are data in `templates/speech/`.
+3. All-caps acronyms of two to six letters, spelled letter by letter with the language's letter names: CLI becomes 씨엘아이 in Korean and シーエルアイ in Japanese. Mandarin speakers say Latin letters by their English names, so Chinese spaces them apart instead (C L I). A plural `s` is dropped (APIs), and digits are left to the voice (X1 becomes 엑스1).
+
+A token is a run of ASCII letters and digits, so particles and punctuation around it do not matter: `CLI를` becomes `씨엘아이를`. In Korean, a particle attached to a rewritten word is made to agree with its new final sound (`JSON를` becomes `제이슨을`).
+
+Code spans, file paths, URLs, e-mail addresses, versions (`v1.47.0`), and redaction marks are never rewritten by the built-in steps; your pronunciations still apply inside code spans and paths. Text that is already spelled out stays as written, and normalizing twice changes nothing. English voices spell acronyms themselves, so English narration only gets your pronunciations.
+
+Captions always show the narration as written. `video/speech.json` lists, for every scene, the caption text, the `say` you wrote, the text sent to the voice, and each rewrite with the rule that made it. QC reads it (see `speech-acronyms` below).
+
+### Captions
+
+Captions are drawn into the video in their own band, which never overlaps the product being shown. Covi also writes them to `video/captions.vtt` and `video/captions.srt`. `--no-captions` or `video.captions: false` turns off both the burned-in captions and the files.
+
+Captions show the `narration` text, never the `say` form. How cues are built (`packages/video/src/captions.ts`):
+
+- Each sentence is split into the fewest cues that fit. Words are spread evenly so no cue ends with an orphaned word, two-line cues are balanced, and a sentence end always closes a cue.
+- A line holds at most 30 half-width cells in vertical videos, 34 in square ones, and 44 in landscape ones: a Latin letter takes one cell and a Korean, Japanese, or Chinese character two (East Asian Width), so a vertical line holds 15 CJK characters. A cue has at most two lines.
+- Cues are timed within each scene's speech window, in proportion to their length, with at least 0.9 s per cue when the window allows.
+
+Line breaking follows the [narration language](#narration-language):
+
+- **English** splits sentences after `.`, `!`, or `?` and lines at spaces, as before.
+- **Korean** finds sentences with `Intl.Segmenter` and breaks lines between words (at spaces), never inside one, so particles stay with their word (`CLI를`).
+- **Japanese and Chinese** have no spaces. Sentences also end at `。`, `！`, and `？`, and lines break between the words `Intl.Segmenter` finds, following line-break rules: closing punctuation (`、。，」』）ー` and small kana) never starts a line, opening brackets (`「『（`) never end one, Latin runs such as `c2-delegate` stay whole, and Japanese particles and endings in hiragana stay with the word they follow (`CLIを`, `追加します`).
+
+### Timing
+
+Timing starts from the narration. Covi measures each scene's take (or, when there is no audio, estimates it from the text plus 0.25 s: 2.5 words per second in English, 4.3 syllables per second in Korean, 4 characters per second in Japanese, and 3 in Chinese) and lays the scenes out:
+
+- A scene lasts `max(visual minimum, lead-in + speech + tail)`, plus any extra hold. The tail is 0.5 s, or 0.8 s for the last scene before the outro, so it lingers a moment after its last word.
+- The lead-in is 0.2 s for the first scene and 0.3 s for the others, so consecutive lines are about 0.35 s apart.
+- Consecutive scenes overlap by a 0.45 s transition (the brand's `motion.transition`).
+- The video ends with [the outro](#the-outro), which enters like a scene. With `video.outro: false` (`--no-outro`), it holds its last scene for 1 s instead: room for the sonic logo after the last line.
+
+**Breathing room.** A narrated standard review (the standard preset, including landscape custom sizes) leaves the narration room to breathe, so music placed around the narration has somewhere to play:
+
+| Breath | Where | How long |
+|---|---|---|
+| Opening | The title card holds while the music opens | the first line starts at 2 s |
+| The hero | The hero scene (the story's payoff, see [Fitting the music](#fitting-the-music-to-the-picture)) settles 0.45 s after it starts; its line waits 1.4 s more, so the music's lift lands clear of speech | a pause of about 1.9 s between lines |
+| The verdict | The summary's verdict lands before its line | 1.25 s more lead-in: a pause of about 1.6 s |
+| Long talk | A line that would start more than 24 s after the last breath (or a pause as long as one, 1.5 s) waits for a breath at that scene change | 1.25 s more lead-in |
+
+Breaths come from the kind of video and the story only, never from the music, so changing only the sound still keeps every frame. Short-form videos keep their tight timing, and so do videos without narration (or whose voice could not be synthesized), whose music plays throughout.
+
+Minimum time on screen per visual (a scene's `minSeconds` overrides it):
+
+| Visual | Minimum |
+|---|---|
+| `title` | 2.6 s |
+| `summary` | 3.4 s |
+| `code` | 3.4 s + 0.07 s per line (at most +1.4 s) |
+| `before-after` | 4.2 s |
+| `interaction` | 1.7 s per step, at least 3.6 s |
+| `terminal` | 3.4 s, or 4.4 s with base output |
+| `api` | 3.6 s, or 4.6 s with a base response |
+| `findings` | 3.2 s + 0.6 s per finding |
+| `diagram` | 3.8 s |
+| others | 3.0 s |
+
+`fitToDuration` (`packages/video/src/timeline/build.ts`) then fits the layout into the spec's window without touching required beats:
+
+1. **Too long:** it drops optional scenes, last first, while more than three scenes remain.
+2. **Still too long:** it speeds speech up by at most 15%. The takes are synthesized again with an ffmpeg tempo filter; this applies only when there is narration audio.
+3. **Too short:** it extends the time on visual scenes (not the title or summary) rather than padding silence. Each scene gets at most 3 s extra for targets of 45 s or less, and at most 7 s for longer targets.
+
+Each adjustment is logged. If the video still misses the window, QC reports it. The breaths and the outro count toward the length being fitted, and fitting never removes them. A visual hold long enough to breathe in stands in for the pause after long talk, so the holds are topped up again until the video reaches its minimum.
+
+### The outro
+
+Every video ends with Covi's outro unless `video.outro` is `false` (`--no-outro`). Covi adds it after the last scene on its own: storyboards never mention it, and agents do not author it. It lasts 2.8 s in standard reviews and landscape videos, and 2.4 s in short-form, vertical, and square ones.
+
+The outro is the stacked logo coming together: the seated fox above the `covi` wordmark, then the review's verdict and the sign-off line ("Reviewed with Covi", in the video's language) on one row beneath it. The choreography, with times from the start of the outro:
+
+| When | What happens |
+|---|---|
+| 0–0.6 s | The summary card drifts away while its fox glides to center stage, its face easing from the verdict's expression to a calm smile (its badge shrinking away). Without a large fox to take over, the fox settles in instead. The progress bar fades out. |
+| 0.34–0.88 s | `covi` writes itself in, letter by letter, while the fox glances down at it. |
+| 0.58–0.98 s | The verdict chip and the sign-off rise into place. |
+| 1.0 s | The card settles: the fox looks back at the viewer, the ▶ over the `i` lands with a small overshoot, and the tail gives one flick. This is the moment the music's sonic logo lands. |
+| 1.85 s | One unhurried blink. The card then holds to the end of the video. |
+
+Everything is a pure function of the frame time; the settle moment comes from `outroSettle()` in `packages/video/src/timeline/cues.ts`, which the music fitter uses too. With `video.mascot: false`, the outro draws the wordmark larger, without the fox. The outro is a visual setting, so turning it on or off renders the frames again; changing only the music never does.
+
+### Sound
+
+What the viewer hears, besides the narration:
+
+- **Music:** the Covi theme (the default), a score composed for this video, or none. It lifts on a downbeat at the story's payoff, and its ending follows the review's verdict and rings out over the outro.
+- **The sonic logo:** three notes Covi adds after the last line whenever music plays, landing as the outro card settles.
+- **Sound effects** for what happens on screen: a pointer click, the before/after reveal, a finding card landing (heavier for high severity), the verdict appearing, and, when no music plays, the outro's sign-off. Ordinary scene transitions, code highlights, terminal output, API panels, and diagrams make no sound. If an effect is noticeable, it is too loud.
+
+The narration stays the product. All of it is synthesized from data in `templates/music/` by `@covi/audio`: nothing is sampled or downloaded, so the sound is license-clean (people post these videos publicly), exactly as long as the video, and the same bytes every time.
+
+#### Choosing the music
+
+| Setting | Music |
+|---|---|
+| `video.music.use: theme` (default), `--music theme`, `COVI_MUSIC=theme` | The Covi theme (`templates/music/scores/covi-theme.yml`): warm and quietly optimistic, with no lead melody under the voice |
+| `--music compose` | A score written for this video. Covi plays the run's `video/score.json` (an agent wrote it; `covi video --draft --music compose` starts it from the theme, marked `"draft": true`). Without one, the configured model provider writes it; without either, the theme plays, with a warning. An agent score that is invalid or too dense to play fails with exit code 2; a model's falls back to the theme |
+| `--music none` | No music; the narration and the effects remain |
+| `video.soundEffects.enabled: false`, `--no-sound-effects`, `COVI_SOUND_EFFECTS=false` | No sound effects |
+
+Requests can choose too (see [Reading the request](#reading-the-request)), and "silent" turns off narration, music, and effects together. The question protocol is in [Which questions are asked](#which-questions-are-asked). How to write a score is in `skills/covi-video/references/music.md`; `covi schema score` prints the format.
+
+#### Where the music plays
+
+With `video.music.placement: auto` (the default), the kind of video decides (`spec.music.placement`, with the same mapping custom sizes use for their timing): a quiet bed under the whole video for feed formats, and music around the narration for standard reviews, because a two-minute bed under technical narration is tiring. Set `continuous` or `bookends` (`--music-placement`, `COVI_MUSIC_PLACEMENT`) to choose one for any video; the choice is kept when a drafted video is rendered again.
+
+| Placement | Used by `auto` for | Music under speech | Music elsewhere | Shortest gap that swells | Ramp down / up |
+|---|---|---|---|---|---|
+| continuous | short-form; custom vertical or square; any video without narration | −20 dB | −11 dB | 0.6 s | 0.08 s before speech / 0.4 s after |
+| bookends | narrated standard reviews; custom landscape | −40 dB (effectively off) | −11 dB | 1.2 s | 0.25 s / 0.45 s |
+
+The gains apply to the music after it is brought to the voice's loudness (−16 LUFS). Before the first line and after the last, music sits at the "elsewhere" level, so bookends still open and close the video with music. Without narration there is no speech to duck under, so music plays at the "elsewhere" level throughout.
+
+Under bookends, a narrated standard review is heard with music mainly in its [breaths](#timing): the 2 s opening, the pause around the hero (the rise is done 0.45 s after the line before it ends, ahead of the hero's downbeat at 0.5 s), the pause before the verdict, pauses after long stretches of talk, and the time before the logo and over the outro. QC's `music-audible` measures how much is heard. A continuous bed under a standard review stays 20 dB under the voice, as WCAG 1.4.7 asks.
+
+#### Fitting the music to the picture
+
+Music fits the picture, never the reverse: the narration fixed every frame before the music is chosen, so changing only the music never moves a frame. The fitter (`fitMusic` in `packages/audio/src/music/fit.ts`) takes the video's length D, the hero moment H, the end of the last narration line L (without narration, the last story scene's start plus 0.45 s), the moment the outro card settles O, and the verdict (the summary scene's, else the review's):
+
+- **Hero.** Each storytelling template names its payoff beats (`hero`). The hero scene is the first scene playing one of them, taking the list in order; H is its start plus the 0.45 s transition, the moment it has settled.
+- **Bars.** Bar j starts at `start + j·bar`, where the music may start partway into its first bar (then it fades in over 0.3 s). The form is intro → loop sections → hero section → loop sections → ending; loops cycle and are cut at boundaries, and the intro is dropped when the hero comes too early for it.
+- **Constraints, in priority order:** the logo's first note starts at least 0.1 s after L; the logo lands (on the ending's first downbeat, T) at least 0.8 s before the end; T is exactly O when the video has an outro (the outro leaves the logo at least 1.35 s after the last line, room for its pickup at any tempo); the tempo stays within ±6% of the score's (±10% when nothing else fits, recorded); and the hero section's first downbeat is exactly H. The fitter searches whole numbers of bars from H to T and picks the tempo closest to the score's. Without an outro it also chooses T, preferring a landing about a second before the end. When no tempo within ±10% reaches H, the hero starts on the nearest bar and the fallback is recorded. Without a hero, the score's tempo holds exactly. Should the last line leave no room before O, the landing follows the rule for videos without an outro, and the fallback is recorded.
+- **The end.** The ending rings over the outro and past the video's end, then fades to silence: over 45% of its ring after the landing, between half a second and a second (0.81 s in a standard review's outro).
+- **Short videos.** Under 8 s, there is no music (the reason is recorded); the effects remain.
+
+The fitted arrangement is in `video/audio.json`: the tempo against the score's, where the first bar starts, the sections with their start times, the hero moment and downbeat (and whether the downbeat is clear of speech), the outro's settle moment, the logo's start and landing, the fade, and any fallbacks.
+
+#### The sonic logo and the endings
+
+The logo is Covi's, written by the engine and never by scores: in the score's key, at `form.logo.octave`, a pickup of 5 (an octave below, a sixteenth) and 1 (an eighth), then the landing at T, held about two beats. The landing follows the verdict:
+
+| Verdict | Landing | The ending under it |
+|---|---|---|
+| looks good | 3 (resolved) | a resolved tonic (I) |
+| needs attention | 2 (left open) | an open chord (IVadd9 or Vsus4) |
+| needs changes | 6 below the tonic (a gentle minor) | a calm relative minor (vi7) |
+
+The logo plays on `form.logo.track` and, when given, `form.logo.double` (the theme: a bell doubled by a pluck). A score's `form.ending` is one section, or one per verdict.
+
+#### Sound effects
+
+| On screen | Recipe | When |
+|---|---|---|
+| A pointer press (interaction steps, screenshot clicks) | `click` | as the press begins |
+| The before/after reveal | `reveal` | as the after state starts to appear |
+| A finding card landing | `finding`, or `finding-high` for high severity | as the card arrives |
+| The summary's verdict | `verdict-looks-good`, `verdict-needs-attention`, `verdict-needs-changes` | as the badge rises |
+| The outro card settling, when no music plays | `outro-looks-good`, `outro-needs-attention`, `outro-needs-changes` | its landing as the card settles |
+
+The moments come from `timeline.cues`, computed by the same functions the runtime draws with (`packages/video/src/timeline/cues.ts`), so a click is heard when it is seen. `templates/music/sound-effects.yml` maps cues to recipes and sets the level: each recipe is rendered to a −3 dBFS peak and played 14 dB under (the verdict and the outro 12 dB). Effects are at least 0.15 s apart and at most 3 in any second; when cues compete, the outro wins, then the verdict, then a high-severity finding, then the rest. Pitched layers of a recipe are written in C and move into the music's key (the major scale sharing its notes, by the nearest octave); without music they play as written.
+
+The outro's sign-off is the sonic logo on its own: the theme's bell doubled by its glass pluck play the pickup of 5 and 1 and land on 3, 2, or 6 below the tonic, as the verdict says, over a soft e-piano chord and a round-bass root, like the theme's endings. A recipe's `anchor` names the moment of the sound that meets its cue (0.45 s in, the landing), so the pickup starts before it. Every note's release ends inside the sound, which is silent before the shortest outro ends. With music, the music's own logo lands on that moment, so the sign-off is left out (`video/audio.json` lists it as dropped, with the reason); with music and effects both off, the outro is silent.
+
+#### The mix
+
+- **Voice:** the takes in place (`video/narration.wav`, mono 48 kHz 16-bit) at −16 LUFS, measured as heard on both channels. The fox's mouth follows the voice alone.
+- **Music:** rendered (and cached in `.covi/cache/music/`, keyed by the score, the patches and kits, the timing, the verdict, and the engine version), brought to −16 LUFS, then shaped by the placement. `video/music.wav` keeps it as placed, so it can be heard alone.
+- **Effects:** at their cue times and levels.
+- **Master:** linear gain to the target, then a deterministic lookahead limiter at −1.5 dBFS, up to three times, until the loudness is within ±0.5 LU of the target and the true peak at or below −1 dBTP. The target is −16 LUFS for narrated videos (with or without music, so every narrated video is equally loud) and −20 LUFS for music without narration; effects alone are only limited. Loudness and true peak are measured in TypeScript (ITU-R BS.1770-4), which agrees with ffmpeg's `ebur128`; a linear gain plus a limiter, rather than ffmpeg's `loudnorm`, keeps it deterministic.
+- **Levels** go to `video/audio.json`: the voice's loudness, how far the music sits under the voice where it speaks (K-weighted RMS), how far the effects' peaks sit under the voice's, and the master's loudness and true peak.
+- **What is heard:** `music.audible` in `video/audio.json` counts the seconds of music a viewer hears outside the logo (from the logo's first note to the end): 0.25 s windows of the placed stem (`video/music.wav`) whose RMS, both channels together, is above −45 dBFS. The stem is at the voice's loudness before placement and the master keeps the narration at −16 LUFS, so −45 dBFS sits about 29 dB under the voice as heard: halfway between a continuous bed under speech (about −36 dBFS, quiet but heard) and bookends' ducked level (about −56 dBFS, masked by the voice), with some 10 dB of margin either way for the music's own dynamics. `music.hero.clear` says whether the hero's downbeat plays at full level, outside speech and the ramps around it.
+
+If the synthesizer or the mix fails, the video keeps its voice (still mastered) and effects, the run records a warning, and `music-fit` says what failed. Music is never left out silently.
+
+#### Changing only the sound
+
+After a full render, `video/frames.json` records a hash of the composition (`timeline.json`, the page, its assets, and the runtime bundle) and the layout reports QC sampled. `covi render` computes the hash again; when it matches and the video exists, Covi keeps the frames, muxes the new mix into the existing video stream, keeps the poster and the contact sheet, runs QC again, and says "Reused the rendered frames; only the audio changed." It takes seconds:
+
+```bash
+covi render --run <id> --music none      # or --music compose, --music-placement continuous, --no-sound-effects
+```
+
+A change to the narration or the storyboard changes the hash, so those render in full.
+
+### Composition and rendering
+
+**Composition.** `video/composition/` is self-contained:
+
+- `index.html`, with the timeline inlined;
+- `runtime.js`;
+- `timeline.json`;
+- the Inter and JetBrains Mono fonts, and for Korean, Japanese, or Chinese text, the slices of Noto Sans KR, JP, or SC that cover it;
+- the images.
+
+**Fonts for CJK text.** Inter and JetBrains Mono have no CJK glyphs, and system fallbacks differ between machines (a Linux runner may have none and draw boxes). Covi bundles the Noto Sans KR, JP, and SC variable fonts (SIL Open Font License, from `@fontsource-variable`). Each is split into about a hundred unicode-range slices; the composition embeds only the slices its text uses (the narration, captions, titles, labels, code, and terminal output), declares them with `@font-face`, and the runtime loads every declared face before it lays anything out, so frames never depend on lazy font loading. Han characters take the shapes of the video's language: Japanese kanji, Simplified Chinese hanzi, or Korean hanja (Chinese in an English video). `<html lang>` is set to the video's language (`zh-Hans` for Chinese), Korean text breaks only between words (`word-break: keep-all`), and Japanese and Chinese follow strict line-break rules.
+
+Open `index.html` in Chromium to see the first frame. Run `covi.seek(<frame>)` in the developer console to draw any frame, and `covi.layout()` to get the layout report that QC uses.
+
+**Determinism.** Every visual property is a pure function of the frame time. The runtime uses no clocks and no CSS transitions or animations, and its randomness, such as the fox's blinks, is seeded from the title. The same timeline renders the same frames, and a render test checks it.
+
+**Rendering** (`packages/video/src/render/renderer.ts`):
+
+- Workers each open the composition in headless Chromium (Playwright) at a device scale factor of 1, seek every frame in their range, and pipe JPEG screenshots (quality 94) into an ffmpeg segment encoder.
+- The segments are concatenated, then muxed with the mix (AAC, 192 kb/s, 48 kHz stereo) and written with `+faststart` for streaming. A video with no sound at all (narration, music, and effects off) has no audio stream.
+- The encoder is libx264 (preset `medium`, CRF 18, High profile, `yuv420p`, BT.709 color tags, broadcast range) when ffmpeg has it. Otherwise Covi uses `h264_videotoolbox` (8 Mb/s), and `mpeg4` as a last resort.
+- By default Covi runs min(4, half the CPU cores) workers, never more than one per 45 frames. Override with `--workers <n>`.
+- The poster (`video/poster.png`) is the frame at 1.6 s, or a third of the way in for very short videos.
+- The contact sheet (`video/contact-sheet.jpg`) tiles the middle frame of each scene: six 320 px columns for vertical videos, three 560 px columns otherwise. Use it to review a whole video at a glance.
+
+Requirements:
+
+- Playwright's Chromium: `covi doctor --install-browser` downloads the build that matches Covi's own Playwright version (add `--with-deps` on Linux for the system libraries).
+- `ffmpeg` and `ffprobe` on `PATH`, or set `COVI_FFMPEG` and `COVI_FFPROBE` to them. If ffmpeg is missing, Covi exits with code 3.
+
+`covi doctor` checks both. Rendering is the slowest stage; its time grows with the number of frames and shrinks with workers.
+
+### Quality checks
+
+After rendering, Covi checks the video and writes `video/qc.json`. It contains the overall `status`, every check, and the `measured` values: duration, size, fps, integrated loudness, true peak, and mean volume.
+
+| Check | Passes when | Otherwise |
+|---|---|---|
+| `format` | Size and fps match the spec, and the pixel format is `yuv420p` | fail |
+| `duration` | The duration is within the window, ±0.5 s | warn; fail when longer than 1.5× the maximum or shorter than half the minimum |
+| `audio` | Whenever narration, music, or effects play: an audio stream exists and is not silent (its loudest sample above −60 dBFS). A narrated mix reads −16 ± 1 LUFS; music without narration −20 ± 1. The true peak is at or below −1 dBTP. Effects alone have no loudness target. With all sound off, no stream is expected | fail without a stream, when silent, beyond ±2 LU, or with a true peak above −0.5 dBTP; warn within ±2 LU, with a true peak between −1 and −0.5 dBTP, or when narration was requested but no speech engine was available |
+| `music-under-speech` | Where someone speaks, the music sits at least 18 dB under the voice (continuous placement) or 30 dB (bookends), as K-weighted RMS from `video/audio.json`. WCAG 1.4.7 asks for 20 dB. Passes when no music plays under narration | continuous: warn from 12 to 18 dB, fail under 12; bookends: warn under 30 |
+| `music-fit` | The logo starts at least 0.1 s after the last line, lands at least 0.8 s before the end and within one frame of the outro settling, the hero downbeat is within one frame of the hero moment, the tempo is within ±6% of the score's, and the last 10 ms are below −60 dBFS | fail when the logo overlaps the last line or the end is not silent; warn on a late landing, a landing off the outro or a hero off its downbeat (naming the fallback), a tempo beyond ±6%, or a music render that failed |
+| `music-audible` | Music that was asked for (`theme` or `compose`) is heard for at least 3 s outside the logo, or 5% of the video when that is more (`music.audible` in `video/audio.json`), and, under bookends, the hero downbeat is clear of speech. Passes when music is off or none could play (`music-fit` says why) | warn |
+| `sound-effects` | Effects are at least 0.15 s apart, at most 3 in any second, and their peaks sit at least 6 dB under the voice's | fail on crowding or under 3 dB; warn from 3 to 6 dB |
+| `black-frames` | ffmpeg `blackdetect` (at least 0.4 s, pixel threshold 0.05) finds nothing | warn |
+| `captions-clear-of-content` | The caption band never intersects demonstrated content | fail |
+| `captions-in-frame` | The caption band stays inside the frame, and no caption line is wider than its box | fail |
+| `text-fits` | No text element overflows its box | warn |
+| `narrator-clear-of-content` | The narrator, measured as drawn with its tail, never covers demonstrated content, the media region, captions, or header text | warn |
+| `images` | Every image loaded in the composition | fail |
+| `fonts` | Every bundled font face loaded, so no text fell back to the machine's fonts (boxes on a runner without CJK fonts) | fail |
+| `caption-timing` | No cue overlaps the next, reads faster than the language's limit, or lasts less than 0.7 s. Limits, in characters per second: English 24 (counting spaces), Korean 17, Chinese 13, Japanese 8 (not counting spaces; a half-width character such as a Latin letter counts half) | fail on overlap; warn on fast or short cues |
+| `narration-pace` | No scene's narration is faster than 4.2 words per second in English, 7.5 syllables per second in Korean, 7 characters per second in Japanese, or 5.5 in Chinese, counted with `Intl.Segmenter` on the text the voice was given | warn |
+| `speech-acronyms` | Non-English narration: the text sent to the voice has no all-caps Latin token left (outside URLs, e-mail addresses, and versions). Names the scene and the token | warn: write the spoken form in `say` or add a pronunciation |
+| `voice-language` | The system voice's locale matches the narration language (hosted voices are not checked) | warn, with a voice to choose instead; also warn when the system voice list could not be read, so the voice's language is unknown |
+
+Covi samples the layout checks at two frames per scene, 35% and 70% of the way through.
+
+The overall status is `fail` if any check fails, `warn` if any warns, and `pass` otherwise. QC never deletes the video and never changes the exit code. Failed and warning checks are added to the run's warnings. The result object carries `video.qc`, and a failed QC adds the warning "Video QC failed; see video/qc.json."
+
+After a render, read `qc.json`, then open `contact-sheet.jpg` and `poster.png`. If a scene is wrong, crowded, or not grounded in evidence, fix the storyboard and run `covi render` again.
+
+## Videos in CI
+
+`covi ci` never asks questions:
+
+- **Decision.** It applies `video.when` (or `--video auto|always|never`).
+- **Capture.** It demonstrates whenever the recommendation is screenshots or video and the project is runnable, at desktop and mobile by default, whether or not a video is rendered. Under `pull_request_target` it runs no project command, so only static sites (or an app already running at `app.url`) are captured.
+- **Spec.** It builds the spec from configuration, which CI reads from the base revision, and from flags such as `--mode` (or `--short`), `--duration`, and `--music`.
+- **Music.** The theme by default. With `video.music.use: compose`, the configured model provider writes the score; without one, the theme plays and the run says so.
+- **Failures.** If rendering fails, the run records a warning and the review still completes.
+
+The review comment links the video according to `publish.video`:
+
+- `link` (default) links the video in the CI artifacts: the file inside the job's artifacts on GitLab, the uploaded workflow artifact on GitHub;
+- `upload` uploads the file through the GitLab project uploads API and embeds it in the note; on GitHub it falls back to the link;
+- `none` leaves the video out.
+
+See [GitHub Action](github-action.md) and [GitLab CI](gitlab-ci.md) for the inputs that map to these settings.

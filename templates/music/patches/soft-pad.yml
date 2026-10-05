@@ -1,0 +1,12 @@
+id: soft-pad
+description: Warm detuned-saw pad for chord beds. Three saws spread across the stereo field into a soft lowpass with a slow swell; its track gets a chorus by default.
+algo: subtractive
+oscs:
+  - { wave: saw, detune: -8, level: 0.55, pan: -0.6 }
+  - { wave: saw, detune: 8, level: 0.55, pan: 0.6 }
+  - { wave: saw, detune: 2, level: 0.35 }
+filter: { type: lowpass, cutoff: 900, q: 0.7, env: 0.8, keytrack: 0.35, adsr: { a: 1.2, d: 1.8, s: 0.35, r: 1.4 } }
+highpass: 140
+amp: { a: 0.45, d: 1.2, s: 0.85, r: 1.4 }
+vibrato: { rate: 0.35, depth: 3, delay: 0, fade: 1 }
+fx: { chorus: { depth: 0.45, rate: 0.23, mix: 0.45 } }

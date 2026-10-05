@@ -1,0 +1,8 @@
+demo:
+  commands:
+    - name: Slugify a title
+      run: node bin/slugify.js "Héllo  Wörld! Ça va?"
+test:
+  command: node --test
+video:
+  mode: short

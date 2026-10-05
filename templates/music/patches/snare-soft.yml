@@ -1,0 +1,10 @@
+id: snare-soft
+description: Light electronic snare — soft body tone with a filtered noise rattle.
+algo: drum
+kind: snare
+freq: 190
+decay: 0.16
+tone: 0.45
+noise: 0.55
+color: 1600
+lowpass: 8000

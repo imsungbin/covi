@@ -1,0 +1,15 @@
+id: pizzicato
+description: Pizzicato strings (Karplus–Strong) with a soft finger attack and a small wooden body resonance. Bouncy ostinatos.
+algo: ks
+damping: 0.45
+brightness: 0.3
+pluckPos: 0.16
+decay: 0.75
+keyDecay: 0.4
+attackSoft: 0.012
+body:
+  - { freq: 280, q: 1.4, gain: 4 }
+  - { freq: 520, q: 1.8, gain: 2.5 }
+  - { freq: 2800, q: 0.8, gain: -3 }
+lowpass: 6000
+amp: { a: 0.003, r: 0.12 }

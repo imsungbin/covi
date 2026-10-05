@@ -162,12 +162,23 @@ export function isBlockingCandidate(finding: Pick<Finding, 'certainty'>): boolea
   return finding.certainty === 'confirmed' || finding.certainty === 'likely';
 }
 
+/**
+ * A finding's id: its source and a hash of its title and location. SARIF and GitLab Code Quality
+ * track findings across runs by this id, so findings Covi words itself hash their English title
+ * in every language.
+ */
+export function findingId(
+  source: string,
+  title: string,
+  location?: { path?: string; line?: number },
+): string {
+  return `${source}-${shortHash(title, location?.path, location?.line)}`;
+}
+
 export function normalizeFinding(input: FindingInput, defaultSource: Finding['source']): Finding {
   const parsed = FindingSchema.parse(input);
   const source = parsed.source ?? defaultSource;
-  const id =
-    parsed.id ??
-    `${source.id ?? source.kind}-${shortHash(parsed.title, parsed.location?.path, parsed.location?.line)}`;
+  const id = parsed.id ?? findingId(source.id ?? source.kind, parsed.title, parsed.location);
   return { ...parsed, id, source };
 }
 

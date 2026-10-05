@@ -18,7 +18,7 @@ import {
 } from '../model/finding.ts';
 import { type Logger, silentLogger } from '../util/log.ts';
 import { RULES } from './rules/index.ts';
-import type { Rule } from './rules/types.ts';
+import type { Rule, RuleContext } from './rules/types.ts';
 
 export interface RuleRunResult {
   findings: Finding[];
@@ -54,8 +54,11 @@ export async function runRules(
   const errors: RuleRunResult['errors'] = [];
   for (const rule of rules) {
     try {
-      for (const input of await rule.run(ctx))
-        findings.push(normalizeFinding(input, { kind: 'rule', id: rule.id }));
+      const source = { kind: 'rule', id: rule.id } as const;
+      const inputs = await rule.run(ctx);
+      const ids = language === 'en' ? [] : await englishIds(rule, ctx, inputs.length);
+      for (const [i, input] of inputs.entries())
+        findings.push(normalizeFinding(ids[i] ? { ...input, id: ids[i] } : input, source));
     } catch (error) {
       const message = (error as Error).message;
       logger.debug(`Rule ${rule.id} failed: ${message}`);
@@ -68,6 +71,20 @@ export async function runRules(
     hasMessage(language, `rule.${r.id}.checks`) ? t(language, `rule.${r.id}.checks`) : r.checks,
   );
   return { findings: unique, checked, errors };
+}
+
+/**
+ * The ids a rule's findings have in English. An id hashes the finding's title, and SARIF and GitLab
+ * track findings across runs by id, so a finding must keep its id whatever language the run writes
+ * in. Rules are pure, so running one again in English yields the same findings in the same order
+ * (the reader caches what it reads); if not, the findings keep the ids of their own titles.
+ */
+async function englishIds(rule: Rule, ctx: RuleContext, count: number): Promise<string[]> {
+  const english = await Promise.resolve()
+    .then(() => rule.run({ ...ctx, language: 'en' }))
+    .catch(() => []);
+  if (english.length !== count) return [];
+  return english.map((f) => normalizeFinding(f, { kind: 'rule', id: rule.id }).id);
 }
 
 export interface BuildReviewInput {

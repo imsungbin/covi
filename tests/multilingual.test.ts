@@ -136,6 +136,9 @@ describe('heuristic output in every language', () => {
         expect(renderReview(review, explanation, context)).not.toMatch(/^# Review:/m);
         expect(renderComment(review, explanation, context)).not.toMatch(/Covi review:/);
         for (const f of review.findings) expect(f.title, f.title).toMatch(script);
+        // A finding keeps its id in every language: SARIF and GitLab track findings by id.
+        const english = await analyze(dir, 'en');
+        expect(review.findings.map((f) => f.id)).toEqual(english.review.findings.map((f) => f.id));
 
         const storyboard = draftStoryboard({
           change,

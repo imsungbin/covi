@@ -10,8 +10,10 @@ import {
   type ExecutionPolicy,
   execShell,
   type FindingInput,
+  findingId,
   type Language,
   type Logger,
+  type Params,
   type ReviewContext,
   type Run,
   t,
@@ -29,6 +31,14 @@ import { checkoutRevision, tempWorkspace } from './checkout.ts';
 import { comparePngs, cropPng, readPng } from './pixels.ts';
 import { type DemoPlan, flowViewport, planDemo } from './plan.ts';
 import { describeShapeChange, type HttpResult, normalizeBody, performRequest } from './requests.ts';
+
+/**
+ * A demo finding's title in the run's language, and the id its English title gives it: SARIF and
+ * GitLab track findings across runs by id, so the id must not change with the language.
+ */
+function titled(language: Language, source: string, key: string, params?: Params) {
+  return { title: t(language, key, params), id: findingId(source, t('en', key, params)) };
+}
 
 export interface DemonstrateInput {
   run: Run;
@@ -176,7 +186,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
           });
           if (revision === 'head') {
             result.findings.push({
-              title: say('finding.appStart.title'),
+              ...titled(language, 'app-start', 'capture.finding.appStart.title'),
               certainty:
                 revisions.includes('base') && pages.size + requests.size > 0
                   ? 'confirmed'
@@ -223,7 +233,9 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
                   reason: outcome.error,
                 });
                 result.findings.push({
-                  title: say('finding.flow.title', { name: flow.name }),
+                  ...titled(language, 'flow-failure', 'capture.finding.flow.title', {
+                    name: flow.name,
+                  }),
                   certainty: 'likely',
                   severity: 'medium',
                   category: 'regression',
@@ -381,7 +393,7 @@ async function assemblePageShots(
       const newErrors = captures.head.errors.filter((e) => !captures.base!.errors.includes(e));
       if (newErrors.length) {
         findings.push({
-          title: t(language, 'capture.finding.pageError.title', { path }),
+          ...titled(language, 'page-error', 'capture.finding.pageError.title', { path }),
           certainty: 'confirmed',
           severity: 'medium',
           category: 'regression',
@@ -393,7 +405,7 @@ async function assemblePageShots(
       }
       if ((captures.base.status ?? 200) < 400 && (captures.head.status ?? 200) >= 400) {
         findings.push({
-          title: t(language, 'capture.finding.pageStatus.title', {
+          ...titled(language, 'page-status', 'capture.finding.pageStatus.title', {
             path,
             status: String(captures.head.status),
           }),
@@ -462,7 +474,7 @@ function compareRequests(
     if (before && shapeChange) {
       const params = { method: request.method, path: request.path };
       findings.push({
-        title: say('apiShape.title', params),
+        ...titled(language, 'api-shape', 'capture.finding.apiShape.title', params),
         certainty: 'confirmed',
         severity: 'high',
         category: 'api-compatibility',
@@ -474,7 +486,7 @@ function compareRequests(
     }
     if (before && before.status < 400 && after.status >= 500) {
       findings.push({
-        title: say('apiStatus.title', {
+        ...titled(language, 'api-status', 'capture.finding.apiStatus.title', {
           method: request.method,
           path: request.path,
           status: String(after.status),
@@ -512,7 +524,9 @@ function compareCommands(
     out.push({ name: command.name, command: command.run, before: r.base, after: r.head, changed });
     if (r.base && r.base.exitCode === 0 && r.head.exitCode !== 0) {
       findings.push({
-        title: say('title', { command: command.run }),
+        ...titled(language, 'command-failure', 'capture.finding.command.title', {
+          command: command.run,
+        }),
         certainty: 'confirmed',
         severity: 'high',
         category: 'regression',

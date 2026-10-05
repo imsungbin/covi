@@ -1,5 +1,5 @@
 import { rmSync } from 'node:fs';
-import type { Demonstration } from '@covi/core';
+import { type Demonstration, normalizeFinding } from '@covi/core';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { covi } from './helpers/cli.ts';
@@ -12,10 +12,10 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-async function demo(name: string): Promise<Demonstration> {
+async function demo(name: string, args: string[] = []): Promise<Demonstration> {
   const dir = await materializeExample(examples.find((e) => e.name === name)!);
   dirs.push(dir);
-  const result = covi(['demo', '--repo', dir, '--json']);
+  const result = covi(['demo', '--repo', dir, '--json', ...args]);
   expect(result.code).toBe(0);
   return (result.json() as { data: { demo: Demonstration } }).data.demo;
 }
@@ -50,6 +50,12 @@ describe('demonstrations', () => {
           category: 'api-compatibility',
         }),
       ]);
+      // Written in Korean, the finding keeps its id: SARIF and GitLab track findings by id.
+      const korean = await demo('api-users-pagination', ['--language', 'ko']);
+      expect(korean.findings[0]!.title).toMatch(/\p{Script=Hangul}/u);
+      const ids = (d: Demonstration) =>
+        d.findings.map((f) => normalizeFinding(f, { kind: 'demo' }).id);
+      expect(ids(korean)).toEqual(ids(result));
     },
   );
 

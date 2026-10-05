@@ -140,7 +140,7 @@ The rules live in `packages/core/src/review/rules/`. Each `Rule` has an `id`, a 
 
 A rule that throws is recorded and skipped; it never fails the run. `review.disableRules` turns rules off by id.
 
-`runRules` gives every finding a stable id (`<rule>-<hash>`). `buildReview` (`review/engine.ts`) then:
+`runRules` gives every finding a stable id (`<rule>-<hash>` of its title and location). The hash uses the English title whatever language the run writes in (demonstration findings do the same), so SARIF and GitLab Code Quality, which track findings across runs by id, see the same finding in a Korean run as in an English one. `buildReview` (`review/engine.ts`) then:
 
 1. merges authored findings (from a model or an agent) with rule and demonstration findings;
 2. drops rule findings the author dismissed by id, and rule findings an authored finding supersedes (same file, within three lines, same category);

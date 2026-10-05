@@ -53,7 +53,7 @@ The packages, their responsibilities, and the dependency direction between them 
 | `npm run test:render` | `COVI_TEST_RENDER=1 vitest run tests/render`: also renders full review videos |
 | `npm run check` | `lint`, `typecheck`, `agents:check`, and `test`, in that order |
 
-Run `npm run check` before you open a pull request. The asset check runs as part of `npm test` (see [derived files](#derived-files)).
+Run `npm run check` before you open a pull request. CI (`.github/workflows/ci.yml`) runs the same check on every pull request and on every push to `main`. The asset check runs as part of `npm test` (see [derived files](#derived-files)).
 
 ## Tests
 

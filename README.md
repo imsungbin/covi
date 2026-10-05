@@ -21,7 +21,7 @@ Covi helps people understand code changes well enough to review them. Give it a 
 /plugin install covi --marketplace imsungbin/covi
 ```
 
-That's all. The plugin adds Covi's skills and puts the `covi` command on Claude's PATH; the first run installs Covi's dependencies, so you need Node.js 22.18 or newer. Then ask: "Review this branch with Covi." On Claude Code older than 2.1.275, run `/plugin marketplace add imsungbin/covi` and then `/plugin install covi@covi`.
+That's all. The plugin adds Covi's skills and puts the `covi` command on Claude's PATH; the first run installs Covi's dependencies, so you need Node.js 22.18 or newer. (If Claude Code notes that it did not install the plugin's packages, that's expected: `covi` installs them itself.) Then ask: "Review this branch with Covi." On Claude Code older than 2.1.275, run `/plugin marketplace add imsungbin/covi` and then `/plugin install covi@covi`.
 
 **Codex.** Install the `covi` command from source, then the skills:
 

@@ -27,7 +27,7 @@ If you use Claude Code, one command in a session is enough:
 /plugin install covi --marketplace imsungbin/covi
 ```
 
-The plugin brings the skills and its own `covi` command: its `bin/` directory is on Claude's PATH while the plugin is enabled, and the first run of `bin/covi` installs Covi's locked dependencies with `npm ci` (Node.js 22.18 or newer must be installed). On Claude Code older than 2.1.275, run `/plugin marketplace add imsungbin/covi`, then `/plugin install covi@covi`. To use `covi` in your own terminal too, also install it from a checkout.
+The plugin brings the skills and its own `covi` command: its `bin/` directory is on Claude's PATH while the plugin is enabled, and the first run of `bin/covi` installs Covi's locked dependencies with `npm ci` (Node.js 22.18 or newer must be installed). Claude Code may note that it did not install the plugin's packages itself; that's expected, because they are npm workspaces, which `bin/covi` installs instead. On Claude Code older than 2.1.275, run `/plugin marketplace add imsungbin/covi`, then `/plugin install covi@covi`. To use `covi` in your own terminal too, also install it from a checkout.
 
 ### From a checkout
 

@@ -61,8 +61,9 @@ export const focusedTest: Rule = {
     const out = [];
     for (const { file, line } of addedLines(files, (f) => f.category === 'test')) {
       if (
-        /\b(describe|it|test|context|suite|specify)\.only\s*\(|\b(fdescribe|fit)\s*\(/.test(
+        inCode(
           line.text,
+          /\b(describe|it|test|context|suite|specify)\.only\s*\(|\b(fdescribe|fit)\s*\(/g,
         )
       ) {
         out.push({
@@ -82,13 +83,35 @@ export const focusedTest: Rule = {
   },
 };
 
+/**
+ * Whether `pattern` (global) matches outside string literals on this line. Test files often hold
+ * code as fixtures ("it.only(...)" in a string); those are data, not focused tests.
+ */
+function inCode(text: string, pattern: RegExp): boolean {
+  for (const m of text.matchAll(pattern)) if (!inString(text, m.index)) return true;
+  return false;
+}
+
+function inString(text: string, at: number): boolean {
+  let quote: string | undefined;
+  for (let i = 0; i < at; i++) {
+    const c = text[i];
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = undefined;
+    } else if (c === "'" || c === '"' || c === '`') quote = c;
+  }
+  return quote !== undefined;
+}
+
 export const skippedTest: Rule = {
   id: 'skipped-test',
   checks: 'tests that are newly skipped or disabled',
   run({ files }) {
     const hits = addedLines(files, (f) => f.category === 'test').filter(({ line }) =>
-      /\b(describe|it|test|context)\.skip\s*\(|\b(xit|xdescribe|xtest)\s*\(|@pytest\.mark\.skip|\bt\.Skip\(|@Disabled\b|@Ignore\b|\bpending\(/.test(
+      inCode(
         line.text,
+        /\b(describe|it|test|context)\.skip\s*\(|\b(xit|xdescribe|xtest)\s*\(|@pytest\.mark\.skip|\bt\.Skip\(|@Disabled\b|@Ignore\b|\bpending\(/g,
       ),
     );
     if (hits.length === 0) return [];

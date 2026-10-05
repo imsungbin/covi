@@ -47,6 +47,18 @@ describe('review rules: hygiene and security', () => {
     ).toEqual(['a.ts']);
   });
 
+  it('ignores focus and skip calls inside strings (test fixtures)', async () => {
+    const r = await run(
+      { 'src/rules.test.ts': "it('a', () => {});\n" },
+      {
+        'src/rules.test.ts':
+          "const fixture = { 'a.test.ts': \"it.only('a', () => {});\" };\nconst other = `it.skip('b')`;\n",
+      },
+    );
+    expect(r.ruleIds).not.toContain('focused-test');
+    expect(r.ruleIds).not.toContain('skipped-test');
+  });
+
   it('flags focused tests as confirmed and skipped tests as risks', async () => {
     const r = await run(
       { 'src/a.test.ts': "it('a', () => {});\n" },
@@ -162,6 +174,14 @@ describe('review rules: correctness and compatibility', () => {
     );
     expect(r.ruleIds).toContain('async-foreach');
     expect(r.findings.filter((x) => x.source.id === 'empty-catch')).toHaveLength(2);
+  });
+
+  it('accepts an explicit fallback value as handling', async () => {
+    const r = await run(
+      { 'src/load.ts': 'x\n' },
+      { 'src/load.ts': 'const cfg = await readConfig().catch(() => undefined);\n' },
+    );
+    expect(r.ruleIds).not.toContain('empty-catch');
   });
 
   it('flags removed routes and destructive migrations', async () => {

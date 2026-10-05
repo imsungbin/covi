@@ -40,7 +40,9 @@ export const emptyCatch: Rule = {
           if (l.kind !== 'add') continue;
           const next = lines[i + 1];
           const oneLine =
-            /\bcatch\s*(\([^)]*\))?\s*\{\s*\}|\.catch\(\s*(\(\s*\w*\s*\)|\w+)\s*=>\s*\{\s*\}\s*\)|\.catch\(\s*\(\)\s*=>\s*(undefined|null)\s*\)/.test(
+            // An empty handler discards the error; `.catch(() => undefined)` names a fallback value
+            // on purpose, so it is not reported.
+            /\bcatch\s*(\([^)]*\))?\s*\{\s*\}|\.catch\(\s*(\(\s*\w*\s*\)|\w+)\s*=>\s*\{\s*\}\s*\)/.test(
               l.text,
             );
           const twoLine =

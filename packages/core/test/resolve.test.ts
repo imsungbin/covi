@@ -81,6 +81,9 @@ describe('resolveChange', () => {
     const change = await resolveChange({ repo: repo.root, range: 'HEAD^!' });
     expect(change.base.sha).toBe(EMPTY_TREE);
     expect(change.files[0]).toMatchObject({ path: 'a.txt', status: 'added' });
+    // The root commit's message is part of the change, like any other commit's.
+    expect(change.commits.map((c) => c.subject)).toEqual(['Initial commit']);
+    expect(change.metadata.title).toBe('Initial commit');
   });
 
   it('reports no changes clearly', async () => {

@@ -111,7 +111,7 @@ The `heuristic` provider does not call a model, so skills are not involved. It u
 
 **In this repository.** `.claude/skills` (Claude Code) and `.agents/skills` (Codex and other clients that use that location) are links to `skills/`, so the skills are available as project skills with no setup. `CLAUDE.md` imports `AGENTS.md`, which Codex reads directly. `npm run agents:sync` maintains both links.
 
-**Claude Code, as a plugin.** The repository root contains `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`, so the repository works as a plugin marketplace with one plugin, `covi`. Its skills are discovered from `skills/`. Add the marketplace with `/plugin marketplace add <path or git URL of this repository>`, then run `/plugin install covi@covi`.
+**Claude Code, as a plugin.** The repository root contains `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`, so the repository works as a plugin marketplace with one plugin, `covi`. Its skills are discovered from `skills/`. Add the marketplace with `/plugin marketplace add <path or git URL of this repository>`, then run `/plugin install covi@covi` (from a shell: `claude plugin marketplace add` and `claude plugin install covi@covi`). Plugin skills are namespaced: `/covi:covi`, `/covi:covi-review`, and so on.
 
 **Any repository, any client.** `covi skills install` copies every skill into the location an agent client reads:
 
@@ -123,7 +123,7 @@ The `heuristic` provider does not call a model, so skills are not involved. It u
 | `covi skills install --target codex --global` | `~/.agents/skills/` |
 | `covi skills install --dest <dir>` | `<dir>` |
 
-Codex discovers skills in `.agents/skills` (in the repository and in the home directory), which is why `codex` and `agents` share a destination.
+Codex discovers skills in `.agents/skills` (in the repository and in the home directory), which is why `codex` and `agents` share a destination. In Codex, `/skills` lists them and `$covi-review` invokes one by name.
 
 `<repo>` is the `--repo` directory, which defaults to the current directory.
 

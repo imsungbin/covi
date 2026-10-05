@@ -315,9 +315,14 @@ function summarize(
     const t = cleanSubject(significant.subject);
     return { summary: sentenceCase(t.text), scope: t.scope, basis: 'commit' };
   }
-  const areas = [
-    ...new Set(input.files.filter((f) => !f.ignored).map((f) => topDir(f.path))),
-  ].slice(0, 3);
+  // Name the places where most of the change happened, not the first ones alphabetically.
+  const weight = new Map<string, number>();
+  for (const f of input.files.filter((f) => !f.ignored))
+    weight.set(topDir(f.path), (weight.get(topDir(f.path)) ?? 0) + f.additions + f.deletions + 1);
+  const areas = [...weight.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([dir]) => dir);
   const what =
     kind === 'unknown' || kind === 'mixed' ? 'Changes' : `${sentenceCase(label(kind))} changes`;
   return { summary: areas.length ? `${what} in ${areas.join(', ')}` : what, basis: 'files' };

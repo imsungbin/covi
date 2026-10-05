@@ -275,6 +275,18 @@ describe('intent', () => {
     expect(intent.ambiguity).toMatch(/Uncommitted work has no commit message/);
   });
 
+  it('names the areas with the most change when nothing describes it', () => {
+    const big = (path: string) => ({ ...file(path, 'source'), additions: 400 });
+    const intent = inferIntent({
+      ...base,
+      change: { commits: [], metadata: {}, includesUncommitted: true },
+      files: [file('.config/a.json', 'config'), big('packages/core/x.ts'), big('src/app/y.ts')],
+    });
+    expect(intent.summary).toMatch(
+      / in (packages\/core|src\/app), (packages\/core|src\/app), \.config$/,
+    );
+  });
+
   it('flags a refactor that changes API routes', () => {
     const intent = inferIntent({
       ...base,

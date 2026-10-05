@@ -194,7 +194,7 @@ async function planChange(git: Git, options: ResolveOptions, logger: Logger): Pr
         worktree: false,
         staged: false,
         source: { kind: 'range', spec: range },
-        logRange: parent === EMPTY_TREE ? undefined : { from: parent, to: sha },
+        logRange: { from: parent, to: sha },
       };
     }
     // A single ref names the base: review everything on HEAD since it diverged.
@@ -474,9 +474,11 @@ function toChangedFile(p: ParsedFile, ignore: readonly string[]): ChangedFile {
 async function readCommits(git: Git, from: string, to: string): Promise<Commit[]> {
   if (from === to) return [];
   const format = '%H%x1f%an%x1f%aI%x1f%s%x1f%b%x1e';
+  // From the empty tree (a root commit) every commit reachable from `to` is part of the change.
+  const range = from === EMPTY_TREE ? ['--max-count=200', to] : [`${from}..${to}`];
   let out: string;
   try {
-    out = await git.out(['log', '--no-merges', `--format=${format}`, `${from}..${to}`]);
+    out = await git.out(['log', '--no-merges', `--format=${format}`, ...range]);
   } catch (error) {
     if (error instanceof GitError) return [];
     throw error;

@@ -74,6 +74,9 @@ export function intentSentence(context: ReviewContext): string {
   const first = summary.split(/\s+/)[0] ?? '';
   if (isImperativeVerb(first))
     return ensurePeriod(`This change ${toThirdPersonClause(lowerFirst(summary))}`);
+  // A summary with its own colon ("Initial commit: Covi, …") reads better quoted as written.
+  if (summary.includes(': '))
+    return `This change is ${KIND_PHRASE[intent.kind]}, titled “${summary}”.`;
   return ensurePeriod(`This change is ${KIND_PHRASE[intent.kind]}: ${lowerFirst(summary)}`);
 }
 
@@ -81,10 +84,19 @@ export function intentSentence(context: ReviewContext): string {
 export function intentStatement(context: ReviewContext): string {
   const { intent } = context;
   const kind = KIND_PHRASE[intent.kind];
-  if (intent.basis === 'title')
-    return `The title describes it as ${kind}: “${context.change.metadata.title}”.`;
+  // Credit the title or commits with the kind only when the evidence came from them.
+  const from = (source: string) => intent.evidence.some((e) => e.startsWith(source));
+  const fromFiles =
+    intent.kind === 'unknown' ? '' : ` Calling it ${kind} is inferred from the files.`;
+  if (intent.basis === 'title') {
+    const title = context.change.metadata.title;
+    return from('title')
+      ? `The title describes it as ${kind}: “${title}”.`
+      : `The title says “${title}”.${fromFiles}`;
+  }
   if (intent.basis === 'commit') {
     const n = context.change.commits.length;
+    if (!from('commit')) return `The commit message says “${intent.summary}”.${fromFiles}`;
     return `${n === 1 ? 'The commit message describes' : `The ${n} commit messages describe`} it as ${kind}${intent.summary ? `: “${intent.summary}”` : ''}.`;
   }
   return intent.kind === 'unknown'

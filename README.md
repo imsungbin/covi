@@ -32,6 +32,85 @@ Inside a coding agent, the agent does the reasoning by following Covi's skills, 
 - a model, when `ANTHROPIC_API_KEY` is set;
 - an agent CLI that you configure.
 
+## Covi, explained by Covi
+
+We asked Covi to explain its own first commit, the one that adds this whole repository (259 files, +35,895 lines), from a Claude Code session. `covi analyze` worked out what it could without a model, the agent wrote the explanation by following the `covi-explain` skill, and `covi report` checked it against the schema and rendered it. This is the rendered result, with headings resized for this page:
+
+> ### Adds Covi: understand, explain, demonstrate, and review code changes
+>
+> This commit creates Covi, a code review workspace built for coding agents. Given a branch, commit range, pull request, or merge request, Covi works out what changed and why, explains it by module and behavior, runs the software at both revisions when seeing the change helps, and reports only findings backed by evidence. A coding agent supplies the judgment by following Covi's skills; the `covi` CLI supplies deterministic tools, schemas for what the agent writes, renderers for reports and comments, and a pipeline for short narrated review videos. The same workflows run in GitHub Actions and GitLab CI.
+>
+> **Why:** To give reviewers, and the agents that help them, one consistent way to understand a change before judging it: understand, explain, demonstrate when it helps, then review. _(confidence: high. Evidence: commit "Initial commit: Covi, an agent-native code review workspace"; README.md and AGENTS.md describe the loop Understand → Explain → Demonstrate → Review; skills/ holds the methodology that both agents and the CLI's model prompts use.)_
+
+<details>
+<summary>What changed, the architecture, and where to start reading</summary>
+
+#### Behavior
+
+- User-visible: yes
+- **Before:** No project existed.
+- **After:** A `covi` CLI (`analyze`, `explain`, `review`, `demo`, `video`, `summarize`, `report`, `render`, `ci`, `publish`, and helpers such as `init`, `trust`, and `doctor`), agent skills for Claude Code and Codex, a GitHub Action, and a GitLab CI template.
+- Every run writes its artifacts to `.covi/runs/<run-id>/` in the reviewed repository.
+
+#### What changed
+
+- **Core (packages/core)**: Defines the platform-independent model (`CodeChange`, `ReviewContext`, `Finding`, `Demonstration`, `Artifact`) and everything deterministic: resolving ranges, branches, and uncommitted work into a change; understanding it (file roles, symbols, routes, environment variables, dependencies, migrations, and intent with a confidence); 26 review rules that keep certainty separate from severity; layered configuration with provenance; run manifests; redaction; and three reasoning providers (built-in heuristics, the Anthropic API, or any agent CLI).
+- **Demonstration (packages/capture)**: Checks out base and head into temporary directories, serves static sites or starts the app, and captures pages, scripted flows, command output, and HTTP responses. Pixel diffs locate visual changes, and regressions it observes, such as a changed response shape, become confirmed findings.
+- **Video (packages/video)**: Plans a video from the user's words (short, standard, or custom), drafts a storyboard from evidence and story templates, times scenes to the measured narration, builds captions, renders a deterministic browser composition through ffmpeg, and checks the result.
+- **Brand (packages/brand)**: The cobalt fox narrator as code: six expressions, seven named animations, design tokens, and the generated SVG assets.
+- **Platforms and CLI (packages/platforms, packages/cli)**: Map GitHub and GitLab CI context onto a `CodeChange`; publish comments, inline annotations, SARIF, Code Quality reports, and step outputs; and compose everything into the `covi` commands with fixed exit codes.
+- **Skills and templates**: Eight skills hold the review methodology for agents and are also loaded into model prompts; seven storytelling templates shape the videos.
+- **CI integrations**: A composite GitHub Action with a fork-safe comment workflow, and a GitLab CI template. Both build Covi from its own source.
+- **Examples, tests, and docs**: Five example changes with expected results, unit and integration tests (236 test cases), fourteen documentation pages, and agent packaging (`AGENTS.md`, `CLAUDE.md`, a Claude Code plugin manifest).
+
+#### Architecture
+
+- Dependency direction is fixed and enforced by a test: `core` imports no other Covi package; `capture`, `video`, and `platforms` build on it; `cli` composes them.
+- Stages communicate through files in a run directory, so an agent can author any input Covi validates (`explanation.json`, `findings.json`, a demo plan, a storyboard) and resume a run.
+- Judgment lives in skills and computation in code: the same skill text guides agents and the prompts of model providers.
+- Repositories are treated as untrusted: their commands need `covi trust` locally, CI reads configuration from the base revision, and `pull_request_target` runs no project code.
+
+#### Implementation details
+
+- Video timing is narration-first: Covi synthesizes and measures each line, lays the scenes out around the speech, then fits the total to the requested length.
+- The browser composition is a pure function of the frame number (seeded blinks, no clocks), so a timeline always renders the same frames.
+- During development TypeScript runs directly on Node's type stripping; installs use a bundled `dist/`.
+
+#### Before you read the diff
+
+- `package-lock.json` and `assets/covi/*.svg` are generated; skim them.
+- The example changes under `examples/` contain deliberate problems (a removed focus outline, an undocumented environment variable) because the tests expect Covi to find them.
+- Token-shaped test fixtures, such as those in `packages/core/test/redact.test.ts`, are assembled at runtime, so no literal credential appears in the source.
+- Start with the trust boundary: `packages/core/src/security/` and `packages/capture/src/demonstrate.ts` decide what Covi may execute.
+
+#### Suggested reading order
+
+1. `AGENTS.md`: Architecture rules and the repository map
+2. `packages/core/src/model/change.ts`: The platform-independent model
+3. `packages/core/src/git/resolve.ts`: How a range or branch becomes a change
+4. `packages/core/src/understand/understand.ts`: What Covi derives without a model
+5. `packages/core/src/review/engine.ts`: How rule and authored findings become a verdict
+6. `packages/core/src/security/trust.ts`: What Covi will execute, and when
+7. `packages/capture/src/demonstrate.ts`: Running the software at both revisions
+8. `packages/video/src/pipeline.ts`: From storyboard to a checked video
+9. `packages/cli/src/workflows.ts`: How the commands compose the packages
+
+#### Open questions
+
+- Where Covi will be hosted is not decided yet: the CI examples use the placeholder `your-org/covi`, and the npm name `covi` belongs to an unrelated package.
+
+</details>
+
+To get the same for any change, ask your agent to "explain this change with Covi", or drive it yourself:
+
+```bash
+covi analyze <range> --json   # what Covi determines without a model, and a brief for the agent
+# the agent writes explanation.json in the run (see: covi schema explanation)
+covi report --run latest      # validate it and render explanation.md and summary.md
+```
+
+Without an agent, `covi explain <range>` writes a shorter, structural explanation on its own.
+
 ## Quick start
 
 ```bash
@@ -80,20 +159,62 @@ See [getting started](docs/getting-started.md) and the [CLI reference](docs/cli.
 
 ## Use it from a coding agent
 
-Covi's methodology ships as agent skills in `skills/`. The `covi` skill routes each request to `covi-understand`, `covi-explain`, `covi-review`, `covi-demo`, `covi-visual-review`, `covi-video`, or `covi-summarize`.
+Covi's methodology ships as agent skills in `skills/`. The `covi` skill routes each request to `covi-understand`, `covi-explain`, `covi-review`, `covi-demo`, `covi-visual-review`, `covi-video`, or `covi-summarize`. The skills call the `covi` CLI, so install that first (see [Quick start](#quick-start)).
 
-- **Claude Code:** in this repository the skills are already available through `.claude/skills`. To use them in another repository, run `covi skills install --target claude` there, or add `--global` to install them for your user. You can also add this repository as a plugin marketplace and install the plugin:
-  1. `/plugin marketplace add your-org/covi`
-  2. `/plugin install covi@covi`
-- **Codex and other agents:** `covi skills install --target codex` (or `--target agents`) installs into `.agents/skills/`, where Codex discovers skills; add `--global` for `~/.agents/skills/`. In this repository, `.agents/skills` already links to `skills/`. `AGENTS.md` is the guide for agents working on Covi itself.
+### Claude Code
 
-Then ask in plain words, for example:
+1. Install Claude Code ([setup guide](https://code.claude.com/docs/en/setup)) and sign in the first time you run `claude`:
+
+   ```bash
+   curl -fsSL https://claude.ai/install.sh | bash   # macOS, Linux, WSL
+   brew install --cask claude-code                  # or with Homebrew
+   ```
+
+   On Windows PowerShell: `irm https://claude.ai/install.ps1 | iex`.
+
+2. Add Covi's skills in one of three ways:
+
+   - **As a plugin.** In a Claude Code session, add this repository as a plugin marketplace and install the `covi` plugin. Its skills then appear as `/covi:covi`, `/covi:covi-review`, and so on.
+
+     ```text
+     /plugin marketplace add your-org/covi
+     /plugin install covi@covi
+     ```
+
+     A local checkout works too: `/plugin marketplace add ./path/to/covi` (relative paths start with `./`). From a shell, run `claude plugin marketplace add your-org/covi`, then `claude plugin install covi@covi`.
+   - **As project skills.** Run `covi skills install --target claude` in the repository you review to copy the skills into its `.claude/skills/`, or add `--global` to install them in `~/.claude/skills/` for every project.
+   - **In this repository**, there is nothing to do: `.claude/skills` already links to `skills/`, and `CLAUDE.md` imports `AGENTS.md`.
+
+3. Start `claude` in the repository you want reviewed and ask in plain words.
+
+### Codex
+
+1. Install the Codex CLI ([repository](https://github.com/openai/codex)) and sign in the first time you run `codex`:
+
+   ```bash
+   npm install -g @openai/codex                       # with npm
+   brew install --cask codex                          # or with Homebrew
+   curl -fsSL https://chatgpt.com/codex/install.sh | sh   # or the install script (macOS, Linux)
+   ```
+
+2. Install Covi's skills where Codex looks for them:
+
+   ```bash
+   covi skills install --target codex            # this repository: .agents/skills/
+   covi skills install --target codex --global   # every repository: ~/.agents/skills/
+   ```
+
+   In this repository, `.agents/skills` already links to `skills/`, and Codex reads `AGENTS.md`.
+
+3. Run `codex` in the repository you want reviewed and ask in plain words, or name a skill with `$covi-review`. `/skills` lists the skills Codex found; it picks up new ones automatically, so restart Codex only if one is missing.
+
+### What to ask
 
 - "Review this branch with Covi."
 - "Explain the last commit."
 - "Make a 30-second vertical video of this change."
 
-The agent asks a question only when the answer would change the result. See [skills](docs/skills.md).
+The agent asks a question only when the answer would change the result. When a repository's `.covi/config.yml` asks Covi to run commands you haven't trusted yet, the agent shows you those commands before it runs `covi trust --yes`. See [skills](docs/skills.md).
 
 ## CI
 

@@ -177,6 +177,15 @@ The `refactor-retry-helper` example shows Covi's product judgment. Nothing user-
 
 Covi is designed to run inside a coding agent. The agent does the reasoning, following Covi's skills (the review methodology), and uses the `covi` CLI for the deterministic parts: resolving the change, rules, capture, rendering, and validation.
 
+### Install the agent
+
+| Agent | Install | Start |
+|---|---|---|
+| Claude Code | `curl -fsSL https://claude.ai/install.sh \| bash` (macOS, Linux, WSL), `brew install --cask claude-code`, or `irm https://claude.ai/install.ps1 \| iex` in Windows PowerShell. See the [setup guide](https://code.claude.com/docs/en/setup). | `claude` |
+| Codex | `npm install -g @openai/codex`, `brew install --cask codex`, or `curl -fsSL https://chatgpt.com/codex/install.sh \| sh`. See the [Codex repository](https://github.com/openai/codex). | `codex` |
+
+Both ask you to sign in the first time they start.
+
 ### Install the skills
 
 ```bash
@@ -187,13 +196,13 @@ covi skills install --target codex --global   # Codex, every repository: ~/.agen
 covi skills install --dest <dir>      # any directory
 ```
 
-`--target agents` installs to the same `.agents/skills/` location as `codex`; other clients that follow that shared layout read it too.
+`--target agents` installs to the same `.agents/skills/` location as `codex`; other clients that follow that shared layout read it too. In Codex, `/skills` lists the skills it found and `$covi-review` (or any skill name) invokes one directly; Codex picks up new skills on its own, so restart it only if one is missing.
 
 Each installed skill directory gets a `.covi-skill` marker. Running the command again refreshes skills that Covi installed and removes ones that no longer exist. Covi refuses to overwrite a directory it did not install. `covi skills` lists the skills, and `covi skills show <name>` prints one.
 
 ### Claude Code plugin
 
-The Covi repository is also a Claude Code plugin marketplace. `.claude-plugin/marketplace.json` lists one plugin, `covi`, whose source is the repository root. `.claude-plugin/plugin.json` describes it, and Claude Code discovers its `skills/`. Add the marketplace with `/plugin marketplace add <path-or-repository>` and install `covi@covi`. The plugin provides the skills; the `covi` CLI must still be installed.
+The Covi repository is also a Claude Code plugin marketplace. `.claude-plugin/marketplace.json` lists one plugin, `covi`, whose source is the repository root. `.claude-plugin/plugin.json` describes it, and Claude Code discovers its `skills/`. Add the marketplace with `/plugin marketplace add <path-or-repository>` and install `covi@covi` (a local path starts with `./` or is absolute; from a shell, use `claude plugin marketplace add` and `claude plugin install covi@covi`). The plugin's skills appear as `/covi:covi`, `/covi:covi-review`, and so on. The plugin provides the skills; the `covi` CLI must still be installed.
 
 ### Inside the Covi repository
 

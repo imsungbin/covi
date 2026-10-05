@@ -48,6 +48,14 @@ Use the `covi` command. With the Claude Code plugin it is already on your PATH; 
 
 Run IDs come back in every `--json` result (`runId`, `runDir`). Pass `--run latest` to continue the most recent run.
 
+## Language
+
+Covi writes in English, Korean, Japanese, or Simplified Chinese (`en`, `ko`, `ja`, `zh`). Each run resolves one: `--language` if given, else `language` in `.covi/config.yml`, else the language the change's own title, description, and commit messages are written in. The result of `covi analyze --json` carries it (`data.language`), and so does `run.json` (`language`).
+
+- Write every sentence meant for people in that language: explanations, findings, summaries, storyboard narration, and what you tell the user. Set `"language"` in `explanation.json`, `findings.json`, and `storyboard.json`.
+- Keep identifiers, file paths, code, commands, and quoted evidence exactly as they appear in the change.
+- If the user asks in another language or names one ("in Korean", "日本語で"), pass `--language` to the commands you run, or tell them how to set `language` in `.covi/config.yml`.
+
 ## Principles
 
 1. **Evidence over assertion.** Every claim about behavior points at code, a captured run, or command output. If you cannot point, say it is unverified.

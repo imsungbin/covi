@@ -30,6 +30,8 @@ Outside `packages/`:
 |---|---|
 | `skills/` | The methodology, as agent skills. Also loaded into model prompts. See [Skills](skills.md). |
 | `templates/stories/` | Storytelling templates for videos, validated on load. See [Video](video.md). |
+| `templates/i18n/` | Message catalogs for English, Korean, Japanese, and Simplified Chinese, validated on load. See [Configuration](configuration.md#language). |
+| `templates/speech/` | Letter names and words for speech normalization in Korean, Japanese, and Chinese. See [Video](video.md#spoken-form). |
 | `integrations/` | The GitHub Action and the GitLab CI component. Both call the CLI. |
 | `examples/` | Realistic example changes with expected outcomes; used by tests and `covi examples`. |
 | `bin/covi.mjs` | The executable. See [Distribution](#distribution). |

@@ -10,7 +10,7 @@ A good explanation lets a reviewer read the diff already knowing what they are l
 ## Run it
 
 1. Apply `covi-understand` (`covi analyze --json`, read `brief.md` and the code around the changes).
-2. Write `explanation.json` in the run directory (`covi schema explanation`). You may start from `explanation.draft.json`.
+2. Write `explanation.json` in the run directory (`covi schema explanation`), in the run's language (`data.language` in the `covi analyze --json` result; see the `covi` skill), with `"language"` set to its code. You may start from `explanation.draft.json`.
 3. Run `covi report --run <id>` to validate it and render `explanation.md`. Fix any schema errors it reports.
 4. Share the explanation with the user, in your own words if they asked a question, or the rendered Markdown.
 
@@ -40,6 +40,7 @@ A good explanation lets a reviewer read the diff already knowing what they are l
 - Group changes by area, not by file.
 - Prefer concrete statements ("Decrementing now stops at zero") to vague ones ("Improves cart logic").
 - Hedge exactly as much as the evidence requires; no more, no less.
+- Write in the review's language, as a native speaker would; keep identifiers, paths, and code as they appear in the change.
 
 ## Examples
 

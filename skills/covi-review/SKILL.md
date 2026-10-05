@@ -21,7 +21,7 @@ review
 2. Understand and explain the change (`covi-understand`, `covi-explain`). Write `explanation.json`.
 3. If the change has user-visible or runtime behavior and Covi can run the project, demonstrate it (`covi-demo`). Observed behavior is the strongest evidence you can have.
 4. Inspect risks using the method below and `references/checklists.md`.
-5. Write `findings.json` (`covi schema findings`): your findings, the rule findings you dismiss (with reasons), what you checked, and what you could not verify.
+5. Write `findings.json` (`covi schema findings`): your findings, the rule findings you dismiss (with reasons), what you checked, and what you could not verify. Write them in the run's language and set `"language"` (see the `covi` skill).
 6. Run `covi report --run <id>`. It merges your findings with the rule findings, derives the verdict, and renders `review.md` and `summary.md`. Exit code 1 means a configured gate failed.
 7. Tell the user the verdict, the findings that matter, and what you could not verify. Link `review.md`.
 
@@ -68,7 +68,7 @@ Every finding has a location (path and line when possible), evidence (quoted cod
 
 ## Presenting the review
 
-Lead with the verdict and the most important finding. Then the remaining findings in order, what you checked, and what you could not verify. Keep praise out unless the user asked; spend the reader's attention on what needs it.
+Lead with the verdict and the most important finding. Then the remaining findings in order, what you checked, and what you could not verify. Keep praise out unless the user asked; spend the reader's attention on what needs it. Write titles, explanations, and suggestions in the review's language; quote evidence exactly as it appears.
 
 ## Output files
 

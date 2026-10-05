@@ -33,4 +33,4 @@ Captions show `narration`; speech uses `say` when present. Use `say` for identif
 - After rendering, read `video/speech.json` (the text each scene's voice was given) and the `speech-acronyms` and `voice-language` checks in `video/qc.json`.
 
 ## Budget
-About 2.5 spoken words per second. Leave breathing room: a 30-second video carries roughly 60–75 words of narration.
+About 2.5 spoken words per second. Leave breathing room: a 30-second video carries roughly 60–75 words of narration. In Korean, plan about 4.3 syllables per second (about 100–120 for 30 seconds); in Japanese about 4 characters per second; in Chinese about 3. QC warns when narration runs faster than 4.2 words, 7.5 Korean syllables, 7 Japanese characters, or 5.5 Chinese characters per second.

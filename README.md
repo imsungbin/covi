@@ -288,13 +288,15 @@ Covi works without configuration. `covi init` writes a `.covi/config.yml` based 
 
 `run.json` records which of these set each value. See [configuration](docs/configuration.md).
 
+Covi writes and narrates in English, Korean, Japanese, or Simplified Chinese. By default it follows the language of the change's own title, description, and commit messages; `--language ko` (or `language: ko` in the config) chooses one. Reports, comments, video narration, captions, and on-screen labels follow it, and narration spells out acronyms the way a Korean, Japanese, or Chinese voice should say them (CLI → 씨엘아이).
+
 ## Requirements
 
 - Node.js 22.18 or later, and git.
 - For demonstrations and videos (optional):
   - Chromium for Playwright (`covi doctor --install-browser`).
   - ffmpeg and ffprobe with H.264 support.
-- For narration (optional): `say` on macOS, `espeak-ng` on Linux, or an `OPENAI_API_KEY` or `ELEVENLABS_API_KEY`. Without a speech engine, videos have captions only.
+- For narration (optional): `say` on macOS, `espeak-ng` on Linux, or an `OPENAI_API_KEY` or `ELEVENLABS_API_KEY`. Without a speech engine, videos have captions only. Narration in Korean, Japanese, or Chinese needs a voice for that language (macOS: Yuna, Kyoko, Tingting; espeak-ng: ko, ja, cmn).
 - For model-written reviews outside an agent session (optional): `ANTHROPIC_API_KEY`.
 
 `covi doctor` checks all of these.

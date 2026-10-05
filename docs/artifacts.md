@@ -176,6 +176,8 @@ Dismissing an id that is not in `rule-findings.json` is an error (exit code 2).
 
 ## Schema versions
 
+`explanation.json`, `findings.json`, and `video/storyboard.json` accept an optional `language` (`en`, `ko`, `ja`, or `zh`; `zh-CN` and `zh-Hans` are read as `zh`). It says what language the prose is in: reports rendered from the file use its headings, and a storyboard's language sets the narration language. Covi writes it on what it generates in Korean, Japanese, and Chinese, and on every drafted storyboard; English explanations and reviews leave it out, as before. Text Covi writes into `context.json` (signals, notes, reading order, ambiguities, demonstration reasons) and `rule-findings.json` is in the run's language too.
+
 JSON files that agents write or that later stages read back carry `schemaVersion: 1`: `run.json`, `context.json`, `rule-findings.json`, `explanation.json`, `explanation.draft.json`, `findings.json`, `review.json`, `demo/captures.json`, and `video/storyboard.json`. Agent-authored files may omit it; it defaults to 1. A demo plan has no version field. `video/timeline.json` carries its own `version: 1`, read by the browser runtime; `video/speech.json` carries `schemaVersion: 1`; `video/decision.json` and `video/qc.json` are diagnostic records.
 
 Additive changes, such as a new optional field, keep the version. A breaking change to a versioned file bumps `schemaVersion`. The configuration and the demo plan have no version, so they only grow: keys are added, never repurposed. Either way, the skills that describe the file are updated with it.

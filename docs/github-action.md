@@ -84,6 +84,7 @@ Inputs that mirror a Covi setting default to empty. Empty means the setting come
 | `duration` | empty (`video.duration`, else `auto`) | Target video length, for example `30s` or `1m30s`, or `auto`. |
 | `narration` | empty (`video.narration`, else on) | `true` or `false`: narrate the video. |
 | `captions` | empty (`video.captions`, else on) | `true` or `false`: burn captions into the video. |
+| `language` | empty (`language`, else `auto`) | The language of the review, the comment, and the video: `auto` (detected from the pull request's title, description, and commits), `en`, `ko`, `ja`, or `zh` (Simplified Chinese). Passed as `--language`. |
 | `annotations` | empty (`publish.annotations`, else on) | `true` or `false`: annotate findings inline on the diff. |
 | `provider` | empty (`intelligence.provider`, else `auto`) | Reasoning provider: `auto`, `heuristic`, `anthropic`, or `command`. |
 | `model` | empty | Model id for the `anthropic` provider. When empty, Covi uses `claude-opus-5-5`. |

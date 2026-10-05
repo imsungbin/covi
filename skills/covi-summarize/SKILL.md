@@ -14,7 +14,7 @@ covi summarize --json                 # markdown summary (PR/MR description styl
 covi summarize --format text          # one paragraph for chat or standups
 ```
 
-Covi grounds the summary in its understanding and review of the change. Improve the wording if you have read the code more deeply, but keep every statement true.
+Covi grounds the summary in its understanding and review of the change, in the run's language (`--language` to choose another). Improve the wording if you have read the code more deeply, but keep every statement true.
 
 ## Method
 
@@ -28,6 +28,7 @@ Covi grounds the summary in its understanding and review of the change. Improve 
 - Keep identifiers out of user-facing notes; keep them in PR descriptions.
 - Mention risks or follow-ups the reader must act on; leave out the rest.
 - Never claim testing or verification that did not happen.
+- Write in the reader's language; keep identifiers and commands as they are.
 
 ## Output files
 

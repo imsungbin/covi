@@ -24,6 +24,7 @@ Covi decides first (`video/decision.json`): a video is worth making when the cha
 2. If `questions` is empty, do not ask anything. "Make a 30-second vertical review video" already says short-form, 9:16, about 30 seconds.
 3. If questions remain and you are in an interactive session, ask them together in one prompt with your client's question tool, using the options Covi returned (for example: video type: Short-form / Standard review / Custom; length: ~15 sec / ~30 sec / ~60 sec / Let Covi decide). Ask about width and height only when the user chose Custom (run the dry run again with `--custom` to get that question).
 4. In CI or any non-interactive context, never ask: configuration and defaults decide (short-form, about 30 seconds, narration and captions on).
+5. The questions come back in the user's language when the request is written in Korean, Japanese, or Chinese, or when the run's language is one of them; ask them as given. A request that names a language ("한국어로", "in Japanese", "用中文") sets the video's language.
 
 ## Run it
 
@@ -49,7 +50,7 @@ After rendering, **check the result yourself**: read `video/qc.json`, open `vide
 - 4–6 scenes for short-form, 6–9 for standard. First a title scene, last a summary scene.
 - One idea per scene; the visual must match what the narration says at that moment.
 - `narration` is what Covi says and the captions show; `say` is only for the spoken form of identifiers and paths (`useCartTotals` → "use cart totals"). Set `language` (`en`, `ko`, `ja`, `zh`) when the narration is not in English; see `references/narration.md` for acronyms and particles.
-- Budget about 2.5 spoken words per second: roughly 60–75 words for a 30-second video, 150–250 for 90 seconds. Covi times scenes from the real narration audio and fits the total to the target.
+- Budget about 2.5 spoken words per second: roughly 60–75 words for a 30-second video, 150–250 for 90 seconds. In Korean count about 4 syllables per second, in Japanese about 4 characters, in Chinese about 3; the same idea takes longer to say in them, so say less. Covi times scenes from the real narration audio and fits the total to the target.
 - Set `optional: true` on scenes that can be dropped to fit the length.
 - Expressions for the narrator: `explaining` (default), `thinking` (problems, before states), `reviewing` (findings), `warning` (serious findings), `success` (fixes that work, summaries).
 

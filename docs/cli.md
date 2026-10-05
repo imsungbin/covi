@@ -68,6 +68,12 @@ Details:
 
 ## Shared option groups
 
+**Language** (`analyze`, `explain`, `review`, `demo`, `video`, `summarize`, `report`, `render`, `ci`):
+
+| Option | Meaning |
+|---|---|
+| `--language <code>` | The language Covi writes and narrates in: `auto` (detected from the change's title, description, and commits), `en`, `ko`, `ja`, or `zh` (Simplified Chinese; `zh-CN` and `zh-Hans` also work). On `report` it rewrites the reports in that language; on `render` it sets the narration language. See [Configuration](configuration.md#language). |
+
 **Intelligence** (`analyze`, `explain`, `review`, `video`, `summarize`, `ci`):
 
 | Option | Meaning |
@@ -91,7 +97,6 @@ Details:
 | `--voice <name>` | Voice for the speech engine. |
 | `--tts <provider>` | Speech engine: `auto`, `system`, `openai`, `elevenlabs`, or `none`. |
 | `--theme <theme>` | Color theme: `light` or `dark`. |
-| `--language <code>` | Language of the narration: `auto`, `en`, `ko`, `ja`, or `zh` (Simplified Chinese; `zh-CN` and `zh-Hans` also work). Wins over the storyboard and the narration's own script. See [Narration language](video.md#narration-language). |
 
 Every flag maps to a configuration key. On the command line it is the highest-precedence layer; see [Configuration](configuration.md#precedence).
 

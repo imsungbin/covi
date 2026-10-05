@@ -18,6 +18,8 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
 |---|---|
 | `skills/` | Canonical agent skills: the review methodology. Product logic, not documentation. |
 | `templates/stories/` | Storytelling templates for videos (data, validated on load). |
+| `templates/i18n/` | Message catalogs: every fixed string Covi writes for people, in `en`, `ko`, `ja`, and `zh` (data, validated on load). |
+| `templates/speech/` | How Korean, Japanese, and Chinese voices should say Latin letters and acronyms (data, validated on load). |
 | `packages/core` | Platform-independent domain model, change resolution, understanding, review rules, configuration, runs, intelligence providers, reports. No browser, no CI APIs. |
 | `packages/capture` | Demonstration: checks out base/head, runs the software, captures pages, flows, commands, and requests. |
 | `packages/video` | Video pipeline: specs, storyboards, narration, captions, timeline, browser composition runtime, renderer, QC. |
@@ -73,7 +75,9 @@ The runs directory ignores itself (it contains a `.gitignore` with `*`); Covi ne
 
 - **Schemas** (`packages/core/src/model/*`, `packages/video/src/storyboard/schema.ts`, `packages/capture/src/plan.ts`, `packages/core/src/config/schema.ts`): agent-authored files are validated with Zod. Additive changes are fine. A breaking change to a versioned file (one with `schemaVersion`) bumps the version; the configuration and the demo plan have no version, so they only grow (add keys, never repurpose one). Either way, update the skills that describe the file.
 - **Rules** (`packages/core/src/review/rules/`): add a positive and a negative test in `packages/core/test/rules.test.ts`. Classify certainty honestly; only `confirmed` and `likely` findings can fail a CI gate.
-- **Templates** (`templates/stories/*.yml`): validated on load; tests draft and validate a storyboard with each.
+- **Templates** (`templates/stories/*.yml`): validated on load; tests draft and validate a storyboard with each. Each beat's `eyebrows` carries its label in Korean, Japanese, and Chinese.
+- **Text for people** goes through the message catalogs (`templates/i18n/<language>.yml`, `t()` in `packages/core/src/i18n/catalog.ts`), never as a literal in code. Add the key to all four catalogs with the same placeholders (a test checks it); Korean particles after a placeholder are written as pairs such as `{을/를}`. English output is pinned by `tests/english-baseline.test.ts`. CLI log messages stay in English.
+- **Speech tables** (`templates/speech/*.yml`): letter names and words for normalizing narration; check a change with a real voice.
 - **Video components** (`packages/video/src/runtime/`): every visual property must be a pure function of the frame time. No `Date`, no `Math.random` (use the seeded helper), no CSS transitions or animations. Text must fit its box (QC checks). Check changes by rendering an example and opening `video/contact-sheet.jpg`.
 - **Platform behavior:** new CI features go in `packages/platforms` and the integration templates, exposed through CLI flags so the core stays unaware of the platform.
 

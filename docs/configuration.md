@@ -171,8 +171,18 @@ A repository is untrusted input: checking out someone's branch can change `.covi
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `base` | string | detected | Base branch for the default comparison, tried as `origin/<base>` first, then `<base>`. |
-| `language` | `auto`, `en`, `ko`, `ja`, `zh` | `auto` | The language Covi narrates in when the narration does not show one (see [Narration language](video.md#narration-language)). `zh` is Simplified Chinese; `zh-CN` and `zh-Hans` mean the same. `auto` detects the language of the change's title, description, and commit messages; `run.json` records the result and why. |
+| `language` | `auto`, `en`, `ko`, `ja`, `zh` | `auto` | The language Covi writes and speaks in: explanations, findings, reports, the pull or merge request comment, drafted video narration, captions, and on-screen labels. `zh` is Simplified Chinese; `zh-CN` and `zh-Hans` mean the same. `auto` uses the language the change's own title, description, and commit messages are written in (the dominant script; identifiers and code don't count), else English. `run.json` records the result and why. See [Language](#language). |
 | `ignore` | list of globs | `[]` | Files to leave out of the review. They are listed as ignored but not analyzed. |
+
+#### Language
+
+Covi writes for people in English, Korean, Japanese, or Simplified Chinese. A run resolves one language, in this order: `--language` (or `COVI_LANGUAGE`), then `language` in configuration, then `auto`. It applies to:
+
+- What Covi writes itself: the structural explanation, rule findings, the review summary and notes, the agent brief, `demo/demo.md`, report headings, and the comment. The fixed strings are message catalogs in `templates/i18n/<language>.yml`.
+- What agents and models write: the brief and the model prompts ask for that language, and `explanation.json`, `findings.json`, and `storyboard.json` may declare it with `language`. A declared language decides the headings of the reports rendered from that file.
+- Videos: drafted narration, captions, eyebrows, and labels, and the narration language (see [Narration language](video.md#narration-language)).
+
+Identifiers, paths, code, commands, and quoted evidence stay as they appear in the change. CLI log messages stay in English.
 
 `ignore` patterns follow `.gitignore` conventions:
 

@@ -48,6 +48,7 @@ Inputs that mirror a Covi setting default to empty. Empty means the setting come
 | `video-mode` | empty (`video.mode`, else `short`) | `short` (9:16, about 30 s), `standard` (16:9, 60–120 s), or `custom`. Passed as `--mode`. |
 | `duration` | empty (`video.duration`, else `auto`) | Target video length, for example `30s`, or `auto`. |
 | `narration` | empty (`video.narration`, else on) | `true` or `false`. |
+| `language` | empty (`language`, else `auto`) | The language of the review, the note, and the video: `auto` (detected from the merge request), `en`, `ko`, `ja`, or `zh`. Passed as `--language`. |
 | `comment` | empty (`publish.comment`, else on) | `true` or `false`: post or update a merge request note. Posting needs `COVI_GITLAB_TOKEN`. |
 | `provider` | empty (`intelligence.provider`, else `auto`) | Reasoning provider: `auto`, `heuristic`, `anthropic`, or `command`. `auto` uses `ANTHROPIC_API_KEY` when it's set. |
 | `expire-in` | `2 weeks` | How long to keep the run artifacts. |

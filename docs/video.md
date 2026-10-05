@@ -98,6 +98,19 @@ Environment variables can set the same values: `COVI_VIDEO_MODE`, `COVI_VIDEO_DU
 | no narration, without voiceover, silent, muted audio / narrated, voiceover | narration off / on |
 | no captions, without subtitles | captions off |
 | dark, dark mode / light mode, light theme | theme |
+| in Korean, Japanese video, Chinese narration, 한국어로, 日本語で, 用中文 | the video's language (a passing mention such as "the Korean locale" does not count) |
+
+The same fields are read in Korean, Japanese, and Chinese:
+
+| Field | Korean | Japanese | Chinese |
+|---|---|---|---|
+| Duration | 30초, 1분 30초, 2분 | 30秒, 1分半, 2分 | 30秒, 1分钟30秒, 2分钟 |
+| Short-form | 세로, 숏폼, 쇼츠, 릴스 | 縦, ショート動画, リール | 竖屏, 竖版, 短视频 |
+| Standard | 가로, 와이드 | 横長, 横向き, 横型 | 横屏, 横版, 宽屏 |
+| Square | 정사각 | 正方形 | 正方形, 方形 |
+| No narration / narration | 내레이션 없이, 음성 없이, 무음 / 내레이션 | ナレーションなし, 音声なし, 無音 / ナレーション | 无旁白, 无配音, 静音 / 旁白, 配音 |
+| No captions | 자막 없이 | 字幕なし | 无字幕, 不要字幕 |
+| Theme | 다크, 라이트 모드 | ダーク, ライトモード | 深色, 浅色 |
 
 Explicit flags override anything inferred from the words. "Make a 30-second vertical review video" resolves completely: short-form, 1080×1920, 25.5–34.5 s.
 
@@ -112,6 +125,8 @@ Explicit flags override anything inferred from the words. "Make a 30-second vert
 | Only the length, for a custom size (for example "a square video") | "How long?": a size implies no length |
 | A custom mode without a size | "Which size should the custom video be?" (1080×1920 · 1920×1080 · 1080×1080) |
 | Nothing | None |
+
+The questions are asked in the language of the request when it is written in Korean, Japanese, or Chinese, else in the run's language (message keys `question.*` in `templates/i18n/`).
 
 Choosing Custom in the mode question leads to the size question, unless a size is already known from the request, flags, or configuration (`followUpQuestions`). At a terminal Covi asks it next; an agent runs the dry run again with `--custom` to get it.
 
@@ -157,7 +172,7 @@ Where questions are asked:
 | Narration | Picks the narration language and the voice, rewrites each scene's spoken text for that voice (acronyms spelled out, your pronunciations applied), then synthesizes and measures one take per scene and mixes them | `video/speech.json`, `video/narration.wav` |
 | Timing | Lays scenes out from the measured speech and fits the duration window | (inside the timeline) |
 | Captions | Splits the narration into cues timed to the speech | `video/captions.vtt`, `video/captions.srt` |
-| Timeline | Freezes everything the renderer needs: scenes, timings, captions, mouth movement, theme | `video/timeline.json`, `video/narration.md` |
+| Timeline | Freezes everything the renderer needs: scenes, timings, captions, mouth movement, theme, the language, and the labels the runtime draws (verdicts, stats, Before/After) in that language | `video/timeline.json`, `video/narration.md` |
 | Composition | Writes a self-contained HTML page that can draw any frame | `video/composition/` |
 | Render | Captures every frame in headless Chromium and encodes H.264 | `video/covi-review.mp4`, `video/poster.png`, `video/contact-sheet.jpg` |
 | QC | Checks format, duration, audio, black frames, layout, caption timing, and the text the voice was given | `video/qc.json` |
@@ -195,7 +210,8 @@ How beats become scenes:
   - code comes from the diff;
   - findings come from the review.
 - **Missing evidence.** Optional beats without evidence are dropped. Required ones fall back to a callout with the explanation's summary.
-- **Narration budget.** Narration runs at about 2.5 words per second. It gets 80% of the target duration in short-form and 85% in standard, split by beat weight.
+- **Language.** Covi drafts in the run's language, or in a language the request names, and records it as the storyboard's `language`. Narration sentences, headings, eyebrows (each template beat carries them in Korean, Japanese, and Chinese), Before/After labels, and the "… more lines" marker come from the message catalogs; text taken from the change (titles, commit messages, area names, findings) stays as written.
+- **Narration budget.** Narration runs at about 2.5 words per second in English, 4.3 syllables per second in Korean, 4 characters per second in Japanese, and 3 in Chinese, scaled from measured voice rates with the same margin English has. It gets 80% of the target duration in short-form and 85% in standard, split by beat weight. The same idea takes more syllables in Korean, Japanese, and Chinese, so a short video says less; when a short video's findings lead does not fit, Covi keeps the finding ("Worth checking: …") instead of the lead.
 - **Depth for longer videos.** Standard-length videos say more, and only what the evidence supports:
   - the title scene adds a one-line map of the scenes that follow ("We'll look at the response before and after, the code behind it, and what to check before merging.") when it fits the budget;
   - an API scene adds what the captured bodies show, such as a status change or sizes ("The old response listed 5 entries; the new items array holds 2.");
@@ -203,7 +219,7 @@ How beats become scenes:
   - a code scene uses the explanation's own description of the file's area;
   - the findings scene names up to three findings with why the first ones matter, and announces only a count it covers;
   - the summary adds "Suggested next step: …" from the top finding when the verdict is not "looks good", or where to start reading the diff when it is.
-- **Spoken form.** The `say` field holds the spoken form when it differs from the caption text. Identifiers and file names are spelled out for speech, for example `app.js` becomes "the app script".
+- **Spoken form.** The `say` field holds the spoken form when it differs from the caption text. Identifiers and file names are spelled out for speech, for example `app.js` becomes "the app script" (in Korean "app 스크립트"), and in Korean, Japanese, and Chinese routes are said segment by segment ("API 슬래시 users").
 
 **Model refinement.** If a model provider is configured (`intelligence.provider: anthropic` or `command`, or `auto` with an Anthropic key or a trusted `intelligence.command`), it rewrites the drafted narration within each scene's word budget, following the `covi-video` methodology. The prompt is redacted before it is sent. Visuals stay as drafted, because they are grounded in captured evidence. If refinement fails, Covi keeps the draft and records a warning.
 

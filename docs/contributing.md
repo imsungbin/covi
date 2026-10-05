@@ -144,30 +144,33 @@ Rules are deterministic, evidence-producing checks in `packages/core/src/review/
 
 ```ts
 import type { FindingInput } from '../../model/finding.ts';
-import { addedLines, quote, type Rule } from './types.ts';
+import { addedLines, messages, quote, type Rule } from './types.ts';
 
 export const exampleRule: Rule = {
   id: 'example-rule', // kebab-case: finding ids, dismissals, and review.disableRules use it
   checks: 'what the rule looks for', // listed under "What Covi checked" in the review
-  run({ files }) {
+  run({ files, language }) {
+    const say = messages(language, 'example-rule'); // rule.example-rule.* in templates/i18n/
     const out: FindingInput[] = [];
     for (const { file, line } of addedLines(files)) {
       if (!/some pattern/.test(line.text)) continue;
       out.push({
-        title: `A short, specific claim about ${file.path}`,
+        title: say('title', { path: file.path }),
         certainty: 'likely',
         severity: 'medium',
         category: 'correctness',
         location: { path: file.path, line: line.newLine },
         evidence: quote(line.text),
-        explanation: 'Why it matters, in a sentence or two.',
-        suggestion: 'What to do instead.',
+        explanation: say('explanation'),
+        suggestion: say('suggestion'),
       });
     }
     return out.slice(0, 3); // repeated hits add noise, not information
   },
 };
 ```
+
+The rule's text lives in the message catalogs (see [Writing text for people](#writing-text-for-people)): add `rule.example-rule.checks`, `title`, `explanation`, and `suggestion` to `templates/i18n/{en,ko,ja,zh}.yml`. The English `checks` must equal the rule's own `checks` (a test compares them).
 
 `run` receives:
 
@@ -176,6 +179,7 @@ export const exampleRule: Rule = {
 - `config`.
 - `reader`: reads files at the base or head revision.
 - `files`: the reviewable files, with ignored paths already removed.
+- `language`: the language findings are written in.
 
 It returns findings synchronously or as a promise. `types.ts` provides `addedLines`, `removedLines`, `quote`, `isCode`, and `isAppCode`.
 
@@ -205,6 +209,16 @@ it('flags the pattern but not the safe variant', async () => {
 
 If the new rule fires on an example, update that example's `expect.rules`. Users can turn a rule off with `review.disableRules` (see [configuration](configuration.md)).
 
+## Writing text for people
+
+Covi writes in English, Korean, Japanese, and Simplified Chinese. Any fixed string a person reads (a report heading, a finding, a narration sentence, a label in the video) lives in the message catalogs `templates/i18n/{en,ko,ja,zh}.yml`, not in code:
+
+- Look a message up with `t(language, 'group.key', { name: value })` from `@covi/core`. Placeholders are `{name}`; a plural message is a map of plural categories (`one`, `other`) chosen by `{count}`. English numbers print as before; other languages use `Intl.NumberFormat`. `listOf`, `joinSentences`, and `endSentence` join lists and sentences the way each language does.
+- Add every key to all four catalogs with the same placeholders. `packages/core/test/catalog.test.ts` fails otherwise, and also checks that each language has the plural forms it needs.
+- In Korean, a particle after a placeholder is a pair, `{name}{을/를}`, and Covi picks the form that agrees with how the value is read aloud (`JSON을`, `API를`).
+- English output must not change unless you mean it to: `tests/english-baseline.test.ts` snapshots it.
+- Ask a native speaker to read new Korean, Japanese, or Chinese text. CLI log messages stay in English.
+
 ## Adding a storytelling template
 
 Templates are data in `templates/stories/<id>.yml`. They are validated when they load (`TemplateSchema` in `packages/video/src/templates.ts`). Unknown keys are rejected.
@@ -219,6 +233,7 @@ Templates are data in `templates/stories/<id>.yml`. They are validated when they
 Each beat has:
 
 - `id` and `eyebrow`: the section label, up to 40 characters.
+- `eyebrows`: the same label in Korean, Japanese, and Chinese (`{ ko: …, ja: …, zh: … }`).
 - `goal`: what the scene must accomplish.
 - `visuals`: preferred visuals in order of preference. The options are `title`, `change-map`, `code`, `screenshot`, `before-after`, `interaction`, `terminal`, `api`, `findings`, `callout`, `diagram`, and `summary`. Add a `:before` or `:after` suffix, as in `screenshot:before`, to pick a revision.
 - `expression`: the narrator expression; defaults to `explaining`.

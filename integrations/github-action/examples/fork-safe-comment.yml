@@ -37,7 +37,7 @@ jobs:
           github-token: ${{ github.token }}
 
       - if: steps.download.outcome == 'success'
-        uses: your-org/covi/integrations/github-action@v1   # replace your-org with where Covi lives
+        uses: imsungbin/covi/integrations/github-action@v1   # or your fork; pin a tag or commit SHA
         with:
           command: publish
           run-dir: covi-run

@@ -19,10 +19,20 @@ Explaining, reviewing, and summarizing a change need only Node.js and git. Demon
 
 Covi is not published to the public npm registry. The name `covi` there belongs to an unrelated project, so do not run `npm install covi` or `npx covi`. Install Covi from its source instead.
 
+### With Claude Code
+
+If you use Claude Code, one command in a session is enough:
+
+```text
+/plugin install covi --marketplace imsungbin/covi
+```
+
+The plugin brings the skills and its own `covi` command: its `bin/` directory is on Claude's PATH while the plugin is enabled, and the first run of `bin/covi` installs Covi's locked dependencies with `npm ci` (Node.js 22.18 or newer must be installed). On Claude Code older than 2.1.275, run `/plugin marketplace add imsungbin/covi`, then `/plugin install covi@covi`. To use `covi` in your own terminal too, also install it from a checkout.
+
 ### From a checkout
 
 ```bash
-git clone <covi-repository-url> covi
+git clone https://github.com/imsungbin/covi.git covi
 cd covi
 npm install                     # dependencies; also builds dist/
 npm link                        # puts `covi` on your PATH
@@ -30,7 +40,7 @@ covi doctor --install-browser   # Chromium, for demonstrations and video
 covi --version
 ```
 
-`npm link` points `covi` at the checkout, which runs the TypeScript sources directly, so edits and `git pull` take effect without a build. Without it, run `./bin/covi.mjs` (or `npm run covi -- <args>`) from the checkout. Set `COVI_USE_DIST=1` to run the built bundle in `dist/` instead.
+`npm link` points `covi` at the checkout, which runs the TypeScript sources directly, so edits and `git pull` take effect without a build. Without it, run `./bin/covi` (it installs dependencies on its first run if needed), `./bin/covi.mjs`, or `npm run covi -- <args>` from the checkout. Set `COVI_USE_DIST=1` to run the built bundle in `dist/` instead.
 
 ### As a package
 
@@ -202,7 +212,7 @@ Each installed skill directory gets a `.covi-skill` marker. Running the command 
 
 ### Claude Code plugin
 
-The Covi repository is also a Claude Code plugin marketplace. `.claude-plugin/marketplace.json` lists one plugin, `covi`, whose source is the repository root. `.claude-plugin/plugin.json` describes it, and Claude Code discovers its `skills/`. Add the marketplace with `/plugin marketplace add <path-or-repository>` and install `covi@covi` (a local path starts with `./` or is absolute; from a shell, use `claude plugin marketplace add` and `claude plugin install covi@covi`). The plugin's skills appear as `/covi:covi`, `/covi:covi-review`, and so on. The plugin provides the skills; the `covi` CLI must still be installed.
+The Covi repository is also a Claude Code plugin marketplace. `.claude-plugin/marketplace.json` lists one plugin, `covi`, whose source is the repository root. `.claude-plugin/plugin.json` describes it, and Claude Code discovers its `skills/`. Install it with `/plugin install covi --marketplace imsungbin/covi`, or add the marketplace with `/plugin marketplace add <path-or-repository>` and install `covi@covi` (a local path starts with `./` or is absolute; from a shell, use `claude plugin marketplace add` and `claude plugin install covi@covi`). The plugin's skills appear as `/covi:covi`, `/covi:covi-review`, and so on. Because the plugin is the whole repository, its `bin/covi` is on Claude's PATH, so Claude can run `covi` without a separate install.
 
 ### Inside the Covi repository
 

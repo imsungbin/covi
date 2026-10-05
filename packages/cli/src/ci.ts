@@ -99,6 +99,8 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
             config,
             logger,
             execution: session.execution,
+            // Vertical videos show phone-sized pages, so flows are captured there.
+            prefer: spec.height > spec.width ? 'mobile' : 'desktop',
           }),
         )
         .catch((error: Error) => {

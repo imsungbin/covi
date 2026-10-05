@@ -26,7 +26,7 @@ import {
 } from './browser.ts';
 import { checkoutRevision, tempWorkspace } from './checkout.ts';
 import { comparePngs, cropPng, readPng } from './pixels.ts';
-import { type DemoPlan, planDemo } from './plan.ts';
+import { type DemoPlan, flowViewport, planDemo } from './plan.ts';
 import { describeShapeChange, type HttpResult, normalizeBody, performRequest } from './requests.ts';
 
 export interface DemonstrateInput {
@@ -39,6 +39,11 @@ export interface DemonstrateInput {
   plan?: unknown;
   /** What may run. Default: everything configured (local runs with trusted configuration). */
   execution?: ExecutionPolicy;
+  /**
+   * The viewport the result will mostly be seen at (mobile for a vertical video). Flows run there
+   * when the plan captures it; pages are captured at every planned viewport either way.
+   */
+  prefer?: ViewportName;
 }
 
 type Revision = 'base' | 'head';
@@ -186,9 +191,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
           }
           if (revision === 'head') {
             for (const flow of plan.flows) {
-              const viewport = (flow.viewports?.[0] ??
-                plan.viewports[0] ??
-                'desktop') as ViewportName;
+              const viewport = flowViewport(flow, plan.viewports, input.prefer);
               logger.info(`  running flow "${flow.name}" (${viewport})`);
               const outcome = await runFlow(browser, app.url, flow, viewport, (i) =>
                 run.path(

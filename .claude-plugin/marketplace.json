@@ -1,6 +1,9 @@
 {
   "name": "covi",
-  "owner": { "name": "Covi" },
+  "description": "Covi: understand, explain, demonstrate, and review code changes from Claude Code.",
+  "owner": {
+    "name": "Covi"
+  },
   "plugins": [
     {
       "name": "covi",

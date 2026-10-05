@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse, parseAllDocuments } from 'yaml';
@@ -214,5 +215,29 @@ describe('GitLab CI component', () => {
     expect(String(specDoc.spec.inputs.image!.default)).toBe(
       `mcr.microsoft.com/playwright:v${pkg.dependencies.playwright}-noble`,
     );
+  });
+});
+
+describe('Claude Code plugin', () => {
+  const read = (path: string) => JSON.parse(readFileSync(join(root, path), 'utf8'));
+  const plugin = read('.claude-plugin/plugin.json') as { name: string; version: string };
+  const marketplace = read('.claude-plugin/marketplace.json') as {
+    plugins: Array<{ name: string; source: string }>;
+  };
+  const pkg = read('package.json') as { version: string };
+
+  it('offers this repository as the plugin, at the package version', () => {
+    expect(marketplace.plugins).toEqual([
+      expect.objectContaining({ name: plugin.name, source: './' }),
+    ]);
+    expect(plugin.version).toBe(pkg.version);
+  });
+
+  it('ships an executable bin/covi, which the plugin puts on PATH', () => {
+    const bin = join(root, 'bin', 'covi');
+    expect(statSync(bin).mode & 0o111, 'bin/covi must be executable').not.toBe(0);
+    const result = spawnSync(bin, ['--version'], { encoding: 'utf8' });
+    expect(result.stderr).toBe('');
+    expect(result.stdout.trim()).toBe(pkg.version);
   });
 });

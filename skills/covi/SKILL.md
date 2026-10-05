@@ -33,7 +33,7 @@ If two readings of the request point at different changes, ask which one. Otherw
 
 ## Tools
 
-Use the `covi` CLI on PATH, or `./bin/covi.mjs` inside the Covi repository. If neither exists, ask the user how Covi is installed; do not run `npx covi` (that npm name belongs to an unrelated project). Pass `--json` whenever you need to read a result; progress goes to stderr.
+Use the `covi` command. With the Claude Code plugin it is already on your PATH; its first run installs Covi's dependencies, which can take up to a minute. Inside the Covi repository, use `./bin/covi`. If `covi` is missing, ask the user how they installed Covi; never run `npx covi` (that npm name belongs to an unrelated project). Pass `--json` whenever you need to read a result; progress goes to stderr. When a capability seems missing, run `covi doctor`; `covi doctor --install-browser` downloads Chromium for demos and videos, so ask the user first.
 
 | Command | What it gives you |
 |---|---|

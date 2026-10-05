@@ -41,7 +41,7 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
 
 ## Using the CLI as a tool
 
-- Run `./bin/covi.mjs` (or `npm run covi --`) from this checkout. It runs the TypeScript sources directly on Node 22.18+, so edits apply without a build.
+- Run `./bin/covi.mjs` (or `npm run covi --`) from this checkout. It runs the TypeScript sources directly on Node 22.18+, so edits apply without a build. `./bin/covi` is the launcher the Claude Code plugin puts on PATH: it installs the locked dependencies on its first run, then runs `bin/covi.mjs`.
 - Pass `--json` to get a stable result object on stdout; progress goes to stderr.
 - Exit codes: `0` ok · `1` review gate failed · `2` usage or invalid input (including schema errors in agent-authored files) · `3` environment (not a repo, missing ffmpeg or browser) · `4` internal error.
 - `covi schema <explanation|findings|storyboard|demo-plan|config>` prints the JSON Schema for files agents write.

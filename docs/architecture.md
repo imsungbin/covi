@@ -33,6 +33,7 @@ Outside `packages/`:
 | `integrations/` | The GitHub Action and the GitLab CI component. Both call the CLI. |
 | `examples/` | Realistic example changes with expected outcomes; used by tests and `covi examples`. |
 | `bin/covi.mjs` | The executable. See [Distribution](#distribution). |
+| `bin/covi` | Launcher for checkouts and the Claude Code plugin: installs the locked dependencies on first run, then runs `bin/covi.mjs`. |
 | `.claude/skills`, `.agents/skills`, `.claude-plugin/` | Agent packaging derived from `skills/`: links for Claude Code and for Codex and other clients, and the Claude Code plugin manifest. `npm run agents:check` keeps them in sync. |
 
 ## Domain model
@@ -210,4 +211,5 @@ In CI, `.covi/config.yml` (and an explicit `--config` file inside the repository
 
 - **From a checkout.** `bin/covi.mjs` runs `packages/cli/src/main.ts` directly when Node supports type stripping (Node 22.18 and later) and the sources exist, so edits apply without a build. The browser runtime for video compositions is bundled on demand with esbuild.
 - **As a package.** `npm run build` (also run on `npm install` through `prepare`) writes `dist/covi.mjs`, the CLI with Covi's internal packages bundled, and `dist/runtime/composition.js`, the prebuilt browser runtime. Playwright and the font packages stay external. The published package contains `bin/`, `dist/`, `skills/`, `templates/`, `assets/`, `examples/`, `AGENTS.md`, `README.md`, and the license.
+- **As a Claude Code plugin.** The plugin is the repository itself, so Claude Code puts its `bin/` on the Bash tool's PATH. `bin/covi` runs `npm ci` in the plugin directory the first time (which also builds `dist/`), then hands over to `bin/covi.mjs`.
 - `COVI_USE_DIST=1` forces the bundle even in a checkout. `COVI_HOME` overrides where Covi looks for its resources (`skills/`, `templates/`); by default it finds them next to the code.

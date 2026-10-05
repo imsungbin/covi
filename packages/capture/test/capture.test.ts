@@ -16,7 +16,7 @@ import { createChangeRepo, type TempRepo } from '../../../tests/helpers/repo.ts'
 import { startApp, waitForReady } from '../src/app.ts';
 import { checkoutRevision, tempWorkspace } from '../src/checkout.ts';
 import { comparePngs, cropPng } from '../src/pixels.ts';
-import { planDemo } from '../src/plan.ts';
+import { flowViewport, planDemo } from '../src/plan.ts';
 import { describeShapeChange } from '../src/requests.ts';
 
 let repo: TempRepo | undefined;
@@ -112,6 +112,16 @@ describe('demo planning', () => {
     expect(() => planDemo(context, config, { pages: 'nope' })).toThrow(
       /demo\/plan\.json is invalid/,
     );
+  });
+});
+
+describe('flowViewport', () => {
+  it("runs a flow at its own viewport, else the preferred one if planned, else the plan's first", () => {
+    expect(flowViewport({ viewports: ['tablet'] }, ['desktop', 'mobile'], 'mobile')).toBe('tablet');
+    expect(flowViewport({}, ['desktop', 'mobile'], 'mobile')).toBe('mobile');
+    expect(flowViewport({}, ['desktop'], 'mobile')).toBe('desktop');
+    expect(flowViewport({}, ['tablet', 'desktop'])).toBe('tablet');
+    expect(flowViewport({}, [])).toBe('desktop');
   });
 });
 

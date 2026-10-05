@@ -6,7 +6,7 @@ This page documents every `covi` command and flag, how to choose the change to w
 covi [global options] <command> [options] [range]
 ```
 
-From a checkout, run `./bin/covi.mjs` or `npm run covi -- <args>` in place of `covi`. `covi help <command>` and `covi <command> --help` print the built-in help.
+From a checkout, run `./bin/covi`, `./bin/covi.mjs`, or `npm run covi -- <args>` in place of `covi`. `covi help <command>` and `covi <command> --help` print the built-in help.
 
 ## Global options
 

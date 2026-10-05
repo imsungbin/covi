@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# The `covi` command for a checkout or a Claude Code plugin install (which puts this bin/ directory
+# on Claude's PATH). The first run installs Covi's locked dependencies with `npm ci`, which also
+# builds dist/; later runs start right away.
+set -euo pipefail
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "covi: Node.js 22.18 or newer is required (https://nodejs.org)." >&2
+  exit 3
+fi
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+
+if [ ! -f "$root/node_modules/.package-lock.json" ]; then
+  lock="$root/.covi-setup.lock"
+  if mkdir "$lock" 2>/dev/null; then
+    trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+    echo "covi: first run: installing dependencies in $root (once; usually under a minute)" >&2
+    (cd "$root" && npm ci --no-audit --no-fund --loglevel=error) >&2
+    rmdir "$lock"
+    trap - EXIT
+  else
+    echo "covi: waiting for another covi process to finish installing dependencies" >&2
+    while [ -d "$lock" ]; do sleep 1; done
+  fi
+fi
+
+exec node "$root/bin/covi.mjs" "$@"

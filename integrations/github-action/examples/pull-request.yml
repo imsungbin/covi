@@ -25,7 +25,7 @@ jobs:
         with:
           fetch-depth: 0   # Covi diffs against the merge base
 
-      - uses: your-org/covi/integrations/github-action@v1   # replace your-org with where Covi lives
+      - uses: imsungbin/covi/integrations/github-action@v1   # or your fork; pin a tag or commit SHA
         with:
           fail-on: high          # fail on confirmed/likely high-severity findings
           video: auto            # a video only when the change is worth seeing

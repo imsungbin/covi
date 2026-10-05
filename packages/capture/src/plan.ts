@@ -2,6 +2,7 @@ import {
   type CoviConfig,
   DemoCommandSchema,
   DemoRequestSchema,
+  type Flow,
   FlowSchema,
   parseOrThrow,
   type ReviewContext,
@@ -20,6 +21,7 @@ export const DemoPlanSchema = z.strictObject({
 });
 
 export type DemoPlan = z.output<typeof DemoPlanSchema>;
+type Viewport = (typeof VIEWPORTS)[number];
 
 const MAX_PAGES = 4;
 const MAX_REQUESTS = 4;
@@ -28,7 +30,7 @@ export function planDemo(
   context: ReviewContext,
   config: CoviConfig,
   authored?: unknown,
-): DemoPlan & { viewports: Array<(typeof VIEWPORTS)[number]> } {
+): DemoPlan & { viewports: Viewport[] } {
   const plan = authored
     ? parseOrThrow(
         DemoPlanSchema,
@@ -67,4 +69,18 @@ export function planDemo(
     viewports: plan.viewports ?? config.demo.viewports,
     notes: plan.notes,
   };
+}
+
+/**
+ * Where a flow runs: at its own first viewport, else at the one the result will mostly be seen at
+ * (mobile for a vertical video) when the plan captures it, else at the plan's first.
+ */
+export function flowViewport(
+  flow: Pick<Flow, 'viewports'>,
+  viewports: readonly Viewport[],
+  prefer?: Viewport,
+): Viewport {
+  if (flow.viewports?.[0]) return flow.viewports[0];
+  if (prefer && viewports.includes(prefer)) return prefer;
+  return viewports[0] ?? 'desktop';
 }

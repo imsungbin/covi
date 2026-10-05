@@ -33,7 +33,7 @@ jobs:
         with:
           fetch-depth: 0   # Covi diffs against the merge base
 
-      - uses: your-org/covi/integrations/github-action@v1   # replace your-org with where Covi lives
+      - uses: imsungbin/covi/integrations/github-action@v1   # or your fork; pin a tag or commit SHA
         with:
           fail-on: high          # fail on confirmed/likely high-severity findings
           video: auto            # a video only when the change is worth seeing
@@ -42,7 +42,7 @@ jobs:
           # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}   # optional: model-written review
 ```
 
-`your-org/covi` is a placeholder. Replace it with the repository where you host Covi, and pin a tag or, for the strongest guarantee, a full commit SHA.
+Covi lives at `imsungbin/covi`; if you run a fork or a mirror, use that repository instead. `@v1` refers to the `v1` release tag. For the strongest guarantee, pin a full commit SHA.
 
 You don't need any configuration to start. Without an API key, Covi reviews with its built-in rules and a structural explanation. To tune it, add `.covi/config.yml` to your default branch (see [configuration.md](configuration.md)). In CI, Covi reads that file from the base revision. Any input you set in the workflow overrides it; inputs you leave out don't.
 
@@ -124,7 +124,7 @@ Give the step an `id` to read them:
 
 ```yaml
       - id: covi
-        uses: your-org/covi/integrations/github-action@v1
+        uses: imsungbin/covi/integrations/github-action@v1
       - if: always() && steps.covi.outputs.verdict == 'needs-changes'
         run: echo "Covi found ${{ steps.covi.outputs.findings-count }} findings"
 ```
@@ -167,7 +167,7 @@ Covi doesn't upload the report itself. To see findings in code scanning, upload 
         with:
           fetch-depth: 0
       - id: covi
-        uses: your-org/covi/integrations/github-action@v1
+        uses: imsungbin/covi/integrations/github-action@v1
       - uses: github/codeql-action/upload-sarif@v4
         if: always() && steps.covi.outputs.sarif-path != '' && github.event.pull_request.head.repo.full_name == github.repository
         with:
@@ -311,7 +311,7 @@ jobs:
           github-token: ${{ github.token }}
 
       - if: steps.download.outcome == 'success'
-        uses: your-org/covi/integrations/github-action@v1   # replace your-org with where Covi lives
+        uses: imsungbin/covi/integrations/github-action@v1   # or your fork; pin a tag or commit SHA
         with:
           command: publish
           run-dir: covi-run

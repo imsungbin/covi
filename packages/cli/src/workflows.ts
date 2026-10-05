@@ -414,6 +414,7 @@ async function demoStage(
   session: Session,
   change: CodeChange,
   plan?: unknown,
+  prefer?: 'desktop' | 'mobile',
 ): Promise<Demonstration | undefined> {
   session.logger.step('Demonstrating the change');
   // Keep the plan the agent or user supplied next to what it produced.
@@ -428,6 +429,7 @@ async function demoStage(
         logger: session.logger,
         plan,
         execution: session.execution,
+        prefer,
       }),
     );
     await session.run.writeText('demo/demo.md', renderDemo(demo), 'capture');
@@ -528,7 +530,9 @@ export async function videoWorkflow(
     decision.render &&
     kinds.some((k) => k !== 'architecture') &&
     session.context.demonstration.runnable.available;
-  const demo = wantsDemo ? await demoStage(session, change) : undefined;
+  // Vertical videos show phone-sized pages, so flows are captured there.
+  const prefer = options.spec.height > options.spec.width ? 'mobile' : 'desktop';
+  const demo = wantsDemo ? await demoStage(session, change, undefined, prefer) : undefined;
   const outcome = await reviewSession(session, change, { demo });
   // Gates belong to review and CI; producing a video never fails on findings.
   finishReview(session, result, outcome, false);

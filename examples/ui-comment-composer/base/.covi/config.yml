@@ -2,7 +2,7 @@
 app:
   static: .
 demo:
-  viewports: [desktop]
+  viewports: [desktop, mobile]   # the composer is responsive; vertical videos show the phone layout
   flows:
     - name: Write a comment
       path: /

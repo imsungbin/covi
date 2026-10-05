@@ -7,6 +7,33 @@
 
 Covi helps people understand code changes well enough to review them. Give it a branch, a commit range, a pull request, or a merge request. It works out what changed and why, and explains the change in terms of modules and behavior rather than individual lines. When seeing the change helps, it runs the software at both revisions and captures the difference. It then reviews the change and reports only findings backed by evidence. When a change is worth watching, Covi also renders a short narrated review video. It works from a coding agent, from the terminal, and in GitHub Actions and GitLab CI.
 
+<p align="center">
+  <a href="docs/media/covi-review.mp4"><img src="docs/media/covi-review.gif" width="320" alt="A 23-second vertical review video made by Covi: a title card, the new comment flow captured on a phone, the key code, and the verdict, narrated by Covi's fox"></a>
+  <br>
+  <sub>A review video Covi made for one of its example changes, with <code>covi video --short</code>. The <a href="docs/media/covi-review.mp4">MP4</a> has the narration.</sub>
+</p>
+
+## Install
+
+**Claude Code.** Run this in a Claude Code session:
+
+```text
+/plugin install covi --marketplace imsungbin/covi
+```
+
+That's all. The plugin adds Covi's skills and puts the `covi` command on Claude's PATH; the first run installs Covi's dependencies, so you need Node.js 22.18 or newer. Then ask: "Review this branch with Covi." On Claude Code older than 2.1.275, run `/plugin marketplace add imsungbin/covi` and then `/plugin install covi@covi`.
+
+**Codex.** Install the `covi` command from source, then the skills:
+
+```bash
+git clone https://github.com/imsungbin/covi.git ~/covi && (cd ~/covi && npm install && npm link)
+covi skills install --target codex --global
+```
+
+**Terminal.** The same clone and `npm link` give you `covi` in any shell; see [Quick start](#quick-start).
+
+Demonstrations and videos also need Chromium (`covi doctor --install-browser`), and videos need ffmpeg. `covi doctor` checks what's missing.
+
 ## How it works
 
 Every workflow follows one loop: **Understand → Explain → Demonstrate (when it helps) → Review**.
@@ -97,7 +124,7 @@ We asked Covi to explain its own first commit, the one that adds this whole repo
 
 #### Open questions
 
-- Where Covi will be hosted is not decided yet: the CI examples use the placeholder `your-org/covi`, and the npm name `covi` belongs to an unrelated package.
+- The npm name `covi` belongs to an unrelated package, so Covi cannot be published to npm under its current name.
 
 </details>
 
@@ -114,10 +141,10 @@ Without an agent, `covi explain <range>` writes a shorter, structural explanatio
 ## Quick start
 
 ```bash
-git clone https://github.com/your-org/covi.git    # placeholder: replace your-org with where Covi is hosted
+git clone https://github.com/imsungbin/covi.git
 cd covi
 npm install
-npm link                       # puts `covi` on your PATH (or run ./bin/covi.mjs)
+npm link                       # puts `covi` on your PATH (or run ./bin/covi)
 covi doctor --install-browser  # the Chromium build Covi uses, for demos and videos
 covi doctor                    # checks git, the browser, ffmpeg, and speech
 ```
@@ -159,54 +186,21 @@ See [getting started](docs/getting-started.md) and the [CLI reference](docs/cli.
 
 ## Use it from a coding agent
 
-Covi's methodology ships as agent skills in `skills/`. The `covi` skill routes each request to `covi-understand`, `covi-explain`, `covi-review`, `covi-demo`, `covi-visual-review`, `covi-video`, or `covi-summarize`. The skills call the `covi` CLI, so install that first (see [Quick start](#quick-start)).
+Covi's methodology ships as agent skills in `skills/`. The `covi` skill routes each request to `covi-understand`, `covi-explain`, `covi-review`, `covi-demo`, `covi-visual-review`, `covi-video`, or `covi-summarize`, and the skills use the `covi` command for the deterministic parts.
 
 ### Claude Code
 
-1. Install Claude Code ([setup guide](https://code.claude.com/docs/en/setup)) and sign in the first time you run `claude`:
+[Install](#install) covers the plugin. Its skills appear as `/covi:covi`, `/covi:covi-review`, and so on, though asking in plain words is usually enough. The plugin carries its own `covi` command, so Claude needs nothing else; to use `covi` in your own terminal as well, install it as in [Quick start](#quick-start).
 
-   ```bash
-   curl -fsSL https://claude.ai/install.sh | bash   # macOS, Linux, WSL
-   brew install --cask claude-code                  # or with Homebrew
-   ```
-
-   On Windows PowerShell: `irm https://claude.ai/install.ps1 | iex`.
-
-2. Add Covi's skills in one of three ways:
-
-   - **As a plugin.** In a Claude Code session, add this repository as a plugin marketplace and install the `covi` plugin. Its skills then appear as `/covi:covi`, `/covi:covi-review`, and so on.
-
-     ```text
-     /plugin marketplace add your-org/covi
-     /plugin install covi@covi
-     ```
-
-     A local checkout works too: `/plugin marketplace add ./path/to/covi` (relative paths start with `./`). From a shell, run `claude plugin marketplace add your-org/covi`, then `claude plugin install covi@covi`.
-   - **As project skills.** Run `covi skills install --target claude` in the repository you review to copy the skills into its `.claude/skills/`, or add `--global` to install them in `~/.claude/skills/` for every project.
-   - **In this repository**, there is nothing to do: `.claude/skills` already links to `skills/`, and `CLAUDE.md` imports `AGENTS.md`.
-
-3. Start `claude` in the repository you want reviewed and ask in plain words.
+- **Without the plugin:** with `covi` installed, `covi skills install --target claude` copies the skills into a repository's `.claude/skills/` (add `--global` for `~/.claude/skills/`).
+- **In this repository:** nothing to do. `.claude/skills` links to `skills/`, and `CLAUDE.md` imports `AGENTS.md`.
+- **Claude Code itself:** see the [setup guide](https://code.claude.com/docs/en/setup), or run `curl -fsSL https://claude.ai/install.sh | bash` (macOS, Linux, WSL) or `brew install --cask claude-code`.
 
 ### Codex
 
-1. Install the Codex CLI ([repository](https://github.com/openai/codex)) and sign in the first time you run `codex`:
+[Install](#install) covers the `covi` command and the skills; `--target codex` puts them in `~/.agents/skills/` with `--global`, or in the repository's `.agents/skills/` without it. In this repository, `.agents/skills` already links to `skills/`, and Codex reads `AGENTS.md`.
 
-   ```bash
-   npm install -g @openai/codex                       # with npm
-   brew install --cask codex                          # or with Homebrew
-   curl -fsSL https://chatgpt.com/codex/install.sh | sh   # or the install script (macOS, Linux)
-   ```
-
-2. Install Covi's skills where Codex looks for them:
-
-   ```bash
-   covi skills install --target codex            # this repository: .agents/skills/
-   covi skills install --target codex --global   # every repository: ~/.agents/skills/
-   ```
-
-   In this repository, `.agents/skills` already links to `skills/`, and Codex reads `AGENTS.md`.
-
-3. Run `codex` in the repository you want reviewed and ask in plain words, or name a skill with `$covi-review`. `/skills` lists the skills Codex found; it picks up new ones automatically, so restart Codex only if one is missing.
+Run `codex` in the repository you want reviewed and ask in plain words, or name a skill with `$covi-review`. `/skills` lists the skills Codex found; it picks up new ones automatically, so restart Codex only if one is missing. To install Codex itself: `npm install -g @openai/codex`, `brew install --cask codex`, or `curl -fsSL https://chatgpt.com/codex/install.sh | sh` (see the [Codex repository](https://github.com/openai/codex)).
 
 ### What to ask
 
@@ -234,7 +228,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # Covi diffs against the merge base
-      - uses: your-org/covi/integrations/github-action@v1   # placeholder: replace your-org with where Covi is hosted
+      - uses: imsungbin/covi/integrations/github-action@v1   # or your fork; pin a tag or commit SHA
         with:
           fail-on: high
           video: auto
@@ -256,7 +250,7 @@ Pull requests from forks get a read-only token. The review still runs, and a sep
 
 ```yaml
 include:
-  - project: 'your-org/covi'        # placeholder: where Covi is hosted on your GitLab instance
+  - project: 'your-org/covi'        # placeholder: a copy of Covi on your GitLab instance
     ref: v1
     file: '/integrations/gitlab-ci/covi.yml'
     inputs:

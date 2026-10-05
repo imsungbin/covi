@@ -1,13 +1,25 @@
 import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { ensureSelfIgnored, exec, shortHash, which } from '@covi/core';
+import {
+  ensureSelfIgnored,
+  exec,
+  LANGUAGE_NAME,
+  type Language,
+  shortHash,
+  which,
+} from '@covi/core';
 import type { Media } from '../render/ffmpeg.ts';
 import type { VideoSpec } from '../spec.ts';
+import { localeLanguage } from './speech.ts';
 import { durationOf, readWav } from './wav.ts';
 
 export interface TtsProvider {
   readonly id: 'system' | 'openai' | 'elevenlabs';
   readonly voice: string;
+  /** The voice's locale when the engine reports one (`ko_KR`, `en-us`); hosted voices have none. */
+  readonly locale?: string;
+  /** Distinguishes takes of the same text and voice that sound different (cache key). */
+  readonly variant?: string;
   /** Writes raw audio for `text` to `file` (any format ffmpeg can decode). */
   synthesize(text: string, file: string, rate: number): Promise<void>;
 }
@@ -18,47 +30,151 @@ export interface Take {
   cached: boolean;
 }
 
-/** Voices that read technical narration well, best first. */
-const MAC_VOICES = [
-  'Ava (Premium)',
-  'Zoe (Premium)',
-  'Samantha (Enhanced)',
-  'Ava',
-  'Samantha',
-  'Allison',
-  'Alex',
-  'Daniel',
-];
+/** macOS voices that read technical narration well, best first, per language. */
+const MAC_VOICES: Record<Language, string[]> = {
+  en: [
+    'Ava (Premium)',
+    'Zoe (Premium)',
+    'Samantha (Enhanced)',
+    'Ava',
+    'Samantha',
+    'Allison',
+    'Alex',
+    'Daniel',
+  ],
+  ko: [
+    'Yuna (Premium)',
+    'Yuna (Enhanced)',
+    'Yuna',
+    'Jian (Premium)',
+    'Jian (Enhanced)',
+    'Jian',
+    'Suhyun',
+    'Minsu',
+    'Sora',
+  ],
+  ja: [
+    'Kyoko (Premium)',
+    'Kyoko (Enhanced)',
+    'Kyoko',
+    'Otoya (Premium)',
+    'Otoya (Enhanced)',
+    'Otoya',
+    'Hattori',
+    'O-Ren',
+  ],
+  zh: [
+    'Tingting (Premium)',
+    'Tingting (Enhanced)',
+    'Tingting',
+    'Lili (Premium)',
+    'Lili (Enhanced)',
+    'Lili',
+    'Yu-shu',
+    'Lilian',
+    'Meijia',
+    'Sinji',
+  ],
+};
+
+/** espeak voices are language codes; Mandarin is `cmn` in espeak-ng (`zh` in older espeak). */
+const ESPEAK_VOICES: Record<Language, string[]> = {
+  en: ['en-us', 'en'],
+  ko: ['ko'],
+  ja: ['ja'],
+  zh: ['cmn', 'zh'],
+};
+
+/** Regional locales a language prefers when several match (Simplified Chinese: mainland first). */
+const PREFERRED_LOCALE: Partial<Record<Language, string>> = { zh: 'zh_CN', en: 'en_US' };
+
+/** A voice to suggest for a language when the configured one speaks another. */
+export function suggestedVoice(provider: string, language: Language): string | undefined {
+  if (provider !== 'system') return undefined;
+  if (process.platform === 'darwin') return MAC_VOICES[language].find((v) => !v.includes('('));
+  return ESPEAK_VOICES[language][0];
+}
+
+export interface SystemVoice {
+  name: string;
+  locale: string;
+}
+
+/**
+ * Parses `say -v '?'`: `Name  locale  # sample`. Names can be long and localized
+ * (`Grandma (중국어(중국 본토)) zh_CN`), so the locale column, not spacing, ends the name.
+ */
+export function parseSayVoices(listing: string): SystemVoice[] {
+  const out: SystemVoice[] = [];
+  for (const line of listing.split('\n')) {
+    const m = /^(.+?)\s+([a-z]{2,3}_[A-Za-z0-9]{2,4})\s+#/.exec(line);
+    if (m) out.push({ name: m[1]!.trim(), locale: m[2]! });
+  }
+  return out;
+}
+
+/** Parses `espeak-ng --voices`: the second column is the language code each voice speaks. */
+export function parseEspeakVoices(listing: string): string[] {
+  return listing
+    .split('\n')
+    .slice(1)
+    .map((l) => l.trim().split(/\s+/)[1] ?? '')
+    .filter(Boolean);
+}
+
+/** The voice to use: the one asked for when installed, else the best installed one for the language. */
+export function pickMacVoice(
+  voices: readonly SystemVoice[],
+  language: Language,
+  preferred?: string,
+): SystemVoice | undefined {
+  const find = (v: string) => voices.find((x) => x.name === v || x.name.startsWith(`${v} (`));
+  const asked = preferred ? find(preferred) : undefined;
+  if (asked) return { name: preferred!, locale: asked.locale };
+  for (const name of MAC_VOICES[language]) {
+    const found = find(name);
+    if (found) return { name, locale: found.locale };
+  }
+  const speaking = voices.filter((v) => localeLanguage(v.locale) === language);
+  const regional = speaking.find((v) => v.locale === PREFERRED_LOCALE[language]);
+  return regional ?? speaking[0] ?? voices[0];
+}
 
 export class SystemTts implements TtsProvider {
   readonly id = 'system' as const;
   readonly voice: string;
+  readonly locale?: string;
   private readonly binary: 'say' | 'espeak-ng' | 'espeak';
 
-  private constructor(binary: SystemTts['binary'], voice: string) {
+  private constructor(binary: SystemTts['binary'], voice: string, locale?: string) {
     this.binary = binary;
     this.voice = voice;
+    this.locale = locale;
   }
 
-  static async detect(preferredVoice?: string): Promise<SystemTts | undefined> {
+  /** The best installed voice for `language`, or `preferredVoice` when it is installed. */
+  static async detect(
+    preferredVoice?: string,
+    language: Language = 'en',
+  ): Promise<SystemTts | undefined> {
     if (process.platform === 'darwin' && (await which(['say']))) {
       const listing = await exec('say', ['-v', '?'], {
         cwd: process.cwd(),
         timeoutMs: 10_000,
       }).catch(() => undefined);
-      const names = (listing?.stdout ?? '')
-        .split('\n')
-        .map((l) => l.split(/\s{2,}/)[0]?.trim() ?? '')
-        .filter(Boolean);
-      const has = (v: string) => names.some((n) => n === v || n.startsWith(`${v} (`));
-      const voice =
-        preferredVoice && has(preferredVoice)
-          ? preferredVoice
-          : (MAC_VOICES.find(has) ?? names[0] ?? 'Samantha');
-      return new SystemTts('say', voice);
+      const voice = pickMacVoice(parseSayVoices(listing?.stdout ?? ''), language, preferredVoice);
+      return new SystemTts('say', voice?.name ?? preferredVoice ?? 'Samantha', voice?.locale);
     }
     for (const bin of ['espeak-ng', 'espeak'] as const) {
-      if (await which([bin])) return new SystemTts(bin, preferredVoice ?? 'en-us');
+      if (!(await which([bin]))) continue;
+      if (preferredVoice) return new SystemTts(bin, preferredVoice, preferredVoice);
+      const listing = await exec(bin, ['--voices'], {
+        cwd: process.cwd(),
+        timeoutMs: 10_000,
+      }).catch(() => undefined);
+      const installed = new Set(parseEspeakVoices(listing?.stdout ?? ''));
+      const voice = ESPEAK_VOICES[language].find((v) => installed.has(v)) ?? 'en-us';
+      return new SystemTts(bin, voice, voice);
     }
     return undefined;
   }
@@ -82,16 +198,32 @@ export class SystemTts implements TtsProvider {
   }
 }
 
+const OPENAI_INSTRUCTIONS =
+  'Calm, friendly, and concise: a senior engineer walking a teammate through a code change.';
+
 export class OpenAiTts implements TtsProvider {
   readonly id = 'openai' as const;
   readonly voice: string;
+  readonly variant?: string;
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly instructions: string;
 
-  constructor(apiKey: string, voice = 'sage', fetchImpl: typeof fetch = fetch) {
+  constructor(
+    apiKey: string,
+    voice = 'sage',
+    fetchImpl: typeof fetch = fetch,
+    language: Language = 'en',
+  ) {
     this.apiKey = apiKey;
     this.voice = voice;
     this.fetchImpl = fetchImpl;
+    // The model follows the text's language on its own; naming it avoids an English accent.
+    this.instructions =
+      language === 'en'
+        ? OPENAI_INSTRUCTIONS
+        : `${OPENAI_INSTRUCTIONS} Speak natural ${LANGUAGE_NAME[language]}.`;
+    if (language !== 'en') this.variant = language;
   }
 
   async synthesize(text: string, file: string, rate: number): Promise<void> {
@@ -104,8 +236,7 @@ export class OpenAiTts implements TtsProvider {
         input: text,
         response_format: 'wav',
         speed: rate,
-        instructions:
-          'Calm, friendly, and concise: a senior engineer walking a teammate through a code change.',
+        instructions: this.instructions,
       }),
       signal: AbortSignal.timeout(60_000),
     });
@@ -138,6 +269,7 @@ export class ElevenLabsTts implements TtsProvider {
         'Content-Type': 'application/json',
         Accept: 'audio/mpeg',
       },
+      // eleven_multilingual_v2 detects the language from the text; it rejects language_code.
       body: JSON.stringify({
         text,
         model_id: 'eleven_multilingual_v2',
@@ -162,10 +294,14 @@ export interface TtsChoice {
   reason: string;
 }
 
-/** `auto` prefers a configured hosted voice, then the operating system's speech engine. */
+/**
+ * `auto` prefers a configured hosted voice, then the operating system's speech engine. Without a
+ * configured voice, the system engine picks one that speaks `language`.
+ */
 export async function chooseTts(
   narration: VideoSpec['narration'],
   env: NodeJS.ProcessEnv = process.env,
+  language: Language = 'en',
 ): Promise<TtsChoice> {
   if (!narration.enabled) return { reason: 'narration disabled' };
   const p = narration.provider;
@@ -180,11 +316,11 @@ export async function chooseTts(
   if (p === 'openai' || (p === 'auto' && env.OPENAI_API_KEY)) {
     if (!env.OPENAI_API_KEY) return { reason: 'OPENAI_API_KEY is not set' };
     return {
-      provider: new OpenAiTts(env.OPENAI_API_KEY, narration.voice),
+      provider: new OpenAiTts(env.OPENAI_API_KEY, narration.voice, fetch, language),
       reason: p === 'auto' ? 'OPENAI_API_KEY is set' : 'configured',
     };
   }
-  const system = await SystemTts.detect(narration.voice);
+  const system = await SystemTts.detect(narration.voice, language);
   if (system) return { provider: system, reason: `system speech (${system.voice})` };
   return {
     reason:
@@ -194,7 +330,8 @@ export async function chooseTts(
 
 /**
  * Synthesizes one narration line into a normalized mono 48 kHz take. Takes are content-addressed
- * (provider, voice, rate, text), so re-rendering a storyboard never pays for unchanged lines.
+ * (provider, voice, variant, rate, text), so re-rendering a storyboard never pays for unchanged
+ * lines.
  */
 export async function synthesizeTake(
   provider: TtsProvider,
@@ -208,6 +345,7 @@ export async function synthesizeTake(
     options.tempo ?? 1,
     text,
     'take-v1',
+    ...(provider.variant ? [provider.variant] : []),
   );
   const file = join(options.cacheDir, 'tts', `${key}.wav`);
   const existing = await stat(file).catch(() => undefined);

@@ -11,6 +11,7 @@ import {
   ExplanationSchema,
   errorMessage,
   FindingsFileSchema,
+  LANGUAGE_INPUTS,
   listRuns,
   listSkills,
   loadRepositoryConfig,
@@ -18,6 +19,7 @@ import {
   NoChangesError,
   type ParsedConfigInput,
   parseConfigInput,
+  parseLanguageSetting,
   parseOrThrow,
   parseYamlConfig,
   Run,
@@ -148,18 +150,28 @@ function int(min: number, max: number): (value: string) => number {
 
 const FAIL_ON_HELP = 'exit 1 when confirmed/likely findings reach this severity';
 
+/** A language code for --language: auto, en, ko, ja, zh (zh-CN and zh-Hans mean zh). */
+function languageOption(value: string): string {
+  if (!parseLanguageSetting(value))
+    throw new InvalidArgumentError(
+      `expected one of ${LANGUAGE_INPUTS.join(', ')} (Traditional Chinese is not supported)`,
+    );
+  return value;
+}
+
 const explicitSource = (cmd: Command, key: string) =>
   cmd.getOptionValueSource(key) === 'cli' || cmd.getOptionValueSource(key) === 'env';
 
 /** Translates command-line flags into the explicit configuration layer. */
 function explicitConfig(cmd: Command): ParsedConfigInput {
   const o = cmd.opts<Record<string, unknown>>();
-  const raw: Record<string, Record<string, unknown>> = {};
+  const raw: Record<string, unknown> = {};
   const set = (section: string, key: string, value: unknown) => {
     if (value === undefined) return;
     raw[section] ??= {};
-    raw[section]![key] = value;
+    (raw[section] as Record<string, unknown>)[key] = value;
   };
+  if (o.language !== undefined) raw.language = o.language;
   set('intelligence', 'provider', o.provider);
   set('intelligence', 'model', o.model);
   set('review', 'failOn', o.failOn);
@@ -243,7 +255,12 @@ function addVideo(cmd: Command): Command {
         'none',
       ]),
     )
-    .addOption(new Option('--theme <theme>', 'color theme').choices(['light', 'dark']));
+    .addOption(new Option('--theme <theme>', 'color theme').choices(['light', 'dark']))
+    .option(
+      '--language <code>',
+      'language of the narration and on-screen text: auto, en, ko, ja, or zh (Simplified Chinese)',
+      languageOption,
+    );
 }
 
 function selection(cmd: Command, range: string | undefined) {

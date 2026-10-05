@@ -7,13 +7,15 @@ import {
   exec,
   exists,
   Git,
+  LANGUAGE_NAME,
+  type Language,
   loadRepositoryConfig,
   repositoryCommands,
   resolveConfig,
   TrustStore,
   which,
 } from '@covi/core';
-import { chooseTts, Media } from '@covi/video';
+import { chooseTts, localeLanguage, Media, SystemTts } from '@covi/video';
 import { chromium } from 'playwright';
 
 export interface DoctorCheck {
@@ -94,12 +96,26 @@ export async function doctor(repo: string): Promise<DoctorCheck[]> {
               : `${choice.kind}${'model' in choice ? ` (${choice.model})` : ''}: ${choice.reason}`,
         });
         const tts = await chooseTts({ ...config.video.narration, enabled: true });
+        // System voices speak one language each; say which one Covi would use for each language.
+        const others: string[] = [];
+        const missing: string[] = [];
+        if (tts.provider?.id === 'system' && !config.video.narration.voice) {
+          for (const language of ['ko', 'ja', 'zh'] as Language[]) {
+            const voice = await SystemTts.detect(undefined, language);
+            if (voice && localeLanguage(voice.locale) === language)
+              others.push(`${LANGUAGE_NAME[language]} "${voice.voice}"`);
+            else missing.push(LANGUAGE_NAME[language]);
+          }
+        }
         checks.push(
           tts.provider
             ? {
                 id: 'narration',
                 status: 'ok',
-                message: `${tts.provider.id} voice "${tts.provider.voice}"`,
+                message: `${tts.provider.id} voice "${tts.provider.voice}"${others.length ? `; ${others.join(', ')}` : ''}${missing.length ? `; no voice for ${missing.join(', ')}` : ''}`,
+                hint: missing.length
+                  ? 'Install voices for those languages (macOS: System Settings → Accessibility → Spoken Content; Linux: espeak-ng) or set OPENAI_API_KEY / ELEVENLABS_API_KEY.'
+                  : undefined,
               }
             : {
                 id: 'narration',

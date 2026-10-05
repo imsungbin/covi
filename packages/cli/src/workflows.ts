@@ -17,6 +17,7 @@ import {
   type FindingsFile,
   FindingsFileSchema,
   gateFailures,
+  LANGUAGE_NAME,
   normalizeFinding,
   type ParsedConfigInput,
   ProviderError,
@@ -557,6 +558,8 @@ export async function videoWorkflow(
       logger: session.logger,
       draftOnly: options.draft,
       workers: options.workers,
+      language: session.languageSettings,
+      pronunciations: session.config.video.narration.pronunciations,
     }),
   );
   applyVideoResult(session, result, produced, options.draft);
@@ -580,7 +583,7 @@ export function applyVideoResult(
   result.video = {
     rendered: Boolean(produced.video),
     reason: produced.narration.enabled
-      ? `narrated with ${produced.narration.provider} (${produced.narration.voice})`
+      ? `narrated${produced.narration.language ? ` in ${LANGUAGE_NAME[produced.narration.language]}` : ''} with ${produced.narration.provider} (${produced.narration.voice})`
       : `captions only: ${produced.narration.reason}`,
     path: produced.video,
     seconds: produced.duration,
@@ -592,6 +595,7 @@ export function applyVideoResult(
     contactSheet: 'video/contact-sheet.jpg',
     captions: 'video/captions.vtt',
     qc: 'video/qc.json',
+    speech: 'video/speech.json',
     composition: 'video/composition/index.html',
   }))
     artifact(session, result, name, rel);
@@ -649,6 +653,8 @@ export async function renderWorkflow(
       cacheDir: session.cacheDir,
       logger: session.logger,
       workers: options.workers,
+      language: session.languageSettings,
+      pronunciations: session.config.video.narration.pronunciations,
     }),
   );
   applyVideoResult(session, result, produced);

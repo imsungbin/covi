@@ -3,9 +3,22 @@ export { AssetCollector, fontFiles, writeComposition } from './composition/build
 export { imageSize } from './composition/images.ts';
 export { runtimeScript } from './composition/runtime-bundle.ts';
 export {
+  localeLanguage,
+  normalizeSpeech,
+  type Pronunciations,
+  resolveSpeechLanguage,
+  type SpeechChange,
+  type SpeechRecord,
+  speakScenes,
+  speechTable,
+  unspokenAcronyms,
+} from './narration/speech.ts';
+export {
   chooseTts,
   ElevenLabsTts,
   OpenAiTts,
+  parseSayVoices,
+  pickMacVoice,
   SystemTts,
   synthesizeTake,
   type Take,
@@ -27,7 +40,14 @@ export {
   produceVideo,
   type VideoDecision,
 } from './pipeline.ts';
-export { layoutChecks, type QcCheck, type QcReport, runQc, timingChecks } from './qc.ts';
+export {
+  layoutChecks,
+  type QcCheck,
+  type QcReport,
+  runQc,
+  speechChecks,
+  timingChecks,
+} from './qc.ts';
 export { Media, type ProbeResult } from './render/ffmpeg.ts';
 export { type RenderOptions, type RenderResult, renderComposition } from './render/renderer.ts';
 export * from './spec.ts';

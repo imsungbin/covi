@@ -14,6 +14,7 @@ import {
   type ExecutionPolicy,
   Git,
   ignoreReason,
+  type Language,
   type Logger,
   loadRepositoryConfig,
   type ModelProvider,
@@ -22,12 +23,14 @@ import {
   Redactor,
   type RepositoryCommand,
   type ResolvedConfig,
+  type ResolvedLanguage,
   type ReviewContext,
   Run,
   renderFileDiff,
   repositoryCommands,
   resolveChange,
   resolveConfig,
+  resolveOutputLanguage,
   TRUST_HINT,
   TrustStore,
   understandChange,
@@ -79,6 +82,39 @@ export interface Session {
   interactive: boolean;
   /** Whether project commands may run, and which repository commands were withheld. */
   execution: ExecutionPolicy;
+  /** The language Covi writes in (recorded in run.json). */
+  language: ResolvedLanguage;
+  /** The language settings speech resolution honors: a flag, or a configured language. */
+  languageSettings: LanguageSettings;
+}
+
+export interface LanguageSettings {
+  /** --language or COVI_LANGUAGE for this command. */
+  flag?: Language;
+  /** `language` in configuration, when it names a language rather than `auto`. */
+  configured?: Language;
+}
+
+/** Splits the resolved `language` setting by where it came from: a flag, or configuration. */
+export function languageSettingsOf(resolved: ResolvedConfig): LanguageSettings {
+  const setting = resolved.config.language;
+  if (setting === 'auto') return {};
+  return /^explicit/.test(resolved.provenance.language ?? '')
+    ? { flag: setting }
+    : { configured: setting };
+}
+
+function settingSource(resolved: ResolvedConfig): string {
+  return `language: ${resolved.config.language} from ${resolved.provenance.language ?? 'global'}`;
+}
+
+/** The output language for a change: the setting, or the script of its title, description, and commits. */
+export function changeLanguage(resolved: ResolvedConfig, change: CodeChange): ResolvedLanguage {
+  return resolveOutputLanguage(resolved.config.language, settingSource(resolved), {
+    title: change.metadata.title,
+    description: change.metadata.description,
+    commits: change.commits.map((c) => `${c.subject}\n${c.body}`),
+  });
 }
 
 /** Repository root for a path, with a clear error outside git. */
@@ -191,6 +227,8 @@ export async function startSession(options: SessionOptions): Promise<Session> {
   });
   run.setChange(change);
   run.setConfig(resolved, options.options);
+  const language = changeLanguage(resolved, change);
+  run.setLanguage(language);
   for (const note of platform?.notes ?? []) run.warn(note);
   const execution: ExecutionPolicy = {
     allowed: platform?.allowExecution ?? true,
@@ -224,6 +262,8 @@ export async function startSession(options: SessionOptions): Promise<Session> {
     cacheDir: `${root}/.covi/cache`,
     interactive: options.interactive,
     execution,
+    language,
+    languageSettings: languageSettingsOf(resolved),
   };
 }
 
@@ -357,6 +397,16 @@ export async function openSession(
   const redactor = Redactor.fromProcess();
   const run = await Run.open(ref, { root, runsDir: resolved.config.output.dir, redactor });
   const context = await run.readJson<ReviewContext>('context.json');
+  // A run keeps the language it was written in, unless this command names another.
+  const settings = languageSettingsOf(resolved);
+  const recorded = run.manifest.language;
+  const language: ResolvedLanguage = settings.flag
+    ? { language: settings.flag, setting: settings.flag, source: settingSource(resolved) }
+    : recorded
+      ? { language: recorded.value, setting: recorded.setting, source: recorded.source }
+      : resolveOutputLanguage(resolved.config.language, settingSource(resolved), {
+          title: run.manifest.change?.title,
+        });
   const providerChoice = chooseSessionProvider(
     resolved.config,
     { allowed: true, withheld },
@@ -376,5 +426,7 @@ export async function openSession(
     cacheDir: `${root}/.covi/cache`,
     interactive: options.interactive,
     execution: { allowed: true, withheld },
+    language,
+    languageSettings: settings,
   };
 }

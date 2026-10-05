@@ -1,4 +1,6 @@
-import { wordCount } from '@covi/core';
+import { LANGUAGE_NAME, wordCount } from '@covi/core';
+import { localeLanguage, type SpeechRecord, unspokenAcronyms } from './narration/speech.ts';
+import { suggestedVoice } from './narration/tts.ts';
 import type { Media } from './render/ffmpeg.ts';
 import type { VideoSpec } from './spec.ts';
 import type { LayoutReport, Rect, Timeline } from './timeline/types.ts';
@@ -31,6 +33,8 @@ export interface QcInput {
   layouts: readonly LayoutReport[];
   narrated: boolean;
   media: Media;
+  /** `video/speech.json`: the text each scene's voice was given. */
+  speech?: SpeechRecord;
 }
 
 function intersects(a: Rect, b: Rect, tolerance = 2): boolean {
@@ -177,6 +181,70 @@ export function timingChecks(timeline: Timeline): QcCheck[] {
   return checks;
 }
 
+/**
+ * Checks on what the voice was given. Voices for Korean, Japanese, and Chinese misread Latin
+ * acronyms, and a voice for one language reads another badly; neither shows in the frames.
+ */
+export function speechChecks(speech: SpeechRecord | undefined): QcCheck[] {
+  if (!speech?.narrated)
+    return [
+      { id: 'speech-acronyms', status: 'pass', message: 'No narration; nothing is spoken.' },
+      { id: 'voice-language', status: 'pass', message: 'No narration; no voice to check.' },
+    ];
+  const name = LANGUAGE_NAME[speech.language];
+  const checks: QcCheck[] = [];
+  if (speech.language === 'en') {
+    checks.push({
+      id: 'speech-acronyms',
+      status: 'pass',
+      message: 'English voices spell acronyms themselves.',
+    });
+  } else {
+    const found = speech.scenes
+      .map((s) => ({ id: s.id, tokens: unspokenAcronyms(s.spoken) }))
+      .filter((s) => s.tokens.length);
+    checks.push(
+      found.length
+        ? {
+            id: 'speech-acronyms',
+            status: 'warn',
+            message: `The ${name} voice is given Latin acronyms it may misread: ${found
+              .map((s) => `${s.tokens.map((t) => `"${t}"`).join(', ')} in scene ${s.id}`)
+              .join(
+                '; ',
+              )}. Write the spoken form in the scene's \`say\`, or add them to video.narration.pronunciations.`,
+          }
+        : {
+            id: 'speech-acronyms',
+            status: 'pass',
+            message: `Every acronym reaches the ${name} voice spelled out.`,
+          },
+    );
+  }
+  const voice = speech.voice;
+  const speaks = localeLanguage(voice?.locale);
+  if (!voice?.locale || !speaks)
+    checks.push({
+      id: 'voice-language',
+      status: 'pass',
+      message: `Voice language not checked: ${voice ? `${voice.provider} voices are multilingual` : 'no voice'}.`,
+    });
+  else if (speaks !== speech.language) {
+    const example = suggestedVoice(voice.provider, speech.language);
+    checks.push({
+      id: 'voice-language',
+      status: 'warn',
+      message: `The voice ${voice.name} speaks ${voice.locale}, but the narration is ${name}. Choose a ${name} voice with --voice${example ? ` (for example ${example})` : ''} or video.narration.voice.`,
+    });
+  } else
+    checks.push({
+      id: 'voice-language',
+      status: 'pass',
+      message: `The voice ${voice.name} (${voice.locale}) speaks ${name}.`,
+    });
+  return checks;
+}
+
 export async function runQc(input: QcInput): Promise<QcReport> {
   const { spec, media, video } = input;
   const checks: QcCheck[] = [];
@@ -298,7 +366,11 @@ export async function runQc(input: QcInput): Promise<QcReport> {
       : { id: 'black-frames', status: 'pass', message: 'No black frames.' },
   );
 
-  checks.push(...layoutChecks(input.timeline, input.layouts), ...timingChecks(input.timeline));
+  checks.push(
+    ...layoutChecks(input.timeline, input.layouts),
+    ...timingChecks(input.timeline),
+    ...speechChecks(input.speech),
+  );
   const status: QcStatus = checks.some((c) => c.status === 'fail')
     ? 'fail'
     : checks.some((c) => c.status === 'warn')

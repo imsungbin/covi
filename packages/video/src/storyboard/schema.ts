@@ -1,3 +1,4 @@
+import { LanguageSchema } from '@covi/core';
 import { z } from 'zod';
 
 /**
@@ -187,7 +188,9 @@ export const SceneSchema = z.strictObject({
     .string()
     .max(600)
     .optional()
-    .describe('Spoken form when it differs from the caption text (e.g. identifiers).'),
+    .describe(
+      'Spoken form when it differs from the caption text: identifiers, paths, and names a voice would misread. Covi still spells out acronyms and applies video.narration.pronunciations to it before synthesis.',
+    ),
   visual: VisualSchema,
   expression: z.enum(EXPRESSION_VALUES).optional(),
   minSeconds: z.number().min(1).max(30).optional(),
@@ -198,6 +201,10 @@ export type Scene = z.output<typeof SceneSchema>;
 
 export const StoryboardSchema = z.strictObject({
   schemaVersion: z.literal(1).default(1),
+  /** The language of the narration and on-screen text. Absent: detected from the narration. */
+  language: LanguageSchema.optional().describe(
+    'Language of the narration and on-screen text: en, ko, ja, or zh (Simplified Chinese). Omit it to let Covi detect the language from the narration.',
+  ),
   title: z.string().min(1),
   template: z.string().min(1),
   /** True for Covi's heuristic draft; an agent or model sets false after rewriting it. */

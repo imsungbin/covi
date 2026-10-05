@@ -143,6 +143,8 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
           provider: session.provider,
           cacheDir: session.cacheDir,
           logger,
+          language: session.languageSettings,
+          pronunciations: config.video.narration.pronunciations,
         }),
       );
       applyVideoResult(session, result, produced);

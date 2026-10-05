@@ -5,6 +5,8 @@ import {
   type Demonstration,
   type Explanation,
   exists,
+  LANGUAGE_NAME,
+  type Language,
   type Logger,
   type ModelProvider,
   parseOrThrow,
@@ -15,6 +17,12 @@ import {
 } from '@covi/core';
 import { toSrt, toVtt } from './captions.ts';
 import { AssetCollector, writeComposition } from './composition/build.ts';
+import {
+  type Pronunciations,
+  resolveSpeechLanguage,
+  type SpeechRecord,
+  speakScenes,
+} from './narration/speech.ts';
 import { chooseTts, synthesizeTake, type Take } from './narration/tts.ts';
 import {
   mixTakes,
@@ -81,6 +89,13 @@ export interface ProduceVideoInput {
   /** Stop after writing storyboard.json so an agent can refine it. */
   draftOnly?: boolean;
   workers?: number;
+  /**
+   * The language settings that apply to speech: `flag` from --language (or COVI_LANGUAGE), and
+   * `configured` from configuration when it names a language rather than `auto`.
+   */
+  language?: { flag?: Language; configured?: Language };
+  /** video.narration.pronunciations: how the voice should say particular words. */
+  pronunciations?: Pronunciations;
 }
 
 export interface ProduceVideoResult {
@@ -91,7 +106,15 @@ export interface ProduceVideoResult {
   contactSheet?: string;
   duration?: number;
   qc?: QcReport;
-  narration: { enabled: boolean; provider?: string; voice?: string; reason: string };
+  narration: {
+    enabled: boolean;
+    provider?: string;
+    voice?: string;
+    reason: string;
+    /** The language the narration is spoken in, and why. */
+    language?: Language;
+    languageSource?: string;
+  };
   notes: string[];
   renderMs?: number;
 }
@@ -181,13 +204,33 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
 
   const media = await Media.locate();
 
-  // 2. Narration-first timing: synthesize and measure each take.
-  const tts = await chooseTts(spec.narration);
+  // 2. Narration-first timing: synthesize and measure each take. The voice reads the scene's
+  // spoken form, normalized for its language (acronyms spelled out, pronunciations applied);
+  // captions keep the narration as written.
+  const said = storyboard.scenes.map((s) => (s.say ?? s.narration).trim());
+  let speechLanguage = resolveSpeechLanguage({
+    flag: input.language?.flag,
+    storyboard: storyboard.language,
+    text: said,
+    configured: input.language?.configured,
+  });
+  const tts = await chooseTts(spec.narration, process.env, speechLanguage.language);
+  // A voice someone chose can name the language when nothing else does; Covi's own pick cannot.
+  if (speechLanguage.fallback && spec.narration.voice && tts.provider?.locale)
+    speechLanguage = resolveSpeechLanguage({ text: said, voiceLocale: tts.provider.locale });
+  const { language } = speechLanguage;
+  const spoken = speakScenes(storyboard.scenes, {
+    language,
+    pronunciations: input.pronunciations,
+    redact: (text) => run.redactor.redact(text),
+  });
   const narration: ProduceVideoResult['narration'] = {
     enabled: Boolean(tts.provider),
     provider: tts.provider?.id,
     voice: tts.provider?.voice,
     reason: tts.reason,
+    language,
+    languageSource: speechLanguage.source,
   };
   if (spec.narration.enabled && !tts.provider)
     run.warn(`Narration requested but unavailable: ${tts.reason}. Rendering with captions only.`);
@@ -195,13 +238,15 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   const synthesizeAll = async (tempo: number) => {
     takes.clear();
     if (!tts.provider) return;
-    logger.step(`Narrating with ${tts.provider.id} (${tts.provider.voice})`);
+    logger.step(
+      `Narrating in ${LANGUAGE_NAME[language]} with ${tts.provider.id} (${tts.provider.voice})`,
+    );
     try {
-      for (const scene of storyboard.scenes) {
-        const text = (scene.say ?? scene.narration).trim();
+      for (const scene of spoken) {
+        const text = scene.spoken.trim();
         if (!text) continue;
         takes.set(
-          scene.id!,
+          scene.id,
           await synthesizeTake(tts.provider, text, {
             rate: spec.narration.rate,
             cacheDir: input.cacheDir,
@@ -228,6 +273,17 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   }
   notes.push(...fit.notes);
   for (const n of fit.notes) logger.info(n);
+  const speechRecord: SpeechRecord = {
+    schemaVersion: 1,
+    narrated: takes.size > 0,
+    language,
+    source: speechLanguage.source,
+    voice: tts.provider
+      ? { provider: tts.provider.id, name: tts.provider.voice, locale: tts.provider.locale }
+      : undefined,
+    scenes: spoken,
+  };
+  await run.writeJson('video/speech.json', speechRecord, 'narration');
 
   // 3. Audio track and the narrator's mouth movement.
   const frames = Math.round(fit.layout.duration * spec.fps);
@@ -308,6 +364,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
     layouts: rendered.layouts,
     narrated: Boolean(audio),
     media,
+    speech: await run.readJson<SpeechRecord>('video/speech.json'),
   });
   await run.writeJson('video/qc.json', qc, 'qc');
   for (const check of qc.checks.filter((c) => c.status !== 'pass'))

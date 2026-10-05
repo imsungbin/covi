@@ -1,0 +1,125 @@
+# Covi for GitLab CI: reviews merge requests, adds findings to the Code Quality widget, uploads
+# reports and the review video as artifacts, and (with a token) posts or updates one MR note.
+#
+# Include it with inputs, for example:
+#   include:
+#     - project: 'your-org/covi'
+#       ref: v1
+#       file: '/integrations/gitlab-ci/covi.yml'
+#       inputs:
+#         covi-project: your-org/covi
+#         covi-ref: v1
+#         fail-on: high
+#
+# Inputs that mirror Covi settings default to empty: Covi then uses .covi/config.yml from the
+# merge request's base revision, and its own defaults after that.
+spec:
+  inputs:
+    stage:
+      default: test
+      description: Pipeline stage for the covi-review job.
+    image:
+      default: mcr.microsoft.com/playwright:v1.63.0-noble
+      description: Image with Node.js 22.18+, bash, and Chromium. Keep its version equal to Covi's Playwright version.
+    covi-project:
+      default: your-org/covi
+      description: Project on this GitLab instance that holds Covi (the one this file is included from). Cloned with the job token.
+    covi-ref:
+      default: main
+      description: Branch, tag, or commit of Covi to install. Pin it to the ref you include.
+    covi-package:
+      default: ''
+      description: Install Covi from this npm package spec or tarball URL instead (a package you publish and control).
+    fail-on:
+      default: ''
+      description: Fail the job on confirmed or likely findings at or above this severity (none, low, medium, high).
+    video:
+      default: ''
+      description: Render a review video only when the change is worth seeing (auto), always, or never.
+    video-mode:
+      default: ''
+      description: short (9:16, about 30 s), standard (16:9, 60-120 s), or custom.
+    duration:
+      default: ''
+      description: Target video length, for example 30s, or auto.
+    narration:
+      default: ''
+      description: true or false.
+    comment:
+      default: ''
+      description: true or false. Posting the MR note needs COVI_GITLAB_TOKEN (a project access token with api scope).
+    provider:
+      default: ''
+      description: Reasoning provider (auto, heuristic, anthropic, command). auto uses ANTHROPIC_API_KEY when it is set.
+    expire-in:
+      default: 2 weeks
+      description: How long to keep the run artifacts.
+---
+covi-review:
+  stage: "$[[ inputs.stage ]]"
+  image: "$[[ inputs.image ]]"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_DEPTH: "0"
+    COVI_PROJECT: "$[[ inputs.covi-project ]]"
+    COVI_REF: "$[[ inputs.covi-ref ]]"
+    COVI_PACKAGE: "$[[ inputs.covi-package ]]"
+    COVI_INPUT_FAIL_ON: "$[[ inputs.fail-on ]]"
+    COVI_INPUT_VIDEO: "$[[ inputs.video ]]"
+    COVI_INPUT_VIDEO_MODE: "$[[ inputs.video-mode ]]"
+    COVI_INPUT_DURATION: "$[[ inputs.duration ]]"
+    COVI_INPUT_NARRATION: "$[[ inputs.narration ]]"
+    COVI_INPUT_COMMENT: "$[[ inputs.comment ]]"
+    COVI_INPUT_PROVIDER: "$[[ inputs.provider ]]"
+  before_script:
+    - |
+      missing=""
+      command -v git >/dev/null || missing="$missing git"
+      if [ "$COVI_INPUT_VIDEO" != "never" ]; then
+        command -v ffmpeg >/dev/null || missing="$missing ffmpeg"
+        command -v espeak-ng >/dev/null || missing="$missing espeak-ng"
+      fi
+      if [ -n "$missing" ]; then
+        # shellcheck disable=SC2086 # $missing is a list of package names
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends $missing >/dev/null
+      fi
+    - |
+      if [ -n "$COVI_PACKAGE" ]; then
+        npm install --global --no-audit --no-fund "$COVI_PACKAGE"
+        export COVI_BIN=covi
+      else
+        # Covi's own source at a pinned ref, from this instance, with the job's token.
+        git init -q /opt/covi
+        git -C /opt/covi fetch -q --depth 1 \
+          "${CI_SERVER_PROTOCOL}://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${COVI_PROJECT}.git" \
+          "$COVI_REF"
+        git -C /opt/covi checkout -q FETCH_HEAD
+        (cd /opt/covi && npm ci --no-audit --no-fund)
+        export COVI_BIN=/opt/covi/bin/covi.mjs COVI_USE_DIST=1
+      fi
+    # The Chromium build Covi's Playwright expects (already in the image when the versions match).
+    - '"$COVI_BIN" doctor --install-browser'
+  script:
+    - |
+      # Only inputs that were set become flags, so the repository's configuration keeps precedence.
+      args=(ci --platform gitlab --out "$CI_PROJECT_DIR/.covi-run")
+      if [ -n "$COVI_INPUT_FAIL_ON" ]; then args+=(--fail-on "$COVI_INPUT_FAIL_ON"); fi
+      if [ -n "$COVI_INPUT_VIDEO" ]; then args+=(--video "$COVI_INPUT_VIDEO"); fi
+      if [ -n "$COVI_INPUT_VIDEO_MODE" ]; then args+=(--mode "$COVI_INPUT_VIDEO_MODE"); fi
+      if [ -n "$COVI_INPUT_DURATION" ]; then args+=(--duration "$COVI_INPUT_DURATION"); fi
+      if [ "$COVI_INPUT_NARRATION" = "true" ]; then args+=(--narration); fi
+      if [ "$COVI_INPUT_NARRATION" = "false" ]; then args+=(--no-narration); fi
+      if [ "$COVI_INPUT_COMMENT" = "true" ]; then args+=(--comment); fi
+      if [ "$COVI_INPUT_COMMENT" = "false" ]; then args+=(--no-comment); fi
+      if [ -n "$COVI_INPUT_PROVIDER" ]; then args+=(--provider "$COVI_INPUT_PROVIDER"); fi
+      "$COVI_BIN" "${args[@]}"
+  artifacts:
+    when: always
+    expire_in: "$[[ inputs.expire-in ]]"
+    expose_as: Covi review
+    paths:
+      - .covi-run/
+    reports:
+      codequality: .covi-run/reports/gl-code-quality-report.json
+      dotenv: .covi-run/reports/covi.env

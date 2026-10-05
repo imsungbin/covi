@@ -1,0 +1,13 @@
+{
+  "name": "@covi/platforms",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Thin adapters that map GitHub pull requests and GitLab merge requests onto Covi's code-change model and publish results back.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@covi/core": "*"
+  }
+}

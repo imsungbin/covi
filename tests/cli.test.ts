@@ -1,0 +1,324 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
+import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
+import { covi } from './helpers/cli.ts';
+import { createRepo } from './helpers/repo.ts';
+
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+const examples = await listExamples();
+async function example(name: string): Promise<string> {
+  const dir = await materializeExample(examples.find((e) => e.name === name)!);
+  dirs.push(dir);
+  return dir;
+}
+
+describe('covi CLI', () => {
+  it('prints help and version', () => {
+    const help = covi(['--help']);
+    expect(help.code).toBe(0);
+    for (const command of [
+      'analyze',
+      'explain',
+      'review',
+      'demo',
+      'video',
+      'summarize',
+      'report',
+      'render',
+      'ci',
+      'publish',
+    ])
+      expect(help.stdout).toContain(command);
+    expect(covi(['--version']).stdout.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('uses documented exit codes for usage and environment errors', () => {
+    expect(covi(['review', '--repo', '']).code).toBe(2);
+    expect(covi(['review', '--frobnicate']).code).toBe(2);
+    const outside = mkdtempSync(join(tmpdir(), 'covi-norepo-'));
+    dirs.push(outside);
+    const result = covi(['review', '--repo', outside, '--json']);
+    expect(result.code).toBe(3);
+    expect(result.json()).toMatchObject({ ok: false, exitCode: 3 });
+  });
+
+  it('reports "no changes" as success', () => {
+    const repo = createRepo({ 'a.txt': 'x\n' });
+    dirs.push(repo.root);
+    const result = covi(['review', '--repo', repo.root, '--json']);
+    expect(result.code).toBe(0);
+    expect(String(result.json().message)).toMatch(/No changes/);
+  });
+
+  it('reviews a change and returns a stable JSON result with artifacts', async () => {
+    const dir = await example('refactor-retry-helper');
+    const result = covi(['review', '--repo', dir, '--json']);
+    expect(result.code).toBe(0);
+    const json = result.json() as {
+      verdict: string;
+      findings: { total: number };
+      artifacts: Record<string, string>;
+      runDir: string;
+    };
+    expect(json.verdict).toBe('looks-good');
+    expect(json.findings.total).toBe(0);
+    for (const key of ['review', 'explanation', 'findings', 'summary', 'context', 'manifest'])
+      expect(existsSync(json.artifacts[key]!)).toBe(true);
+    const manifest = JSON.parse(readFileSync(join(json.runDir, 'run.json'), 'utf8')) as {
+      outcome: { status: string };
+      stages: Array<{ name: string }>;
+      config: { provenance: Record<string, string> };
+    };
+    expect(manifest.outcome.status).toBe('success');
+    expect(manifest.stages.map((s) => s.name)).toEqual(
+      expect.arrayContaining(['understand', 'rules']),
+    );
+    expect(manifest.config.provenance['video.mode']).toBe('global');
+  });
+
+  it('fails the review gate with exit code 1', async () => {
+    const dir = await example('visual-pricing-cards');
+    expect(covi(['review', '--repo', dir, '--fail-on', 'medium', '--json']).code).toBe(1);
+    expect(covi(['review', '--repo', dir, '--fail-on', 'high', '--json']).code).toBe(0);
+  });
+
+  it('supports the agent loop: analyze, write explanation and findings, report', async () => {
+    const dir = await example('api-users-pagination');
+    const analyzed = covi(['analyze', '--repo', dir, '--json']).json() as {
+      runId: string;
+      runDir: string;
+      artifacts: Record<string, string>;
+      data: { ruleFindings: Array<{ id: string }> };
+    };
+    const brief = readFileSync(analyzed.artifacts.brief!, 'utf8');
+    expect(brief).toContain('## What Covi determined');
+    expect(brief).toContain('## Diff (prioritized)');
+    expect(brief).toContain('covi report --run');
+
+    const ruleIds = analyzed.data.ruleFindings.map((f) => f.id);
+    writeFileSync(
+      join(analyzed.runDir, 'explanation.json'),
+      JSON.stringify({
+        depth: 'standard',
+        headline: 'Paginate GET /api/users',
+        summary:
+          'The users endpoint now returns a page object with a cursor instead of the full array.',
+        intent: {
+          statement: 'Large teams made the full list slow.',
+          confidence: 'medium',
+          evidence: ['commit message'],
+        },
+      }),
+    );
+    writeFileSync(
+      join(analyzed.runDir, 'findings.json'),
+      JSON.stringify({
+        findings: [
+          {
+            title: 'GET /api/users changes from an array to an object',
+            certainty: 'confirmed',
+            severity: 'high',
+            category: 'api-compatibility',
+            location: { path: 'app.js', line: 24 },
+            evidence: 'res.end(JSON.stringify(pageOfUsers(cursor, limit)))',
+            explanation: 'Existing clients iterate the array.',
+          },
+        ],
+        dismissed: ruleIds
+          .filter((id) => id.includes('env-var'))
+          .map((id) => ({ id, reason: 'Documented in the deployment repo.' })),
+        checked: ['response contract'],
+      }),
+    );
+    const reported = covi(['report', '--repo', dir, '--run', analyzed.runId, '--json']);
+    expect(reported.code).toBe(0);
+    const json = reported.json() as { verdict: string; findings: { confirmed: number } };
+    expect(json.verdict).toBe('needs-changes');
+    expect(json.findings.confirmed).toBe(1);
+    const review = readFileSync(join(analyzed.runDir, 'review.md'), 'utf8');
+    expect(review).toContain('GET /api/users changes from an array to an object');
+    expect(review).toContain('Documented in the deployment repo.');
+    // The run's recorded outcome reflects the agent's review, so `covi runs` shows it.
+    const manifest = JSON.parse(readFileSync(join(analyzed.runDir, 'run.json'), 'utf8')) as {
+      outcome: { verdict: string; findings: { confirmed: number } };
+      updatedAt?: string;
+    };
+    expect(manifest.outcome).toMatchObject({
+      verdict: 'needs-changes',
+      findings: { confirmed: 1 },
+    });
+    expect(manifest.updatedAt).toBeDefined();
+    const gated = covi(['report', '--repo', dir, '--run', analyzed.runId, '--fail-on', 'high']);
+    expect(gated.code).toBe(1);
+    expect(
+      (
+        JSON.parse(readFileSync(join(analyzed.runDir, 'run.json'), 'utf8')) as {
+          outcome: { status: string };
+        }
+      ).outcome.status,
+    ).toBe('gated');
+  });
+
+  it('rejects invalid agent-authored files with field-level errors (exit 2)', async () => {
+    const dir = await example('bugfix-cli-slugify');
+    const analyzed = covi(['analyze', '--repo', dir, '--json']).json() as {
+      runId: string;
+      runDir: string;
+    };
+    writeFileSync(
+      join(analyzed.runDir, 'findings.json'),
+      JSON.stringify({
+        findings: [
+          {
+            title: 'Bad',
+            certainty: 'maybe',
+            severity: 'high',
+            category: 'correctness',
+            evidence: 'x',
+            explanation: 'y',
+          },
+        ],
+      }),
+    );
+    const result = covi(['report', '--repo', dir, '--run', analyzed.runId]);
+    expect(result.code).toBe(2);
+    expect(result.stderr).toMatch(
+      /findings\.0\.certainty: expected one of "confirmed", "likely", "risk", "question"/,
+    );
+  });
+
+  it('explains and summarizes', async () => {
+    const dir = await example('ui-comment-composer');
+    const explained = covi(['explain', '--repo', dir]);
+    expect(explained.code).toBe(0);
+    expect(explained.stdout).toContain('# Show remaining characters and block overlong comments');
+    const summary = covi(['summarize', '--repo', dir, '--format', 'text']);
+    expect(summary.stdout.trim().split('\n')).toHaveLength(1);
+  });
+
+  it('plans videos and asks only what is missing', async () => {
+    const dir = await example('ui-comment-composer');
+    const vague = covi([
+      'video',
+      '--repo',
+      dir,
+      '--dry-run',
+      '--request',
+      'make a review video',
+      '--json',
+    ]).json() as { data: { questions: Array<{ id: string }>; decision: { render: boolean } } };
+    expect(vague.data.questions.map((q) => q.id)).toEqual(['mode', 'duration']);
+    expect(vague.data.decision.render).toBe(true);
+    const specific = covi([
+      'video',
+      '--repo',
+      dir,
+      '--dry-run',
+      '--request',
+      'Make a 30-second vertical review video.',
+      '--json',
+    ]).json() as {
+      data: {
+        questions: unknown[];
+        spec: { mode: string; width: number; duration: { target: number } };
+      };
+    };
+    expect(specific.data.questions).toEqual([]);
+    expect(specific.data.spec).toMatchObject({
+      mode: 'short',
+      width: 1080,
+      duration: { target: 30 },
+    });
+  });
+
+  it('declines a video for an internal change and still produces the review', async () => {
+    const dir = await example('refactor-retry-helper');
+    const result = covi(['video', '--repo', dir, '--json']);
+    expect(result.code).toBe(0);
+    const json = result.json() as {
+      video: { rendered: boolean; reason: string };
+      artifacts: Record<string, string>;
+    };
+    expect(json.video.rendered).toBe(false);
+    expect(json.video.reason).toMatch(/Nothing user-visible changes/);
+    expect(existsSync(json.artifacts.review!)).toBe(true);
+  });
+
+  it('prints JSON schemas, templates, skills, and examples', () => {
+    const schema = covi(['schema', 'findings']).json() as {
+      type: string;
+      properties: Record<string, unknown>;
+    };
+    expect(schema.type).toBe('object');
+    expect(Object.keys(schema.properties)).toEqual(
+      expect.arrayContaining(['findings', 'dismissed', 'checked', 'notVerified']),
+    );
+    expect(covi(['schema', 'nope']).code).toBe(2);
+    expect(covi(['templates', '--json']).json()).toHaveLength(7);
+    expect(
+      (covi(['skills', '--json']).json() as unknown as Array<{ name: string }>).map((s) => s.name),
+    ).toContain('covi-review');
+    expect(covi(['examples', '--json']).json()).toHaveLength(5);
+    expect(covi(['mascot', '--expression', 'success']).stdout).toMatch(/^<svg/);
+  });
+
+  it('initializes configuration from what it detects', async () => {
+    const dir = await example('ui-comment-composer');
+    rmSync(join(dir, '.covi', 'config.yml'));
+    const result = covi(['init', '--repo', dir, '--json']).json() as {
+      created: boolean;
+      content: string;
+      detected: string[];
+    };
+    expect(result.created).toBe(true);
+    expect(result.content).toContain('static: .');
+    // Video settings stay commented out, so interactive sessions still ask about them.
+    expect(result.content).toMatch(/^# video:$/m);
+    expect(result.content).not.toMatch(/^video:/m);
+    expect(covi(['review', '--repo', dir, '--json']).code).toBe(0);
+  });
+
+  it('lists and shows runs', async () => {
+    const dir = await example('refactor-retry-helper');
+    covi(['review', '--repo', dir, '--json']);
+    const runs = covi(['runs', '--repo', dir, '--json']).json() as unknown as Array<{
+      id: string;
+      workflow: string;
+    }>;
+    expect(runs[0]!.workflow).toBe('review');
+    const show = covi(['runs', 'show', 'latest', '--repo', dir, '--json']).json() as {
+      runId: string;
+    };
+    expect(show.runId).toBe(runs[0]!.id);
+
+    // A configured output.dir is where every command looks.
+    writeFileSync(join(dir, '.covi', 'config.yml'), 'output:\n  dir: .reviews\n');
+    covi(['review', '--repo', dir, '--json']);
+    expect(existsSync(join(dir, '.reviews', 'LATEST'))).toBe(true);
+    const moved = covi(['runs', '--repo', dir, '--json']).json() as unknown as Array<{
+      id: string;
+    }>;
+    expect(moved).toHaveLength(1);
+    expect(
+      (covi(['runs', 'show', 'latest', '--repo', dir, '--json']).json() as { runId: string }).runId,
+    ).toBe(moved[0]!.id);
+  });
+
+  it('installs skills for agent clients without clobbering foreign directories', () => {
+    const dest = mkdtempSync(join(tmpdir(), 'covi-skills-'));
+    dirs.push(dest);
+    const first = covi(['skills', 'install', '--dest', dest, '--json']).json() as {
+      installed: string[];
+    };
+    expect(first.installed).toContain('covi');
+    expect(existsSync(join(dest, 'covi-review', 'references', 'checklists.md'))).toBe(true);
+    expect(covi(['skills', 'install', '--dest', dest, '--json']).code).toBe(0);
+    rmSync(join(dest, 'covi', '.covi-skill'));
+    expect(covi(['skills', 'install', '--dest', dest]).code).toBe(2);
+  });
+});

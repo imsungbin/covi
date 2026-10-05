@@ -1,0 +1,37 @@
+id: bug-fix
+name: Bug fix
+description: Problem, reproduction, fix, and the regression concern.
+use_when: The change fixes incorrect behavior (bug fixes and security fixes).
+beats:
+  - id: context
+    eyebrow: The bug
+    goal: Name what was broken and where, in one sentence.
+    visuals: [title]
+    expression: explaining
+  - id: problem
+    eyebrow: Before
+    goal: Reproduce or describe the broken behavior on the base revision.
+    visuals: [before-after, terminal, api, screenshot:before]
+    expression: thinking
+  - id: fix
+    eyebrow: The fix
+    goal: Point at the lines that fix it and say why they work.
+    visuals: [code]
+    expression: explaining
+  - id: proof
+    eyebrow: After
+    goal: Show the corrected behavior.
+    visuals: [interaction, screenshot:after]
+    expression: success
+    optional: true
+  - id: review
+    eyebrow: Worth a look
+    goal: The regression concern or the most important finding.
+    visuals: [findings, callout]
+    expression: reviewing
+  - id: summary
+    eyebrow: Summary
+    goal: The verdict and what to check before merging.
+    visuals: [summary]
+    expression: success
+short: [context, problem, fix, review, summary]

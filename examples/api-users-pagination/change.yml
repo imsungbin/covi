@@ -1,0 +1,13 @@
+title: Paginate the users endpoint
+description: An API change in a small Node service. GET /api/users now returns a page object instead of an array and reads a new USERS_PAGE_SIZE variable. Calling the endpoint at both revisions shows the response shape changed, which breaks existing clients.
+branch: feat/users-pagination
+commits:
+  - message: "feat(api): paginate GET /api/users"
+expect:
+  intent: feature
+  demonstration: high
+  video: true
+  template: api-change
+  rules: [env-var-undocumented, missing-tests]
+  demoFindings: [api-shape]
+  verdict: needs-changes

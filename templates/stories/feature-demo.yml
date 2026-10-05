@@ -1,0 +1,37 @@
+id: feature-demo
+name: Feature demo
+description: The previous workflow, the new behavior, the key interaction, and an implementation note.
+use_when: The change adds or changes user-facing behavior in a UI.
+beats:
+  - id: context
+    eyebrow: New behavior
+    goal: Say what users can do now that they could not before.
+    visuals: [title]
+    expression: explaining
+  - id: before
+    eyebrow: Before
+    goal: Show the previous workflow briefly.
+    visuals: [screenshot:before]
+    expression: thinking
+    optional: true
+  - id: interaction
+    eyebrow: See it
+    goal: Walk through the key interaction on the head revision.
+    visuals: [interaction, before-after, screenshot:after]
+    expression: success
+  - id: implementation
+    eyebrow: How it works
+    goal: The one implementation detail a reviewer should understand.
+    visuals: [code]
+    expression: explaining
+  - id: review
+    eyebrow: Worth a look
+    goal: The most important finding or edge case to check.
+    visuals: [findings, callout]
+    expression: reviewing
+  - id: summary
+    eyebrow: Summary
+    goal: The verdict and the next step.
+    visuals: [summary]
+    expression: success
+short: [context, interaction, implementation, review, summary]

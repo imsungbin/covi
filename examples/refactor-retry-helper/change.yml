@@ -1,0 +1,11 @@
+title: Extract backoff calculation from the retry loop
+description: An internal refactor in a small HTTP library. The backoff delay calculation moves into its own module with its own tests; behavior is unchanged. Nothing is user-visible, so Covi should explain and review it and decline to make a video.
+branch: refactor/retry-backoff
+commits:
+  - message: "refactor(http): extract backoff calculation from the retry loop"
+expect:
+  intent: refactor
+  demonstration: none
+  video: false
+  rules: []
+  verdict: looks-good

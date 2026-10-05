@@ -1,0 +1,32 @@
+id: api-change
+name: API change
+description: The request, the response before and after, and the compatibility question.
+use_when: The change alters HTTP routes, handlers, or response shapes.
+beats:
+  - id: context
+    eyebrow: API change
+    goal: Name the endpoint and what changed about it.
+    visuals: [title]
+    expression: explaining
+  - id: exchange
+    eyebrow: Request / response
+    goal: Show the real response before and after the change.
+    visuals: [api, code]
+    expression: explaining
+  - id: implementation
+    eyebrow: Handler
+    goal: The handler lines that produce the new behavior.
+    visuals: [code]
+    expression: explaining
+    optional: true
+  - id: review
+    eyebrow: Compatibility
+    goal: Who could break, and what to verify.
+    visuals: [findings, callout]
+    expression: warning
+  - id: summary
+    eyebrow: Summary
+    goal: The verdict.
+    visuals: [summary]
+    expression: success
+short: [context, exchange, review, summary]

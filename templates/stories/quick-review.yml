@@ -1,0 +1,32 @@
+id: quick-review
+name: Quick review
+description: A short tour of what changed and the one thing worth a reviewer's attention.
+use_when: The change has no strong visual story, or nothing more specific fits.
+beats:
+  - id: context
+    eyebrow: The change
+    goal: Say what the change does and why, in one sentence.
+    visuals: [title]
+    expression: explaining
+  - id: scope
+    eyebrow: What changed
+    goal: Show where the change lands so reviewers know its shape.
+    visuals: [change-map]
+    expression: explaining
+    optional: true
+  - id: core
+    eyebrow: The key lines
+    goal: Point at the lines that carry the change and explain what they do.
+    visuals: [code]
+    expression: explaining
+  - id: review
+    eyebrow: Worth a look
+    goal: The most important finding, or what to check if nothing stands out.
+    visuals: [findings, callout]
+    expression: reviewing
+  - id: summary
+    eyebrow: Summary
+    goal: The verdict and the next step for the reviewer.
+    visuals: [summary]
+    expression: success
+short: [context, core, review, summary]

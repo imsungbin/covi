@@ -1,0 +1,38 @@
+id: before-after
+name: Before and after
+description: Visual changes judged by looking at them, including responsive and accessibility states.
+use_when: The change is mostly styles or markup (visual updates, layout, theming).
+beats:
+  - id: context
+    eyebrow: Visual change
+    goal: Name the visual change in one sentence.
+    visuals: [title]
+    expression: explaining
+  - id: compare
+    eyebrow: Before / after
+    goal: Show both versions with the changed region emphasized.
+    visuals: [before-after, screenshot:after]
+    expression: reviewing
+  - id: detail
+    eyebrow: Up close
+    goal: Zoom into the region that changed most, or another viewport.
+    visuals: [screenshot:after, interaction]
+    expression: explaining
+    optional: true
+  - id: styles
+    eyebrow: The styles
+    goal: The rules responsible for the change.
+    visuals: [code]
+    expression: explaining
+    optional: true
+  - id: review
+    eyebrow: Worth a look
+    goal: Accessibility, responsive, or consistency concerns.
+    visuals: [findings, callout]
+    expression: reviewing
+  - id: summary
+    eyebrow: Summary
+    goal: The verdict.
+    visuals: [summary]
+    expression: success
+short: [context, compare, review, summary]

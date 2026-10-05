@@ -1,0 +1,17 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; color: #1d2433; background: #f5f7fb; }
+.pricing { max-width: 1040px; margin: 0 auto; padding: 56px 24px; text-align: center; }
+h1 { font-size: 38px; margin: 0 0 10px; }
+.intro { color: #5b6475; font-size: 18px; margin: 0 0 40px; }
+.plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; align-items: stretch; }
+.plan { position: relative; background: #ffffff; border: 1px solid #e3e7ef; border-radius: 16px; padding: 32px 26px 26px; text-align: left; box-shadow: 0 12px 32px rgba(29, 36, 51, 0.08); }
+.plan--popular { border: 2px solid #4f46e5; transform: translateY(-8px); box-shadow: 0 18px 40px rgba(79, 70, 229, 0.18); }
+.badge { position: absolute; top: -13px; left: 26px; background: #4f46e5; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 5px 10px; border-radius: 999px; }
+.plan h2 { font-size: 20px; margin: 0 0 8px; }
+.price { font-size: 38px; font-weight: 800; margin: 0 0 16px; letter-spacing: -0.02em; }
+.price span { font-size: 15px; font-weight: 500; color: #5b6475; }
+.plan ul { padding-left: 18px; color: #3d4556; line-height: 1.9; min-height: 96px; }
+.button { display: block; text-align: center; background: #eef0f6; color: #1d2433; text-decoration: none; padding: 13px; border-radius: 10px; font-weight: 700; }
+.button--primary { background: #4f46e5; color: #fff; }
+.button:focus { outline: none; }
+@media (max-width: 720px) { .plans { grid-template-columns: 1fr; gap: 28px; } .plan--popular { transform: none; } }

@@ -1,0 +1,7 @@
+{
+  "name": "tiny-slugify",
+  "version": "1.3.0",
+  "type": "module",
+  "bin": { "slugify": "bin/slugify.js" },
+  "scripts": { "test": "node --test" }
+}

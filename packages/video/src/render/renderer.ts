@@ -1,0 +1,315 @@
+import { spawn } from 'node:child_process';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { availableParallelism } from 'node:os';
+import { basename, dirname, join } from 'node:path';
+import { serveStatic } from '@covi/core';
+import { type Browser, chromium, type Page } from 'playwright';
+import type { CompositionApi, LayoutReport, Timeline } from '../timeline/types.ts';
+import type { Media } from './ffmpeg.ts';
+
+export interface RenderOptions {
+  /** Directory holding the composition's index.html. */
+  compositionDir: string;
+  output: string;
+  timeline: Pick<Timeline, 'fps' | 'frames' | 'width' | 'height' | 'duration' | 'scenes'>;
+  media: Media;
+  audio?: string;
+  workers?: number;
+  /** Frames to sample for layout QC (defaults to a few per scene). */
+  layoutFrames?: number[];
+  /** Frames for the contact sheet (defaults to each scene's midpoint). */
+  sheetFrames?: number[];
+  posterFrame?: number;
+  onProgress?: (done: number, total: number) => void;
+}
+
+export interface RenderResult {
+  output: string;
+  frames: number;
+  renderMs: number;
+  layouts: LayoutReport[];
+  poster?: string;
+  contactSheet?: string;
+  pageErrors: string[];
+}
+
+/** In the page, `globalThis` is the window and exposes the composition API. */
+type CompositionWindow = { covi?: CompositionApi };
+
+const LAUNCH_ARGS = [
+  '--force-device-scale-factor=1',
+  '--hide-scrollbars',
+  '--font-render-hinting=none',
+  '--disable-lcd-text',
+  '--mute-audio',
+];
+
+async function openPage(
+  browser: Browser,
+  url: string,
+  width: number,
+  height: number,
+  errors: string[],
+): Promise<Page> {
+  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto(url, { waitUntil: 'load' });
+  await page.waitForFunction(
+    () => typeof (globalThis as CompositionWindow).covi !== 'undefined',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(() => (globalThis as CompositionWindow).covi!.ready);
+  return page;
+}
+
+function encodeSegment(media: Media, fps: number, out: string, encoderArgs: string[]) {
+  const child = spawn(
+    media.ffmpegPath,
+    [
+      ...['-hide_banner', '-loglevel', 'error', '-y'],
+      ...['-f', 'image2pipe', '-vcodec', 'mjpeg', '-framerate', String(fps), '-i', '-'],
+      // Screenshots are full-range JPEG; convert to the broadcast range players expect.
+      ...['-vf', 'scale=in_range=full:out_range=tv,format=yuv420p'],
+      ...encoderArgs,
+      ...[
+        '-color_range',
+        'tv',
+        '-colorspace',
+        'bt709',
+        '-color_primaries',
+        'bt709',
+        '-color_trc',
+        'bt709',
+      ],
+      ...['-r', String(fps), '-an', out],
+    ],
+    { stdio: ['pipe', 'ignore', 'pipe'] },
+  );
+  let stderr = '';
+  child.stderr.on('data', (d: Buffer) => {
+    stderr += d.toString();
+  });
+  const done = new Promise<void>((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', (code) =>
+      code === 0
+        ? resolve()
+        : reject(new Error(`ffmpeg segment encode failed (${code}): ${stderr.trim().slice(-400)}`)),
+    );
+  });
+  // One error listener for the pipe's lifetime (not one per frame).
+  let pipeError: Error | undefined;
+  child.stdin.on('error', (error) => {
+    pipeError = error;
+  });
+  const write = (buffer: Buffer) =>
+    new Promise<void>((resolve, reject) => {
+      if (pipeError) {
+        reject(pipeError);
+        return;
+      }
+      if (child.stdin.write(buffer)) resolve();
+      else child.stdin.once('drain', resolve);
+    });
+  return { write, end: () => child.stdin.end(), done, kill: () => child.kill('SIGKILL') };
+}
+
+/** Renders a composition to H.264 MP4 by seeking every frame in headless Chromium. */
+export async function renderComposition(options: RenderOptions): Promise<RenderResult> {
+  const started = Date.now();
+  const { timeline, media } = options;
+  const total = timeline.frames;
+  const workDir = join(dirname(options.output), `.render-${basename(options.output)}`);
+  await rm(workDir, { recursive: true, force: true });
+  await mkdir(workDir, { recursive: true });
+
+  const workers = Math.max(
+    1,
+    Math.min(
+      options.workers ?? Math.min(4, Math.max(1, Math.floor(availableParallelism() / 2))),
+      Math.ceil(total / 45),
+    ),
+  );
+  const ranges = Array.from({ length: workers }, (_, i) => {
+    const from = Math.floor((total * i) / workers);
+    return { from, to: Math.floor((total * (i + 1)) / workers) };
+  });
+  const midpoints = timeline.scenes.map((s) =>
+    Math.min(total - 1, Math.round(((s.start + s.end) / 2) * timeline.fps)),
+  );
+  const layoutFrames = new Set(
+    options.layoutFrames ??
+      timeline.scenes.flatMap((s) =>
+        [0.35, 0.7].map((k) =>
+          Math.min(total - 1, Math.round((s.start + (s.end - s.start) * k) * timeline.fps)),
+        ),
+      ),
+  );
+  const sheetFrames = new Set(options.sheetFrames ?? midpoints);
+  const posterFrame =
+    options.posterFrame ??
+    Math.min(total - 1, Math.round(Math.min(1.6, timeline.duration / 3) * timeline.fps));
+
+  const server = await serveStatic(options.compositionDir);
+  const browser = await chromium.launch({ args: LAUNCH_ARGS });
+  const encoderArgs = await media.videoEncoderArgs();
+  const pageErrors: string[] = [];
+  const layouts: LayoutReport[] = [];
+  const sheet = new Map<number, Buffer>();
+  let poster: Buffer | undefined;
+  let done = 0;
+  const encoders: Array<ReturnType<typeof encodeSegment>> = [];
+
+  try {
+    await Promise.all(
+      ranges.map(async (range, i) => {
+        const page = await openPage(
+          browser,
+          `${server.url}/index.html`,
+          timeline.width,
+          timeline.height,
+          pageErrors,
+        );
+        const encoder = encodeSegment(
+          media,
+          timeline.fps,
+          join(workDir, `segment-${String(i).padStart(3, '0')}.mp4`),
+          encoderArgs,
+        );
+        encoders.push(encoder);
+        for (let frame = range.from; frame < range.to; frame++) {
+          await page.evaluate((f) => (globalThis as CompositionWindow).covi!.seek(f), frame);
+          const jpeg = await page.screenshot({
+            type: 'jpeg',
+            quality: 94,
+            animations: 'disabled',
+            caret: 'hide',
+          });
+          await encoder.write(jpeg);
+          if (layoutFrames.has(frame))
+            layouts.push(
+              await page.evaluate(() => (globalThis as CompositionWindow).covi!.layout()),
+            );
+          if (sheetFrames.has(frame)) sheet.set(frame, jpeg);
+          if (frame === posterFrame) poster = await page.screenshot({ type: 'png' });
+          done++;
+          if (done % 15 === 0 || done === total) options.onProgress?.(done, total);
+        }
+        encoder.end();
+        await encoder.done;
+        await page.close();
+      }),
+    );
+    if (pageErrors.length) throw new Error(`Composition error: ${pageErrors[0]}`);
+
+    const list = ranges
+      .map(
+        (_, i) =>
+          `file '${join(workDir, `segment-${String(i).padStart(3, '0')}.mp4`).replace(/'/g, "'\\''")}'`,
+      )
+      .join('\n');
+    await writeFile(join(workDir, 'segments.txt'), `${list}\n`);
+    const silent = join(workDir, 'video.mp4');
+    await media.ffmpeg([
+      '-f',
+      'concat',
+      '-safe',
+      '0',
+      '-i',
+      join(workDir, 'segments.txt'),
+      '-c',
+      'copy',
+      silent,
+    ]);
+    if (options.audio) {
+      await media.ffmpeg([
+        '-i',
+        silent,
+        '-i',
+        options.audio,
+        '-map',
+        '0:v:0',
+        '-map',
+        '1:a:0',
+        '-c:v',
+        'copy',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '160k',
+        '-ar',
+        '48000',
+        '-t',
+        timeline.duration.toFixed(3),
+        '-movflags',
+        '+faststart',
+        options.output,
+      ]);
+    } else {
+      await media.ffmpeg(['-i', silent, '-c', 'copy', '-movflags', '+faststart', options.output]);
+    }
+
+    const result: RenderResult = {
+      output: options.output,
+      frames: total,
+      renderMs: Date.now() - started,
+      layouts,
+      pageErrors,
+    };
+    if (poster) {
+      result.poster = join(dirname(options.output), 'poster.png');
+      await writeFile(result.poster, poster);
+    }
+    if (sheet.size)
+      result.contactSheet = await contactSheet(
+        media,
+        [...sheet.entries()].sort((a, b) => a[0] - b[0]).map(([, b]) => b),
+        join(dirname(options.output), 'contact-sheet.jpg'),
+        workDir,
+        timeline.width,
+        timeline.height,
+      );
+    return result;
+  } catch (error) {
+    for (const e of encoders) e.kill();
+    throw error;
+  } finally {
+    await browser.close().catch(() => undefined);
+    await server.close();
+    await rm(workDir, { recursive: true, force: true });
+  }
+}
+
+/** Tiles scene midpoints into one image so a person or agent can review the whole video at a glance. */
+async function contactSheet(
+  media: Media,
+  frames: Buffer[],
+  out: string,
+  workDir: string,
+  width: number,
+  height: number,
+): Promise<string> {
+  const dir = join(workDir, 'sheet');
+  await mkdir(dir, { recursive: true });
+  await Promise.all(
+    frames.map((b, i) => writeFile(join(dir, `f-${String(i).padStart(3, '0')}.jpg`), b)),
+  );
+  const cols = Math.min(frames.length, height > width ? 6 : 3);
+  const rows = Math.ceil(frames.length / cols);
+  const tileWidth = height > width ? 320 : 560;
+  await media.ffmpeg([
+    '-framerate',
+    '1',
+    '-i',
+    join(dir, 'f-%03d.jpg'),
+    '-vf',
+    `scale=${tileWidth}:-2,tile=${cols}x${rows}:padding=12:margin=12:color=0xF8F9FB`,
+    '-frames:v',
+    '1',
+    '-q:v',
+    '3',
+    out,
+  ]);
+  return out;
+}

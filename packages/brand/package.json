@@ -1,0 +1,10 @@
+{
+  "name": "@covi/brand",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Covi's visual identity: design tokens and the SVG fox mascot. Isomorphic and dependency-free.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

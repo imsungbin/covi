@@ -1,0 +1,12 @@
+title: Fix slugify for accented characters and repeated separators
+description: A bug fix in a small command-line tool. Accented letters were dropped and separators doubled up ("Héllo  Wörld!" became "h-llo--w-rld-"). Covi should demonstrate the command before and after, and find nothing blocking because the fix comes with a regression test.
+branch: fix/slugify-accents
+commits:
+  - message: "fix(slugify): keep accented letters and collapse repeated separators"
+expect:
+  intent: bug-fix
+  demonstration: high
+  video: true
+  template: bug-fix
+  rules: []
+  verdict: looks-good

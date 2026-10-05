@@ -1,0 +1,11 @@
+{
+  "name": "covi",
+  "owner": { "name": "Covi" },
+  "plugins": [
+    {
+      "name": "covi",
+      "source": "./",
+      "description": "Covi's review methodology as skills: understand, explain, demonstrate, review, visual review, video, summarize."
+    }
+  ]
+}

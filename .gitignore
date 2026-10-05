@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Covi run artifacts and caches (configuration in .covi/config.yml stays tracked)
+.covi/runs/
+.covi/cache/

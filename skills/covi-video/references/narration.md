@@ -30,6 +30,7 @@ Captions show `narration`; speech uses `say` when present. Use `say` for identif
 - Write the narration in that language and set the storyboard's `language` (`ko`, `ja`, or `zh`). Without it, Covi detects the language from the narration's script.
 - Voices for these languages misread Latin acronyms: a Korean voice says "CLI" as 클리. Before synthesis Covi spells out all-caps acronyms of two to six letters (CLI → 씨엘아이, シーエルアイ, C L I) and the common ones said as words (JSON → 제이슨, ジェイソン). Write particles as you would for the spoken form: `CLI를`, `API는`, `JSON을`.
 - Covi leaves code spans and paths alone, and it cannot guess lowercase names (`c2`, `kubectl`) or long all-caps words. Put their spoken form in `say`, or ask the user to add `video.narration.pronunciations` when the name recurs.
+- Japanese voices guess each kanji's reading from context and sometimes guess wrong: Kyoko reads 空のとき ("when it is empty") as そらのとき ("when the sky"). When a short word's kanji has several readings, write it in kana in `say` (からのとき).
 - After rendering, read `video/speech.json` (the text each scene's voice was given) and the `speech-acronyms` and `voice-language` checks in `video/qc.json`.
 
 ## Budget

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { LANGUAGES, type Language, type LanguageSetting } from '../i18n/language.ts';
+import { LanguageSettingSchema } from '../i18n/schema.ts';
 import { FINDING_CATEGORIES } from '../model/finding.ts';
 import { parseDuration } from '../util/duration.ts';
 
@@ -71,6 +73,63 @@ export const DemoRequestSchema = z.strictObject({
 });
 export type DemoRequest = z.output<typeof DemoRequestSchema>;
 
+const Spoken = z
+  .string()
+  .min(1)
+  .max(128)
+  .refine((v) => !/[\r\n]/.test(v), 'a spoken form is one line');
+
+/** Whether `key` occurs in `text` as a whole token (not glued to another ASCII letter or digit). */
+function containsToken(text: string, key: string): boolean {
+  const alnum = /[A-Za-z0-9]/;
+  let at = text.indexOf(key);
+  while (at !== -1) {
+    const before = text[at - 1];
+    const after = text[at + key.length];
+    const startOk = !alnum.test(key[0]!) || !before || !alnum.test(before);
+    const endOk = !alnum.test(key.at(-1)!) || !after || !alnum.test(after);
+    if (startOk && endOk) return true;
+    at = text.indexOf(key, at + 1);
+  }
+  return false;
+}
+
+/**
+ * How narration should say a word, for languages whose voices misread it: `CLI: 씨엘아이`, or per
+ * language `c2: { ko: 씨투, ja: シーツー }`. Keys match exactly and case-sensitively.
+ */
+export const PronunciationsSchema = z
+  .record(
+    z
+      .string()
+      .min(1)
+      .max(64)
+      .refine((k) => k.trim() === k && !/[\r\n]/.test(k), 'no surrounding spaces or line breaks'),
+    z.union([
+      Spoken,
+      z.strictObject(Object.fromEntries(LANGUAGES.map((l) => [l, Spoken.optional()]))),
+    ]),
+  )
+  .superRefine((map, ctx) => {
+    const keys = Object.keys(map);
+    if (keys.length > 500) ctx.addIssue({ code: 'custom', message: 'at most 500 pronunciations' });
+    // A spoken form that contains a key would be rewritten again on the next pass.
+    for (const [key, value] of Object.entries(map)) {
+      const forms = typeof value === 'string' ? [value] : Object.values(value);
+      for (const form of forms) {
+        const loop = keys.find((k) => form && containsToken(form, k));
+        if (loop)
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message: `the spoken form "${form}" contains "${loop}", which would be rewritten again`,
+          });
+      }
+    }
+  });
+
+export type Pronunciations = Record<string, string | Partial<Record<Language, string>>>;
+
 const NarrationInput = z.union([
   z.boolean(),
   z.strictObject({
@@ -79,12 +138,18 @@ const NarrationInput = z.union([
     voice: z.string().optional(),
     /** Speech rate multiplier, 0.8–1.3. */
     rate: z.number().min(0.8).max(1.3).optional(),
+    pronunciations: PronunciationsSchema.optional().describe(
+      'How the voice says particular words, e.g. { CLI: 씨엘아이, c2: { ko: 씨투, ja: シーツー } }. Exact, case-sensitive keys; values for every language or per language (en, ko, ja, zh).',
+    ),
   }),
 ]);
 
 /** Partial, strict schema for config files and explicit inputs (typos are errors). */
 export const ConfigInputSchema = z.strictObject({
   base: z.string().optional(),
+  language: LanguageSettingSchema.optional().describe(
+    'Language Covi writes and narrates in: auto (detected from the change), en, ko, ja, or zh (Simplified Chinese).',
+  ),
   ignore: z.array(z.string()).optional(),
   intelligence: z
     .strictObject({
@@ -165,10 +230,13 @@ export interface NarrationConfig {
   provider: (typeof NARRATION_PROVIDERS)[number];
   voice?: string;
   rate: number;
+  pronunciations?: Pronunciations;
 }
 
 export interface CoviConfig {
   base?: string;
+  /** Language of what Covi writes and says; `auto` follows the change's own words. */
+  language: LanguageSetting;
   ignore: string[];
   intelligence: {
     provider: (typeof INTELLIGENCE_PROVIDERS)[number];
@@ -222,6 +290,7 @@ export interface CoviConfig {
 
 /** The global Covi defaults (lowest precedence layer). */
 export const DEFAULT_CONFIG: CoviConfig = {
+  language: 'auto',
   ignore: [],
   intelligence: { provider: 'auto', maxDiffChars: 120_000, timeout: 300 },
   review: { failOn: 'none', maxFindings: 10, focus: [], disableRules: [], runTests: false },

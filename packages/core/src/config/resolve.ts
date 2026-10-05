@@ -73,7 +73,7 @@ function mergeInto(
 
 /** Free-form maps are replaced as a whole rather than merged key by key. */
 function isRecordField(path: string): boolean {
-  return path === 'app.env';
+  return path === 'app.env' || path === 'video.narration.pronunciations';
 }
 
 function leafProvenance(
@@ -106,12 +106,13 @@ export function resolveConfig(layers: readonly ConfigLayer[]): ResolvedConfig {
 
 /** Maps COVI_* environment variables onto config keys (treated as explicit input). */
 export function configFromEnv(env: NodeJS.ProcessEnv): ParsedConfigInput {
-  const raw: Record<string, Plain> = {};
+  const raw: Record<string, unknown> = {};
   const set = (section: string, key: string, value: unknown) => {
     raw[section] ??= {};
-    raw[section]![key] = value;
+    (raw[section] as Plain)[key] = value;
   };
   const bool = (v: string) => /^(1|true|yes|on)$/i.test(v);
+  if (env.COVI_LANGUAGE) raw.language = env.COVI_LANGUAGE;
   if (env.COVI_PROVIDER) set('intelligence', 'provider', env.COVI_PROVIDER);
   if (env.COVI_MODEL) set('intelligence', 'model', env.COVI_MODEL);
   if (env.COVI_FAIL_ON) set('review', 'failOn', env.COVI_FAIL_ON);

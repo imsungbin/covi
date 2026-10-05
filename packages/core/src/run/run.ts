@@ -1,6 +1,7 @@
 import { copyFile, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { ResolvedConfig } from '../config/resolve.ts';
+import type { ResolvedLanguage } from '../i18n/language.ts';
 import type { ChangeSource, CodeChange, Revision } from '../model/change.ts';
 import type { Certainty, Verdict } from '../model/finding.ts';
 import { Redactor } from '../security/redact.ts';
@@ -98,6 +99,12 @@ export interface RunManifest {
     stats: CodeChange['stats'];
   };
   config?: { provenance: Record<string, string>; values: unknown };
+  /** The language Covi writes in, the setting it came from, and why (see `language` config). */
+  language?: {
+    value: ResolvedLanguage['language'];
+    setting: ResolvedLanguage['setting'];
+    source: string;
+  };
   options?: Record<string, unknown>;
   stages: StageRecord[];
   commands: CommandRecord[];
@@ -341,6 +348,14 @@ export class Run {
       values: this.redactor.redactDeep(resolved.config),
     };
     if (options) this.manifest.options = this.redactor.redactDeep(options);
+  }
+
+  setLanguage(resolved: ResolvedLanguage): void {
+    this.manifest.language = {
+      value: resolved.language,
+      setting: resolved.setting,
+      source: this.redactor.redact(resolved.source),
+    };
   }
 
   async finish(outcome: RunOutcome): Promise<void> {

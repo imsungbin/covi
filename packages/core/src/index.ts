@@ -41,6 +41,9 @@ export {
   type ResolveOptions,
   resolveChange,
 } from './git/resolve.ts';
+export * from './i18n/korean.ts';
+export * from './i18n/language.ts';
+export * from './i18n/schema.ts';
 export {
   analyzeWithModel,
   buildAnalysisSystemPrompt,

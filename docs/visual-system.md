@@ -154,7 +154,7 @@ The video timeline carries the whole theme (`Theme` from `packages/brand`) to th
 | Text | `'Inter Variable', Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif` |
 | Code, paths, terminals | `'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace` |
 
-Video compositions embed both variable fonts as WOFF2 files from the `@fontsource-variable/inter` and `@fontsource-variable/jetbrains-mono` packages, with `font-display: block`, so a frame never renders in a fallback font. The embedded files cover the Latin subset, and other scripts fall back to system fonts. Inter uses the `cv11` and `ss01` features. Monospace text turns ligatures off.
+Video compositions embed both variable fonts as WOFF2 files from the `@fontsource-variable/inter` and `@fontsource-variable/jetbrains-mono` packages, with `font-display: block`, so a frame never renders in a fallback font. The embedded files cover the Latin subset. Korean, Japanese, and Chinese text uses Noto Sans KR, JP, and SC (`@fontsource-variable/noto-sans-kr`, `-jp`, `-sc`), placed right after the first family of both stacks; a composition embeds only the unicode-range slices its text uses, and the video's language decides which one draws Han characters. Other scripts fall back to system fonts. Inter uses the `cv11` and `ss01` features. Monospace text turns ligatures off.
 
 Text styles:
 

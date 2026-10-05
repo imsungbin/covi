@@ -365,12 +365,18 @@ Captions are drawn into the video in their own band, which never overlaps the pr
 Captions show the `narration` text, never the `say` form. How cues are built (`packages/video/src/captions.ts`):
 
 - Each sentence is split into the fewest cues that fit. Words are spread evenly so no cue ends with an orphaned word, two-line cues are balanced, and a sentence end always closes a cue.
-- A line holds at most 30 characters in vertical videos, 34 in square ones, and 44 in landscape ones. A cue has at most two lines.
+- A line holds at most 30 half-width cells in vertical videos, 34 in square ones, and 44 in landscape ones: a Latin letter takes one cell and a Korean, Japanese, or Chinese character two (East Asian Width), so a vertical line holds 15 CJK characters. A cue has at most two lines.
 - Cues are timed within each scene's speech window, in proportion to their length, with at least 0.9 s per cue when the window allows.
+
+Line breaking follows the [narration language](#narration-language):
+
+- **English** splits sentences after `.`, `!`, or `?` and lines at spaces, as before.
+- **Korean** finds sentences with `Intl.Segmenter` and breaks lines between words (at spaces), never inside one, so particles stay with their word (`CLI를`).
+- **Japanese and Chinese** have no spaces. Sentences also end at `。`, `！`, and `？`, and lines break between the words `Intl.Segmenter` finds, following line-break rules: closing punctuation (`、。，」』）ー` and small kana) never starts a line, opening brackets (`「『（`) never end one, Latin runs such as `c2-delegate` stay whole, and Japanese particles and endings in hiragana stay with the word they follow (`CLIを`, `追加します`).
 
 ### Timing
 
-Timing starts from the narration. Covi measures each scene's take (or estimates 2.5 words per second plus 0.25 s when there is no audio) and lays the scenes out:
+Timing starts from the narration. Covi measures each scene's take (or, when there is no audio, estimates it from the text plus 0.25 s: 2.5 words per second in English, 4.3 syllables per second in Korean, 4 characters per second in Japanese, and 3 in Chinese) and lays the scenes out:
 
 - A scene lasts `max(visual minimum, lead-in + speech + 0.5 s)`, plus any extra hold.
 - The lead-in is 0.2 s for the first scene and 0.3 s for the others.
@@ -406,8 +412,10 @@ Each adjustment is logged. If the video still misses the window, QC reports it.
 - `index.html`, with the timeline inlined;
 - `runtime.js`;
 - `timeline.json`;
-- the Inter and JetBrains Mono fonts;
+- the Inter and JetBrains Mono fonts, and for Korean, Japanese, or Chinese text, the slices of Noto Sans KR, JP, or SC that cover it;
 - the images.
+
+**Fonts for CJK text.** Inter and JetBrains Mono have no CJK glyphs, and system fallbacks differ between machines (a Linux runner may have none and draw boxes). Covi bundles the Noto Sans KR, JP, and SC variable fonts (SIL Open Font License, from `@fontsource-variable`). Each is split into about a hundred unicode-range slices; the composition embeds only the slices its text uses (the narration, captions, titles, labels, code, and terminal output), declares them with `@font-face`, and the runtime loads every declared face before it lays anything out, so frames never depend on lazy font loading. Han characters take the shapes of the video's language: Japanese kanji, Simplified Chinese hanzi, or Korean hanja (Chinese in an English video). `<html lang>` is set to the video's language (`zh-Hans` for Chinese), Korean text breaks only between words (`word-break: keep-all`), and Japanese and Chinese follow strict line-break rules.
 
 Open `index.html` in Chromium to see the first frame. Run `covi.seek(<frame>)` in the developer console to draw any frame, and `covi.layout()` to get the layout report that QC uses.
 
@@ -440,12 +448,12 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | `audio` | Narrated: an audio stream exists, mean volume is above −50 dB, and integrated loudness is within −26…−12 LUFS. Passes when narration was not requested | fail without an audio stream or when silent; warn when loudness is out of range, or when narration was requested but no speech engine was available |
 | `black-frames` | ffmpeg `blackdetect` (at least 0.4 s, pixel threshold 0.05) finds nothing | warn |
 | `captions-clear-of-content` | The caption band never intersects demonstrated content | fail |
-| `captions-in-frame` | The caption band stays inside the frame | fail |
+| `captions-in-frame` | The caption band stays inside the frame, and no caption line is wider than its box | fail |
 | `text-fits` | No text element overflows its box | warn |
 | `narrator-clear-of-content` | The narrator never overlaps content | warn |
 | `images` | Every image loaded in the composition | fail |
-| `caption-timing` | No cue overlaps the next, reads faster than 24 characters per second, or lasts less than 0.7 s | fail on overlap; warn on fast or short cues |
-| `narration-pace` | No scene's narration is faster than 4.2 words per second | warn |
+| `caption-timing` | No cue overlaps the next, reads faster than the language's limit, or lasts less than 0.7 s. Limits, in characters per second: English 24 (counting spaces), Korean 17, Chinese 13, Japanese 8 (not counting spaces) | fail on overlap; warn on fast or short cues |
+| `narration-pace` | No scene's narration is faster than 4.2 words per second in English, 7.5 syllables per second in Korean, 7 characters per second in Japanese, or 5.5 in Chinese, counted with `Intl.Segmenter` on the text the voice was given | warn |
 | `speech-acronyms` | Non-English narration: the text sent to the voice has no all-caps Latin token left (outside URLs, e-mail addresses, and versions). Names the scene and the token | warn: write the spoken form in `say` or add a pronunciation |
 | `voice-language` | The system voice's locale matches the narration language (hosted voices are not checked) | warn, with a voice to choose instead |
 

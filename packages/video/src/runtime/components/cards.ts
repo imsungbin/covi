@@ -89,7 +89,11 @@ export function summary(v: V<'summary'>, ctx: ComponentContext): Component {
   const box = ctx.regions.full;
   const theme = ctx.timeline.theme;
   const vertical = ctx.timeline.orientation !== 'landscape';
-  const verdict = VERDICT[v.verdict];
+  const labels = ctx.timeline.labels;
+  const verdict = {
+    ...VERDICT[v.verdict],
+    label: labels?.verdict[v.verdict] ?? VERDICT[v.verdict].label,
+  };
   const color = theme[verdict.tone];
   const foxSize = ctx.timeline.mascot
     ? vertical
@@ -146,9 +150,9 @@ export function summary(v: V<'summary'>, ctx: ComponentContext): Component {
       borderTop: `1px solid ${theme.line}`,
     });
     for (const [label, value, prefix, tone] of [
-      ['files', v.stats.files, '', theme.text],
-      ['added', v.stats.additions, '+', theme.success],
-      ['removed', v.stats.deletions, '−', theme.danger],
+      [labels?.stats.files ?? 'files', v.stats.files, '', theme.text],
+      [labels?.stats.added ?? 'added', v.stats.additions, '+', theme.success],
+      [labels?.stats.removed ?? 'removed', v.stats.deletions, '−', theme.danger],
     ] as const) {
       const s = el('div', 'stat', stats);
       const val = el('div', 'v mono', s, `${prefix}${value}`);

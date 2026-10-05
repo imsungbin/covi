@@ -1,5 +1,5 @@
 import { appendFile, readFile } from 'node:fs/promises';
-import { CERTAINTY_LABEL, COMMENT_MARKER, type Finding, isBlockingCandidate } from '@covi/core';
+import { COMMENT_MARKER, type Finding, isBlockingCandidate, type Language, t } from '@covi/core';
 import type { FetchLike, PlatformContext, Publisher, PublishOutcome } from './types.ts';
 
 const ZERO_SHA = /^0+$/;
@@ -260,7 +260,11 @@ export function escapeProperty(text: string): string {
  * Inline annotations on the pull request diff, no token required. GitHub shows at most 10 of each
  * level per step, so the most important findings go first.
  */
-export function annotations(findings: readonly Finding[], limit = 10): string[] {
+export function annotations(
+  findings: readonly Finding[],
+  limit = 10,
+  language: Language = 'en',
+): string[] {
   const counts = { error: 0, warning: 0, notice: 0 };
   const lines: string[] = [];
   for (const f of findings) {
@@ -272,14 +276,16 @@ export function annotations(findings: readonly Finding[], limit = 10): string[] 
           : 'warning';
     if (counts[level] >= limit) continue;
     counts[level]++;
-    const props = [`title=${escapeProperty(`Covi · ${CERTAINTY_LABEL[f.certainty]}: ${f.title}`)}`];
+    const props = [
+      `title=${escapeProperty(`Covi · ${t(language, `certainty.${f.certainty}`)}: ${f.title}`)}`,
+    ];
     if (f.location) {
       props.unshift(`file=${escapeProperty(f.location.path)}`);
       if (f.location.line) props.push(`line=${f.location.line}`);
       if (f.location.endLine) props.push(`endLine=${f.location.endLine}`);
     }
     lines.push(
-      `::${level} ${props.join(',')}::${escapeData(`${f.explanation}${f.suggestion ? `\n\nSuggestion: ${f.suggestion}` : ''}`)}`,
+      `::${level} ${props.join(',')}::${escapeData(`${f.explanation}${f.suggestion ? `\n\n${t(language, 'comment.suggestion')} ${f.suggestion}` : ''}`)}`,
     );
   }
   return lines;

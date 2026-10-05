@@ -5,22 +5,26 @@ import {
   type DemoRequestResult,
   type DemoShot,
   type Explanation,
+  endSentence,
   ensurePeriod,
   type Finding,
   humanizeIdentifier,
   intentSentence,
   isImperativeVerb,
-  joinList,
+  joinSentences,
+  type Language,
+  listOf,
   lowerFirst,
-  plural,
+  type Params,
   type Review,
   type ReviewContext,
   sentenceCase,
+  t,
   truncate,
-  wordCount,
 } from '@covi/core';
 import type { VideoSpec } from '../spec.ts';
 import { type Beat, type StoryTemplate, selectTemplate } from '../templates.ts';
+import { SPEECH_RATE, segments, speechUnits } from '../text.ts';
 import type { Scene, Storyboard, Visual } from './schema.ts';
 
 export interface DraftInput {
@@ -32,10 +36,17 @@ export interface DraftInput {
   spec: VideoSpec;
   templates: Map<string, StoryTemplate>;
   templateId?: string;
+  /** The language to narrate in (the run's language). Default: English. */
+  language?: Language;
 }
 
-/** Natural speech for narration: ~2.5 words per second. */
+/** Natural speech for narration: ~2.5 words per second (see SPEECH_RATE for other languages). */
 export const WORDS_PER_SECOND = 2.5;
+
+/** Seconds of speech, in a language's units (English: words). */
+function units(seconds: number, language: Language): number {
+  return Math.round(seconds * SPEECH_RATE[language]);
+}
 
 const BEAT_WEIGHT: Record<string, number> = { context: 0.8, summary: 0.8, review: 1.2, scope: 0.7 };
 
@@ -62,19 +73,22 @@ export function draftStoryboard(input: DraftInput): Storyboard {
   const weights = beats.map((b) => BEAT_WEIGHT[b.id] ?? 1);
   const totalWeight = weights.reduce((a, b) => a + b, 0);
   const used = new Set<string>();
+  const language = input.language ?? 'en';
   const ctx: BeatContext = {
     ...input,
     short,
     used,
     vertical: input.spec.height > input.spec.width,
+    language,
+    say: (key, params) => t(language, `narration.${key}`, params),
   };
 
   const scenes: Scene[] = [];
   const budgets: number[] = [];
   beats.forEach((beat, i) => {
     const budget = Math.max(
-      6,
-      Math.round((speechSeconds * WORDS_PER_SECOND * weights[i]!) / totalWeight),
+      units(2.4, language),
+      Math.round((speechSeconds * SPEECH_RATE[language] * weights[i]!) / totalWeight),
     );
     const scene = buildScene(beat, budget, ctx);
     if (scene) {
@@ -88,19 +102,21 @@ export function draftStoryboard(input: DraftInput): Storyboard {
         {
           id: 'summary',
           eyebrow: 'Summary',
+          eyebrows: { ko: '요약', ja: 'まとめ', zh: '总结' },
           goal: '',
           visuals: ['summary'],
           expression: 'success',
           optional: false,
         },
-        20,
+        units(8, language),
         ctx,
       )!,
     );
   }
-  if (!short) addRoadmap(scenes, budgets[0] ?? 0);
+  if (!short) addRoadmap(scenes, budgets[0] ?? 0, ctx);
   return {
     schemaVersion: 1,
+    language,
     title: truncate(input.explanation.headline, 90),
     template: template.id,
     draft: true,
@@ -112,6 +128,13 @@ interface BeatContext extends DraftInput {
   short: boolean;
   vertical: boolean;
   used: Set<string>;
+  language: Language;
+  /** A drafted sentence in the narration language (`narration.<key>` in the catalogs). */
+  say: (key: string, params?: Params) => string;
+}
+
+function eyebrowOf(beat: Beat, language: Language): string {
+  return language === 'en' ? beat.eyebrow : beat.eyebrows[language];
 }
 
 function buildScene(beat: Beat, budget: number, ctx: BeatContext): Scene | undefined {
@@ -123,13 +146,15 @@ function buildScene(beat: Beat, budget: number, ctx: BeatContext): Scene | undef
     if (!visual) continue;
     ctx.used.add(key);
     const narration = narrate(beat, visual, ctx, budget);
-    const text = fitWords(narration.text, budget);
+    const text = fitWords(narration.text, budget, ctx.language);
     return {
       beat: beat.id,
-      eyebrow: beat.eyebrow,
+      eyebrow: eyebrowOf(beat, ctx.language),
       heading: narration.heading,
       narration: text,
-      say: narration.say ? fitWords(narration.say, budget + 6) : spoken(text),
+      say: narration.say
+        ? fitWords(narration.say, budget + units(2.4, ctx.language), ctx.language)
+        : spoken(text, ctx.language),
       visual,
       expression: expressionFor(beat, ctx),
       optional: beat.optional || undefined,
@@ -140,12 +165,16 @@ function buildScene(beat: Beat, budget: number, ctx: BeatContext): Scene | undef
 
 function fallbackScene(beat: Beat, budget: number, ctx: BeatContext): Scene | undefined {
   if (beat.id === 'context' || beat.id === 'summary') return undefined;
-  const text = fitWords(stripMarkdown(firstSentence(ctx.explanation.summary)), budget);
+  const text = fitWords(
+    stripMarkdown(firstSentence(ctx.explanation.summary, ctx.language)),
+    budget,
+    ctx.language,
+  );
   return {
     beat: beat.id,
-    eyebrow: beat.eyebrow,
+    eyebrow: eyebrowOf(beat, ctx.language),
     narration: text,
-    say: spoken(text),
+    say: spoken(text, ctx.language),
     visual: {
       kind: 'callout',
       tone: 'info',
@@ -193,7 +222,11 @@ function makeVisual(
       const stats = change.stats;
       const meta = [
         change.repository.name,
-        `${plural(context.size.files, 'file')} · +${stats.additions} −${stats.deletions}`,
+        ctx.say('meta', {
+          files: t(ctx.language, 'count.files', { count: context.size.files }),
+          additions: stats.additions,
+          deletions: stats.deletions,
+        }),
       ];
       if (change.metadata.number)
         meta.unshift(
@@ -245,7 +278,10 @@ function makeVisual(
         after: { path: shot.after.path, label: shot.name },
         layout: ctx.vertical ? 'stack' : 'split',
         focus: shot.diff?.bounds,
-        labels: { before: 'Before', after: 'After' },
+        labels: {
+          before: t(ctx.language, 'video.label.before'),
+          after: t(ctx.language, 'video.label.after'),
+        },
       };
     }
     case 'interaction': {
@@ -270,9 +306,11 @@ function makeVisual(
         kind: 'terminal',
         title: cmd.name,
         command: cmd.command,
-        output: clipLines(cmd.after.output, ctx.short ? 8 : 12),
+        output: clipLines(cmd.after.output, ctx.short ? 8 : 12, ctx.language),
         before:
-          cmd.before && cmd.changed ? clipLines(cmd.before.output, ctx.short ? 6 : 10) : undefined,
+          cmd.before && cmd.changed
+            ? clipLines(cmd.before.output, ctx.short ? 6 : 10, ctx.language)
+            : undefined,
       };
     }
     case 'api': {
@@ -286,12 +324,12 @@ function makeVisual(
           req.before && req.changed
             ? {
                 status: req.before.status,
-                body: clipLines(prettyJson(req.before.body), ctx.short ? 9 : 14),
+                body: clipLines(prettyJson(req.before.body), ctx.short ? 9 : 14, ctx.language),
               }
             : undefined,
         after: {
           status: req.after.status,
-          body: clipLines(prettyJson(req.after.body), ctx.short ? 9 : 14),
+          body: clipLines(prettyJson(req.after.body), ctx.short ? 9 : 14, ctx.language),
         },
       };
     }
@@ -306,7 +344,7 @@ function makeVisual(
           location: f.location
             ? `${f.location.path}${f.location.line ? `:${f.location.line}` : ''}`
             : undefined,
-          note: truncate(firstSentence(f.explanation), 120),
+          note: truncate(firstSentence(f.explanation, ctx.language), 120),
         })),
       };
     }
@@ -317,17 +355,15 @@ function makeVisual(
           kind: 'callout',
           tone: f.severity === 'high' ? 'warning' : 'info',
           title: truncate(f.title, 90),
-          body: truncate(firstSentence(f.explanation), 160),
+          body: truncate(firstSentence(f.explanation, ctx.language), 160),
         };
       }
       const start = explanation.readingOrder[0];
       return {
         kind: 'callout',
         tone: 'success',
-        title: 'No blocking issues found',
-        body: start
-          ? `Start the review with ${start.path}.`
-          : 'The change looks sound in the areas Covi checked.',
+        title: ctx.say('callout.noBlocking'),
+        body: start ? ctx.say('callout.startWith', { path: start.path }) : ctx.say('callout.sound'),
       };
     }
     case 'diagram': {
@@ -487,14 +523,22 @@ function summaryPoints(ctx: BeatContext): string[] {
   const points: string[] = [];
   for (const f of ctx.review.findings.slice(0, 2))
     points.push(
-      `${sentenceCase(f.certainty === 'question' ? 'Question' : f.certainty)}: ${truncate(f.title, 70)}`,
+      ctx.say('summary.pointLine', {
+        label: ctx.say(`summary.point.${f.certainty}`),
+        title: truncate(f.title, 70),
+      }),
     );
   for (const c of ctx.explanation.changes) {
     if (points.length >= 3) break;
-    points.push(`${c.area}: ${truncate(stripMarkdown(c.description), 70)}`);
+    points.push(
+      ctx.say('summary.pointLine', {
+        label: c.area,
+        title: truncate(stripMarkdown(c.description), 70),
+      }),
+    );
   }
   if (ctx.context.tests.addedTestCases > 0 && points.length < 4)
-    points.push(`${plural(ctx.context.tests.addedTestCases, 'new test')}`);
+    points.push(ctx.say('summary.newTests', { count: ctx.context.tests.addedTestCases }));
   return points.slice(0, ctx.short ? 3 : 4);
 }
 
@@ -509,59 +553,88 @@ interface Narration {
 }
 
 function narrate(beat: Beat, visual: Visual, ctx: BeatContext, budget: number): Narration {
-  const { context, review } = ctx;
+  const { context, review, say, language } = ctx;
+  const en = language === 'en';
+  const list = (items: string[]) => listOf(language, items);
   switch (visual.kind) {
     case 'title': {
-      const lead = stripMarkdown(intentSentence(context));
+      const lead = stripMarkdown(intentSentence(context, language));
       const where =
         context.areas.length > 1
-          ? ` It touches ${joinList(context.areas.slice(0, 2).map((a) => a.name))}.`
+          ? say('touches', { areas: list(context.areas.slice(0, 2).map((a) => a.name)) })
           : '';
       return { text: lead + (ctx.short ? '' : where) };
     }
     case 'change-map':
       return {
-        text: `The change spans ${plural(context.areas.length, 'area')}, mostly ${joinList(context.areas.slice(0, 2).map((a) => a.name))}.`,
-        heading: `${plural(context.size.files, 'file')} changed`,
+        text: say('changeMap.text', {
+          areas: t(language, 'count.areas', { count: context.areas.length }),
+          names: list(context.areas.slice(0, 2).map((a) => a.name)),
+        }),
+        heading: say('changeMap.heading', {
+          files: t(language, 'count.files', { count: context.size.files }),
+        }),
       };
     case 'code': {
       const file = visual.path.split('/').pop() ?? visual.path;
       const named = keySymbols(context, visual.path, visual.lines.map((l) => l.text).join('\n'));
-      const verb = named.every((s) => s.change === 'added') ? 'adds' : 'updates';
-      const what = named.length ? `, which ${verb} ${joinList(named.map((s) => s.name))}` : '';
-      const lead =
-        beat.id === 'fix'
-          ? 'The fix lives in'
-          : beat.id === 'styles'
-            ? 'The styles live in'
-            : 'The key change is in';
+      const verb = say(named.every((s) => s.change === 'added') ? 'code.adds' : 'code.updates');
+      const lead = beat.id === 'fix' ? 'fix' : beat.id === 'styles' ? 'styles' : 'key';
       const description = ctx.short ? undefined : areaDescription(ctx, visual.path);
+      const heard = spokenFile(file, language);
       if (description)
         return {
-          text: `${lead} ${file}. ${description}`,
-          say: `${lead} ${spokenFile(file)}. ${spoken(description)}`,
+          text: joinSentences(language, [say(`code.${lead}`, { file }), description]),
+          say: joinSentences(language, [
+            say(`code.${lead}`, { file: heard }),
+            spoken(description, language),
+          ]),
           heading: visual.path,
         };
-      const text = `${lead} ${file}${what}.`;
-      const say = `${lead} ${spokenFile(file)}${named.length ? `, which ${verb} ${joinList(named.map((s) => humanizeIdentifier(s.name)))}` : ''}.`;
-      return { text, say, heading: visual.path };
+      if (!named.length)
+        return {
+          text: say(`code.${lead}`, { file }),
+          say: say(`code.${lead}`, { file: heard }),
+          heading: visual.path,
+        };
+      return {
+        text: say(`code.${lead}What`, { file, verb, names: list(named.map((s) => s.name)) }),
+        say: say(`code.${lead}What`, {
+          file: heard,
+          verb,
+          names: list(named.map((s) => humanizeIdentifier(s.name))),
+        }),
+        heading: visual.path,
+      };
     }
-    case 'screenshot':
+    case 'screenshot': {
+      const thePage = say('screenshot.thePage');
       return visual.image.path.includes('before')
-        ? { text: `Here's ${visual.label ?? 'the page'} before the change.`, heading: visual.label }
+        ? {
+            text: say('screenshot.before', { label: visual.label ?? thePage }),
+            heading: visual.label,
+          }
         : {
-            text: `And here's ${visual.label === '/' ? 'the page' : (visual.label ?? 'the page')} after the change${visual.focus ? ', with the changed area highlighted' : ''}.`,
+            text: say('screenshot.after', {
+              label: visual.label === '/' ? thePage : (visual.label ?? thePage),
+              highlighted: visual.focus ? say('screenshot.highlighted') : '',
+            }),
             heading: visual.label,
           };
+    }
     case 'before-after': {
-      const order =
-        visual.layout === 'stack'
-          ? 'On top is the old version; below, the new one.'
-          : 'On the left is the old version; on the right, the new one.';
+      const order = say(visual.layout === 'stack' ? 'beforeAfter.stack' : 'beforeAfter.split');
       const page =
-        visual.after.label && visual.after.label !== '/' ? ` of ${visual.after.label}` : '';
+        visual.after.label && visual.after.label !== '/'
+          ? say('beforeAfter.pageOf', { page: visual.after.label })
+          : '';
       return {
-        text: `${ctx.context.intent.kind === 'bug-fix' ? 'Here is the behavior before and after the fix' : `Here's the before and after${page}`}. ${order}`,
+        text: joinSentences(language, [
+          ctx.context.intent.kind === 'bug-fix'
+            ? say('beforeAfter.fix')
+            : say('beforeAfter.page', { page }),
+          order,
+        ]),
         heading: visual.after.label,
       };
     }
@@ -573,8 +646,12 @@ function narrate(beat: Beat, visual: Visual, ctx: BeatContext, budget: number): 
       return {
         text:
           labels.length >= 2
-            ? `Here's the new flow. ${sentenceCase(joinList(labels.map(asClause)))}.`
-            : 'Here is the new flow, step by step.',
+            ? say('interaction.steps', {
+                steps: en
+                  ? sentenceCase(list(labels.map(asClause)))
+                  : list(labels.map((l) => l.replace(/[.!。！]$/, ''))),
+              })
+            : say('interaction.plain'),
       };
     }
     case 'terminal': {
@@ -582,71 +659,93 @@ function narrate(beat: Beat, visual: Visual, ctx: BeatContext, budget: number): 
       // The terminal shows the exact command; narration describes it instead of reading it out.
       const output = first.trim();
       const cmd = ctx.demo?.commands.find((c) => c.name === visual.title);
+      const none = say('terminal.none');
       const exit =
         !ctx.short && cmd?.before && cmd.before.exitCode !== cmd.after.exitCode
-          ? ` It now exits with code ${cmd.after.exitCode ?? 'none'} instead of ${cmd.before.exitCode ?? 'none'}.`
+          ? say('terminal.exits', {
+              after: cmd.after.exitCode ?? none,
+              before: cmd.before.exitCode ?? none,
+            })
           : '';
       const text = visual.before
-        ? `Here's the same command before and after the change.${output && output.length <= 40 ? ` It now prints ${output}.` : ''}${exit}`
-        : `Here's the command's output after the change.`;
-      return { text, say: spoken(text), heading: visual.title };
+        ? `${say('terminal.compared')}${output && output.length <= 40 ? say('terminal.prints', { output }) : ''}${exit}`
+        : say('terminal.output');
+      return { text, say: spoken(text, language), heading: visual.title };
     }
     case 'api': {
       const req = ctx.demo?.requests.find((r) => r.path === visual.path);
-      const shape = req?.shapeChange ? ` ${sentenceCase(req.shapeChange)}.` : '';
-      const detail = req && !ctx.short && visual.before ? exchangeDetail(req) : '';
-      const more = `${shape}${detail ? ` ${detail}` : ''}`;
+      const shape = req?.shapeChange
+        ? endSentence(language, en ? sentenceCase(req.shapeChange) : req.shapeChange)
+        : '';
+      const detail = req && !ctx.short && visual.before ? exchangeDetail(req, ctx) : '';
+      const more = joinSentences(language, [shape, detail]);
       return {
-        text: `Calling ${visual.method} ${visual.path}${visual.before ? ' before and after the change' : ''}.${more}`,
-        say: `Calling ${visual.method} ${spokenPath(visual.path)}${visual.before ? ', before and after the change' : ''}.${more ? ` ${spoken(more)}` : ''}`,
+        text: joinSentences(language, [
+          say(visual.before ? 'api.callCompared' : 'api.call', {
+            method: visual.method,
+            path: visual.path,
+          }),
+          more,
+        ]),
+        say: joinSentences(language, [
+          say(visual.before ? 'api.sayCompared' : 'api.call', {
+            method: visual.method,
+            path: spokenPath(visual.path, language),
+          }),
+          more ? spoken(more, language) : '',
+        ]),
         heading: `${visual.method} ${visual.path}`,
       };
     }
     case 'findings': {
       if (!ctx.short)
         return {
-          text: findingsNarration(review.findings, budget),
-          heading: headingForFindings(review.findings),
+          text: findingsNarration(review.findings, budget, ctx),
+          heading: headingForFindings(review.findings, ctx),
         };
-      const [first, second] = review.findings;
-      const lead =
-        review.findings.length === 1
-          ? 'One thing worth reviewing'
-          : `${review.findings.length === 2 ? 'Two' : 'A few'} things worth a look. First`;
-      const firstText = `${lead}: ${lowerFirstWord(stripMarkdown(first!.title))}.`;
-      const why = ctx.short ? '' : ` ${firstSentence(first!.explanation)}`;
-      const secondText =
-        second && !ctx.short ? ` Also, ${lowerFirstWord(stripMarkdown(second.title))}.` : '';
-      return { text: firstText + why + secondText, heading: headingForFindings(review.findings) };
+      const n = review.findings.length;
+      const title = lowerFirstWord(stripMarkdown(review.findings[0]!.title), language);
+      const text = say(n === 1 ? 'findings.one' : n === 2 ? 'findings.two' : 'findings.few', {
+        title,
+      });
+      // CJK narration needs more syllables per idea; when the lead does not fit, keep the finding.
+      const compact = say('callout.check', { title });
+      return {
+        text: !en && speechUnits(text, language) > budget ? compact : text,
+        heading: headingForFindings(review.findings, ctx),
+      };
     }
     case 'callout':
       return visual.tone === 'success'
-        ? { text: `Covi didn't find blocking issues.${visual.body ? ` ${visual.body}` : ''}` }
-        : { text: `Worth checking: ${lowerFirstWord(visual.title)}.` };
+        ? { text: joinSentences(language, [say('callout.clean'), visual.body ?? '']) }
+        : { text: say('callout.check', { title: lowerFirstWord(visual.title, language) }) };
     case 'diagram':
-      return {
-        text: `Here's how the moved pieces relate now; every highlighted module changed in this diff.`,
-        heading: 'Module map',
-      };
+      return { text: say('diagram.text'), heading: say('diagram.heading') };
     case 'summary': {
       const verdict =
         review.verdict === 'looks-good'
-          ? 'Overall, this looks good to merge.'
+          ? say('summary.looksGood')
           : review.verdict === 'needs-changes'
-            ? 'This needs changes before it can merge.'
-            : `It needs a closer look at ${plural(review.findings.length, 'spot')} before merging.`;
+            ? say('summary.needsChanges')
+            : say('summary.needsAttention', {
+                spots: say('summary.spots', { count: review.findings.length }),
+              });
       const tests =
         context.tests.addedTestCases > 0
-          ? ` It comes with ${plural(context.tests.addedTestCases, 'new test')}.`
+          ? say('summary.tests', {
+              tests: say('summary.newTests', { count: context.tests.addedTestCases }),
+            })
           : '';
       if (ctx.short) return { text: verdict };
       const suggestion =
         review.verdict !== 'looks-good' ? review.findings[0]?.suggestion : undefined;
       const start = ctx.explanation.readingOrder[0]?.path;
       const next = suggestion
-        ? ` Suggested next step: ${lowerFirstWord(ensurePeriod(stripMarkdown(suggestion)))}`
+        ? say('summary.next', {
+            step: lowerFirstWord(endSentence(language, stripMarkdown(suggestion)), language),
+          })
         : review.verdict === 'looks-good' && start
-          ? ` If you read the diff, start with ${start}.`
+          ? say('summary.start', { path: start })
           : '';
       return { text: verdict + tests + next };
     }
@@ -654,39 +753,43 @@ function narrate(beat: Beat, visual: Visual, ctx: BeatContext, budget: number): 
 }
 
 /** Standard videos open with a one-line map of what is coming, taken from the scenes that follow. */
-function addRoadmap(scenes: Scene[], budget: number): void {
+function addRoadmap(scenes: Scene[], budget: number, ctx: BeatContext): void {
   const [first, ...rest] = scenes;
   if (first?.visual.kind !== 'title' || rest.length < 3) return;
   const stops = [
-    ...new Set(rest.map((s) => roadmapStop(s.visual)).filter((x): x is string => Boolean(x))),
+    ...new Set(rest.map((s) => roadmapStop(s.visual, ctx)).filter((x): x is string => Boolean(x))),
   ];
   if (stops.length < 2) return;
-  const text = `${first.narration} We'll look at ${joinList(stops)}.`;
+  const text = ctx.say('roadmap.text', {
+    first: first.narration,
+    stops: listOf(ctx.language, stops),
+  });
   // A little over budget is fine for one orienting sentence; a long one is not.
-  if (wordCount(text) > Math.round(budget * 1.3)) return;
+  if (speechUnits(text, ctx.language) > Math.round(budget * 1.3)) return;
   first.narration = text;
-  first.say = spoken(text);
+  first.say = spoken(text, ctx.language);
 }
 
-function roadmapStop(visual: Visual): string | undefined {
+function roadmapStop(visual: Visual, ctx: BeatContext): string | undefined {
+  const say = (key: string) => ctx.say(`roadmap.${key}`);
   switch (visual.kind) {
     case 'api':
-      return visual.before ? 'the response before and after' : 'the new response';
+      return say(visual.before ? 'api' : 'apiNew');
     case 'terminal':
-      return visual.before ? 'the command before and after' : "the command's output";
+      return say(visual.before ? 'terminal' : 'terminalNew');
     case 'before-after':
-      return 'the page before and after';
+      return say('beforeAfter');
     case 'screenshot':
-      return 'what it looks like';
+      return say('screenshot');
     case 'interaction':
-      return 'the new flow';
+      return say('interaction');
     case 'code':
-      return 'the code behind it';
+      return say('code');
     case 'diagram':
     case 'change-map':
-      return 'how the pieces fit together';
+      return say('structure');
     case 'findings':
-      return 'what to check before merging';
+      return say('findings');
     default:
       return undefined;
   }
@@ -697,6 +800,7 @@ function areaDescription(ctx: BeatContext, path: string): string | undefined {
   const change = ctx.explanation.changes.find((c) => c.files.includes(path));
   if (!change) return undefined;
   const clean = stripMarkdown(change.description).trim();
+  if (ctx.language !== 'en') return endSentence(ctx.language, clean);
   const first = (clean.split(/\s+/)[0] ?? '').toLowerCase();
   // "Adds X, changes Y" reads as a clause about the file; anything else is already a sentence.
   const verb =
@@ -704,57 +808,58 @@ function areaDescription(ctx: BeatContext, path: string): string | undefined {
     [first.replace(/ies$/, 'y'), first.replace(/es$/, ''), first.slice(0, -1)].some(
       isImperativeVerb,
     );
-  return ensurePeriod(verb ? `It ${lowerFirst(clean)}` : clean);
+  return ensurePeriod(
+    verb ? ctx.say('code.describedBy', { description: lowerFirst(clean) }) : clean,
+  );
 }
 
 /** What the captured responses show beyond their shape: status and size, from the real bodies. */
-function exchangeDetail(req: DemoRequestResult): string {
+function exchangeDetail(req: DemoRequestResult, ctx: BeatContext): string {
   const parts: string[] = [];
   if (req.before && req.before.status !== req.after.status)
-    parts.push(`The status changed from ${req.before.status} to ${req.after.status}.`);
+    parts.push(ctx.say('api.status', { before: req.before.status, after: req.after.status }));
   const before = parseJson(req.before?.body);
   const after = parseJson(req.after.body);
   if (Array.isArray(before) && Array.isArray(after) && before.length !== after.length) {
-    parts.push(
-      `It returned ${plural(before.length, 'entry', 'entries')} before and ${after.length} now.`,
-    );
+    parts.push(ctx.say('api.entries', { count: before.length, now: after.length }));
   } else if (Array.isArray(before) && isRecord(after)) {
     const lists = Object.entries(after).filter(([, v]) => Array.isArray(v));
     if (lists.length === 1) {
       const [key, list] = lists[0]! as [string, unknown[]];
-      parts.push(
-        `The old response listed ${plural(before.length, 'entry', 'entries')}; the new ${key} array holds ${list.length}.`,
-      );
+      parts.push(ctx.say('api.listed', { count: before.length, key, now: list.length }));
     }
   } else if (isRecord(before) && isRecord(after)) {
     const added = Object.keys(after).filter((k) => !(k in before));
-    if (added.length) parts.push(`The response now also includes ${joinList(added.slice(0, 3))}.`);
+    if (added.length)
+      parts.push(ctx.say('api.includes', { keys: listOf(ctx.language, added.slice(0, 3)) }));
   }
-  return parts.join(' ');
+  return joinSentences(ctx.language, parts);
 }
 
 /**
  * Names every finding on screen when the budget allows, with why the first ones matter. When it
  * does not, explanations go first, so the count it announces is always the count it covers.
  */
-function findingsNarration(findings: readonly Finding[], budget: number): string {
+function findingsNarration(findings: readonly Finding[], budget: number, ctx: BeatContext): string {
+  const { language, say } = ctx;
   const shown = findings.slice(0, 3);
-  const title = (f: Finding) => lowerFirstWord(stripMarkdown(f.title));
-  const why = (f: Finding) => firstSentence(stripMarkdown(f.explanation));
+  const title = (f: Finding) => lowerFirstWord(stripMarkdown(f.title), language);
+  const why = (f: Finding) => firstSentence(stripMarkdown(f.explanation), language);
   if (shown.length === 1)
-    return `One thing worth reviewing: ${title(shown[0]!)}. ${why(shown[0]!)}`;
-  const count = findings.length === shown.length ? { 2: 'Two', 3: 'Three' }[shown.length] : 'A few';
+    return say('findings.oneWhy', { title: title(shown[0]!), why: why(shown[0]!) });
+  const count =
+    findings.length === shown.length ? ({ 2: 'two', 3: 'three' } as const)[shown.length] : 'few';
   const variant = (explained: number) =>
-    [
-      `${count} things worth a look.`,
+    joinSentences(language, [
+      say(`findings.count.${count ?? 'few'}`),
       ...shown.flatMap((f, i) => [
-        `${['First', 'Second', 'Third'][i]}, ${title(f)}.`,
+        say(`findings.ordinal.${['first', 'second', 'third'][i]}`, { title: title(f) }),
         ...(i < explained ? [why(f)] : []),
       ]),
-    ].join(' ');
+    ]);
   for (const explained of [2, 1, 0]) {
     const text = variant(explained);
-    if (wordCount(text) <= budget) return text;
+    if (speechUnits(text, language) <= budget) return text;
   }
   return variant(0);
 }
@@ -792,23 +897,24 @@ function asClause(label: string): string {
   return lowerFirstWord(label.replace(/[.!]$/, ''));
 }
 
-function headingForFindings(findings: readonly Finding[]): string {
+function headingForFindings(findings: readonly Finding[], ctx: BeatContext): string {
   const f = findings[0]!;
-  const label = {
-    confirmed: 'Confirmed issue',
-    likely: 'Likely issue',
-    risk: 'Risk worth checking',
-    question: 'Open question',
-  }[f.certainty];
-  return findings.length === 1 ? label : `${findings.length} things to check`;
+  return findings.length === 1
+    ? ctx.say(`findings.heading.${f.certainty}`)
+    : ctx.say('findings.heading.many', { count: findings.length });
 }
 
 // ---------------------------------------------------------------------------------------------
 // Text helpers
 // ---------------------------------------------------------------------------------------------
 
-/** Keeps whole sentences within the word budget (never cuts mid-sentence unless one sentence is too long). */
-export function fitWords(text: string, budget: number): string {
+/**
+ * Keeps whole sentences within the budget, in the language's speech units (English: words). Never
+ * cuts mid-sentence unless one sentence is too long.
+ */
+export function fitWords(text: string, budget: number, language: Language = 'en'): string {
+  if (language !== 'en') return fitUnits(text, budget, language);
+  const wordCount = (s: string) => speechUnits(s, 'en');
   const clean = text.replace(/\s+/g, ' ').trim();
   if (wordCount(clean) <= budget) return clean;
   // Sentence boundaries need whitespace after the punctuation, so "app.js" or "v1.2" stay whole.
@@ -838,6 +944,40 @@ export function fitWords(text: string, budget: number): string {
     .replace(/[,;:]$/, '')}.`;
 }
 
+/** fitWords for Korean, Japanese, and Chinese: sentences from Intl.Segmenter, clauses at commas. */
+function fitUnits(text: string, budget: number, language: Language): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (speechUnits(clean, language) <= budget) return clean;
+  const sentences = segments(clean, language, 'sentence')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  let out = '';
+  for (const s of sentences) {
+    const next = joinSentences(language, [out, s]);
+    if (speechUnits(next, language) > budget) break;
+    out = next;
+  }
+  if (out) return out;
+  const first = sentences[0] ?? clean;
+  if (speechUnits(first, language) <= Math.ceil(budget * 1.6)) return first;
+  // One sentence is too long: end it at the last clause that fits, else at the budget.
+  const clauses = first.split(/(?<=[,，、;；])\s*/);
+  const gap = language === 'ko' ? ' ' : '';
+  let cut = '';
+  for (const clause of clauses) {
+    const next = cut ? `${cut}${gap}${clause}` : clause;
+    if (speechUnits(next, language) > budget) break;
+    cut = next;
+  }
+  if (!cut) {
+    for (const g of segments(first, language, 'grapheme')) {
+      if (speechUnits(cut + g, language) > budget) break;
+      cut += g;
+    }
+  }
+  return endSentence(language, cut.replace(/[,，、;；\s]+$/, ''));
+}
+
 /** How a file is said aloud: "the app script", "the pricing stylesheet". */
 const FILE_NOUN: Record<string, string> = {
   ts: 'module',
@@ -860,7 +1000,32 @@ const FILE_NOUN: Record<string, string> = {
   toml: 'config',
 };
 
-export function spoken(text: string): string {
+const SPOKEN_PATH =
+  /(?:[\w.-]+\/)*\b([\w-]+)\.(tsx?|jsx?|mjs|cjs|css|scss|py|go|rs|rb|md|json|ya?ml|toml|html)\b/g;
+
+/**
+ * The spoken form of narration: identifiers as words, paths as "the totals module". English is
+ * the reference; other languages say file kinds in their own words ("totals 모듈"). Acronyms are
+ * left for speech normalization at render time.
+ */
+export function spoken(text: string, language: Language = 'en'): string {
+  if (language !== 'en')
+    return (
+      stripMarkdown(text)
+        .replace(/\b([a-z]+[A-Z][A-Za-z0-9]*)\b/g, (m) => humanizeIdentifier(m))
+        .replace(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g, (m) => humanizeIdentifier(m))
+        .replace(SPOKEN_PATH, (_m, name: string, ext: string) =>
+          t(language, 'narration.file.phrase', {
+            name: humanizeIdentifier(name),
+            noun: t(language, `narration.file.${FILE_NOUN[ext] ?? 'file'}`),
+          }),
+        )
+        // Routes are said segment by segment: "/api/users" → "API 슬래시 users".
+        .replace(/(?<![\w./])\/[A-Za-z][\w\-/:{}.]*/g, (route) => spokenPath(route, language))
+        .replace(/→/g, t(language, 'narration.to'))
+        .replace(/\s+/g, ' ')
+        .trim()
+    );
   return (
     stripMarkdown(text)
       .replace(/\b([a-z]+[A-Z][A-Za-z0-9]*)\b/g, (m) => humanizeIdentifier(m))
@@ -880,15 +1045,20 @@ export function spoken(text: string): string {
   );
 }
 
-function spokenFile(file: string): string {
-  return spoken(file);
+function spokenFile(file: string, language: Language): string {
+  return spoken(file, language);
 }
 
-function spokenPath(path: string): string {
-  return path
-    .replace(/^\//, '')
-    .replace(/\//g, ' slash ')
-    .replace(/[{}:[\]]/g, '');
+/** Path segments that are acronyms; non-English voices get them in capitals so they are spelled. */
+const PATH_ACRONYMS = /^(api|cli|ui|db|sdk|url|http|https|rpc|ws|v\d+)$/i;
+
+function spokenPath(path: string, language: Language): string {
+  const segments = path.replace(/^\//, '').split('/');
+  const said =
+    language === 'en'
+      ? segments
+      : segments.map((s) => (PATH_ACRONYMS.test(s) ? s.toUpperCase() : s));
+  return said.join(t(language, 'narration.slash')).replace(/[{}:[\]]/g, '');
 }
 
 function stripMarkdown(text: string): string {
@@ -901,26 +1071,28 @@ function stripMarkdown(text: string): string {
   );
 }
 
-function firstSentence(text: string): string {
+function firstSentence(text: string, language: Language = 'en'): string {
+  if (language !== 'en') return (segments(text.trim(), language, 'sentence')[0] ?? text).trim();
   const m = /^[^.!?]+[.!?]/.exec(text.trim());
   return (m?.[0] ?? text).trim();
 }
 
-function lowerFirstWord(text: string): string {
-  const t = text.trim();
-  if (!t) return t;
-  const first = t.split(/\s+/)[0]!;
-  if (/^[A-Z]{2,}/.test(first) || /[a-z][A-Z]/.test(first)) return t;
-  return t[0]!.toLowerCase() + t.slice(1);
+/** Lowercases an English sentence's first word for use mid-sentence; other languages keep case. */
+function lowerFirstWord(text: string, language: Language = 'en'): string {
+  const trimmed = text.trim();
+  if (!trimmed || language !== 'en') return trimmed;
+  const first = trimmed.split(/\s+/)[0]!;
+  if (/^[A-Z]{2,}/.test(first) || /[a-z][A-Z]/.test(first)) return trimmed;
+  return trimmed[0]!.toLowerCase() + trimmed.slice(1);
 }
 
-function clipLines(text: string, max: number): string {
+function clipLines(text: string, max: number, language: Language = 'en'): string {
   const lines = text.replace(/\r/g, '').split('\n');
   while (lines.length && !lines.at(-1)!.trim()) lines.pop();
   if (lines.length <= max) return lines.map((l) => l.slice(0, 90)).join('\n');
   return [
     ...lines.slice(0, max - 1).map((l) => l.slice(0, 90)),
-    `… ${lines.length - max + 1} more lines`,
+    t(language, 'video.moreLines', { count: lines.length - max + 1 }),
   ].join('\n');
 }
 

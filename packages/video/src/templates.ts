@@ -15,6 +15,12 @@ const VISUAL_TOKEN =
 export const BeatSchema = z.strictObject({
   id: z.string().regex(/^[a-z0-9-]+$/),
   eyebrow: z.string().max(40),
+  /** The eyebrow in Korean, Japanese, and Chinese (English is `eyebrow`). */
+  eyebrows: z.strictObject({
+    ko: z.string().max(40),
+    ja: z.string().max(40),
+    zh: z.string().max(40),
+  }),
   goal: z.string().min(1),
   visuals: z.array(z.string().regex(VISUAL_TOKEN)).min(1),
   expression: z.enum(EXPRESSION_VALUES).default('explaining'),

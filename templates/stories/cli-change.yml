@@ -5,26 +5,31 @@ use_when: The change alters command-line behavior or output.
 beats:
   - id: context
     eyebrow: CLI change
+    eyebrows: { ko: 'CLI 변경', ja: 'CLI の変更', zh: 'CLI 变更' }
     goal: Name the command and the behavior change.
     visuals: [title]
     expression: explaining
   - id: run
     eyebrow: Run it
+    eyebrows: { ko: '실행해 보기', ja: '実行してみる', zh: '运行一下' }
     goal: Show the command output before and after.
     visuals: [terminal, code]
     expression: explaining
   - id: implementation
     eyebrow: The fix
+    eyebrows: { ko: '수정', ja: '修正', zh: '修复' }
     goal: The lines responsible.
     visuals: [code]
     expression: explaining
   - id: review
     eyebrow: Worth a look
+    eyebrows: { ko: '살펴볼 점', ja: '確認ポイント', zh: '值得一看' }
     goal: Edge cases in input handling or output compatibility.
     visuals: [findings, callout]
     expression: reviewing
   - id: summary
     eyebrow: Summary
+    eyebrows: { ko: '요약', ja: 'まとめ', zh: '总结' }
     goal: The verdict.
     visuals: [summary]
     expression: success

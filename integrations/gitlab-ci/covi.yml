@@ -45,6 +45,9 @@ spec:
     narration:
       default: ''
       description: true or false.
+    language:
+      default: ''
+      description: Language of the review, note, and video narration (auto, en, ko, ja, zh). auto detects it from the merge request.
     comment:
       default: ''
       description: true or false. Posting the MR note needs COVI_GITLAB_TOKEN (a project access token with api scope).
@@ -70,6 +73,7 @@ covi-review:
     COVI_INPUT_VIDEO_MODE: "$[[ inputs.video-mode ]]"
     COVI_INPUT_DURATION: "$[[ inputs.duration ]]"
     COVI_INPUT_NARRATION: "$[[ inputs.narration ]]"
+    COVI_INPUT_LANGUAGE: "$[[ inputs.language ]]"
     COVI_INPUT_COMMENT: "$[[ inputs.comment ]]"
     COVI_INPUT_PROVIDER: "$[[ inputs.provider ]]"
   before_script:
@@ -110,6 +114,7 @@ covi-review:
       if [ -n "$COVI_INPUT_DURATION" ]; then args+=(--duration "$COVI_INPUT_DURATION"); fi
       if [ "$COVI_INPUT_NARRATION" = "true" ]; then args+=(--narration); fi
       if [ "$COVI_INPUT_NARRATION" = "false" ]; then args+=(--no-narration); fi
+      if [ -n "$COVI_INPUT_LANGUAGE" ]; then args+=(--language "$COVI_INPUT_LANGUAGE"); fi
       if [ "$COVI_INPUT_COMMENT" = "true" ]; then args+=(--comment); fi
       if [ "$COVI_INPUT_COMMENT" = "false" ]; then args+=(--no-comment); fi
       if [ -n "$COVI_INPUT_PROVIDER" ]; then args+=(--provider "$COVI_INPUT_PROVIDER"); fi

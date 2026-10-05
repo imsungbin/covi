@@ -214,8 +214,17 @@ function addSelection(cmd: Command): Command {
     .option('--out <dir>', 'write the run to this exact directory');
 }
 
+/** --language for commands that write for people. */
+function addLanguage(cmd: Command): Command {
+  return cmd.option(
+    '--language <code>',
+    'language Covi writes and narrates in: auto (from the change), en, ko, ja, or zh (Simplified Chinese)',
+    languageOption,
+  );
+}
+
 function addIntelligence(cmd: Command): Command {
-  return cmd
+  return addLanguage(cmd)
     .addOption(
       new Option('--provider <provider>', 'who does the reasoning').choices([
         'auto',
@@ -255,12 +264,7 @@ function addVideo(cmd: Command): Command {
         'none',
       ]),
     )
-    .addOption(new Option('--theme <theme>', 'color theme').choices(['light', 'dark']))
-    .option(
-      '--language <code>',
-      'language of the narration and on-screen text: auto, en, ko, ja, or zh (Simplified Chinese)',
-      languageOption,
-    );
+    .addOption(new Option('--theme <theme>', 'color theme').choices(['light', 'dark']));
 }
 
 function selection(cmd: Command, range: string | undefined) {
@@ -523,10 +527,12 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
       },
     );
 
-  addSelection(
-    program
-      .command('demo')
-      .description('Run the software at base and head and capture what changed'),
+  addLanguage(
+    addSelection(
+      program
+        .command('demo')
+        .description('Run the software at base and head and capture what changed'),
+    ),
   )
     .option(
       '--plan <file>',
@@ -575,6 +581,7 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
           explicit: videoRequestFrom(cmd),
           provided: providedVideoKeys(s.resolved.provenance),
           interactive: o.dryRun ? !u.flags.yes : interactive,
+          language: s.language.language,
         });
         if (o.dryRun) {
           const { decideVideo } = await import('@covi/video');
@@ -598,10 +605,12 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
             if (q.id === 'size' && answers.mode && answers.mode !== 'custom') continue;
             answers[q.id] = await ask(q);
             queue.push(
-              ...followUpQuestions(plan, answers, [
-                ...Object.keys(answers),
-                ...queue.map((x) => x.id),
-              ] as VideoQuestion['id'][]),
+              ...followUpQuestions(
+                plan,
+                answers,
+                [...Object.keys(answers), ...queue.map((x) => x.id)] as VideoQuestion['id'][],
+                s.language.language,
+              ),
             );
           }
           const base: VideoRequest = {
@@ -657,11 +666,13 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
       },
     );
 
-  program
-    .command('report')
-    .description(
-      'Validate agent-written explanation.json and findings.json, then render the reports',
-    )
+  addLanguage(
+    program
+      .command('report')
+      .description(
+        'Validate agent-written explanation.json and findings.json, then render the reports',
+      ),
+  )
     .option('--run <id>', 'run id, directory, or "latest"', 'latest')
     .addOption(
       new Option('--fail-on <level>', FAIL_ON_HELP).choices(['none', 'low', 'medium', 'high']),
@@ -680,8 +691,12 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
       await finish(cmd, result, s);
     });
 
-  addVideo(
-    program.command('render').description("Render (or re-render) a run's storyboard into a video"),
+  addLanguage(
+    addVideo(
+      program
+        .command('render')
+        .description("Render (or re-render) a run's storyboard into a video"),
+    ),
   )
     .option('--run <id>', 'run id, directory, or "latest"', 'latest')
     .option(

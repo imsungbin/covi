@@ -1,4 +1,4 @@
-import { CERTAINTY_LABEL, type Finding } from '@covi/core';
+import { type Finding, type Language, t } from '@covi/core';
 
 const LEVEL: Record<Finding['severity'], 'error' | 'warning' | 'note'> = {
   high: 'error',
@@ -7,7 +7,11 @@ const LEVEL: Record<Finding['severity'], 'error' | 'warning' | 'note'> = {
 };
 
 /** SARIF 2.1.0 for code-scanning tools (GitHub code scanning, IDE viewers). */
-export function toSarif(findings: readonly Finding[], version: string): object {
+export function toSarif(
+  findings: readonly Finding[],
+  version: string,
+  language: Language = 'en',
+): object {
   const rules = new Map<string, { id: string; name: string; shortDescription: { text: string } }>();
   for (const f of findings) {
     const id = f.source.id ?? `${f.source.kind}-${f.category}`;
@@ -28,7 +32,9 @@ export function toSarif(findings: readonly Finding[], version: string): object {
         results: findings.map((f) => ({
           ruleId: f.source.id ?? `${f.source.kind}-${f.category}`,
           level: f.certainty === 'question' ? 'note' : LEVEL[f.severity],
-          message: { text: `${CERTAINTY_LABEL[f.certainty]}: ${f.title}. ${f.explanation}` },
+          message: {
+            text: `${t(language, `certainty.${f.certainty}`)}: ${f.title}. ${f.explanation}`,
+          },
           partialFingerprints: { coviFindingId: f.id },
           locations: f.location
             ? [

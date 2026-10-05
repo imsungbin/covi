@@ -29,6 +29,9 @@ inputs:
   captions:
     description: "true or false: burn captions into the video. Empty: video.captions, else on."
     default: ""
+  language:
+    description: "Language of the review, comment, and video narration: auto (detected from the pull request), en, ko, ja, or zh (Simplified Chinese). Empty: language from the repository config, else auto."
+    default: ""
   annotations:
     description: "true or false: annotate findings inline on the diff. Empty: publish.annotations, else on."
     default: ""
@@ -175,6 +178,7 @@ runs:
         DURATION: ${{ inputs.duration }}
         NARRATION: ${{ inputs.narration }}
         CAPTIONS: ${{ inputs.captions }}
+        LANGUAGE: ${{ inputs.language }}
         ANNOTATIONS: ${{ inputs.annotations }}
         PROVIDER: ${{ inputs.provider }}
         MODEL: ${{ inputs.model }}
@@ -192,6 +196,7 @@ runs:
         if [ "$NARRATION" = "true" ]; then args+=(--narration); fi
         if [ "$NARRATION" = "false" ]; then args+=(--no-narration); fi
         if [ "$CAPTIONS" = "false" ]; then args+=(--no-captions); fi
+        if [ -n "$LANGUAGE" ]; then args+=(--language "$LANGUAGE"); fi
         if [ "$ANNOTATIONS" = "false" ]; then args+=(--no-annotations); fi
         if [ -n "$PROVIDER" ]; then args+=(--provider "$PROVIDER"); fi
         if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi

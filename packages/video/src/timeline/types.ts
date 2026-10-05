@@ -136,10 +136,24 @@ export type TimelineTheme = Theme;
 /** The video's language (`en`, `ko`, `ja`, or `zh` for Simplified Chinese). */
 export type TimelineLanguage = 'en' | 'ko' | 'ja' | 'zh';
 
+/** Fixed words the runtime draws, in the video's language. */
+export interface TimelineLabels {
+  verdict: Record<'looks-good' | 'needs-attention' | 'needs-changes', string>;
+  certainty: Record<'confirmed' | 'likely' | 'risk' | 'question', string>;
+  severity: Record<'high' | 'medium' | 'low', string>;
+  stats: { files: string; added: string; removed: string };
+  before: string;
+  after: string;
+  response: string;
+  terminal: string;
+}
+
 export interface Timeline {
   version: 1;
   /** Language of the narration, captions, and labels; sets `<html lang>` and line breaking. */
   language: TimelineLanguage;
+  /** Fixed words the runtime draws (verdicts, stats, Before/After), in `language`. */
+  labels?: TimelineLabels;
   title: string;
   width: number;
   height: number;

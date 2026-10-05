@@ -1,5 +1,5 @@
-import type { CoviConfig, VideoMode } from '@covi/core';
-import { parseDuration } from '@covi/core';
+import type { CoviConfig, Language, VideoMode } from '@covi/core';
+import { detectLanguage, parseDuration, t } from '@covi/core';
 
 /**
  * Video intent → a concrete, renderable spec. Strong defaults per mode; explicit requests win;
@@ -22,6 +22,8 @@ export interface VideoSpec {
   style: 'concise' | 'explanatory';
   theme: 'light' | 'dark';
   mascot: boolean;
+  /** A language the request named ("a Korean video"); it wins over the run's language. */
+  language?: Language;
 }
 
 export const MODE_PRESETS: Record<
@@ -56,6 +58,8 @@ export interface VideoRequest {
   captions?: boolean;
   theme?: 'light' | 'dark';
   style?: 'concise' | 'explanatory';
+  /** A language the request names: "in Korean", "한국어로", "日本語で", "用中文". */
+  language?: Language;
 }
 
 export interface ParsedRequest {
@@ -81,12 +85,41 @@ const NUMBER_WORDS: Record<string, number> = {
   'two minutes': 120,
 };
 
+/** Language names in English, Korean, Japanese, and Chinese. */
+const LANGUAGE_WORDS: Array<[Language, string]> = [
+  ['ko', 'korean|한국어|韓国語|韩语|韩文'],
+  ['ja', 'japanese|일본어|日本語|日语|日文'],
+  ['zh', 'chinese|mandarin|중국어|中国語|中文|汉语|普通话|简体中文'],
+  ['en', 'english|영어|英語|英文|英语'],
+];
+
+/** Phrases that ask for a language explicitly, not merely mention one. */
+function requestedLanguage(t: string): { language: Language; phrase: string } | undefined {
+  for (const [language, names] of LANGUAGE_WORDS) {
+    const patterns = [
+      new RegExp(`\\b(?:in|into)\\s+(?:${names})\\b`),
+      new RegExp(
+        `\\b(?:${names})\\s+(?:video|narration|narrated|voice(?:over)?|captions?|subtitles?|version)\\b`,
+      ),
+      new RegExp(`(?:${names})\\s*(?:로|으로|버전|영상|내레이션|나레이션|음성|자막)`),
+      new RegExp(`(?:${names})\\s*(?:で|の(?:動画|ナレーション|音声|字幕))`),
+      new RegExp(`(?:用|以|说)\\s*(?:${names})|(?:${names})\\s*(?:视频|旁白|配音|字幕|版)`),
+    ];
+    for (const re of patterns) {
+      const m = re.exec(t);
+      if (m) return { language, phrase: m[0].trim() };
+    }
+  }
+  return undefined;
+}
+
 /**
- * Reads video intent from natural language so "Make a 30-second vertical review video" needs no
- * follow-up questions. Only unambiguous phrases are interpreted.
+ * Reads video intent from natural language so "Make a 30-second vertical review video" (or
+ * "30초 세로 영상", "30秒の縦動画", "30秒竖屏视频") needs no follow-up questions. Only unambiguous
+ * phrases are interpreted.
  */
 export function parseVideoRequest(text: string): ParsedRequest {
-  const t = ` ${text.toLowerCase().replace(/[“”"]/g, ' ')} `;
+  const t = ` ${text.toLowerCase().replace(/[“”"「」]/g, ' ')} `;
   const request: VideoRequest = {};
   const inferred: Record<string, string> = {};
   const hit = (re: RegExp) => re.exec(t)?.[0]?.trim();
@@ -111,19 +144,19 @@ export function parseVideoRequest(text: string): ParsedRequest {
   if (!request.mode) {
     firstHit('mode', [
       [
-        /\b(vertical|portrait|9:16|9x16|short[- ]form|shorts|reels?|tiktok|mobile)\b/,
+        /\b(vertical|portrait|9:16|9x16|short[- ]form|shorts|reels?|tiktok|mobile)\b|세로|숏폼|쇼츠|릴스|縦|ショート動画|リール|竖屏|竖版|竖向|短视频/,
         (r) => {
           r.mode = 'short';
         },
       ],
       [
-        /\b(horizontal|landscape|16:9|16x9|widescreen|standard|full[- ]length|walkthrough|in[- ]depth)\b/,
+        /\b(horizontal|landscape|16:9|16x9|widescreen|standard|full[- ]length|walkthrough|in[- ]depth)\b|가로|와이드|横長|横向き|横型|横屏|横版|横向|宽屏/,
         (r) => {
           r.mode = 'standard';
         },
       ],
       [
-        /\b(square|1:1)\b/,
+        /\b(square|1:1)\b|정사각|正方形|方形/,
         (r) => {
           r.mode = 'custom';
           r.width = 1080;
@@ -134,7 +167,15 @@ export function parseVideoRequest(text: string): ParsedRequest {
   }
 
   const secs = /(\d{1,3}(?:\.\d+)?)\s*[- ]?\s*(seconds?|secs?|s|minutes?|mins?|m)\b/.exec(t);
-  if (secs) {
+  // 30초, 1분 30초, 30秒, 1分半, 1分钟30秒, 2分钟.
+  const cjk =
+    /(?:(\d{1,3})\s*(?:분|分钟|分)\s*(반|半)?\s*)?(?:(\d{1,3}(?:\.\d+)?)\s*(?:초|秒钟|秒))?/g;
+  const cjkHit = [...t.matchAll(cjk)].find((m) => m[1] || m[3]);
+  if (cjkHit && !secs) {
+    const minutes = Number(cjkHit[1] ?? 0) + (cjkHit[2] ? 0.5 : 0);
+    request.duration = minutes * 60 + Number(cjkHit[3] ?? 0);
+    inferred.duration = `"${cjkHit[0].trim()}"`;
+  } else if (secs) {
     const value = Number(secs[1]);
     request.duration = /^m/.test(secs[2]!) ? value * 60 : value;
     inferred.duration = `"${secs[0].trim()}"`;
@@ -156,13 +197,13 @@ export function parseVideoRequest(text: string): ParsedRequest {
   }
   firstHit('narration', [
     [
-      /\b(no|without|silent|mute[d]?)\s*(narration|voice(over)?|audio)\b|\bsilent\b/,
+      /\b(no|without|silent|mute[d]?)\s*(narration|voice(over)?|audio)\b|\bsilent\b|(?:내레이션|나레이션|음성|소리)\s*(?:없|빼|끄)|무음|(?:ナレーション|音声)\s*(?:なし|無し|不要|なしで)|無音|(?:无|不要|没有|去掉)\s*(?:旁白|配音|语音|声音)|静音|无声/,
       (r) => {
         r.narration = false;
       },
     ],
     [
-      /\b(narrat\w*|voice(over)?)\b/,
+      /\b(narrat\w*|voice(over)?)\b|내레이션|나레이션|ナレーション|旁白|配音/,
       (r) => {
         r.narration = true;
       },
@@ -170,7 +211,7 @@ export function parseVideoRequest(text: string): ParsedRequest {
   ]);
   firstHit('captions', [
     [
-      /\b(no|without)\s+(captions|subtitles)\b/,
+      /\b(no|without)\s+(captions|subtitles)\b|자막\s*(?:없|빼|끄)|字幕\s*(?:なし|無し|不要)|(?:无|不要|没有|去掉)\s*字幕/,
       (r) => {
         r.captions = false;
       },
@@ -178,18 +219,23 @@ export function parseVideoRequest(text: string): ParsedRequest {
   ]);
   firstHit('theme', [
     [
-      /\bdark( mode| theme)?\b/,
+      /\bdark( mode| theme)?\b|다크|어두운|ダーク|深色|暗色|暗黑/,
       (r) => {
         r.theme = 'dark';
       },
     ],
     [
-      /\blight( mode| theme)\b/,
+      /\blight( mode| theme)\b|라이트\s*(?:모드|테마)|밝은|ライト(?:モード|テーマ)|浅色|亮色/,
       (r) => {
         r.theme = 'light';
       },
     ],
   ]);
+  const named = requestedLanguage(t);
+  if (named) {
+    request.language = named.language;
+    inferred.language = `"${named.phrase}"`;
+  }
   return { request, inferred };
 }
 
@@ -242,6 +288,7 @@ export function resolveVideoSpec(config: CoviConfig, request: VideoRequest = {})
       (duration.target > 45 ? 'explanatory' : 'concise'),
     theme: request.theme ?? v.theme,
     mascot: v.mascot,
+    ...(request.language ? { language: request.language } : {}),
   };
 }
 
@@ -256,6 +303,7 @@ export function requestFromSpec(spec: VideoSpec): VideoRequest {
     captions: spec.captions,
     theme: spec.theme,
     style: spec.style,
+    ...(spec.language ? { language: spec.language } : {}),
   };
 }
 
@@ -313,6 +361,44 @@ export interface VideoPlan {
   sizeKnown: boolean;
 }
 
+/** The questions in a language (English by default, as the constants below). */
+export function videoQuestion(id: VideoQuestion['id'], language: Language = 'en'): VideoQuestion {
+  const say = (key: string) => t(language, `question.${id}.${key}`);
+  if (id === 'mode')
+    return {
+      id,
+      header: say('header'),
+      question: say('question'),
+      options: (['short', 'standard', 'custom'] as const).map((value) => ({
+        value,
+        label: say(value),
+        description: say(`${value}Description`),
+      })),
+    };
+  if (id === 'duration')
+    return {
+      id,
+      header: say('header'),
+      question: say('question'),
+      options: (['15', '30', '60', 'auto'] as const).map((value) => {
+        const key = value === 'auto' ? 'auto' : `s${value}`;
+        return { value, label: say(key), description: say(`${key}Description`) };
+      }),
+    };
+  return {
+    id,
+    header: say('header'),
+    question: say('question'),
+    options: (
+      [
+        ['1080x1920', '1080×1920', 'vertical'],
+        ['1920x1080', '1920×1080', 'landscape'],
+        ['1080x1080', '1080×1080', 'square'],
+      ] as const
+    ).map(([value, label, key]) => ({ value, label, description: say(key) })),
+  };
+}
+
 export const MODE_QUESTION: VideoQuestion = {
   id: 'mode',
   header: 'Video type',
@@ -366,9 +452,14 @@ export function planVideo(
     explicit?: VideoRequest;
     provided?: Iterable<string>;
     interactive: boolean;
+    /** The language to ask in: the run's, unless the request itself is written in another. */
+    language?: Language;
   },
 ): VideoPlan {
   const parsed = options.text ? parseVideoRequest(options.text) : { request: {}, inferred: {} };
+  const written = options.text ? detectLanguage(options.text)?.language : undefined;
+  const asking = written && written !== 'en' ? written : (options.language ?? 'en');
+  const ask = (id: VideoQuestion['id']) => videoQuestion(id, asking);
   const request: VideoRequest = { ...parsed.request, ...stripUndefined(options.explicit ?? {}) };
   const provided = new Set(options.provided ?? []);
   for (const key of Object.keys(stripUndefined(options.explicit ?? {}))) provided.add(key);
@@ -386,10 +477,10 @@ export function planVideo(
   // Short and standard imply a length; a custom size does not, so its length is worth asking.
   const questions: VideoQuestion[] = [];
   if (options.interactive) {
-    if (missing.includes('mode')) questions.push(MODE_QUESTION);
+    if (missing.includes('mode')) questions.push(ask('mode'));
     if (missing.includes('duration') && (missing.includes('mode') || mode === 'custom'))
-      questions.push(DURATION_QUESTION);
-    if (missing.includes('size')) questions.push(SIZE_QUESTION);
+      questions.push(ask('duration'));
+    if (missing.includes('size')) questions.push(ask('size'));
   }
   return {
     spec: resolveVideoSpec(config, request),
@@ -405,9 +496,12 @@ export function followUpQuestions(
   plan: Pick<VideoPlan, 'sizeKnown'>,
   answers: Partial<Record<VideoQuestion['id'], string>>,
   asked: Iterable<VideoQuestion['id']>,
+  language: Language = 'en',
 ): VideoQuestion[] {
   const done = new Set(asked);
-  return answers.mode === 'custom' && !plan.sizeKnown && !done.has('size') ? [SIZE_QUESTION] : [];
+  return answers.mode === 'custom' && !plan.sizeKnown && !done.has('size')
+    ? [videoQuestion('size', language)]
+    : [];
 }
 
 function stripUndefined<T extends object>(value: T): Partial<T> {

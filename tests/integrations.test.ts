@@ -105,6 +105,7 @@ describe('GitHub Action', () => {
       'duration',
       'narration',
       'captions',
+      'language',
       'annotations',
       'provider',
     ])
@@ -178,6 +179,7 @@ describe('GitLab CI component', () => {
       'video-mode',
       'duration',
       'narration',
+      'language',
       'comment',
       'provider',
     ])

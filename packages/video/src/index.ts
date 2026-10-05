@@ -76,5 +76,6 @@ export {
   layoutScenes,
   minSecondsFor,
   TRANSITION,
+  timelineLabels,
 } from './timeline/build.ts';
 export type * from './timeline/types.ts';

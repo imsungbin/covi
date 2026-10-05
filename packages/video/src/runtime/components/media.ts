@@ -332,11 +332,27 @@ export function terminal(v: V<'terminal'>, ctx: ComponentContext): Component {
       : { ...box, width: (box.width - gap) / 2 };
     const b = vertical ? { ...a, y: box.y + a.height + gap } : { ...a, x: box.x + a.width + gap };
     windows.push(
-      terminalWindow(ctx.root, a, 'Before', v.command, v.before, ctx),
-      terminalWindow(ctx.root, b, 'After', v.command, v.output, ctx),
+      terminalWindow(
+        ctx.root,
+        a,
+        ctx.timeline.labels?.before ?? 'Before',
+        v.command,
+        v.before,
+        ctx,
+      ),
+      terminalWindow(ctx.root, b, ctx.timeline.labels?.after ?? 'After', v.command, v.output, ctx),
     );
   } else {
-    windows.push(terminalWindow(ctx.root, box, v.title ?? 'Terminal', v.command, v.output, ctx));
+    windows.push(
+      terminalWindow(
+        ctx.root,
+        box,
+        v.title ?? ctx.timeline.labels?.terminal ?? 'Terminal',
+        v.command,
+        v.output,
+        ctx,
+      ),
+    );
   }
   return {
     update({ t, duration }) {
@@ -419,8 +435,8 @@ export function api(v: V<'api'>, ctx: ComponentContext): Component {
     pre.style.fontSize = `${clamp(Math.min((rect.width - ctx.u(44)) / (longest * 0.61), (rect.height - ctx.u(80)) / (lines.length * 1.5 + 1)), ctx.u(13), ctx.u(24))}px`;
     pre.innerHTML = lines
       .map((l, i) => {
-        // The "… N more lines" marker from clipping is a note, not JSON.
-        const html = /^… \d+ more lines?$/.test(l)
+        // The "… N more lines" marker from clipping (in any language) is a note, not JSON.
+        const html = /^… /.test(l)
           ? `<span class="tk-comment">${escapeHtml(l)}</span>`
           : highlightLine(l, 'json') || ' ';
         const kind = kinds?.[i];
@@ -438,10 +454,10 @@ export function api(v: V<'api'>, ctx: ComponentContext): Component {
       ? { ...area, height: (area.height - gap) / 2 }
       : { ...area, width: (area.width - gap) / 2 };
     const b = vertical ? { ...a, y: area.y + a.height + gap } : { ...a, x: area.x + a.width + gap };
-    make(a, 'Before', v.before.status, beforeLines, marks!.left);
-    make(b, 'After', v.after.status, afterLines, marks!.right);
+    make(a, ctx.timeline.labels?.before ?? 'Before', v.before.status, beforeLines, marks!.left);
+    make(b, ctx.timeline.labels?.after ?? 'After', v.after.status, afterLines, marks!.right);
   } else {
-    make(area, 'Response', v.after.status, afterLines);
+    make(area, ctx.timeline.labels?.response ?? 'Response', v.after.status, afterLines);
   }
   return {
     update({ t, duration }) {
@@ -498,10 +514,11 @@ export function findings(v: V<'findings'>, ctx: ComponentContext): Component {
     el('div', 'bar', card).style.background = color[f.certainty];
     const body = el('div', 'body', card);
     const meta = el('div', 'meta', body);
-    const c = chip(meta, CERTAINTY_LABEL[f.certainty], 'soft');
+    const labels = ctx.timeline.labels;
+    const c = chip(meta, labels?.certainty[f.certainty] ?? CERTAINTY_LABEL[f.certainty], 'soft');
     c.style.color = color[f.certainty];
     c.style.background = `${color[f.certainty]}1F`;
-    chip(meta, `${f.severity} severity`, 'muted');
+    chip(meta, labels?.severity[f.severity] ?? `${f.severity} severity`, 'muted');
     const title = el('div', 'ftitle', body, f.title);
     title.style.fontSize = `${ctx.u(vertical ? 38 : 32)}px`;
     if (f.location)

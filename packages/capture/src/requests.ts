@@ -1,4 +1,4 @@
-import type { DemoRequest } from '@covi/core';
+import { type DemoRequest, type Language, listOf, t } from '@covi/core';
 
 export interface HttpResult {
   status: number;
@@ -60,7 +60,14 @@ function kind(shape: Shape): string {
  * Describes incompatible differences between two JSON responses: changed top-level type, removed
  * fields, or fields whose type changed. Added fields are compatible and not reported.
  */
-export function describeShapeChange(beforeBody: string, afterBody: string): string | undefined {
+export function describeShapeChange(
+  beforeBody: string,
+  afterBody: string,
+  language: Language = 'en',
+): string | undefined {
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `capture.shape.${key}`, params);
+  const named = (k: string) => say(`kind.${k}`);
   let before: unknown;
   let after: unknown;
   try {
@@ -74,9 +81,9 @@ export function describeShapeChange(beforeBody: string, afterBody: string): stri
   if (kind(a) !== kind(b)) {
     const keys =
       typeof b === 'object' && 'object' in b
-        ? ` with keys ${Object.keys(b.object).slice(0, 4).join(', ')}`
+        ? say('keys', { keys: Object.keys(b.object).slice(0, 4).join(', ') })
         : '';
-    return `the response changed from a JSON ${kind(a)} to a JSON ${kind(b)}${keys}`;
+    return say('kindChanged', { from: named(kind(a)), to: named(kind(b)), keys });
   }
   const removed: string[] = [];
   const retyped: string[] = [];
@@ -94,16 +101,23 @@ export function describeShapeChange(beforeBody: string, afterBody: string): stri
       return;
     }
     if (kind(x) !== kind(y) && x !== 'unknown' && y !== 'unknown' && x !== 'null' && y !== 'null')
-      retyped.push(`${path || 'value'} (${kind(x)} → ${kind(y)})`);
+      retyped.push(
+        say('retypedField', {
+          path: path || say('value'),
+          from: named(kind(x)),
+          to: named(kind(y)),
+        }),
+      );
   };
   walk(a, b, '');
   const parts: string[] = [];
   if (removed.length)
-    parts.push(
-      `removed ${removed.length === 1 ? 'field' : 'fields'} ${removed.slice(0, 4).join(', ')}`,
-    );
-  if (retyped.length) parts.push(`changed the type of ${retyped.slice(0, 3).join(', ')}`);
-  return parts.length ? `the response ${parts.join(' and ')}` : undefined;
+    parts.push(say('removed', { count: removed.length, fields: removed.slice(0, 4).join(', ') }));
+  if (retyped.length) parts.push(say('retyped', { fields: retyped.slice(0, 3).join(', ') }));
+  if (!parts.length) return undefined;
+  return say('response', {
+    parts: language === 'en' ? parts.join(say('and')) : listOf(language, parts),
+  });
 }
 
 export function normalizeBody(body: string): string {

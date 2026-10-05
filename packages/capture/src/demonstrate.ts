@@ -10,10 +10,11 @@ import {
   type ExecutionPolicy,
   execShell,
   type FindingInput,
+  type Language,
   type Logger,
   type ReviewContext,
   type Run,
-  TRUST_HINT,
+  t,
 } from '@covi/core';
 import { type Browser, chromium } from 'playwright';
 import { type RunningApp, startApp } from './app.ts';
@@ -44,6 +45,8 @@ export interface DemonstrateInput {
    * when the plan captures it; pages are captured at every planned viewport either way.
    */
   prefer?: ViewportName;
+  /** The language of findings and notes. Default: English. */
+  language?: Language;
 }
 
 type Revision = 'base' | 'head';
@@ -67,6 +70,10 @@ const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
  */
 export async function demonstrate(input: DemonstrateInput): Promise<Demonstration> {
   const { run, change, context, config, logger } = input;
+  const language = input.language ?? 'en';
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `capture.${key}`, params);
+  const hint = say('trustHint');
   const policy: ExecutionPolicy = input.execution ?? { allowed: true, withheld: [] };
   const withheld = new Set(policy.withheld.map((c) => c.key));
   const plan = planDemo(context, config, input.plan);
@@ -90,34 +97,44 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
         : undefined;
   // Serving files and browsing them runs no project code; starting the app and demo commands do.
   if (!policy.allowed && mode === 'command') {
-    result.skipped.push({ what: `app.start (${config.app.start})`, reason: policy.reason ?? '' });
+    result.skipped.push({
+      what: say('skip.appStart', { command: config.app.start ?? '' }),
+      reason: policy.reason ?? '',
+    });
     mode = undefined;
   }
   const commandsToRun = policy.allowed ? plan.commands : [];
   for (const command of policy.allowed ? [] : plan.commands)
-    result.skipped.push({ what: `command "${command.name}"`, reason: policy.reason ?? '' });
+    result.skipped.push({
+      what: say('skip.command', { name: command.name }),
+      reason: policy.reason ?? '',
+    });
   for (const c of policy.withheld.filter((c) => c.key.startsWith('demo.commands.')))
     result.skipped.push({
-      what: `command "${c.key.slice('demo.commands.'.length)}"`,
-      reason: `Not trusted on this machine yet. ${TRUST_HINT}`,
+      what: say('skip.command', { name: c.key.slice('demo.commands.'.length) }),
+      reason: say('reason.notTrusted', { hint }),
     });
 
   if (!wantsApp && commandsToRun.length === 0) {
     result.skipped.push({
-      what: 'demonstration',
-      reason: context.demonstration.reasons.at(-1) ?? 'Nothing to demonstrate.',
+      what: say('skip.demonstration'),
+      reason: context.demonstration.reasons.at(-1) ?? say('reason.nothing'),
     });
     await run.writeJson('demo/captures.json', result, 'capture');
     return result;
   }
   if (wantsApp && !mode) {
     result.skipped.push({
-      what: 'pages, flows, and requests',
+      what: say('skip.pagesFlowsRequests'),
       reason: !policy.allowed
         ? (policy.reason ?? '')
         : withheld.has('app.start') || withheld.has('app.url')
-          ? `The app settings in the repository configuration are not trusted on this machine yet. ${TRUST_HINT}`
-          : `Covi does not know how to run this project. Set app.start (and app.url if needed) or app.static in .covi/config.yml${runnable.suggestions.length ? `, e.g. ${runnable.suggestions[0]}` : ''}.`,
+          ? say('reason.appNotTrusted', { hint })
+          : say('reason.cannotRun', {
+              example: runnable.suggestions.length
+                ? say('reason.example', { suggestion: runnable.suggestions[0]! })
+                : '',
+            }),
     });
   }
   const revisions: Revision[] = mode === 'url' ? ['head'] : ['base', 'head'];
@@ -153,10 +170,13 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
           });
         } catch (error) {
           const message = (error as Error).message;
-          result.skipped.push({ what: `app at ${revision}`, reason: message.split('\n')[0]! });
+          result.skipped.push({
+            what: say('skip.appAt', { revision }),
+            reason: message.split('\n')[0]!,
+          });
           if (revision === 'head') {
             result.findings.push({
-              title: 'The app does not start at the head revision',
+              title: say('finding.appStart.title'),
               certainty:
                 revisions.includes('base') && pages.size + requests.size > 0
                   ? 'confirmed'
@@ -164,8 +184,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
               severity: 'high',
               category: 'regression',
               evidence: message.slice(0, 600),
-              explanation:
-                'Covi could not start the configured app with this change applied, so the change likely breaks startup or the build.',
+              explanation: say('finding.appStart.explanation'),
               source: { kind: 'demo', id: 'app-start' },
             });
           }
@@ -199,15 +218,17 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
                 ),
               );
               if (outcome.error) {
-                result.skipped.push({ what: `flow "${flow.name}"`, reason: outcome.error });
+                result.skipped.push({
+                  what: say('skip.flow', { name: flow.name }),
+                  reason: outcome.error,
+                });
                 result.findings.push({
-                  title: `Flow "${flow.name}" fails at the head revision`,
+                  title: say('finding.flow.title', { name: flow.name }),
                   certainty: 'likely',
                   severity: 'medium',
                   category: 'regression',
                   evidence: outcome.error,
-                  explanation:
-                    'A configured user flow could not be completed with this change applied.',
+                  explanation: say('finding.flow.explanation'),
                   source: { kind: 'demo', id: 'flow-failure' },
                 });
               }
@@ -288,9 +309,9 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
       }
     }
 
-    result.shots.unshift(...(await assemblePageShots(run, pages, result.findings)));
-    result.requests = compareRequests(plan, requests, result.findings);
-    result.commands = compareCommands(plan, commands, result.findings);
+    result.shots.unshift(...(await assemblePageShots(run, pages, result.findings, language)));
+    result.requests = compareRequests(plan, requests, result.findings, language);
+    result.commands = compareCommands(plan, commands, result.findings, language);
   } finally {
     await browser?.close().catch(() => undefined);
     await workspace.dispose();
@@ -314,6 +335,7 @@ async function assemblePageShots(
   run: Run,
   pages: Map<string, Partial<Record<Revision, PageCapture>>>,
   findings: FindingInput[],
+  language: Language,
 ): Promise<DemoShot[]> {
   const shots: DemoShot[] = [];
   for (const [key, captures] of pages) {
@@ -359,24 +381,30 @@ async function assemblePageShots(
       const newErrors = captures.head.errors.filter((e) => !captures.base!.errors.includes(e));
       if (newErrors.length) {
         findings.push({
-          title: `New JavaScript error on ${path}`,
+          title: t(language, 'capture.finding.pageError.title', { path }),
           certainty: 'confirmed',
           severity: 'medium',
           category: 'regression',
           location: undefined,
           evidence: newErrors.slice(0, 3).join('\n'),
-          explanation: `Loading ${path} (${viewport}) logs errors at the head revision that do not occur at the base revision.`,
+          explanation: t(language, 'capture.finding.pageError.explanation', { path, viewport }),
           source: { kind: 'demo', id: 'page-error' },
         });
       }
       if ((captures.base.status ?? 200) < 400 && (captures.head.status ?? 200) >= 400) {
         findings.push({
-          title: `${path} returns HTTP ${captures.head.status} after the change`,
+          title: t(language, 'capture.finding.pageStatus.title', {
+            path,
+            status: String(captures.head.status),
+          }),
           certainty: 'confirmed',
           severity: 'high',
           category: 'regression',
-          evidence: `Base: HTTP ${captures.base.status}; head: HTTP ${captures.head.status}.`,
-          explanation: 'The page loads at the base revision but fails with this change.',
+          evidence: t(language, 'capture.finding.pageStatus.evidence', {
+            base: String(captures.base.status),
+            head: String(captures.head.status),
+          }),
+          explanation: t(language, 'capture.finding.pageStatus.explanation'),
           source: { kind: 'demo', id: 'page-status' },
         });
       }
@@ -407,7 +435,10 @@ function compareRequests(
   plan: DemoPlan,
   observed: Map<string, Partial<Record<Revision, HttpResult>>>,
   findings: FindingInput[],
+  language: Language,
 ): DemoRequestResult[] {
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `capture.finding.${key}`, params);
   const out: DemoRequestResult[] = [];
   for (const request of plan.requests) {
     const r = observed.get(request.name);
@@ -418,7 +449,7 @@ function compareRequests(
       !before ||
       before.status !== after.status ||
       normalizeBody(before.body) !== normalizeBody(after.body);
-    const shapeChange = before ? describeShapeChange(before.body, after.body) : undefined;
+    const shapeChange = before ? describeShapeChange(before.body, after.body, language) : undefined;
     out.push({
       name: request.name,
       method: request.method,
@@ -429,27 +460,34 @@ function compareRequests(
       shapeChange,
     });
     if (before && shapeChange) {
+      const params = { method: request.method, path: request.path };
       findings.push({
-        title: `${request.method} ${request.path} changed its response shape`,
+        title: say('apiShape.title', params),
         certainty: 'confirmed',
         severity: 'high',
         category: 'api-compatibility',
-        evidence: `Observed by calling ${request.method} ${request.path} at both revisions: ${shapeChange}.`,
-        explanation:
-          'Existing clients that parse the previous shape will break unless they are updated in the same release.',
-        suggestion:
-          'Version the endpoint, keep the old shape behind a parameter, or update every client in this change.',
+        evidence: say('apiShape.evidence', { ...params, shape: shapeChange }),
+        explanation: say('apiShape.explanation'),
+        suggestion: say('apiShape.suggestion'),
         source: { kind: 'demo', id: 'api-shape' },
       });
     }
     if (before && before.status < 400 && after.status >= 500) {
       findings.push({
-        title: `${request.method} ${request.path} now fails with HTTP ${after.status}`,
+        title: say('apiStatus.title', {
+          method: request.method,
+          path: request.path,
+          status: String(after.status),
+        }),
         certainty: 'confirmed',
         severity: 'high',
         category: 'regression',
-        evidence: `Base: HTTP ${before.status}; head: HTTP ${after.status}. ${after.body.slice(0, 200)}`,
-        explanation: 'The endpoint worked before this change and returns a server error with it.',
+        evidence: say('apiStatus.evidence', {
+          base: String(before.status),
+          head: String(after.status),
+          body: after.body.slice(0, 200),
+        }),
+        explanation: say('apiStatus.explanation'),
         source: { kind: 'demo', id: 'api-status' },
       });
     }
@@ -461,7 +499,10 @@ function compareCommands(
   plan: DemoPlan,
   observed: Map<string, Partial<Record<Revision, { exitCode: number | null; output: string }>>>,
   findings: FindingInput[],
+  language: Language,
 ): DemoCommandResult[] {
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `capture.finding.command.${key}`, params);
   const out: DemoCommandResult[] = [];
   for (const command of plan.commands) {
     const r = observed.get(command.name);
@@ -471,12 +512,16 @@ function compareCommands(
     out.push({ name: command.name, command: command.run, before: r.base, after: r.head, changed });
     if (r.base && r.base.exitCode === 0 && r.head.exitCode !== 0) {
       findings.push({
-        title: `\`${command.run}\` now fails`,
+        title: say('title', { command: command.run }),
         certainty: 'confirmed',
         severity: 'high',
         category: 'regression',
-        evidence: `Exit code ${r.base.exitCode} at base, ${r.head.exitCode ?? 'timeout'} at head.\n${r.head.output.split('\n').slice(-6).join('\n')}`,
-        explanation: 'The demo command succeeds without this change and fails with it.',
+        evidence: say('evidence', {
+          base: String(r.base.exitCode),
+          head: r.head.exitCode === null ? say('timeout') : String(r.head.exitCode),
+          output: r.head.output.split('\n').slice(-6).join('\n'),
+        }),
+        explanation: say('explanation'),
         source: { kind: 'demo', id: 'command-failure' },
       });
     }

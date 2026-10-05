@@ -18,6 +18,7 @@ import {
   FindingsFileSchema,
   gateFailures,
   LANGUAGE_NAME,
+  type Language,
   normalizeFinding,
   type ParsedConfigInput,
   ProviderError,
@@ -31,10 +32,12 @@ import {
   renderExplanation,
   renderReview,
   renderSummary,
+  reportLanguage,
   runRules,
   type SummaryFormat,
   type TestRunResult,
   TRUST_HINT,
+  t,
   UsageError,
 } from '@covi/core';
 import type { PlatformContext } from '@covi/platforms';
@@ -141,6 +144,7 @@ async function analysis(session: Session, ruleFindings: readonly Finding[], chan
         redactor: session.redactor,
         maxDiffChars: session.config.intelligence.maxDiffChars,
         runId: session.run.id,
+        language: session.language.language,
       }),
     );
   } catch (error) {
@@ -209,9 +213,10 @@ export async function reviewSession(
   options: { runTests?: boolean; demo?: Demonstration } = {},
 ): Promise<ReviewOutcome> {
   const { run, context, config, logger } = session;
+  const language = session.language.language;
   logger.step('Reviewing');
   const rules = await run.stage('rules', () =>
-    runRules(change, context, { git: session.git, config, logger }),
+    runRules(change, context, { git: session.git, config, logger, language }),
   );
   const demoFindings = (options.demo?.findings ?? []).map((f) =>
     normalizeFinding(f, { kind: 'demo' }),
@@ -235,7 +240,7 @@ export async function reviewSession(
   if (wantTests && testsNote) run.warn(testsNote);
   const tests =
     wantTests && !testsNote ? await run.stage('tests', () => runTests(session)) : undefined;
-  const explanation = model?.explanation ?? explainHeuristically(context);
+  const explanation = model?.explanation ?? explainHeuristically(context, language);
   const findingsFile: FindingsFile = model?.findings ?? {
     schemaVersion: 1,
     findings: [],
@@ -259,6 +264,7 @@ export async function reviewSession(
     generatedBy: model
       ? { provider: session.provider!.id, model: session.provider!.model }
       : { provider: 'heuristic' },
+    language,
   });
   await writeReviewArtifacts(
     session,
@@ -270,19 +276,37 @@ export async function reviewSession(
 }
 
 export async function writeReviewArtifacts(
-  session: Pick<Session, 'run' | 'context'>,
+  session: Pick<Session, 'run' | 'context' | 'language'>,
   built: BuiltReview,
   explanation: Explanation,
   findingsFile: FindingsFile,
 ): Promise<void> {
   const { run, context } = session;
+  // Headings follow what the authored files say they are written in, else the run's language.
+  const language = reportLanguage(session.language.language, explanation, findingsFile);
   await run.writeJson('explanation.json', explanation, 'explanation');
-  await run.writeText('explanation.md', renderExplanation(explanation, context), 'explanation');
+  await run.writeText(
+    'explanation.md',
+    renderExplanation(explanation, context, language),
+    'explanation',
+  );
   await run.writeJson('findings.json', findingsFile, 'findings');
   await run.writeJson('review.json', { ...built.review, omitted: built.omitted }, 'review');
-  await run.writeText('review.md', renderReview(built.review, explanation, context), 'review');
-  await run.writeText('summary.md', renderSummary(explanation, built.review, context), 'summary');
-  await run.writeText('comment.md', renderComment(built.review, explanation, context), 'comment');
+  await run.writeText(
+    'review.md',
+    renderReview(built.review, explanation, context, language),
+    'review',
+  );
+  await run.writeText(
+    'summary.md',
+    renderSummary(explanation, built.review, context, 'markdown', language),
+    'summary',
+  );
+  await run.writeText(
+    'comment.md',
+    renderComment(built.review, explanation, context, {}, language),
+    'comment',
+  );
 }
 
 function finishReview(
@@ -322,24 +346,31 @@ export async function analyzeWorkflow(
 ): Promise<WorkflowResult> {
   const { run, context, config, logger } = session;
   const result = baseResult('analyze', session);
+  const language = session.language.language;
   const rules = await run.stage('rules', () =>
-    runRules(change, context, { git: session.git, config, logger }),
+    runRules(change, context, { git: session.git, config, logger, language }),
   );
   await run.writeJson(
     'rule-findings.json',
     { schemaVersion: 1, findings: rules.findings, checked: rules.checked, errors: rules.errors },
     'findings',
   );
-  await run.writeJson('explanation.draft.json', explainHeuristically(context), 'explanation');
+  await run.writeJson(
+    'explanation.draft.json',
+    explainHeuristically(context, language),
+    'explanation',
+  );
   const brief = renderBrief(change, context, rules.findings, {
     runDir: relative(change.repository.root, run.dir) || run.dir,
     runId: run.id,
     redactor: session.redactor,
     maxDiffChars: config.intelligence.maxDiffChars,
+    language,
   });
   await run.writeText('brief.md', brief, 'brief');
   result.findings = findingCounts(rules.findings);
   result.data = {
+    language: session.language,
     intent: context.intent,
     size: context.size,
     demonstration: {
@@ -372,19 +403,21 @@ export async function explainWorkflow(
   change: CodeChange,
 ): Promise<WorkflowResult> {
   const result = baseResult('explain', session);
+  const language = session.language.language;
   const rules = await session.run.stage('rules', () =>
     runRules(change, session.context, {
       git: session.git,
       config: session.config,
       logger: session.logger,
+      language,
     }),
   );
   const model = await analysis(session, rules.findings, change);
-  const explanation = model?.explanation ?? explainHeuristically(session.context);
+  const explanation = model?.explanation ?? explainHeuristically(session.context, language);
   await session.run.writeJson('explanation.json', explanation, 'explanation');
   await session.run.writeText(
     'explanation.md',
-    renderExplanation(explanation, session.context),
+    renderExplanation(explanation, session.context, reportLanguage(language, explanation)),
     'explanation',
   );
   artifact(session, result, 'explanation', 'explanation.md');
@@ -431,9 +464,14 @@ async function demoStage(
         plan,
         execution: session.execution,
         prefer,
+        language: session.language.language,
       }),
     );
-    await session.run.writeText('demo/demo.md', renderDemo(demo), 'capture');
+    await session.run.writeText(
+      'demo/demo.md',
+      renderDemo(demo, session.language.language),
+      'capture',
+    );
     return demo;
   } catch (error) {
     session.run.warn(`Demonstration failed: ${(error as Error).message.split('\n')[0]}`);
@@ -465,18 +503,23 @@ export async function demoWorkflow(
   return result;
 }
 
-export function renderDemo(demo: Demonstration): string {
-  const out = ['# Demonstration', ''];
+export function renderDemo(demo: Demonstration, language: Language = 'en'): string {
+  const say = (key: string, params?: Record<string, string | number>) =>
+    t(language, `demo.${key}`, params);
+  const out = [`# ${say('title')}`, ''];
   for (const shot of demo.shots) {
     out.push(
-      `## ${shot.kind === 'page' ? `Page ${shot.name}` : `${shot.flow} · step ${shot.step}: ${shot.label ?? ''}`} (${shot.viewport})`,
+      `## ${shot.kind === 'page' ? say('page', { name: shot.name }) : say('flowStep', { flow: shot.flow ?? '', step: shot.step ?? '', label: shot.label ?? '' })} (${shot.viewport})`,
       '',
     );
-    if (shot.before) out.push(`Before: ![before](../${shot.before.path})`, '');
-    if (shot.after) out.push(`After: ![after](../${shot.after.path})`, '');
+    if (shot.before) out.push(`${say('before')} ![before](../${shot.before.path})`, '');
+    if (shot.after) out.push(`${say('after')} ![after](../${shot.after.path})`, '');
     if (shot.diff)
       out.push(
-        `Changed pixels: ${(shot.diff.changedRatio * 100).toFixed(2)}%${shot.diff.path ? ` ([diff](../${shot.diff.path}))` : ''}`,
+        say('changedPixels', {
+          percent: (shot.diff.changedRatio * 100).toFixed(2),
+          diff: shot.diff.path ? say('diffLink', { path: `../${shot.diff.path}` }) : '',
+        }),
         '',
       );
   }
@@ -484,18 +527,22 @@ export function renderDemo(demo: Demonstration): string {
     out.push(
       `## ${r.method} ${r.path}`,
       '',
-      `Before: ${r.before ? `HTTP ${r.before.status}` : 'n/a'} · After: HTTP ${r.after.status}${r.changed ? ' · changed' : ''}`,
+      say('request', {
+        before: r.before ? `HTTP ${r.before.status}` : say('notApplicable'),
+        after: String(r.after.status),
+        changed: r.changed ? say('changed') : '',
+      }),
       '',
     );
-    if (r.shapeChange) out.push(`Shape change: ${r.shapeChange}.`, '');
+    if (r.shapeChange) out.push(say('shapeChange', { shape: r.shapeChange }), '');
   }
   for (const c of demo.commands) {
     out.push(`## \`${c.command}\``, '');
-    if (c.before) out.push('Before:', '', '```', c.before.output, '```', '');
-    out.push('After:', '', '```', c.after.output, '```', '');
+    if (c.before) out.push(say('before'), '', '```', c.before.output, '```', '');
+    out.push(say('after'), '', '```', c.after.output, '```', '');
   }
   if (demo.skipped.length) {
-    out.push('## Not demonstrated', '');
+    out.push(`## ${say('notDemonstrated')}`, '');
     for (const s of demo.skipped) out.push(`- ${s.what}: ${s.reason}`);
     out.push('');
   }
@@ -558,7 +605,8 @@ export async function videoWorkflow(
       logger: session.logger,
       draftOnly: options.draft,
       workers: options.workers,
-      language: session.languageSettings,
+      language: session.language.language,
+      languageSettings: session.languageSettings,
       pronunciations: session.config.video.narration.pronunciations,
     }),
   );
@@ -627,7 +675,7 @@ export async function renderWorkflow(
         await run.readJson('explanation.json'),
         'explanation.json',
       ) as Explanation)
-    : explainHeuristically(session.context);
+    : explainHeuristically(session.context, session.language.language);
   const demo = (await run.has('demo/captures.json'))
     ? await run.readJson<Demonstration>('demo/captures.json')
     : undefined;
@@ -653,7 +701,8 @@ export async function renderWorkflow(
       cacheDir: session.cacheDir,
       logger: session.logger,
       workers: options.workers,
-      language: session.languageSettings,
+      language: session.language.language,
+      languageSettings: session.languageSettings,
       pronunciations: session.config.video.narration.pronunciations,
     }),
   );
@@ -665,6 +714,8 @@ export async function renderWorkflow(
 export async function reportWorkflow(session: Session): Promise<WorkflowResult> {
   const { run, context, config } = session;
   const result = baseResult('report', session);
+  // --language rewrites the reports in another language; the run records it.
+  if (session.languageSettings.flag) run.setLanguage(session.language);
   const explanation = (await run.has('explanation.json'))
     ? ({
         ...parseOrThrow(
@@ -677,7 +728,7 @@ export async function reportWorkflow(session: Session): Promise<WorkflowResult> 
       } as Explanation)
     : (() => {
         run.warn('No explanation.json found; using the structural explanation.');
-        return explainHeuristically(context);
+        return explainHeuristically(context, session.language.language);
       })();
   const authored = (await run.has('findings.json'))
     ? parseOrThrow(
@@ -714,6 +765,7 @@ export async function reportWorkflow(session: Session): Promise<WorkflowResult> 
       demo && demo.shots.length + demo.requests.length + demo.commands.length > 0,
     ),
     generatedBy: { provider: 'agent' },
+    language: reportLanguage(session.language.language, authored, explanation),
   });
   await run.stage('report', () =>
     writeReviewArtifacts(
@@ -747,7 +799,13 @@ export async function summarizeWorkflow(
           null,
           2,
         )
-      : renderSummary(outcome.explanation, outcome.review, session.context, format);
+      : renderSummary(
+          outcome.explanation,
+          outcome.review,
+          session.context,
+          format,
+          reportLanguage(session.language.language, outcome.explanation),
+        );
   result.data = { summary: text };
   result.verdict = outcome.review.verdict;
   artifact(session, result, 'summary', 'summary.md');
@@ -770,7 +828,8 @@ export async function commentFromRun(
     'explanation.json',
   ) as Explanation;
   const context = await run.readJson<ReviewContext>('context.json');
-  return { body: renderComment(review, explanation, context, links), review, context };
+  const language = reportLanguage(run.manifest.language?.value ?? 'en', explanation, review);
+  return { body: renderComment(review, explanation, context, links, language), review, context };
 }
 
 export function platformSummaryTitle(platform: PlatformContext | undefined): string {

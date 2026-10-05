@@ -6,12 +6,14 @@ import {
   ExitCode,
   type Explanation,
   gateFailures,
+  type Language,
   type Logger,
   type ParsedConfigInput,
   type Review,
   type ReviewContext,
   type Run,
   renderReview,
+  reportLanguage,
 } from '@covi/core';
 import {
   annotations,
@@ -101,6 +103,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
             execution: session.execution,
             // Vertical videos show phone-sized pages, so flows are captured there.
             prefer: spec.height > spec.width ? 'mobile' : 'desktop',
+            language: session.language.language,
           }),
         )
         .catch((error: Error) => {
@@ -143,7 +146,8 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
           provider: session.provider,
           cacheDir: session.cacheDir,
           logger,
-          language: session.languageSettings,
+          language: session.language.language,
+          languageSettings: session.languageSettings,
           pronunciations: config.video.narration.pronunciations,
         }),
       );
@@ -163,6 +167,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
   await writeCiOutputs(run, platform, outcome.review, result, {
     ...options,
     annotations: config.publish.annotations,
+    language: reportLanguage(session.language.language, outcome.explanation),
   });
 
   if (options.publish ?? config.publish.comment) {
@@ -205,10 +210,11 @@ async function writeCiOutputs(
   platform: PlatformContext,
   review: Review,
   result: WorkflowResult,
-  options: Pick<CiOptions, 'log' | 'env'> & { annotations: boolean },
+  options: Pick<CiOptions, 'log' | 'env'> & { annotations: boolean; language: Language },
 ): Promise<void> {
+  const { language } = options;
   const version = await coviVersion();
-  await run.writeJson('reports/covi.sarif', toSarif(review.findings, version), 'report');
+  await run.writeJson('reports/covi.sarif', toSarif(review.findings, version, language), 'report');
   result.artifacts.sarif = run.path('reports/covi.sarif');
   const values = {
     COVI_VERDICT: review.verdict,
@@ -217,13 +223,14 @@ async function writeCiOutputs(
     COVI_VIDEO: result.video?.path,
   };
   if (platform.platform === 'github') {
-    if (options.annotations) for (const line of annotations(review.findings)) options.log(line);
+    if (options.annotations)
+      for (const line of annotations(review.findings, 10, language)) options.log(line);
     if (options.env.GITHUB_STEP_SUMMARY) {
       const context = await run.readJson<ReviewContext>('context.json');
       const explanation = await run.readJson<Explanation>('explanation.json');
       await writeJobSummary(
         options.env.GITHUB_STEP_SUMMARY,
-        renderReview(review, explanation, context),
+        renderReview(review, explanation, context, language),
       );
     }
     if (options.env.GITHUB_OUTPUT) {

@@ -5,33 +5,39 @@ use_when: The change is mostly styles or markup (visual updates, layout, theming
 beats:
   - id: context
     eyebrow: Visual change
+    eyebrows: { ko: '화면 변경', ja: '見た目の変更', zh: '视觉变化' }
     goal: Name the visual change in one sentence.
     visuals: [title]
     expression: explaining
   - id: compare
     eyebrow: Before / after
+    eyebrows: { ko: '변경 전 / 후', ja: '変更前 / 変更後', zh: '变更前 / 后' }
     goal: Show both versions with the changed region emphasized.
     visuals: [before-after, screenshot:after]
     expression: reviewing
   - id: detail
     eyebrow: Up close
+    eyebrows: { ko: '자세히', ja: '拡大', zh: '近看' }
     goal: Zoom into the region that changed most, or another viewport.
     visuals: [screenshot:after, interaction]
     expression: explaining
     optional: true
   - id: styles
     eyebrow: The styles
+    eyebrows: { ko: '스타일', ja: 'スタイル', zh: '样式' }
     goal: The rules responsible for the change.
     visuals: [code]
     expression: explaining
     optional: true
   - id: review
     eyebrow: Worth a look
+    eyebrows: { ko: '살펴볼 점', ja: '確認ポイント', zh: '值得一看' }
     goal: Accessibility, responsive, or consistency concerns.
     visuals: [findings, callout]
     expression: reviewing
   - id: summary
     eyebrow: Summary
+    eyebrows: { ko: '요약', ja: 'まとめ', zh: '总结' }
     goal: The verdict.
     visuals: [summary]
     expression: success

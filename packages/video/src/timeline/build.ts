@@ -1,5 +1,5 @@
 import { motion, themes, typography } from '@covi/brand';
-import { type Language, seedFrom } from '@covi/core';
+import { type Language, seedFrom, t } from '@covi/core';
 import { buildCaptions, captionOptionsFor } from '../captions.ts';
 import { cjkFontsFor, withCjkFamilies } from '../composition/fonts.ts';
 import { orientationOf, type VideoSpec } from '../spec.ts';
@@ -10,9 +10,38 @@ import type {
   Expression,
   ImageAsset,
   Timeline,
+  TimelineLabels,
   TimelineScene,
   TimelineVisual,
 } from './types.ts';
+
+/** The labels a video draws, from the message catalog of its language. */
+export function timelineLabels(language: Language): TimelineLabels {
+  const say = (key: string) => t(language, `video.label.${key}`);
+  return {
+    verdict: {
+      'looks-good': say('verdict.looks-good'),
+      'needs-attention': say('verdict.needs-attention'),
+      'needs-changes': say('verdict.needs-changes'),
+    },
+    certainty: {
+      confirmed: say('certainty.confirmed'),
+      likely: say('certainty.likely'),
+      risk: say('certainty.risk'),
+      question: say('certainty.question'),
+    },
+    severity: {
+      high: say('severity.high'),
+      medium: say('severity.medium'),
+      low: say('severity.low'),
+    },
+    stats: { files: say('stats.files'), added: say('stats.added'), removed: say('stats.removed') },
+    before: say('before'),
+    after: say('after'),
+    response: say('response'),
+    terminal: say('terminal'),
+  };
+}
 
 /** Scenes overlap by the brand's transition length. */
 export const TRANSITION = motion.transition;
@@ -203,6 +232,7 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
   return {
     version: 1,
     language,
+    labels: timelineLabels(language),
     title: input.title,
     width: spec.width,
     height: spec.height,

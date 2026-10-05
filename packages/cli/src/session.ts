@@ -241,7 +241,7 @@ export async function startSession(options: SessionOptions): Promise<Session> {
 
   logger.step('Understanding the change');
   const context = await run.stage('understand', () =>
-    understandChange(change, { git, config, logger }),
+    understandChange(change, { git, config, logger, language: language.language }),
   );
   await run.writeJson('context.json', context, 'context');
   await run.writeText('diff.patch', renderPatch(change), 'diff');

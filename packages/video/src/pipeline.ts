@@ -89,11 +89,13 @@ export interface ProduceVideoInput {
   /** Stop after writing storyboard.json so an agent can refine it. */
   draftOnly?: boolean;
   workers?: number;
+  /** The language Covi writes in for this run: drafted narration and labels. Default: English. */
+  language?: Language;
   /**
    * The language settings that apply to speech: `flag` from --language (or COVI_LANGUAGE), and
    * `configured` from configuration when it names a language rather than `auto`.
    */
-  language?: { flag?: Language; configured?: Language };
+  languageSettings?: { flag?: Language; configured?: Language };
   /** video.narration.pronunciations: how the voice should say particular words. */
   pronunciations?: Pronunciations;
 }
@@ -143,19 +145,25 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
     });
   } else {
     logger.step('Drafting the storyboard');
+    // A language named in the request ("a Korean video") wins over the run's language.
+    const draftLanguage = spec.language ?? input.language ?? 'en';
     storyboard = redact(
       draftStoryboard({
         ...input,
         templates: await loadTemplates(),
         templateId: input.template,
+        language: draftLanguage,
       }),
     );
     drafted = true;
     if (input.provider) {
       try {
         storyboard = redact(
-          await refineNarration(input.provider, storyboard, input, (text) =>
-            run.redactor.redact(text),
+          await refineNarration(
+            input.provider,
+            storyboard,
+            { ...input, language: draftLanguage },
+            (text) => run.redactor.redact(text),
           ),
         );
         notes.push(`Narration refined by ${input.provider.id}.`);
@@ -209,10 +217,10 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   // captions keep the narration as written.
   const said = storyboard.scenes.map((s) => (s.say ?? s.narration).trim());
   let speechLanguage = resolveSpeechLanguage({
-    flag: input.language?.flag,
+    flag: input.languageSettings?.flag ?? spec.language,
     storyboard: storyboard.language,
     text: said,
-    configured: input.language?.configured,
+    configured: input.languageSettings?.configured,
   });
   const tts = await chooseTts(spec.narration, process.env, speechLanguage.language);
   // A voice someone chose can name the language when nothing else does; Covi's own pick cannot.

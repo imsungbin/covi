@@ -1,6 +1,7 @@
 import { motion, themes, typography } from '@covi/brand';
 import { type Language, seedFrom } from '@covi/core';
 import { buildCaptions, captionOptionsFor } from '../captions.ts';
+import { cjkFontsFor, withCjkFamilies } from '../composition/fonts.ts';
 import { orientationOf, type VideoSpec } from '../spec.ts';
 import type { Scene, Storyboard, Visual } from '../storyboard/schema.ts';
 import { SPEECH_RATE, speechUnits } from '../text.ts';
@@ -197,6 +198,8 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
         { ...captionOptionsFor(orientation), language },
       )
     : [];
+  // Fonts follow the text that will be drawn, so CJK in a code excerpt is covered too.
+  const cjk = cjkFontsFor(JSON.stringify([input.title, scenes, captions]), language);
   return {
     version: 1,
     language,
@@ -208,7 +211,11 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
     frames,
     orientation,
     theme: themes[spec.theme],
-    fonts: { sans: typography.sans, mono: typography.mono },
+    fonts: {
+      sans: withCjkFamilies(typography.sans, cjk),
+      mono: withCjkFamilies(typography.mono, cjk),
+      ...(cjk.length ? { cjk } : {}),
+    },
     mascot: spec.mascot,
     transition: TRANSITION,
     scenes,

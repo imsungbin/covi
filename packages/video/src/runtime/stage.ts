@@ -101,6 +101,13 @@ export class Stage {
   }
 
   private async mount(): Promise<void> {
+    // Load every declared face up front: CJK slices load lazily by unicode-range otherwise, and
+    // text measured before its slice arrives would lay out with fallback metrics.
+    const faces: FontFace[] = [];
+    document.fonts.forEach((face) => {
+      faces.push(face);
+    });
+    await Promise.all(faces.map((face) => face.load().catch(() => undefined)));
     await document.fonts.ready;
     const t = this.timeline;
     const r = this.regions;

@@ -1,8 +1,9 @@
 import { copyFile, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, extname, isAbsolute, join, relative } from 'node:path';
-import { shortHash, UsageError } from '@covi/core';
+import { LOCALE, shortHash, UsageError } from '@covi/core';
 import type { ImageAsset, Timeline } from '../timeline/types.ts';
+import { fontSlices } from './fonts.ts';
 import { imageSize } from './images.ts';
 import { runtimeScript } from './runtime-bundle.ts';
 
@@ -69,6 +70,16 @@ export async function writeComposition(
   const fonts = fontFiles();
   await copyFile(fonts.sans, join(dir, 'assets', 'fonts', 'inter.woff2'));
   await copyFile(fonts.mono, join(dir, 'assets', 'fonts', 'jetbrains-mono.woff2'));
+  // CJK text draws with bundled Noto slices, never with whatever the machine has installed.
+  const { mouth: _mouth, ...drawn } = timeline;
+  const slices = fontSlices(timeline.fonts.cjk ?? [], JSON.stringify(drawn));
+  for (const slice of slices) await copyFile(slice.file, join(dir, 'assets', 'fonts', slice.name));
+  const cjkFaces = slices
+    .map(
+      (f) =>
+        `@font-face { font-family: '${f.family}'; src: url(assets/fonts/${f.name}) format('woff2'); font-weight: 100 900; font-display: block; unicode-range: ${f.unicodeRange}; }\n`,
+    )
+    .join('');
   for (const [src, source] of images) {
     await mkdir(dirname(join(dir, src)), { recursive: true });
     await copyFile(source, join(dir, src));
@@ -77,7 +88,7 @@ export async function writeComposition(
   await writeFile(join(dir, 'timeline.json'), `${JSON.stringify(timeline, null, 2)}\n`);
   const json = JSON.stringify(timeline).replace(/</g, '\\u003c');
   const html = `<!doctype html>
-<html lang="en">
+<html lang="${LOCALE[timeline.language ?? 'en']}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=${timeline.width}">
@@ -85,7 +96,7 @@ export async function writeComposition(
 <style>
 @font-face { font-family: 'Inter Variable'; src: url(assets/fonts/inter.woff2) format('woff2'); font-weight: 100 900; font-display: block; }
 @font-face { font-family: 'JetBrains Mono Variable'; src: url(assets/fonts/jetbrains-mono.woff2) format('woff2'); font-weight: 100 800; font-display: block; }
-html, body { margin: 0; background: ${timeline.theme.background}; }
+${cjkFaces}html, body { margin: 0; background: ${timeline.theme.background}; }
 </style>
 </head>
 <body>

@@ -153,6 +153,8 @@ describe('heuristic output in every language', () => {
         for (const scene of storyboard.scenes) {
           expect(scene.eyebrow, scene.beat).toMatch(label);
           expect(scene.narration, scene.beat).toMatch(script);
+          const { eyebrow } = scene.visual as { eyebrow?: string };
+          if (eyebrow) expect(eyebrow, `${scene.beat} title card`).toMatch(label);
         }
         const labels = timelineLabels(language);
         expect(labels.verdict['looks-good']).toMatch(label);

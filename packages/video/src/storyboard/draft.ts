@@ -235,7 +235,7 @@ function makeVisual(
       return {
         kind: 'title',
         title: truncate(explanation.headline, 80),
-        eyebrow: beat.eyebrow,
+        eyebrow: eyebrowOf(beat, ctx.language),
         meta,
       };
     }
@@ -958,9 +958,12 @@ function fitUnits(text: string, budget: number, language: Language): string {
     out = next;
   }
   if (out) return out;
+  // One sentence is too long. A sentence that carries text from the change (an English commit
+  // title in Chinese narration) costs more units than its time; narration-first timing absorbs
+  // a long sentence better than a broken one.
   const first = sentences[0] ?? clean;
-  if (speechUnits(first, language) <= Math.ceil(budget * 1.6)) return first;
-  // One sentence is too long: end it at the last clause that fits, else at the budget.
+  if (speechUnits(first, language) <= Math.ceil(budget * 2.5)) return first;
+  // End it at the last clause that fits, else at the last word that fits (never inside one).
   const clauses = first.split(/(?<=[,，、;；])\s*/);
   const gap = language === 'ko' ? ' ' : '';
   let cut = '';
@@ -970,12 +973,12 @@ function fitUnits(text: string, budget: number, language: Language): string {
     cut = next;
   }
   if (!cut) {
-    for (const g of segments(first, language, 'grapheme')) {
-      if (speechUnits(cut + g, language) > budget) break;
-      cut += g;
+    for (const word of segments(first, language, 'word')) {
+      if (speechUnits(cut + word, language) > budget) break;
+      cut += word;
     }
   }
-  return endSentence(language, cut.replace(/[,，、;；\s]+$/, ''));
+  return endSentence(language, (cut || first).replace(/[,，、;；\s]+$/, ''));
 }
 
 /** How a file is said aloud: "the app script", "the pricing stylesheet". */

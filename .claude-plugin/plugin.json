@@ -5,6 +5,11 @@
   "author": {
     "name": "Covi contributors"
   },
+  "homepage": "https://github.com/imsungbin/covi",
+  "repository": "https://github.com/imsungbin/covi",
+  "documentationUrl": "https://github.com/imsungbin/covi/tree/main/docs",
+  "supportUrl": "https://github.com/imsungbin/covi/issues",
+  "privacyPolicyUrl": "https://github.com/imsungbin/covi#privacy",
   "license": "MIT",
   "keywords": ["code-review", "explain", "demo", "video", "skills"]
 }

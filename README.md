@@ -301,6 +301,19 @@ Covi writes and narrates in English, Korean, Japanese, or Simplified Chinese. By
 
 `covi doctor` checks all of these.
 
+## Privacy
+
+Covi has no server and collects no telemetry. It runs on your machine or in your CI and writes its results to `.covi/runs/` in the repository. Run files record commit authors' display names, never their e-mail addresses.
+
+Data leaves the machine only for services you set up:
+
+- **Anthropic API**, when `ANTHROPIC_API_KEY` is set or you choose the `anthropic` provider: a redacted brief of the change, including a digest of the diff. Set `intelligence.provider: heuristic` to keep code on the machine.
+- **An agent CLI you configure** (the `command` provider): the same redacted brief, on its stdin.
+- **OpenAI or ElevenLabs**, when you set their API key: the narration text of a video.
+- **GitHub or GitLab**: review comments, only from `covi ci` with commenting enabled or from `covi publish`.
+
+Inside a coding agent, the agent reads the change itself, under that agent's own data handling. [What leaves your machine](docs/security.md#what-leaves-your-machine) has the details.
+
 ## Documentation
 
 - [Product concept](docs/concept.md)

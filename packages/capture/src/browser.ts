@@ -46,6 +46,21 @@ export async function newContext(
   return browser.newContext(contextOptions(viewport, options));
 }
 
+/** A new context with one page; the context is closed again when the page cannot open. */
+async function openContext(
+  browser: Browser,
+  viewport: ViewportName,
+  options: ContextOptions = {},
+): Promise<{ context: BrowserContext; page: Page }> {
+  const context = await newContext(browser, viewport, options);
+  try {
+    return { context, page: await context.newPage() };
+  } catch (error) {
+    await context.close().catch(() => undefined);
+    throw error;
+  }
+}
+
 async function settle(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => undefined);
   // Evaluated in the page; written as strings because this module is compiled without DOM types.
@@ -80,20 +95,19 @@ export async function capturePage(
   file: string,
   trace?: TraceCollector,
 ): Promise<PageCapture> {
-  const context = await newContext(browser, viewport);
-  const page = await context.newPage();
+  const { context, page } = await openContext(browser, viewport);
   const v = VIEWPORT_PRESETS[viewport];
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  if (trace) {
-    trace.start();
-    await observe(page, trace);
-    trace.beginStep({ id: 'load', action: 'goto' });
-  }
   try {
+    if (trace) {
+      trace.start();
+      await observe(page, trace);
+      trace.beginStep({ id: 'load', action: 'goto' });
+    }
     const response = await page.goto(url, { waitUntil: 'load', timeout: 30_000 });
     await settle(page);
     const fullHeight = Number(
@@ -226,22 +240,16 @@ async function openPage(
   recordDir?: string,
 ): Promise<{ context: BrowserContext; page: Page; recordError?: string }> {
   if (recordDir) {
-    let context: BrowserContext | undefined;
     try {
-      context = await newContext(browser, viewport, { recordDir });
-      return { context, page: await context.newPage() };
+      return await openContext(browser, viewport, { recordDir });
     } catch (error) {
-      await context?.close().catch(() => undefined);
-      const plain = await newContext(browser, viewport);
       return {
-        context: plain,
-        page: await plain.newPage(),
+        ...(await openContext(browser, viewport)),
         recordError: (error as Error).message.split('\n')[0]!,
       };
     }
   }
-  const context = await newContext(browser, viewport);
-  return { context, page: await context.newPage() };
+  return openContext(browser, viewport);
 }
 
 /**
@@ -263,10 +271,6 @@ export async function runFlow(
   const trace = options.trace;
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  if (trace) {
-    trace.start();
-    await observe(page, trace);
-  }
   const frames: FlowFrame[] = [];
   let current = 'open';
   const shoot = async (label: string, target?: string) => {
@@ -309,6 +313,10 @@ export async function runFlow(
     trace?.endStep({ mutations: await collectMutations(page, scale, VIEWPORT_PRESETS[viewport]) });
   let result: FlowRun;
   try {
+    if (trace) {
+      trace.start();
+      await observe(page, trace);
+    }
     trace?.beginStep({ id: 'open', action: 'goto', target: flow.path });
     await page.goto(`${baseUrl}${flow.path}`, { waitUntil: 'load', timeout: 30_000 });
     await settle(page);

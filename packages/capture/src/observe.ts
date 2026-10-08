@@ -42,22 +42,24 @@ const TAKE_MUTATIONS = `(() => {
 
 /** The init script remembers at most this many changed elements. */
 const MAX_TARGETS = 200;
+/** A trace sums its steps' counts; past this a page is only trying to overflow the sum. */
+const MAX_COUNT = 1e9;
 
 const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
 const clamp = (n: number, max: number) => Math.min(Math.max(n, 0), max);
 
 /**
  * Checks what `TAKE_MUTATIONS` returned. The page can overwrite `window.__coviMutations`, so the
- * result is page input: the count becomes a whole number (0 when it is not a finite number), and
- * a box is kept only when its four fields are finite, clipped to the frame, at most 200 of them.
- * Boxes stay in CSS pixels.
+ * result is page input: the count becomes a whole number up to 1e9 (0 when it is not a finite
+ * number), and a box is kept only when its four fields are finite, clipped to the frame, at most
+ * 200 of them. Boxes stay in CSS pixels.
  */
 export function parseMutations(
   raw: unknown,
   frame: { width: number; height: number },
 ): { count: number; rects: Rect[] } {
   const taken = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
-  const count = finite(taken.count) ? Math.max(0, Math.floor(taken.count)) : 0;
+  const count = finite(taken.count) ? clamp(Math.floor(taken.count), MAX_COUNT) : 0;
   const listed: unknown[] = Array.isArray(taken.rects) ? taken.rects.slice(0, MAX_TARGETS) : [];
   const rects = listed.flatMap((r): Rect[] => {
     const { x, y, width, height } = (r ?? {}) as Record<string, unknown>;

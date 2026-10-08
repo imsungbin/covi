@@ -21,6 +21,8 @@ export interface FinalRecording {
   detail?: string;
 }
 
+const CONVERT_TIMEOUT_MS = 120_000;
+
 /** H.264 plays everywhere; mpeg4 when this ffmpeg build has no libx264. */
 const ENCODERS: ReadonlyArray<readonly string[]> = [
   ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p'],
@@ -62,11 +64,16 @@ export async function finalizeRecording(
           '+faststart',
           targets.mp4,
         ],
-        { cwd: dirname(raw), timeoutMs: 120_000 },
+        { cwd: dirname(raw), timeoutMs: CONVERT_TIMEOUT_MS },
       );
       if (result.exitCode === 0) {
         await rm(raw, { force: true });
         return { file: targets.mp4, format: 'mp4' };
+      }
+      if (result.timedOut) {
+        // The other encoder would get as long again, and is no faster.
+        detail = `ffmpeg timed out after ${CONVERT_TIMEOUT_MS / 1000} s`;
+        break;
       }
       detail = result.stderr.trim().split('\n').at(-1) || `ffmpeg exited with ${result.exitCode}`;
     } catch (error) {

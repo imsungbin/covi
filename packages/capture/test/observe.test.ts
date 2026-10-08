@@ -56,6 +56,8 @@ describe('parseMutations', () => {
     expect(count(4)).toBe(4);
     expect(count(2.7)).toBe(2);
     expect(count(-5)).toBe(0);
+    // Steps' counts are summed: a page cannot push the total to Infinity.
+    expect(count(1e308)).toBe(1e9);
     expect(count(Number.NaN)).toBe(0);
     expect(count(Number.POSITIVE_INFINITY)).toBe(0);
     expect(count('12')).toBe(0);

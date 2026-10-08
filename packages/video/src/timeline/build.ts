@@ -445,7 +445,8 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
     if (span) emphasis.set(timing.id, span);
     const transition = i > 0 ? sceneTransition(scene) : undefined;
     const phases = scenePhases(scene, text, timing, captionOptions, transition?.seconds);
-    const cues = sceneCues(scene, phases, timing.end - timing.start);
+    // Rounded like the phases, so a cue at the scene's very end survives the subtraction.
+    const cues = sceneCues(scene, phases, round(timing.end - timing.start));
     // A title over a capture is a cold open: the capture fills the media region and the title
     // goes in the header, where a content scene's heading goes.
     const over = visual.kind === 'title' && visual.background ? visual : undefined;

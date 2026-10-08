@@ -220,6 +220,22 @@ describe('scene cues', () => {
     expect(fix!.end - fix!.start).toBeLessThan(29);
     expect(fix).not.toHaveProperty('cues');
   });
+
+  it('keep a cue at the very end of its scene, whatever the float error', () => {
+    const words = 'the cart stops at zero and'.split(' ');
+    const lines = ['Done.', ...[3, 4, 5, 6].map((n) => `${words.slice(0, n).join(' ')}.`)];
+    const list = lines.map((narration, i) => ({
+      ...wrap,
+      id: `s${i}`,
+      narration,
+      ...(i === 3 ? { cues: [{ at: 3.05, kind: 'reveal' }] } : {}),
+    }));
+    const last = build(scenes(list)).scenes[3]!;
+    // The scene is 3.05 s long, which subtraction makes 3.049999999999999.
+    expect(last.end - last.start).toBeLessThan(3.05);
+    expect(last.end - last.start).toBeCloseTo(3.05, 9);
+    expect(last.cues).toEqual([{ at: 3.05, kind: 'reveal' }]);
+  });
 });
 
 describe('minimum time on screen', () => {

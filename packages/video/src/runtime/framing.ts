@@ -121,3 +121,30 @@ export function marksCamera(
     k,
   };
 }
+
+/** A gloss leaving fades out over a few frames, then the next one fades in. */
+export const NOTE_OUT = 0.15;
+export const NOTE_IN = 0.3;
+
+/**
+ * The note shown under a tour at `t` and its fade (0–1): `before` until the camera starts toward
+ * the first mark, then each mark's note from its `start`. A note giving way to a different one
+ * fades out over `NOTE_OUT` first, so one never cuts to nothing in a frame.
+ */
+export function tourNote(
+  notes: readonly (string | undefined)[],
+  starts: readonly number[],
+  t: number,
+  before?: string,
+): { text: string | undefined; k: number } {
+  let i = -1;
+  while (i + 1 < starts.length && t >= starts[i + 1]!) i++;
+  if (i < 0) return { text: before, k: before ? 1 : 0 };
+  const now = notes[i];
+  const prior = i > 0 ? notes[i - 1] : before;
+  const start = starts[i]!;
+  if (prior === now) return { text: now, k: now ? 1 : 0 };
+  if (prior && t < start + NOTE_OUT) return { text: prior, k: 1 - seg(t, start, start + NOTE_OUT) };
+  const from = prior ? start + NOTE_OUT : start;
+  return { text: now, k: now ? seg(t, from, from + NOTE_IN) : 0 };
+}

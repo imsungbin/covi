@@ -451,8 +451,13 @@ describe.skipIf(!available)('rendering', () => {
     return { v, m, duration, done: Math.min(m.end + 0.1, duration - 0.05) };
   }
 
-  /** A marked capture in scene s2 at a frame: the gloss, the first frame's camera, ring, and cursor. */
-  function frameState(look: Awaited<ReturnType<typeof compose>>['look'], frame: number) {
+  type Box = { left: number; top: number; right: number; bottom: number; width: number };
+
+  /**
+   * A marked capture in scene s2 at a frame: the gloss (or step chip), and the camera, ring, and
+   * cursor of frame `which` (an interaction's step), with their boxes on the page.
+   */
+  function frameState(look: Awaited<ReturnType<typeof compose>>['look'], frame: number, which = 0) {
     return look<{
       gloss: string;
       shown: number;
@@ -460,21 +465,40 @@ describe.skipIf(!available)('rendering', () => {
       zoom: number;
       ring: number;
       cursor: number;
+      boxes: { gloss: Box; frame: Box; image: Box; cursor: Box };
     }>(
       frame,
       's2',
       `const gloss = scene.querySelector('.gloss');
-       const opacity = (selector) => Number.parseFloat(scene.querySelector(selector).style.opacity || '0');
-       const image = scene.querySelector('.frame img').style.transform;
+       const nth = (selector) => scene.querySelectorAll(selector)[${which}];
+       const opacity = (node) => Number.parseFloat(node.style.opacity || '0');
+       const box = (node) => {
+         const { left, top, right, bottom, width } = node.getBoundingClientRect();
+         return { left, top, right, bottom, width };
+       };
+       const image = nth('.frame img').style.transform;
        return {
          gloss: gloss.textContent,
-         shown: opacity('.gloss'),
+         shown: opacity(gloss),
          image,
          zoom: Number.parseFloat(image.match(/scale\\(([\\d.]+)\\)/)[1]),
-         ring: opacity('.focus-ring'),
-         cursor: opacity('.cursor'),
+         ring: opacity(nth('.focus-ring')),
+         cursor: opacity(nth('.cursor')),
+         boxes: {
+           gloss: box(gloss),
+           frame: box(nth('.frame')),
+           image: box(nth('.frame img')),
+           cursor: box(nth('.cursor')),
+         },
        };`,
     );
+  }
+
+  /** The chip sits just under its frame, from the frame's left edge. */
+  function expectUnderFrame(boxes: { gloss: Box; frame: Box }) {
+    expect(Math.abs(boxes.gloss.left - boxes.frame.left)).toBeLessThan(1);
+    expect(boxes.gloss.top).toBeGreaterThan(boxes.frame.bottom);
+    expect(boxes.gloss.top - boxes.frame.bottom).toBeLessThan(20);
   }
 
   it('morphs code: the old lines struck to ghosts, the new ones typed where they were', async () => {
@@ -747,6 +771,13 @@ describe.skipIf(!available)('rendering', () => {
       expect(onFirst).toMatchObject({ gloss: 'Total', shown: 1 });
       expect(onFirst.ring).toBeGreaterThan(0.5);
       expect(onFirst.cursor).toBe(1);
+      expectUnderFrame(onFirst.boxes);
+      // As the camera leaves, the first gloss fades out over a few frames rather than cutting.
+      // (0.05 s in: inside the 0.15 s fade-out, `NOTE_OUT` in the runtime's framing.ts.)
+      const leaving = await state(second!.start + 0.05);
+      expect(leaving.gloss).toBe('Total');
+      expect(leaving.shown).toBeGreaterThan(0);
+      expect(leaving.shown).toBeLessThan(1);
       // After the pan: the second gloss, the camera moved.
       const onSecond = await state(second!.pan[1] + 0.05);
       expect(onSecond).toMatchObject({ gloss: 'Badge', shown: 1 });
@@ -790,7 +821,8 @@ describe.skipIf(!available)('rendering', () => {
                   { focus: { x: 40, y: 40, width: 160, height: 80 }, label: 'Total' },
                   { focus: { x: 440, y: 280, width: 160, height: 80 }, label: 'Badge' },
                 ],
-                click: { x: 520, y: 320 },
+                // Away from the last mark: the next step's cursor waits here, where it clicked.
+                click: { x: 120, y: 330 },
               },
               {
                 image: { path: 'demo/a.png' },
@@ -818,6 +850,7 @@ describe.skipIf(!available)('rendering', () => {
       expect(onFirst.gloss).toBe('1/2  Total');
       expect(onFirst.ring).toBeGreaterThan(0.5);
       expect(onFirst.cursor).toBe(1);
+      expectUnderFrame(onFirst.boxes);
       const onSecond = await state(second!.pan[1] + 0.05);
       expect(onSecond.gloss).toBe('1/2  Badge');
       expect(onSecond.image).not.toBe(onFirst.image);
@@ -826,8 +859,16 @@ describe.skipIf(!available)('rendering', () => {
       expect(onSecond.zoom).toBeLessThanOrEqual(1.5);
       const fits = (await report()).items.find((i) => i.role === 'text')!;
       expect(fits.overflow).toBe(false);
-      // A label too long for the chip is ellipsized inside the media region, and QC hears of it.
+      // The next step opens with the cursor where the last one clicked, not on its last mark.
       const mark = timing[1]!.marks![0]!;
+      expect(mark.start).toBeGreaterThan(timing[1]!.start + 0.1);
+      const opening = await frameState(look, frameAt('s2', timing[1]!.start + 0.05), 1);
+      expect(opening.cursor).toBe(1);
+      const scale = opening.boxes.image.width / 640;
+      expect(opening.boxes.cursor.left).toBeCloseTo(opening.boxes.image.left + 120 * scale, -1);
+      expect(opening.boxes.cursor.top).toBeCloseTo(opening.boxes.image.top + 330 * scale, -1);
+      expectUnderFrame({ gloss: opening.boxes.gloss, frame: opening.boxes.frame });
+      // A label too long for the chip is ellipsized inside the media region, and QC hears of it.
       expect((await state(mark.start - 0.05)).gloss).toBe(`2/2  ${long}`);
       const clipped = (await report()).items.find((i) => i.role === 'text')!;
       expect(clipped.overflow).toBe(true);
@@ -835,6 +876,35 @@ describe.skipIf(!available)('rendering', () => {
       // (Within the stage camera's push-in, which scales the whole media layer.)
       expect(clipped.rect.x + clipped.rect.width).toBeLessThanOrEqual(media.x + media.width + 4);
       expect((await state(mark.pan[1] - 0.05)).gloss).toBe('2/2  Receipt');
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('reports a step label too long for its chip, with or without glosses', async () => {
+    const browser = await chromium.launch();
+    try {
+      const long = Array.from({ length: 6 }, () => 'then the receipt opens').join(', ');
+      const { frameAt, look, report, errors } = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'proof',
+          narration: 'Check out, and the receipt opens.',
+          visual: {
+            kind: 'interaction',
+            steps: [{ image: { path: 'demo/a.png' }, label: long, click: { x: 120, y: 330 } }],
+          },
+        },
+        storyboard.scenes[2]!,
+      ]);
+      const state = await frameState(look, frameAt('s2', 1));
+      expect(state.gloss).toBe(`1/1  ${long}`);
+      expectUnderFrame(state.boxes);
+      const text = (await report()).items.filter((i) => i.role === 'text');
+      expect(text).toHaveLength(1);
+      expect(text[0]!.overflow).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await browser.close();

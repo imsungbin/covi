@@ -15,7 +15,7 @@ import {
 import type { Point, Rect, TimelineVisual } from '../../timeline/types.ts';
 import { clamp, easeOutCubic, fade, lerp, rise, seg, typedPrefix } from '../anim.ts';
 import { el, escapeHtml } from '../dom.ts';
-import { center, markProgress, marksCamera } from '../framing.ts';
+import { center, marksCamera, tourNote } from '../framing.ts';
 import { highlightLine } from '../highlight.ts';
 import { union } from '../narrator.ts';
 import { choreograph, Frame } from './frame.ts';
@@ -58,23 +58,34 @@ function frameTarget(
 // Screenshot
 // ---------------------------------------------------------------------------------------------
 
-/** A gloss: a mark's label in a chip under the frame, inside the media region. */
-function glossChip(ctx: ComponentContext, box: Rect): HTMLSpanElement {
+/**
+ * A chip for the storyboard's own text under a frame (a mark's gloss, a step's label): it
+ * ellipsizes, and QC checks it for fit.
+ */
+function noteChip(ctx: ComponentContext): HTMLSpanElement {
   const node = chip(ctx.root, '', 'soft');
   node.classList.add('gloss');
-  Object.assign(node.style, {
-    position: 'absolute',
-    left: `${box.x}px`,
-    top: `${box.y + box.height + ctx.u(16)}px`,
-    maxWidth: `${box.width}px`,
-  });
+  node.style.position = 'absolute';
   return node;
 }
 
-/** Shows the gloss of the mark the camera is on, fading in as the camera starts toward it. */
-function showGloss(chip: HTMLElement, label: string | undefined, t: number, from: number): void {
-  if (chip.textContent !== (label ?? '')) chip.textContent = label ?? '';
-  fade(chip, label ? seg(t, from, from + 0.3) : 0);
+/**
+ * Places a note chip just under a frame, from its left edge, so it reads with the capture however
+ * narrow it is. It stays in the band reserved under `box`, and never runs past its right edge.
+ */
+function underFrame(node: HTMLElement, frame: Frame, box: Rect, ctx: ComponentContext): void {
+  const v = frame.viewport;
+  Object.assign(node.style, {
+    left: `${v.x}px`,
+    top: `${v.y + v.height + ctx.u(16)}px`,
+    maxWidth: `${box.x + box.width - v.x}px`,
+  });
+}
+
+/** Shows a tour's note in `node`, at its fade. */
+function showNote(node: HTMLElement, note: { text: string | undefined; k: number }): void {
+  if (node.textContent !== (note.text ?? '')) node.textContent = note.text ?? '';
+  fade(node, note.k);
 }
 
 export function screenshot(v: V<'screenshot'>, ctx: ComponentContext): Component {
@@ -101,7 +112,8 @@ export function screenshot(v: V<'screenshot'>, ctx: ComponentContext): Component
       ],
       target: () => frameTarget(frame, v.focus, v.click),
     };
-  const gloss = glossed ? glossChip(ctx, box) : undefined;
+  const gloss = glossed ? noteChip(ctx) : undefined;
+  if (gloss) underFrame(gloss, frame, box, ctx);
   const rects = marks.map((m) => m.focus);
   const pose = ({ t, duration }: Pick<SceneClock, 't' | 'duration'>) => {
     const timing = screenshotMarks(duration, marks, ctx.phases);
@@ -132,7 +144,15 @@ export function screenshot(v: V<'screenshot'>, ctx: ComponentContext): Component
           0,
           at.from < 0 ? undefined : center(rects[at.from]!),
         );
-      if (gloss) showGloss(gloss, marks[at.to]!.label, t, timing.marks[at.to]!.start);
+      if (gloss)
+        showNote(
+          gloss,
+          tourNote(
+            marks.map((m) => m.label),
+            timing.marks.map((m) => m.start),
+            t,
+          ),
+        );
     },
     report: () => [
       ...frameItems([frame]),
@@ -282,26 +302,25 @@ function wipe(v: V<'before-after'>, ctx: ComponentContext): Component {
 // Interaction: a sequence of screenshots with cursor and click emphasis
 // ---------------------------------------------------------------------------------------------
 
-/** How far an interaction step zooms toward its focus or its marks (less than a screenshot's). */
+/** How far an interaction step zooms toward its focus or its marks: less than a screenshot. */
 const STEP_ZOOM = 1.5;
 
 export function interaction(v: V<'interaction'>, ctx: ComponentContext): Component {
   const box = { ...ctx.regions.media, height: ctx.regions.media.height - ctx.u(64) };
   const frames = v.steps.map((s) => new Frame(ctx.root, box, s.image, { chrome: true, u: ctx.u }));
-  // With glosses the chip carries the storyboard's text: it ellipsizes, and QC checks it.
-  const glossed = v.steps.some((s) => s.marks?.some((m) => m.label));
-  const label = glossed ? glossChip(ctx, box) : chip(ctx.root, '', 'soft');
-  if (!glossed)
-    Object.assign(label.style, {
-      position: 'absolute',
-      left: `${box.x}px`,
-      top: `${box.y + box.height + ctx.u(16)}px`,
-    });
+  // The step's number, then its label or the gloss of the mark the camera is on.
+  const label = noteChip(ctx);
+  const count = el('span', '', label);
+  const note = el('span', '', label);
   const marks = v.steps.map((s) => s.marks?.map((m) => m.focus));
-  /** Where the cursor waits as a step opens: on the last mark of the step before, if it had any. */
+  /**
+   * Where the cursor waits as a step opens: where the step before left it, on its click, else on
+   * its last mark; with neither, it comes in from the corner.
+   */
   const waiting = (i: number) => {
+    const click = v.steps[i - 1]?.click;
     const prior = marks[i - 1]?.at(-1);
-    return prior ? center(prior) : undefined;
+    return click ?? (prior ? center(prior) : undefined);
   };
   const timingOf = (duration: number) =>
     interactionTiming(
@@ -354,22 +373,24 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
         }
       });
       const shown = v.steps[active]!;
+      underFrame(label, frames[active]!, box, ctx);
+      count.textContent = `${active + 1}/${v.steps.length}`;
       // Once the camera heads for a mark with a gloss, the gloss stands in for the step's label.
-      const now = timing[active]!;
-      const reached = now.marks ? markProgress(now.marks, t) : undefined;
-      const gloss =
-        reached && t >= now.marks![reached.to]!.start
-          ? shown.marks?.[reached.to]?.label
-          : undefined;
-      const note = gloss ?? shown.label;
-      label.textContent = `${active + 1}/${v.steps.length}${note ? `  ${note}` : ''}`;
+      const tour = timing[active]!.marks;
+      const now = tour
+        ? tourNote(
+            shown.marks!.map((m) => m.label ?? shown.label),
+            tour.map((m) => m.start),
+            t,
+            shown.label,
+          )
+        : { text: shown.label, k: 1 };
+      showNote(note, { ...now, text: now.text && `  ${now.text}` });
       fade(label, active === 0 ? entered(clock, 0, 0.3) : seg(since, 0, 0.3));
     },
     report: () => [
       ...frameItems(frames.slice(0, 1)),
-      ...(glossed
-        ? [{ role: 'text' as const, rect: rectOf(label), overflow: overflows(label) }]
-        : []),
+      { role: 'text' as const, rect: rectOf(label), overflow: overflows(label) },
     ],
     target({ t, duration }) {
       const timing = timingOf(duration);

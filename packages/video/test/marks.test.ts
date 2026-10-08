@@ -7,6 +7,9 @@ import {
   MARK_ZOOM,
   markProgress,
   marksCamera,
+  NOTE_IN,
+  NOTE_OUT,
+  tourNote,
 } from '../src/runtime/framing.ts';
 import { markTiming } from '../src/timeline/cues.ts';
 
@@ -67,10 +70,43 @@ describe('a tour of marks', () => {
     expect(marksCamera(g, [A], one, 3).camera.z).toBeCloseTo(1.9, 9);
   });
 
-  it('zooms a step’s marks no further than a step’s focus', () => {
-    // An interaction step's focus zooms to 1.5×: one mark matches it, and a tour never exceeds it.
+  it('zooms a step’s marks to the step’s own ceiling', () => {
+    // An interaction step zooms to 1.5× at most: one mark reaches it, and a tour never exceeds it.
     const one = markTiming(0, 4, [undefined]);
     expect(marksCamera(g, [A], one, 3, 1.5).camera.z).toBeCloseTo(1.5, 9);
     expect(marksCamera(g, [A, B], timing, 3.5, 1.5).camera.z).toBeCloseTo(1.5, 9);
+  });
+});
+
+describe('the note under a tour', () => {
+  const starts = [1, 2];
+
+  it('fades the first gloss in as the camera starts toward its mark', () => {
+    expect(tourNote(['Total', 'Badge'], starts, 0.5)).toEqual({ text: undefined, k: 0 });
+    const first = tourNote(['Total', 'Badge'], starts, 1 + NOTE_IN / 2);
+    expect(first.text).toBe('Total');
+    expect(first.k).toBeCloseTo(0.5, 9);
+  });
+
+  it('fades the previous gloss out over a few frames before the next fades in', () => {
+    const out = tourNote(['Total', 'Badge'], starts, 2 + NOTE_OUT / 2);
+    expect(out.text).toBe('Total');
+    expect(out.k).toBeCloseTo(0.5, 9);
+    expect(tourNote(['Total', 'Badge'], starts, 2 + NOTE_OUT).text).toBe('Badge');
+    const next = tourNote(['Total', 'Badge'], starts, 2 + NOTE_OUT + NOTE_IN / 2);
+    expect(next.text).toBe('Badge');
+    expect(next.k).toBeCloseTo(0.5, 9);
+  });
+
+  it('holds a note that does not change, and fades out to nothing', () => {
+    expect(tourNote(['Total', 'Total'], starts, 2.01)).toEqual({ text: 'Total', k: 1 });
+    expect(tourNote(['Total', undefined], starts, 2 + NOTE_OUT / 2).text).toBe('Total');
+    expect(tourNote(['Total', undefined], starts, 2 + NOTE_OUT)).toEqual({ text: undefined, k: 0 });
+  });
+
+  it('starts from the label shown before the tour', () => {
+    expect(tourNote(['Total'], [1], 0.5, 'Open the cart')).toEqual({ text: 'Open the cart', k: 1 });
+    expect(tourNote(['Total'], [1], 1 + NOTE_OUT / 2).text).toBe('Total');
+    expect(tourNote(['Total'], [1], 1 + NOTE_OUT / 2, 'Open the cart').text).toBe('Open the cart');
   });
 });

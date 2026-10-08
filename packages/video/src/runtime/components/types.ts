@@ -1,6 +1,7 @@
 import type { FoxOptions } from '@covi/brand';
 import type { Phases } from '../../timeline/cues.ts';
 import type { LayoutItem, Rect, Timeline } from '../../timeline/types.ts';
+import { seg } from '../anim.ts';
 import type { Regions } from '../layout.ts';
 
 export type { LayoutItem, Rect };
@@ -14,6 +15,8 @@ export interface SceneClock {
   frame: number;
   /** Narrator state, for components that draw the fox themselves. */
   fox: { mouth: number; blink: number };
+  /** The video's first scene: already in place at frame 0, so the first frame shows the subject. */
+  open: boolean;
 }
 
 export interface ComponentContext {
@@ -80,4 +83,9 @@ export function overflows(node: HTMLElement): boolean {
     node.scrollWidth > node.clientWidth + 2 ||
     node.scrollHeight > node.clientHeight + Math.max(2, font * 0.3)
   );
+}
+
+/** Entrance progress over [start, end]; the opening scene is already in place at frame 0. */
+export function entered(clock: Pick<SceneClock, 't' | 'open'>, start: number, end: number): number {
+  return clock.open ? 1 : seg(clock.t, start, end);
 }

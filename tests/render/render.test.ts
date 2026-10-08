@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseConfigInput, resolveConfig } from '@covi/core';
@@ -246,6 +246,89 @@ describe.skipIf(!available)('rendering', () => {
     const fonts = qc.checks.find((c) => c.id === 'fonts')!;
     expect(fonts.status).toBe('fail');
     expect(fonts.message).toMatch(/Noto Sans JP Variable did not load/);
+  });
+
+  it('opens on a title over a capture: in place at frame 0, the capture drifting', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'covi-open-'));
+    dirs.push(dir);
+    const browser = await chromium.launch();
+    try {
+      // A landscape capture to open on.
+      const capture = await browser.newPage({ viewport: { width: 640, height: 400 } });
+      await capture.setContent('<body style="margin:0;background:#2a6f97"></body>');
+      mkdirSync(join(dir, 'demo'));
+      await capture.screenshot({ path: join(dir, 'demo', 'a.png') });
+      await capture.close();
+      const spec = resolveVideoSpec(resolveConfig([]).config, {
+        mode: 'custom',
+        width: 360,
+        height: 640,
+      });
+      const scenes = StoryboardSchema.parse({
+        ...storyboard,
+        scenes: storyboard.scenes.map((s, i) =>
+          i === 0
+            ? {
+                ...s,
+                visual: {
+                  kind: 'title',
+                  title: 'Clamp cart quantities at zero',
+                  eyebrow: 'The bug',
+                  meta: [],
+                  background: { path: 'demo/a.png' },
+                },
+              }
+            : s,
+        ),
+      }).scenes;
+      const layout = layoutScenes(scenes, new Map(), new Map(), 'en', pacingFor(spec));
+      const assets = new AssetCollector(dir);
+      await assets.prepare(['demo/a.png']);
+      const timeline = buildTimeline({
+        title: storyboard.title,
+        scenes,
+        layout,
+        spec,
+        image: assets.image,
+      });
+      const composition = join(dir, 'composition');
+      await writeComposition(composition, timeline, assets.files);
+      const page = await browser.newPage({ viewport: { width: 360, height: 640 } });
+      await page.goto(`file://${join(composition, 'index.html')}`);
+      await page.waitForFunction('window.covi !== undefined');
+      await page.evaluate('window.covi.ready');
+      // The tests have no DOM types: the page reads its own styles from a script.
+      const look = (frame: number) =>
+        page.evaluate(`(() => {
+          window.covi.seek(${frame});
+          const scene = document.querySelector('[data-scene="s1"]');
+          const style = (selector) => scene.querySelector(selector)?.style;
+          return {
+            capture: style('.layer > .frame')?.opacity,
+            heading: scene.querySelector('.scene-header .heading')?.textContent,
+            headingOpacity: style('.scene-header .heading')?.opacity,
+            eyebrowOpacity: style('.scene-header .eyebrow')?.opacity,
+            panel: scene.querySelector('.title-panel') !== null,
+            camera: style('.layer')?.transform,
+          };
+        })()`) as Promise<Record<string, unknown>>;
+      // Frame 0 already shows the capture and its title, settled.
+      expect(await look(0)).toEqual({
+        capture: '1',
+        heading: 'Clamp cart quantities at zero',
+        headingOpacity: '1',
+        eyebrowOpacity: '1',
+        panel: false,
+        camera: '',
+      });
+      // The stage's camera drifts the capture, as on a screenshot.
+      const s1 = timeline.scenes[0]!;
+      const middle = await look(Math.round(((s1.start + s1.end) / 2) * timeline.fps));
+      expect(middle.camera).toMatch(/^scale\(1\.0\d+\)$/);
+      await page.close();
+    } finally {
+      await browser.close();
+    }
   });
 
   it('is deterministic: the same timeline renders the same frame bytes', async () => {

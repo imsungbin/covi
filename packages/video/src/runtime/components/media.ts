@@ -19,6 +19,7 @@ import { choreograph, Frame } from './frame.ts';
 import {
   type Component,
   type ComponentContext,
+  entered,
   type LayoutItem,
   overflows,
   rectOf,
@@ -61,8 +62,9 @@ export function screenshot(v: V<'screenshot'>, ctx: ComponentContext): Component
     u: ctx.u,
   });
   return {
-    update({ t, duration }) {
-      rise(frame.root, seg(t, 0, 0.55), ctx.u(28));
+    update(clock) {
+      const { t, duration } = clock;
+      rise(frame.root, entered(clock, 0, 0.55), ctx.u(28));
       choreograph(frame, v.focus, v.click, t, screenshotTiming(duration, ctx.phases));
     },
     report: () => [
@@ -129,10 +131,11 @@ export function beforeAfter(v: V<'before-after'>, ctx: ComponentContext): Compon
     });
   });
   return {
-    update({ t, duration }) {
+    update(clock) {
+      const { t, duration } = clock;
       const timing = beforeAfterTiming(v.layout, duration, ctx.phases);
-      rise(frames[0]!.root, seg(t, 0, 0.5), ctx.u(24));
-      rise(labels[0]!, seg(t, 0.05, 0.5), ctx.u(10));
+      rise(frames[0]!.root, entered(clock, 0, 0.5), ctx.u(24));
+      rise(labels[0]!, entered(clock, 0.05, 0.5), ctx.u(10));
       rise(frames[1]!.root, seg(t, ...timing.reveal), ctx.u(24));
       rise(labels[1]!, seg(t, ...timing.label), ctx.u(10));
       const k = seg(t, ...timing.focus);
@@ -179,11 +182,12 @@ function wipe(v: V<'before-after'>, ctx: ComponentContext): Component {
     });
   }
   return {
-    update({ t, duration }) {
+    update(clock) {
+      const { t, duration } = clock;
       const timing = beforeAfterTiming('wipe', duration, ctx.phases);
-      rise(before.root, seg(t, 0, 0.5), ctx.u(24));
+      rise(before.root, entered(clock, 0, 0.5), ctx.u(24));
       after.root.style.opacity = before.root.style.opacity;
-      fade(labels[0]!, seg(t, 0.1, 0.5));
+      fade(labels[0]!, entered(clock, 0.1, 0.5));
       const w = easeOutCubic(seg(t, ...timing.reveal));
       const vp = before.viewport;
       before.root.style.clipPath = `inset(0 0 0 ${(w * 100).toFixed(2)}%)`;
@@ -215,7 +219,8 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
     top: `${box.y + box.height + ctx.u(16)}px`,
   });
   return {
-    update({ t, duration }) {
+    update(clock) {
+      const { t, duration } = clock;
       const timing = interactionTiming(duration, v.steps.length, ctx.phases);
       const active = activeStep(timing, t);
       const since = t - timing[active]!.start;
@@ -223,7 +228,7 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
         const step = timing[i]!;
         // The previous step stays underneath while the next one fades in on top.
         if (i === active) {
-          const enter = i === 0 ? seg(t, 0, 0.45) : seg(t, step.start, step.start + 0.3);
+          const enter = i === 0 ? entered(clock, 0, 0.45) : seg(t, step.start, step.start + 0.3);
           f.root.style.opacity = String(easeOutCubic(enter).toFixed(3));
         } else f.root.style.opacity = i === active - 1 && since < 0.3 ? '1' : '0';
         if (i !== active) {
@@ -237,7 +242,7 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
       });
       const shown = v.steps[active]!;
       label.textContent = `${active + 1}/${v.steps.length}${shown.label ? `  ${shown.label}` : ''}`;
-      fade(label, seg(since, 0, 0.3));
+      fade(label, active === 0 ? entered(clock, 0, 0.3) : seg(since, 0, 0.3));
     },
     report: () => frameItems(frames.slice(0, 1)),
     target({ t, duration }) {
@@ -302,11 +307,12 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
     height: `${height}px`,
   });
   return {
-    update({ t, duration }) {
-      rise(panel, seg(t, 0, 0.5), ctx.u(30));
+    update(clock) {
+      const { t, duration } = clock;
+      rise(panel, entered(clock, 0, 0.5), ctx.u(30));
       const starts = highlightStarts(duration, v.highlight, ctx.phases);
       rows.forEach(({ row, hl }, i) => {
-        fade(row, seg(t, 0.15 + i * 0.035, 0.45 + i * 0.035));
+        fade(row, entered(clock, 0.15 + i * 0.035, 0.45 + i * 0.035));
         if (hl) {
           // A row has `hl` exactly when its index is in `highlight`, so it has a start.
           const start = starts.get(i)!;
@@ -410,12 +416,13 @@ export function terminal(v: V<'terminal'>, ctx: ComponentContext): Component {
     );
   }
   return {
-    update({ t, duration }) {
+    update(clock) {
+      const { t, duration } = clock;
       const starts = terminalStarts(duration, windows.length, ctx.phases);
       windows.forEach((w, i) => {
         const start = starts[i]!;
         // The first window is up from the start; a phase only moves when its command is typed.
-        rise(w.win, i === 0 ? seg(t, 0, 0.5) : seg(t, start - 0.2, start + 0.3), ctx.u(24));
+        rise(w.win, i === 0 ? entered(clock, 0, 0.5) : seg(t, start - 0.2, start + 0.3), ctx.u(24));
         w.play(t, start);
       });
     },
@@ -517,10 +524,14 @@ export function api(v: V<'api'>, ctx: ComponentContext): Component {
     make(area, ctx.timeline.labels?.response ?? 'Response', v.after.status, afterLines);
   }
   return {
-    update({ t, duration }) {
-      rise(req, seg(t, 0, 0.4), ctx.u(16));
+    update(clock) {
+      const { t, duration } = clock;
+      rise(req, entered(clock, 0, 0.4), ctx.u(16));
       const spans = apiPanels(duration, panels.length, ctx.phases);
-      for (const [i, p] of panels.entries()) rise(p, seg(t, ...spans[i]!), ctx.u(24));
+      // The first panel (the only response, or the before panel) is the subject; the after
+      // panel is choreography and rises on time.
+      for (const [i, p] of panels.entries())
+        rise(p, i === 0 ? entered(clock, ...spans[0]!) : seg(t, ...spans[i]!), ctx.u(24));
     },
     report: () => [
       { role: 'media', rect: rectOf(req) },
@@ -639,10 +650,10 @@ export function changeMap(v: V<'change-map'>, ctx: ComponentContext): Component 
     return { row, plus, minus };
   });
   return {
-    update({ t }) {
+    update(clock) {
       items.forEach(({ row, plus, minus }, i) => {
-        rise(row, seg(t, 0.1 + i * 0.12, 0.5 + i * 0.12), ctx.u(18));
-        const g = easeOutCubic(seg(t, 0.4 + i * 0.12, 1.1 + i * 0.12));
+        rise(row, entered(clock, 0.1 + i * 0.12, 0.5 + i * 0.12), ctx.u(18));
+        const g = easeOutCubic(entered(clock, 0.4 + i * 0.12, 1.1 + i * 0.12));
         plus.style.transform = `scaleX(${g.toFixed(4)})`;
         minus.style.transform = `scaleX(${g.toFixed(4)})`;
       });
@@ -681,11 +692,11 @@ export function callout(v: V<'callout'>, ctx: ComponentContext): Component {
   if (body) body.style.fontSize = `${ctx.u(ctx.timeline.orientation === 'vertical' ? 30 : 26)}px`;
   card.style.top = `${box.y + (box.height - card.offsetHeight) / 2}px`;
   return {
-    update({ t }) {
-      const e = easeOutCubic(seg(t, 0, 0.55));
+    update(clock) {
+      const e = easeOutCubic(entered(clock, 0, 0.55));
       card.style.opacity = String(e.toFixed(3));
       card.style.transform = `scale(${lerp(0.94, 1, e).toFixed(4)})`;
-      icon.style.transform = `scale(${lerp(0.6, 1, easeOutCubic(seg(t, 0.15, 0.6))).toFixed(4)})`;
+      icon.style.transform = `scale(${lerp(0.6, 1, easeOutCubic(entered(clock, 0.15, 0.6))).toFixed(4)})`;
     },
     report: () => [{ role: 'text', rect: rectOf(card), overflow: overflows(card) }],
   };
@@ -765,13 +776,13 @@ export function diagram(v: V<'diagram'>, ctx: ComponentContext): Component {
   svgLayer.style.zIndex = '0';
   for (const n of nodes) n.style.zIndex = '1';
   return {
-    update({ t }) {
+    update(clock) {
       for (const [i, n] of nodes.entries())
-        rise(n, seg(t, 0.1 + i * 0.1, 0.5 + i * 0.1), ctx.u(18));
+        rise(n, entered(clock, 0.1 + i * 0.1, 0.5 + i * 0.1), ctx.u(18));
       for (const [i, { line, length }] of edges.entries()) {
         line.setAttribute(
           'stroke-dashoffset',
-          String(length * (1 - easeOutCubic(seg(t, 0.8 + i * 0.12, 1.5 + i * 0.12)))),
+          String(length * (1 - easeOutCubic(entered(clock, 0.8 + i * 0.12, 1.5 + i * 0.12)))),
         );
       }
     },

@@ -87,11 +87,23 @@ describe('phases', () => {
         scene('s2', 'The counter turns amber.', extra),
         scene('s3', 'Done.'),
       ]).scenes[1]!;
-    const plain = hero({ hero: true });
-    expect(plain.hero).toBe(true);
-    expect(plain.phases).toEqual({ hero: Number((plain.speech!.start - plain.start).toFixed(3)) });
+    const cut = hero({ hero: true, transition: 'cut' });
+    expect(cut.hero).toBe(true);
+    expect(cut.phases).toEqual({ hero: Number((cut.speech!.start - cut.start).toFixed(3)) });
     const synced = hero({ hero: true, sync: { hero: 'turns amber' } });
-    expect(synced.phases!.hero).toBeGreaterThan(plain.phases!.hero!);
+    expect(synced.phases!.hero).toBeGreaterThan(0.6);
+  });
+
+  it('never put the default hero phase before the hero has zoomed through', () => {
+    const hero = build([
+      scene('s1', 'One.'),
+      scene('s2', 'The counter turns amber.', { hero: true }),
+      scene('s3', 'Done.'),
+    ]).scenes[1]!;
+    // Its line starts 60% into the zoom-through; the accent waits for the zoom to finish.
+    expect(hero.transition).toEqual({ kind: 'zoom-through', seconds: 0.6 });
+    expect(hero.speech!.start - hero.start).toBeLessThan(0.6);
+    expect(hero.phases).toEqual({ hero: 0.6 });
   });
 
   it('skip a phrase that redaction removed instead of failing', () => {

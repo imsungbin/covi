@@ -8,7 +8,7 @@ import {
 } from '../timeline/types.ts';
 import { clamp, easeInOutCubic, easeOutCubic, lerp, seeded, seg, spring } from './anim.ts';
 import { type CameraPlan, cameraPlan, cameraPush, heroAccent } from './camera.ts';
-import { summary, title } from './components/cards.ts';
+import { summary, title, titleOver } from './components/cards.ts';
 import {
   api,
   beforeAfter,
@@ -84,7 +84,9 @@ function mountComponent(scene: TimelineScene, ctx: ComponentContext): Component 
   const v = scene.visual;
   switch (v.kind) {
     case 'title':
-      return title(v, ctx, scene.expression);
+      return v.background
+        ? titleOver({ ...v, background: v.background }, ctx)
+        : title(v, ctx, scene.expression);
     case 'summary':
       return summary(v, ctx);
     case 'screenshot':
@@ -127,7 +129,8 @@ const POINTS_AT = new Set<TimelineScene['visual']['kind']>([
 
 /** Where the narrator looks when nothing in the scene is highlighted: toward the content. */
 function gazeFor(scene: TimelineScene, vertical: boolean): { x: number; y: number } {
-  if (scene.visual.kind === 'title' || scene.visual.kind === 'summary') return { x: 0, y: 0 };
+  const v = scene.visual;
+  if (v.kind === 'summary' || (v.kind === 'title' && !v.background)) return { x: 0, y: 0 };
   return vertical ? { x: -0.55, y: 0.75 } : { x: -0.7, y: 0.45 };
 }
 
@@ -317,7 +320,14 @@ export class Stage {
     const duration = scene.end - scene.start;
     const pointing = POINTS_AT.has(scene.visual.kind);
     const target = pointing
-      ? m.component.target?.({ t, duration, p: clamp(t / duration), frame, fox: { mouth, blink } })
+      ? m.component.target?.({
+          t,
+          duration,
+          p: clamp(t / duration),
+          frame,
+          fox: { mouth, blink },
+          open: m.index === 0,
+        })
       : undefined;
     const { aim, reach, gaze } = this.aimFor(m, target);
     return foxPose({
@@ -419,6 +429,7 @@ export class Stage {
         p: clamp(local / duration),
         frame,
         fox: { mouth, blink },
+        open: first,
       };
       m.clock = clock;
       m.component.update(clock);
@@ -427,12 +438,13 @@ export class Stage {
       else m.media.style.transform = push > 1e-6 ? `scale(${(1 + push).toFixed(5)})` : '';
       if (m.component.fox && m.foxTaken !== undefined)
         m.component.fox.element.style.visibility = time >= m.foxTaken - 1e-6 ? 'hidden' : 'visible';
+      // The opening scene's header is in place at frame 0, like the rest of it.
       if (m.header) {
         const eyebrow = m.header.firstElementChild as HTMLElement;
-        eyebrow.style.opacity = easeOutCubic(seg(local, 0.05, 0.4)).toFixed(3);
+        eyebrow.style.opacity = easeOutCubic(first ? 1 : seg(local, 0.05, 0.4)).toFixed(3);
         const heading = m.header.children[1] as HTMLElement | undefined;
         if (heading) {
-          const e = easeOutCubic(seg(local, 0.12, 0.55));
+          const e = easeOutCubic(first ? 1 : seg(local, 0.12, 0.55));
           heading.style.opacity = e.toFixed(3);
           heading.style.transform = `translateY(${((1 - e) * 14 * this.regions.unit).toFixed(2)}px)`;
         }

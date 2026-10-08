@@ -72,16 +72,19 @@ function captionWindow(speech: { text: string; start: number; end: number }) {
 /**
  * The moments a scene's visual pins to, in seconds since the scene started: each `sync` phrase
  * placed in the line's caption window with the captions' own split, and the hero's `hero` (its
- * `sync.hero` phrase, else the start of its line). `text` is the narration without markup, the
- * line the captions show, even when the voice reads `say`: the speech is timed only as a whole,
- * so the captions' split of the narration is the one measure of when a phrase is heard, phrases
- * are validated against the narration, and a visual pinned to it lands with its caption.
+ * `sync.hero` phrase, else the start of its line, but never before `settled`, when its incoming
+ * transition has finished: the accent lands on the arrived picture). `text` is the narration
+ * without markup, the line the captions show, even when the voice reads `say`: the speech is
+ * timed only as a whole, so the captions' split of the narration is the one measure of when a
+ * phrase is heard, phrases are validated against the narration, and a visual pinned to it lands
+ * with its caption.
  */
 export function scenePhases(
   scene: Pick<Scene, 'sync' | 'hero'>,
   text: string,
   timing: SceneTiming,
   options: CaptionOptions,
+  settled = 0,
 ): Record<string, number> | undefined {
   const phases: Record<string, number> = {};
   const caption = captionWindow({ text, start: timing.speechStart, end: timing.speechEnd });
@@ -94,7 +97,7 @@ export function scenePhases(
     if (time) phases[name] = round(time.start - timing.start);
   }
   if (scene.hero && phases[HERO_PHASE] === undefined)
-    phases[HERO_PHASE] = round(timing.speechStart - timing.start);
+    phases[HERO_PHASE] = round(Math.max(timing.speechStart - timing.start, settled));
   return Object.keys(phases).length ? phases : undefined;
 }
 /** The pause between one line and the next at an ordinary scene change. */
@@ -369,7 +372,14 @@ function findLastIndex<T>(
   return -1;
 }
 
-const NO_NARRATOR = new Set<TimelineVisual['kind']>(['title', 'summary', 'outro']);
+/** Title cards (without a capture), summaries, and the outro draw the fox large themselves. */
+function drawsFox(visual: TimelineVisual): boolean {
+  return (
+    visual.kind === 'summary' ||
+    visual.kind === 'outro' ||
+    (visual.kind === 'title' && !visual.background)
+  );
+}
 
 type Verdict = Extract<TimelineVisual, { kind: 'summary' }>['verdict'];
 
@@ -407,19 +417,23 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
     const text = line.text;
     const span = emphasisSpan(line);
     if (span) emphasis.set(timing.id, span);
-    const phases = scenePhases(scene, text, timing, captionOptions);
+    const transition = i > 0 ? sceneTransition(scene) : undefined;
+    const phases = scenePhases(scene, text, timing, captionOptions, transition?.seconds);
+    // A title over a capture is a cold open: the capture fills the media region and the title
+    // goes in the header, where a content scene's heading goes.
+    const over = visual.kind === 'title' && visual.background ? visual : undefined;
     return {
       id: timing.id,
       beat: scene.beat,
-      eyebrow: scene.eyebrow ?? scene.beat,
-      heading: scene.heading,
+      eyebrow: scene.eyebrow ?? over?.eyebrow ?? scene.beat,
+      heading: scene.heading ?? over?.title,
       start: timing.start,
       end: timing.end,
       visual,
       expression: (scene.expression ?? 'explaining') as Expression,
-      narrator: spec.mascot && !NO_NARRATOR.has(visual.kind),
+      narrator: spec.mascot && !drawsFox(visual),
       speech: text.trim() ? { start: timing.speechStart, end: timing.speechEnd, text } : undefined,
-      ...(i > 0 ? { transition: sceneTransition(scene) } : {}),
+      ...(transition ? { transition } : {}),
       ...(phases ? { phases } : {}),
       ...(scene.hero ? { hero: true } : {}),
       ...(scene.camera === 'static' ? { camera: 'static' as const } : {}),

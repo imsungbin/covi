@@ -122,6 +122,18 @@ Long-running commands, such as `app.start`, run in their own process group. When
 | Each demo command | Its own `timeout`, 60 s by default |
 | `intelligence.command` | `intelligence.timeout`, 300 s by default |
 
+## Outcomes
+
+`covi outcomes collect` reads comments, reactions, and commits from GitHub or GitLab. All of it is untrusted input, and what it collects feeds the calibration hint of every later review in the repository, so Covi limits who can shape it:
+
+- **Where tokens go.** Requests go only to the API base, which comes from `--api-url`, `GITHUB_API_URL`, `CI_API_V4_URL`, or the public default, and never from a run's files. Next pages are followed only under that base, and redirects are never followed, so a token never reaches another host.
+- **Only Covi's own comment.** Anyone can paste Covi's marker, so a comment or a finding anchor counts only when Covi's identity wrote it: the token's own user, or the bot in `publish.botLogin` (GitHub; default `github-actions[bot]`, matched by login and by type Bot) or `publish.gitlabBotUser` (GitLab; only once GitLab confirms the account is a bot). In CI those keys come from the base revision's configuration, or from the checkout when no change is under review (a scheduled or manually started run). A change without such a comment is skipped. `covi publish` is stricter still: it edits only a comment its own token wrote.
+- **The ledger.** Only the ledger at the very end of Covi's comment is read, so a ledger quoted inside a finding's evidence is never taken for it. It must decode, fit its schema, and stay under its size limit. Its run id must be a run id, because it names the outcome file. When `covi publish` posts an artifact from a `workflow_run`, it keeps the ledger an earlier trusted run wrote and builds nothing from the artifact; anchors and the rating line then come only from flags.
+- **Who can feed the shared data.** The GitHub Action collects only pull requests from the repository itself, never a fork's, in a job that checks out only the base commit and runs nothing from the pull request. On GitLab, only the scheduled job on the protected default branch writes the protected cache that reviews on protected refs read; merge requests from unprotected branches review without it, and their job removes any restored `.covi/outcomes/` before Covi runs. Keep GitLab's "Use separate caches for protected branches" on.
+- **Votes.** A pull or merge request's author would rather their change look good, so their own 👍 and 👎 on finding anchors (and, on GitLab, on Covi's note) are not counted. Someone who voted both ways counts on neither side.
+- **What is kept.** Outcome files hold no prose, only ids, counts, states, certainties, and links. They are redacted when written, bounded when read (at most 200 files, 256 KB each), and ignored entirely when git tracks any of them (in any letter case, or inside a submodule), when `.covi` or `.covi/outcomes` is a symbolic link, or when Covi cannot check. Reviews read them once, before any project command runs, so a demonstration cannot plant one.
+- **What the hint can say.** The brief's calibration hint is numbers and catalog text only, and it changes no certainty.
+
 ## Environment for project commands
 
 Project commands (`app.install`, `app.start`, `test.command`, `demo.commands`) never inherit Covi's environment. `childEnv` in `packages/core/src/security/env.ts` builds a new one from:
@@ -191,6 +203,7 @@ Because a video's narration, captions, and on-screen code, output, and responses
 - **Narration:** text goes to OpenAI or ElevenLabs only when their API key is set (`auto`) or you choose that provider. The system engines (`say` on macOS, espeak-ng elsewhere) run locally.
 - **Music:** synthesized on the machine. Only `video.music.use: compose` with a model provider sends anything, to the same provider as the analysis, and all of it redacted: the change's headline and summary (at most 200 and 500 characters), the story template and the verdict, the video's length and kind, the scene list (beats, labels, and times, not the narration's words), the hero moment, the end of the last line, and the moment the outro settles, the names and descriptions of the bundled instruments, the Covi theme as an example of the format, and the music methodology.
 - **Comments:** go to GitHub or GitLab only from `covi ci` with commenting enabled, or from `covi publish`.
+- **Outcomes:** `covi outcomes collect` only reads from GitHub or GitLab; it sends nothing but its API requests.
 
 `provider: auto` uses Anthropic whenever `ANTHROPIC_API_KEY` is set. Set `intelligence.provider: heuristic` when code must not leave the machine.
 
@@ -255,7 +268,7 @@ Covi's safeguards govern Covi's own behavior. A pipeline definition that comes f
 
 Cited evidence in a comment is shown as code: ids, labels, and file names. It becomes a link only when the platform serves run files one by one (GitLab job artifacts), the path stays inside the run and uses only letters, digits, `.`, `_`, `-`, and `/`, and the URL passes the same http(s) check as every other link.
 
-Comments are capped at 60,000 characters. Covi edits its own comment, identified by a hidden marker, instead of posting new ones.
+Comments are capped at 60,000 characters. Covi edits its own comment, identified by a hidden marker and by its author (see [Outcomes](#outcomes)), instead of posting new ones. Finding anchors are escaped the same way.
 
 The Markdown reports escape dynamic text the same way: `review.md` (which also becomes the GitHub job summary), `explanation.md`, and `summary.md`. A crafted pull request title or file name renders as text in them, not as a link, image, or HTML.
 
@@ -265,6 +278,7 @@ In the GitHub `workflow_run` pattern, the run directory comes from an artifact t
 - refuses with exit code 2 a run whose manifest recorded a different head commit
 - skips the comment when the pull request has moved on since the review; the newer run comments instead
 - rebuilds the comment from schema-validated files with the escaping above, and executes nothing from the artifact
+- keeps the comment's outcome ledger as an earlier trusted run left it, and posts finding anchors and the rating line only as its flags say, never as the artifact's `run.json` says
 
 `--number` and `--expect-head` override the event's values for other setups; the head check applies to them too.
 
@@ -272,7 +286,7 @@ In the GitHub `workflow_run` pattern, the run directory comes from an artifact t
 
 GitHub:
 
-- Grant `contents: read`, plus `pull-requests: write` only on jobs that comment. Add `security-events: write` only to upload SARIF, and `actions: read` only in the `workflow_run` comment job.
+- Grant `contents: read`, plus `pull-requests: write` only on jobs that comment. Add `security-events: write` only to upload SARIF, and `actions: read` only in the `workflow_run` comment job. A job that collects outcomes needs only `contents: read` and `pull-requests: read`.
 - Pass API keys through `secrets`, as action inputs. They are unavailable to fork pull requests, where `provider: auto` falls back to the heuristic review.
 - Keep `fetch-depth: 0` so Covi doesn't need to fetch. Consider `persist-credentials: false` on `actions/checkout`, so the token isn't left in `.git/config` where project code could read it.
 - Pin the action to a tag or commit SHA. By default the action builds and runs its own source at that ref; if you set `covi-package`, point it at a package you publish and control.
@@ -280,6 +294,7 @@ GitHub:
 GitLab:
 
 - Use a project access token with the `api` scope, the least role that can comment on merge requests, and an expiry. Store it as a masked variable in `COVI_GITLAB_TOKEN`.
+- To collect outcomes, store a token with the `read_api` scope as a masked, protected variable in `GITLAB_TOKEN`, so pipelines on unprotected branches never see it. The scheduled `covi-outcomes` job reads only that variable, never `COVI_GITLAB_TOKEN`.
 - Covi uses `CI_JOB_TOKEN` for one thing: the template's install step fetches Covi's source from your instance with it. Notes and uploads use `COVI_GITLAB_TOKEN`; a job token can't write notes.
 - Leave fork merge request pipelines in the fork project unless you have reviewed the change.
 - Pin `covi-ref` to a tag (or `covi-package` to a version you control), so a pipeline always runs the Covi you reviewed.

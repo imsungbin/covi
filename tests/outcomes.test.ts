@@ -158,7 +158,8 @@ describe('calibration', () => {
     const second = review();
     const [before, after] = readFileSync(prompts, 'utf8').split('\u0000');
     // Planted during the first run's demo: that run's model never saw it; the next run's did.
-    expect(before).not.toContain('How past findings held up');
+    // (The covi-review methodology in the prompt names the section, so look for its heading.)
+    expect(before).not.toContain('## How past findings held up');
     expect(after).toContain('- Likely issue: 4 of 5 held up (80%)');
     // The hint is material, not a verdict: the reported certainties are the same.
     expect(certainties(second)).toEqual(certainties(firstRun));
@@ -415,6 +416,14 @@ describe('covi outcomes', () => {
       { env: { ...gh.env, GITHUB_TOKEN: '', GH_TOKEN: '', COVI_GITHUB_TOKEN: '' } },
     );
     expect(noToken.code).toBe(3);
+    // The scheduled GitLab job reads only GITLAB_TOKEN, so the hint names it.
+    const gitlab = ['--platform', 'gitlab', '--repository', 'acme/shop', '--number', '7'];
+    const noGitLabToken = await coviAsync(
+      ['outcomes', 'collect', '--repo', repo.dir, ...gitlab, '--json'],
+      { env: { GITHUB_ACTIONS: '', GITLAB_CI: '', GITLAB_TOKEN: '', COVI_GITLAB_TOKEN: '' } },
+    );
+    expect(noGitLabToken.code).toBe(3);
+    expect((noGitLabToken.json() as { hint: string }).hint).toMatch(/\bGITLAB_TOKEN\b.*read_api/);
     const nowhere = await coviAsync(['outcomes', 'collect', '--repo', repo.dir, '--number', '7'], {
       env: { GITHUB_ACTIONS: '', GITLAB_CI: '', GITHUB_REPOSITORY: '', GITHUB_TOKEN: 't' },
     });

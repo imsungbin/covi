@@ -164,7 +164,7 @@ export async function collectOutcomes(o: CollectOptions): Promise<WorkflowResult
             hint:
               platform === 'github'
                 ? 'Set GITHUB_TOKEN (or COVI_GITHUB_TOKEN) to a token that can read pull requests.'
-                : 'Set COVI_GITLAB_TOKEN to a token with the read_api scope.',
+                : 'Set GITLAB_TOKEN (or COVI_GITLAB_TOKEN) to a token with the read_api scope. The scheduled covi-outcomes job reads only GITLAB_TOKEN.',
           },
     );
   const collector = made.collector;

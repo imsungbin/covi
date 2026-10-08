@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Evidence model: `evidence.json` gives every diff hunk and capture an id; findings, explanations, and scenes cite them in `evidenceIds` (required on confirmed and likely findings in `findings.json` v2, which is also how a file without `schemaVersion` is read), and `covi evidence` lists them.
 - Subject model: `.covi/subject/subject.json` remembers the screens, elements, and passing flows Covi captured (`subject.store`); a plan without flows replays them, a storyboard `focus` can name `subject:<screen>#<element>`, and `covi subject` lists it.
 - Video components and sound: code that morphs from the old lines to the new, highlight groups, and code captions; up to three `marks` per screenshot or interaction step, each with an optional gloss; diagram edge labels; storyboard `cues`; a whoosh for moving transitions, and a riser and a hit for the hero; music ducks 60 ms before speech and returns over 300 ms.
+- Outcome loop: comments carry a ledger and a "Was this useful? 👍 👎" line, `covi outcomes collect` gathers what became of them into `.covi/outcomes/`, `covi outcomes report` gives precision by certainty, and the brief shows it as a hint; the GitHub Action gains `outcomes`, `finding-anchors`, and an author-side example, and GitLab a scheduled outcomes job.
 
 ### Changed
 

@@ -230,6 +230,7 @@ Inside a coding agent you usually do not configure a provider. The agent reads t
 | `focus` | list of categories | `[]` | Categories to rank first. Confirmed and likely findings still come before risks and questions; within each group, these categories lead. |
 | `disableRules` | list of rule ids | `[]` | Built-in rules to turn off. |
 | `runTests` | boolean | `false` | Run `test.command` as part of every review (same as `--run-tests`). |
+| `calibration` | boolean | `true` | Show how past findings held up (from `.covi/outcomes/`) in the brief and the model's material. It is a hint and changes no certainty. |
 
 Categories: `correctness`, `regression`, `edge-case`, `error-handling`, `state`, `concurrency`, `security`, `permissions`, `api-compatibility`, `data-integrity`, `performance`, `accessibility`, `testing`, `ui`, `maintainability`, `complexity`, `intent-mismatch`, `dependency`, `configuration`.
 
@@ -470,14 +471,16 @@ The map is replaced as a whole, not merged key by key, when several configuratio
 
 ### `publish`
 
-Used by `covi ci` and `covi publish`.
+Used by `covi ci` and `covi publish`; `botLogin` and `gitlabBotUser` also by `covi outcomes collect`.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `comment` | boolean | `true` | Post or update one summary comment on the pull or merge request. |
 | `annotations` | boolean | `true` | Annotate findings inline: workflow annotations in GitHub Actions, the Code Quality report in GitLab CI (written empty when `false`). |
 | `video` | `link`, `upload`, `none` | `link` | How the comment refers to the video. `link` links to it: the job artifact file on GitLab, otherwise the uploaded artifacts. `upload` uploads the MP4 where the platform supports it (GitLab) for inline playback, and links elsewhere. `none` leaves the video out. |
-| `botLogin` | `name[bot]` | `github-actions[bot]` | The GitHub App bot Covi comments as when its token has no user of its own (the workflow token, or an app token). Covi takes a comment or a finding anchor as its own only when that bot wrote it, or, for a token with a user, when that user did. |
+| `anchors` | boolean | `false` | Also post each confirmed or likely finding that has a line as an inline review comment people can react to (GitHub; at most 10 per run, once per finding). |
+| `rating` | boolean | `true` | End the comment with "Was this useful? 👍 👎". `covi outcomes` counts the reactions. |
+| `botLogin` | `name[bot]` | `github-actions[bot]` | The GitHub App bot Covi comments as when its token has no user of its own (the workflow token, or an app token). Covi takes a comment or a finding anchor as its own only when that bot wrote it, or, for a token with a user, when that user did; `covi outcomes collect` accepts either. |
 | `gitlabBotUser` | GitLab username | none | The GitLab bot user Covi's CI comments as: the username of the project or group access token in `COVI_GITLAB_TOKEN`, such as `project_5_bot_1a2b`. Collecting outcomes always takes the notes of the token's own user as Covi's. With this set, a collect that runs with another token (a maintainer's own) also takes this user's notes, once GitLab confirms the account is a bot (one `GET /users/:id`); if GitLab does not confirm it, those notes are ignored. |
 
 ## Environment variables

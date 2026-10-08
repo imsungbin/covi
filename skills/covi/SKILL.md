@@ -41,10 +41,11 @@ Use the `covi` command. With the Claude Code plugin it is already on your PATH; 
 | `covi report --run <id>` | Validates your `explanation.json` and `findings.json`, then renders `review.md`, `explanation.md`, `summary.md` |
 | `covi evidence --run <id> --json` | Every piece of evidence in a run (diff hunks, screenshots, recordings, traces, pixel diffs, requests, commands, test output) with the ids findings, explanations, and scenes cite |
 | `covi subject [--run <id>] --json` | What Covi has seen of the software (screens, elements with their `subject:<screen>#<element>` references, flows that passed); with `--run`, which elements each capture of that run shows |
+| `covi outcomes report --json` | How this repository's past findings held up: precision by certainty from `.covi/outcomes/` (`covi outcomes collect` gathers it; ask the user first, it calls the GitHub or GitLab API) |
 | `covi demo [range] [--plan file]` | Runs the software at base and head; screenshots, flows, command output, API responses |
 | `covi video ...` | Plans, drafts, and renders review videos (see `covi-video`) |
 | `covi render --run <id>` | Renders a storyboard (or a music score) you edited |
-| `covi schema <explanation\|findings\|storyboard\|score\|demo-plan\|config\|evidence>` | The JSON Schema for a file you write or read |
+| `covi schema <explanation\|findings\|storyboard\|score\|demo-plan\|config\|evidence\|outcome>` | The JSON Schema for a file you write or read |
 | `covi templates` | Storytelling templates for videos |
 | `covi doctor` | What this environment can do (browser, ffmpeg, speech) |
 

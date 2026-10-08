@@ -65,3 +65,9 @@ export const demoPath = {
   /** Why the app did not start at a revision: the evidence an `app-start` finding cites. */
   appLog: (revision: DemoRevision) => `demo/app-${revision}.log`,
 } as const;
+
+/**
+ * A run id: `<YYYYMMDD>-<HHMMSS>-<workflow>[-<head7>][-<n>]`. Pruning trusts it to pick run
+ * directories, and outcome files are named after one, so nothing else may pass for it.
+ */
+export const RUN_ID_PATTERN = /^\d{8}-\d{6}-[a-z-]+(-[0-9a-f]{7})?(-\d+)?$/;

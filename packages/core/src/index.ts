@@ -103,6 +103,16 @@ export * from './model/evidence.ts';
 export * from './model/explanation.ts';
 export * from './model/finding.ts';
 export * from './model/subject.ts';
+export * from './model/outcome.ts';
+// The ledger's `areaKey` stays out: `understand/areas.ts` exports one by that name.
+export {
+  anchorKeyOf,
+  anchorMarker,
+  mergeLedger,
+  outcomeKey,
+  parseLedger,
+  renderLedger,
+} from './outcomes/ledger.ts';
 export { renderBrief } from './report/brief.ts';
 export { COMMENT_MARKER, type CommentLinks, renderComment, safeUrl } from './report/comment.ts';
 export { renderDiffDigest, renderFileDiff, renderHunk } from './report/digest.ts';

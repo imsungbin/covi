@@ -75,12 +75,21 @@ export class ApiClient {
     this.base = new URL(options.base.endsWith('/') ? options.base : `${options.base}/`);
   }
 
-  /** An absolute URL under the API base. Anything else throws: the token goes nowhere else. */
+  /**
+   * An absolute URL under the API base. Anything else throws: the token goes nowhere else. So does
+   * one with userinfo, which fetch would refuse with the whole URL, credentials included, in its
+   * message.
+   */
   url(pathOrUrl: string): string {
     const url = pathOrUrl.startsWith('/')
       ? new URL(`${this.base.href}${pathOrUrl.slice(1)}`)
       : new URL(pathOrUrl);
-    if (url.origin !== this.base.origin || !url.pathname.startsWith(this.base.pathname))
+    if (
+      url.username ||
+      url.password ||
+      url.origin !== this.base.origin ||
+      !url.pathname.startsWith(this.base.pathname)
+    )
       throw new Error(
         `Refusing to send a token outside ${this.base.href}: ${url.origin}${url.pathname}`,
       );

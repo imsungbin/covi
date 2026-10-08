@@ -1,0 +1,11 @@
+{
+  "number": 8,
+  "state": "open",
+  "html_url": "https://github.com/acme/shop/pull/8",
+  "merged_at": null,
+  "closed_at": null,
+  "merge_commit_sha": null,
+  "user": { "login": "author", "id": 5, "type": "User" },
+  "head": { "ref": "feat/coupons", "sha": "cccccccccccccccccccccccccccccccccccccccc" },
+  "base": { "ref": "main", "sha": "0000000000000000000000000000000000000000" }
+}

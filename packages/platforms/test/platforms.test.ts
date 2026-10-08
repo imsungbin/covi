@@ -9,10 +9,12 @@ import {
   createPublisher,
   dotenvReport,
   escapeProperty,
+  GitHubClient,
   GitHubPublisher,
   GitLabPublisher,
   githubContext,
   gitlabContext,
+  resolvePullRequest,
   toSarif,
   writeOutputs,
 } from '../src/index.ts';
@@ -475,6 +477,28 @@ describe('GitHub', () => {
     expect(broken.reason).toBe(
       'GitHub sent a body that is not JSON for /repos/acme/shop/issues/7/comments',
     );
+  });
+
+  it('reads pull request lookups through the bounded reader, and says why one failed', async () => {
+    const api = fixtureFetch({
+      'GET https://api.github.com/repos/acme/shop/pulls/7': { fixture: 'github/truncated.txt' },
+      'GET https://api.github.com/repos/acme/shop/pulls?state=open&head=fork%3Afix&per_page=100': {
+        fixture: 'github/truncated.txt',
+      },
+    });
+    const client = new GitHubClient({ token: 't', fetch: api.fetch });
+    expect(
+      await resolvePullRequest(client, 'acme/shop', {
+        metadata: { platform: 'github', number: 7 },
+        expectedHead: 'a'.repeat(40),
+      }),
+    ).toEqual({ reason: 'GitHub sent a body that is not JSON for /repos/acme/shop/pulls/7' });
+    expect(
+      await resolvePullRequest(client, 'acme/shop', {
+        metadata: { platform: 'github' },
+        pullRequestHead: { owner: 'fork', branch: 'fix', sha: 'a'.repeat(40) },
+      }),
+    ).toEqual({ reason: 'GitHub sent a body that is not JSON for /repos/acme/shop/pulls' });
   });
 
   it('posts at most 10 anchors in one run', async () => {

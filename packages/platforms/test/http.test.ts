@@ -155,6 +155,22 @@ describe('ApiClient', () => {
     expect(api.calls.every((call) => call.redirect === 'manual')).toBe(true);
   });
 
+  it('refuses a URL with userinfo, and names only the path when a redirect carries one', async () => {
+    const api = fixtureFetch({
+      'GET https://api.github.com/moved': {
+        status: 301,
+        headers: { location: 'https://user:secret@api.github.com/repositories/9' },
+      },
+    });
+    const c = client(api.fetch);
+    const error = await c.get('/moved').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PlatformHttpError);
+    expect(error).toMatchObject({ status: 301, message: 'GitHub answered HTTP 301 for /moved' });
+    expect(api.calls).toHaveLength(1);
+    expect(() => c.url('https://user:secret@api.github.com/x')).toThrow(/Refusing to send a token/);
+    expect(() => c.url('https://user:secret@api.github.com/x')).not.toThrow(/secret/);
+  });
+
   it('stops a Link cycle at the page limit', async () => {
     const page = 'https://api.github.com/repos/a/b/pulls?page=1';
     const api = fixtureFetch({

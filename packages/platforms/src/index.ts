@@ -21,6 +21,9 @@ export {
   RequestBudget,
 } from './http.ts';
 export { artifactFileBase } from './links.ts';
+export { GitHubCollector, type GitHubCollectorOptions } from './outcomes/github.ts';
+export { findRevert, quotesComment } from './outcomes/signals.ts';
+export type { OutcomeCollector } from './outcomes/types.ts';
 export { toSarif } from './sarif.ts';
 export type {
   AnchorsOutcome,

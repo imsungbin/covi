@@ -176,29 +176,49 @@ export async function resolvePullRequest(
   if (!target && context.pullRequestHead) {
     const { owner, branch, sha } = context.pullRequestHead;
     const head = encodeURIComponent(`${owner}:${branch}`);
-    const response = await client.request(
-      'GET',
-      `/repos/${repository}/pulls?state=open&head=${head}&per_page=100`,
-    );
-    if (!response.ok)
+    const path = `/repos/${repository}/pulls`;
+    const response = await client.request('GET', `${path}?state=open&head=${head}&per_page=100`);
+    if (!response.ok) {
+      await response.body?.cancel();
       return { reason: `could not look up the pull request (HTTP ${response.status})` };
-    const pulls = (await response.json()) as Array<{ number: number; head: { sha: string } }>;
-    target = pulls.find((p) => p.head.sha === sha)?.number;
+    }
+    const pulls = await bodyOf<Array<{ number?: number; head?: { sha?: string } }>>(response, path);
+    if ('reason' in pulls) return pulls;
+    target = Array.isArray(pulls.data)
+      ? pulls.data.find((p) => p.head?.sha === sha)?.number
+      : undefined;
     if (!target)
       return { reason: `no open pull request has head ${sha.slice(0, 7)} (${owner}:${branch})` };
   }
   if (!target) return { reason: 'not a pull request event' };
   if (context.expectedHead) {
-    const response = await client.request('GET', `/repos/${repository}/pulls/${target}`);
-    if (!response.ok)
+    const path = `/repos/${repository}/pulls/${target}`;
+    const response = await client.request('GET', path);
+    if (!response.ok) {
+      await response.body?.cancel();
       return { reason: `could not read pull request #${target} (HTTP ${response.status})` };
-    const pull = (await response.json()) as { head: { sha: string } };
-    if (pull.head.sha !== context.expectedHead)
+    }
+    const pull = await bodyOf<{ head?: { sha?: string } }>(response, path);
+    if ('reason' in pull) return pull;
+    const head = String(pull.data?.head?.sha ?? '');
+    if (head !== context.expectedHead)
       return {
-        reason: `pull request #${target} now points at ${pull.head.sha.slice(0, 7)}, not the reviewed ${context.expectedHead.slice(0, 7)}; the newer run will comment`,
+        reason: `pull request #${target} now points at ${head.slice(0, 7) || 'an unknown commit'}, not the reviewed ${context.expectedHead.slice(0, 7)}; the newer run will comment`,
       };
   }
   return { number: target };
+}
+
+/** A bounded JSON body, or why it could not be read (too large, or not JSON), naming the path. */
+async function bodyOf<T>(
+  response: Response,
+  path: string,
+): Promise<{ data: T } | { reason: string }> {
+  try {
+    return { data: await readJson<T>(response, 'GitHub', path) };
+  } catch (error) {
+    return { reason: (error as Error).message };
+  }
 }
 
 export interface GitHubPublisherOptions extends GitHubClientOptions {
@@ -212,10 +232,23 @@ export interface GitHubPublisherOptions extends GitHubClientOptions {
 }
 
 /** Who wrote a comment, as GitHub lists it. */
-type Author = { id?: number; login?: string; type?: string } | null | undefined;
+export type Author = { id?: number; login?: string; type?: string } | null | undefined;
 
 /** The token's own user id, or `null` for a token that has no user (a workflow or app token). */
-type Identity = { user: number | null };
+export type Identity = { user: number | null };
+
+/** The bot a workflow token comments as. */
+const DEFAULT_BOT_LOGIN = 'github-actions[bot]';
+
+/**
+ * Whether Covi wrote a comment. Anyone can paste the marker, and other apps can quote it, so only
+ * the token's own user counts; a token with no user (it comments as a bot) trusts only its bot's
+ * login.
+ */
+export function authoredBy(author: Author, me: Identity, botLogin = DEFAULT_BOT_LOGIN): boolean {
+  if (me.user !== null) return author?.id === me.user;
+  return author?.type === 'Bot' && author.login === botLogin;
+}
 
 /** Creates or updates Covi's single summary comment on a pull request (issue comments API). */
 export class GitHubPublisher implements Publisher {
@@ -261,17 +294,11 @@ export class GitHubPublisher implements Publisher {
     return this.me;
   }
 
-  /**
-   * The first comment Covi wrote. Anyone can paste the marker, and other apps can quote it, so
-   * only the token's own user counts; a token with no user (it comments as a bot) trusts only its
-   * bot's login.
-   */
+  /** The first comment Covi wrote (see `authoredBy`). */
   private async own<T extends { user?: Author }>(comments: readonly T[]): Promise<T | undefined> {
     if (!comments.length) return undefined;
-    const { user } = await this.whoami();
-    if (user !== null) return comments.find((c) => c.user?.id === user);
-    const bot = this.options.botLogin ?? 'github-actions[bot]';
-    return comments.find((c) => c.user?.type === 'Bot' && c.user.login === bot);
+    const me = await this.whoami();
+    return comments.find((c) => authoredBy(c.user, me, this.options.botLogin));
   }
 
   async findComment(): Promise<ExistingComment | null> {

@@ -1,0 +1,6 @@
+[
+  { "id": 1, "content": "-1", "user": { "login": "reviewer", "id": 6, "type": "User" } },
+  { "id": 2, "content": "-1", "user": { "login": "second", "id": 7, "type": "User" } },
+  { "id": 3, "content": "+1", "user": { "login": "author", "id": 5, "type": "User" } },
+  { "id": 4, "content": "heart", "user": { "login": "reviewer", "id": 6, "type": "User" } }
+]

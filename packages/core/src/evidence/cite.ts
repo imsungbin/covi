@@ -133,15 +133,30 @@ export function groundFinding<T extends GroundableFinding>(
   return { finding: { ...grounded, certainty: 'risk' } as T, dropped, demoted: finding.certainty };
 }
 
-/** Covi's own explanation cites the hunks of each change's files; an agent's cites its own. */
-export function citeChanges(explanation: Explanation, index: EvidenceIndex): Explanation {
+/** Ids one statement in Covi's own explanation cites. */
+const CITED_PER_STATEMENT = 6;
+
+/**
+ * Covi's own explanation cites the hunks of each change's files, and its intent what those changes
+ * cite (else the hunks of the files to read first); an agent's cites its own.
+ */
+export function citeExplanation(explanation: Explanation, index: EvidenceIndex): Explanation {
+  const hunks = (paths: readonly string[]) =>
+    [...new Set(paths.flatMap((path) => hunksOf(index, path)))].slice(0, CITED_PER_STATEMENT);
+  const changes = explanation.changes.map((c) => {
+    if (c.evidenceIds?.length) return c;
+    const ids = hunks(c.files);
+    return ids.length ? { ...c, evidenceIds: ids } : c;
+  });
+  if (explanation.intent.evidenceIds?.length) return { ...explanation, changes };
+  const cited = [...new Set(changes.flatMap((c) => c.evidenceIds ?? []))];
+  const ids = cited.length
+    ? cited.slice(0, CITED_PER_STATEMENT)
+    : hunks(explanation.readingOrder.map((r) => r.path));
   return {
     ...explanation,
-    changes: explanation.changes.map((c) => {
-      if (c.evidenceIds?.length) return c;
-      const ids = c.files.flatMap((path) => hunksOf(index, path)).slice(0, 6);
-      return ids.length ? { ...c, evidenceIds: ids } : c;
-    }),
+    changes,
+    ...(ids.length ? { intent: { ...explanation.intent, evidenceIds: ids } } : {}),
   };
 }
 
@@ -204,8 +219,8 @@ export function groundModelFindings(
 }
 
 /**
- * A model's explanation with only the ids the run's evidence has. A `changes[]` entry left citing
- * nothing then cites its files' hunks (`citeChanges`); the notes say what was dropped.
+ * A model's explanation with only the ids the run's evidence has. A `changes[]` entry or an intent
+ * left citing nothing is then cited by `citeExplanation`; the notes say what was dropped.
  */
 export function groundModelExplanation(
   explanation: Explanation,

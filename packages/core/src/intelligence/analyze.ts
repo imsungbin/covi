@@ -3,7 +3,7 @@ import type { CoviConfig } from '../config/schema.ts';
 import { LANGUAGE_NAME, type Language } from '../i18n/language.ts';
 import type { CodeChange } from '../model/change.ts';
 import type { ReviewContext } from '../model/context.ts';
-import type { EvidenceItem } from '../model/evidence.ts';
+import { type EvidenceItem, withinCitationLimits } from '../model/evidence.ts';
 import { type Explanation, ExplanationSchema } from '../model/explanation.ts';
 import { type Finding, type FindingsFile, FindingsFileBaseSchema } from '../model/finding.ts';
 import { renderBrief } from '../report/brief.ts';
@@ -13,10 +13,13 @@ import { AnthropicProvider } from './anthropic.ts';
 import { CommandProvider } from './command.ts';
 import type { ModelProvider, ProviderChoice } from './provider.ts';
 
-export const ModelAnalysisSchema = z.strictObject({
-  explanation: ExplanationSchema,
-  review: FindingsFileBaseSchema,
-});
+export const ModelAnalysisSchema = z.preprocess(
+  withinCitationLimits,
+  z.strictObject({
+    explanation: ExplanationSchema,
+    review: FindingsFileBaseSchema,
+  }),
+);
 
 export function createProvider(
   choice: ProviderChoice,

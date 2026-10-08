@@ -9,7 +9,7 @@ import {
   type CodeChange,
   childEnv,
   citationProblems,
-  citeChanges,
+  citeExplanation,
   code,
   DEMO_PATHS,
   type Demonstration,
@@ -195,7 +195,8 @@ async function evidenceOf(run: Session['run']): Promise<EvidenceIndex> {
 
 /**
  * Covi's explanation of the change, citing only what the run has: a model's unknown ids are
- * dropped with a run warning, then each change cites its files' hunks.
+ * dropped with a run warning, then each change cites its files' hunks, and the intent what the
+ * changes cite.
  */
 function citedExplanation(
   run: Session['run'],
@@ -203,10 +204,10 @@ function citedExplanation(
   known: EvidenceIndex,
   fromModel: boolean,
 ): Explanation {
-  if (!fromModel) return citeChanges(explanation, known);
+  if (!fromModel) return citeExplanation(explanation, known);
   const grounded = groundModelExplanation(explanation, known);
   for (const note of grounded.notes) run.warn(note);
-  return citeChanges(grounded.explanation, known);
+  return citeExplanation(grounded.explanation, known);
 }
 
 /** Model analysis when a provider is configured; heuristics otherwise (or when the model fails). */
@@ -469,10 +470,10 @@ export async function analyzeWorkflow(
     { schemaVersion: 1, findings: rules.findings, checked: rules.checked, errors: rules.errors },
     'findings',
   );
-  // A draft that cites the hunks of each change, so an agent copying it starts grounded.
+  // A draft whose changes and intent cite hunks, so an agent copying it starts grounded.
   await run.writeJson(
     'explanation.draft.json',
-    citeChanges(explainHeuristically(context, language), await evidenceOf(run)),
+    citeExplanation(explainHeuristically(context, language), await evidenceOf(run)),
     'explanation',
   );
   const brief = renderBrief(change, context, rules.findings, {
@@ -979,17 +980,17 @@ export async function renderWorkflow(
   const review = (await run.has('review.json'))
     ? (parseOrThrow(ReviewFileSchema, await run.readJson('review.json'), 'review.json') as Review)
     : undefined;
+  const evidence = await evidenceOf(run);
   const explanation = (await run.has('explanation.json'))
     ? (parseOrThrow(
         ExplanationSchema,
         await run.readJson('explanation.json'),
         'explanation.json',
       ) as Explanation)
-    : explainHeuristically(session.context, session.language.language);
+    : citeExplanation(explainHeuristically(session.context, session.language.language), evidence);
   const demo = (await run.has(DEMO_PATHS.captures))
     ? await run.readJson<Demonstration>(DEMO_PATHS.captures)
     : undefined;
-  const evidence = await evidenceOf(run);
   const produced = await run.stage('video', () =>
     produceVideo({
       run,
@@ -1045,7 +1046,7 @@ export async function reportWorkflow(session: Session): Promise<WorkflowResult> 
   if (!agentExplanation) run.warn('No explanation.json found; using the structural explanation.');
   const explanation =
     agentExplanation ??
-    citeChanges(explainHeuristically(context, session.language.language), known);
+    citeExplanation(explainHeuristically(context, session.language.language), known);
   const authored = (await run.has('findings.json'))
     ? parseOrThrow(
         FindingsFileSchema,
@@ -1062,7 +1063,7 @@ export async function reportWorkflow(session: Session): Promise<WorkflowResult> 
   if (problems.length)
     throw new UsageError(
       `Cited evidence is not in this run:\n  ${problems.join('\n  ')}`,
-      `List the run's evidence with \`covi evidence --run ${run.id}\`. Evidence ids look like \`diff-hunk:src/app.ts:40\` (the + start of a hunk's @@ header), \`trace:flow-post-head#n2\`, or \`screenshot:home-desktop-after\`.`,
+      `List the run's evidence with \`covi evidence --run ${run.id}\`; only its ids count, so demonstrate in the run you report on (\`covi review --demo\`) to cite captures. Evidence ids look like \`diff-hunk:src/app.ts:40\` (the + start of a hunk's @@ header), \`trace:flow-post-head#n2\`, or \`screenshot:home-desktop-after\`.`,
     );
   if (authored?.schemaVersion === 1) {
     const uncited = authored.findings.filter(

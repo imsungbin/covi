@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   citationProblems,
-  citeChanges,
+  citeExplanation,
   groundFinding,
   hunksAt,
   indexEvidence,
@@ -100,6 +100,29 @@ describe('findings.json version 2', () => {
       review: { findings: [finding()] },
     };
     expect(ModelAnalysisSchema.safeParse(analysis).success).toBe(true);
+  });
+
+  it("cuts a model's over-long citation lists instead of discarding its analysis", () => {
+    const ids = Array.from({ length: 25 }, (_, i) => `diff-hunk:src/cart.ts:${i + 1}`);
+    const long = `trace:${'x'.repeat(500)}`;
+    const parsed = ModelAnalysisSchema.parse({
+      explanation: {
+        depth: 'brief',
+        headline: 'Clamp quantities',
+        summary: 's',
+        intent: { statement: 's', confidence: 'high', evidenceIds: [long, ...ids] },
+        changes: [{ area: 'Cart', description: 'd', evidenceIds: ['', ...ids] }],
+      },
+      review: { findings: [finding({ evidenceIds: ids })] },
+    });
+    const first20 = ids.slice(0, 20);
+    expect(parsed.explanation.intent.evidenceIds).toEqual(first20);
+    expect(parsed.explanation.changes[0]!.evidenceIds).toEqual(first20);
+    expect(parsed.review.findings[0]!.evidenceIds).toEqual(first20);
+    // An agent's files are held to the limit.
+    expect(
+      FindingsFileSchema.safeParse({ findings: [finding({ evidenceIds: ids })] }).success,
+    ).toBe(false);
   });
 });
 
@@ -242,11 +265,47 @@ describe('explanation grounding', () => {
   } as unknown as Explanation;
 
   it("cites the hunks of each change's files in Covi's own explanation", () => {
-    expect(citeChanges(explanation, index).changes.map((c) => c.evidenceIds)).toEqual([
+    expect(citeExplanation(explanation, index).changes.map((c) => c.evidenceIds)).toEqual([
       ['diff-hunk:src/cart.ts:10', 'diff-hunk:src/cart.ts:40'],
       undefined,
       ['trace:flow-post-head'],
     ]);
+  });
+
+  it('cites for the intent what its changes cite, once each', () => {
+    const cited = citeExplanation(explanation, index);
+    expect(cited.intent.evidenceIds).toEqual([
+      'diff-hunk:src/cart.ts:10',
+      'diff-hunk:src/cart.ts:40',
+      'trace:flow-post-head',
+    ]);
+    expect(ungroundedStatements(cited)).toEqual(['behavior', 'changes[1] (Docs)']);
+    // An intent that cites something keeps its own ids.
+    const own = { ...explanation.intent, evidenceIds: ['trace:flow-post-head#n2'] };
+    expect(citeExplanation({ ...explanation, intent: own }, index).intent.evidenceIds).toEqual([
+      'trace:flow-post-head#n2',
+    ]);
+  });
+
+  it('caps what a change and the intent cite at six ids', () => {
+    const paths = Array.from({ length: 8 }, (_, i) => `src/f${i}.ts`);
+    const many = indexEvidence({ items: paths.map((path) => hunkItem(path, 1, 2)) });
+    const change = (files: string[]) => ({ area: 'A', description: 'd', files });
+    const two = { ...explanation, changes: [change(paths.slice(0, 4)), change(paths.slice(4))] };
+    const cited = citeExplanation(two, many);
+    expect(cited.changes.map((c) => c.evidenceIds?.length)).toEqual([4, 4]);
+    expect(cited.intent.evidenceIds).toEqual(paths.slice(0, 6).map((p) => `diff-hunk:${p}:1`));
+    const one = citeExplanation({ ...explanation, changes: [change(paths)] }, many);
+    expect(one.changes[0]!.evidenceIds).toHaveLength(6);
+  });
+
+  it('cites the hunks of the files to read first when no change cites anything', () => {
+    const bare = {
+      ...explanation,
+      changes: [],
+      readingOrder: [{ path: 'src/other.ts', reason: 'r' }],
+    } as Explanation;
+    expect(citeExplanation(bare, index).intent.evidenceIds).toEqual(['diff-hunk:src/other.ts:1']);
   });
 
   it('lists the statements that make a claim and cite nothing', () => {

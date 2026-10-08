@@ -40,6 +40,26 @@ export const EvidenceIdsSchema = z
     "Ids from the run's evidence.json that support this claim (`covi evidence --run <id>` lists them).",
   );
 
+/**
+ * A model's answer with every `evidenceIds` list cut to what `EvidenceIdsSchema` accepts: entries
+ * that are not ids of an allowed length are dropped, and the rest kept up to the cap. Structured
+ * outputs do not enforce lengths, and one over-long list should cost citations, not the analysis.
+ */
+export function withinCitationLimits(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withinCitationLimits);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, v]) => [
+      key,
+      key === 'evidenceIds' && Array.isArray(v)
+        ? v
+            .filter((id) => typeof id === 'string' && id && id.length <= EVIDENCE_LIMITS.id)
+            .slice(0, EVIDENCE_LIMITS.cites)
+        : withinCitationLimits(v),
+    ]),
+  );
+}
+
 const ItemIdSchema = z.string().max(EVIDENCE_LIMITS.id).regex(EVIDENCE_ID);
 
 export const EvidenceItemSchema = z.strictObject({

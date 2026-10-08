@@ -23,7 +23,7 @@ export {
 } from './evidence/build.ts';
 export {
   citationProblems,
-  citeChanges,
+  citeExplanation,
   type EvidenceIndex,
   type GroundableFinding,
   type Grounded,

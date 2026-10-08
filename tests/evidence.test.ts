@@ -84,9 +84,14 @@ describe('evidence in reviews', () => {
     // The key really was redacted out of the diff the hunks are read from.
     expect(readFileSync(join(runDir, 'diff.patch'), 'utf8')).not.toContain('MIIBMIIB');
     expect(readFileSync(join(runDir, 'comment.md'), 'utf8')).toContain('`src/a b.test.ts:1`');
-    // The findings.json Covi wrote is a valid version 2 file: reporting it again passes.
+    // The findings.json Covi wrote is a valid version 2 file, and every statement of its
+    // explanation cites evidence: reporting them again passes without a grounding warning.
     expect(read<{ schemaVersion: number }>(runDir, 'findings.json').schemaVersion).toBe(2);
-    expect(covi(['report', '--repo', repo.root, '--run', runDir, '--json']).code).toBe(0);
+    const reported = covi(['report', '--repo', repo.root, '--run', runDir, '--json']);
+    expect(reported.code).toBe(0);
+    expect((reported.json() as { warnings: string[] }).warnings.join('\n')).not.toContain(
+      'cite no evidence',
+    );
   });
 
   it("holds agent findings and explanations to the run's evidence", () => {
@@ -104,12 +109,14 @@ describe('evidence in reviews', () => {
     expect(read<Items>(runDir, 'evidence.json').items.map((i) => i.id)).toContain(
       'diff-hunk:src/cart.ts:1',
     );
-    // Covi's own draft cites the hunks of each change, so an agent copying it starts grounded.
-    const draft = read<{ changes: Array<{ evidenceIds?: string[] }> }>(
-      runDir,
-      'explanation.draft.json',
-    );
+    // Covi's own draft cites the hunks of each change, and its intent what they cite, so an agent
+    // copying it starts grounded.
+    const draft = read<{
+      intent: { evidenceIds?: string[] };
+      changes: Array<{ evidenceIds?: string[] }>;
+    }>(runDir, 'explanation.draft.json');
     expect(draft.changes.flatMap((c) => c.evidenceIds ?? [])).toContain('diff-hunk:src/cart.ts:1');
+    expect(draft.intent.evidenceIds).toEqual(['diff-hunk:src/cart.ts:1']);
     const finding = {
       title: 'Quantity can no longer go negative',
       certainty: 'confirmed',
@@ -138,6 +145,7 @@ describe('evidence in reviews', () => {
         `findings.json findings[0] (Quantity can no longer go negative): ${wrong}`,
       );
       expect(unknown.text).toContain('covi evidence --run');
+      expect(unknown.text).toContain('covi review --demo');
       expect(unknown.text).toContain('diff-hunk:src/app.ts:40');
     }
 
@@ -274,9 +282,10 @@ describe('evidence in reviews', () => {
       intent: { evidenceIds?: string[] };
       changes: Array<{ evidenceIds?: string[] }>;
     }>(runDir, 'explanation.json');
-    expect(explanation.intent.evidenceIds).toBeUndefined();
-    // The made-up id is gone, so the change cites its file's hunk instead.
+    // The made-up ids are gone, so the change cites its file's hunk instead, and the intent
+    // what the change cites.
     expect(explanation.changes[0]!.evidenceIds).toEqual(['diff-hunk:src/cart.ts:1']);
+    expect(explanation.intent.evidenceIds).toEqual(['diff-hunk:src/cart.ts:1']);
     const reported = covi(['report', '--repo', repo.root, '--run', runDir, '--json']);
     expect(reported.code).toBe(0);
     expect((reported.json() as { artifacts: Record<string, string> }).artifacts.evidence).toBe(

@@ -141,10 +141,10 @@ export {
 } from './security/trust.ts';
 export { type StaticServer, serveStatic } from './serve/static-server.ts';
 export {
+  actsOnSecret,
   emptySubject,
   type FlowMerge,
   type FlowOutcome,
-  fillsSecret,
   flowKept,
   hasObservations,
   mergeSubject,

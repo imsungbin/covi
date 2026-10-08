@@ -27,6 +27,7 @@ export {
 export { type Checkout, checkoutRevision, tempWorkspace } from './checkout.ts';
 export { type DemonstrateInput, demonstrate } from './demonstrate.ts';
 export {
+  isFocusSecret,
   isSecretField,
   type PageScan,
   parseScan,

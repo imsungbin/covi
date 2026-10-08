@@ -6,7 +6,7 @@ import { type Browser, chromium } from 'playwright';
 import { afterEach, describe, expect, it } from 'vitest';
 import { canUseBrowser } from '../../../tests/helpers/env.ts';
 import { capturePage, runFlow } from '../src/browser.ts';
-import { isSecretField, parseScan, selectorFor } from '../src/elements.ts';
+import { isSecretField, parseScan, scanPage, selectorFor } from '../src/elements.ts';
 
 const browserAvailable = await canUseBrowser();
 let dir: string | undefined;
@@ -43,6 +43,29 @@ const FIELDS = `<!doctype html><html><body>
 <select id="month" autocomplete="cc-exp-month"><option>01</option><option>02</option></select>
 <select id="size"><option>S</option><option>M</option></select>
 <div id="note" role="textbox" contenteditable="true" title="Note"></div>
+<input id="d1" autocomplete="one-time-code" inputmode="numeric" maxlength="1">
+<input id="d2" inputmode="numeric" maxlength="1">
+</body></html>`;
+
+/** Names Playwright's role engine computes, and selectors that would find more than one element. */
+const NAMES = `<!doctype html><html><body>
+<button>Go</button><button>Go back</button>
+<button>Delete</button><button>Delete</button>
+<button id="dup">Alpha</button><button id="dup">Beta</button>
+<input id="q12345" title="Search title" placeholder="Search here">
+<label>Remember me <input id="r12345" type="checkbox"></label>
+<a href="/next"><img alt="Home"> page</a>
+<span id="l1">First</span><span id="l2">Second</span><input id="s12345" aria-labelledby="l1 l2">
+<button>Save<span hidden>later</span></button>
+<div role="frobnicate">Unknown role</div>
+</body></html>`;
+
+/** Rich-text editors: editable elements inside wrappers a scan picks, and as label sources. */
+const EDITOR = `<!doctype html><html><body>
+<div data-testid="composer"><div id="body" contenteditable="true"></div></div>
+<button id="reply">Reply <span id="inline" contenteditable="true" style="display:inline-block;min-width:80px">&nbsp;</span></button>
+<div id="draft" contenteditable="true"></div><input id="subject" aria-labelledby="draft">
+<label for="to"><span id="to-label" contenteditable="true" style="display:inline-block;min-width:80px">&nbsp;</span></label><input id="to">
 </body></html>`;
 
 describe('parseScan', () => {
@@ -81,7 +104,7 @@ describe('parseScan', () => {
       box: { x: 1, y: 2, width: 3, height: 4 },
     });
     const selectors = scan.elements.map((e) => e.selector);
-    expect(selectors.slice(1, 4)).toEqual(['role=link[name="Link"]', '#pin', '#card']);
+    expect(selectors.slice(1, 4)).toEqual(['role=link[name="Link"s]', '#pin', '#card']);
     expect(scan.elements.filter((e) => e.secret).map((e) => e.selector)).toEqual(['#pin', '#card']);
     // The first 60 raw entries are read: 8 above (4 kept) and 52 buttons.
     expect(scan.elements).toHaveLength(56);
@@ -144,7 +167,7 @@ describe('parseScan', () => {
     });
     expect(selectorFor({ id: 'save' })).toEqual({ selector: '#save', key: 'save' });
     expect(selectorFor({ id: 'ember1234', role: 'button', name: 'Go' })).toEqual({
-      selector: 'role=button[name="Go"]',
+      selector: 'role=button[name="Go"s]',
       key: 'go',
     });
     expect(selectorFor({ id: ':r1:' })).toBeUndefined();
@@ -171,12 +194,12 @@ describe('scans in the browser', () => {
       expect(
         scan.elements.map((e) => [e.selector, e.key, e.role, e.label, e.secret ?? false]),
       ).toEqual([
-        ['role=heading[name="Sign in"]', 'sign-in', 'heading', 'Sign in', false],
+        ['role=heading[name="Sign in"s]', 'sign-in', 'heading', 'Sign in', false],
         ['[data-testid="save-draft"]', 'save-draft', 'button', 'Save draft', false],
         ['#email', 'email', 'textbox', 'Email', false],
         ['#pw', 'pw', 'textbox', 'Password', true],
-        ['role=link[name="Get \\"help\\""]', 'get-help', 'link', 'Get "help"', false],
-        ['role=button[name="Generated"]', 'generated', 'button', 'Generated', false],
+        ['role=link[name="Get \\"help\\""s]', 'get-help', 'link', 'Get "help"', false],
+        ['role=button[name="Generated"s]', 'generated', 'button', 'Generated', false],
         ['#far', 'far', 'button', 'Far below', false],
       ]);
       expect(scan.elements.at(-1)!.box.y).toBeGreaterThan(3000);
@@ -273,5 +296,154 @@ describe('scans in the browser', () => {
       const note = plain.frames.at(-1)!.scan!.elements.find((e) => e.selector === '#note')!;
       expect(note.label).toBe('Note');
     },
+  );
+
+  it.skipIf(!browserAvailable)(
+    'keeps a selector only when it finds exactly one element, by exact name',
+    async () => {
+      dir = mkdtempSync(join(tmpdir(), 'covi-scan-names-'));
+      writeFileSync(join(dir, 'index.html'), NAMES);
+      server = await serveStatic(dir);
+      browser = await chromium.launch();
+      const page = await browser.newPage();
+      await page.goto(`${server.url}/`);
+      const scan = (await scanPage(page))!;
+      // "Go" no longer finds "Go back"; the two Deletes and the unknown role are dropped; the
+      // duplicated id falls back to each button's name.
+      expect(scan.elements.map((e) => [e.selector, e.key])).toEqual([
+        ['role=button[name="Go"s]', 'go'],
+        ['role=button[name="Go back"s]', 'go-back'],
+        ['role=button[name="Alpha"s]', 'alpha'],
+        ['role=button[name="Beta"s]', 'beta'],
+        ['role=textbox[name="Search title"s]', 'search-title'],
+        ['role=checkbox[name="Remember me"s]', 'remember-me'],
+        ['role=link[name="Home page"s]', 'home-page'],
+        ['role=textbox[name="First Second"s]', 'first-second'],
+        ['role=button[name="Save"s]', 'save'],
+      ]);
+      for (const e of scan.elements)
+        expect(await page.locator(e.selector).count(), e.selector).toBe(1);
+      await page.close();
+    },
+  );
+
+  it.skipIf(!browserAvailable)(
+    'never reads what a flow typed into an editable element, inside a wrapper or as a label',
+    async () => {
+      dir = mkdtempSync(join(tmpdir(), 'covi-scan-editor-'));
+      writeFileSync(join(dir, 'index.html'), EDITOR);
+      server = await serveStatic(dir);
+      browser = await chromium.launch();
+      const outcome = await runFlow(
+        browser,
+        server.url,
+        {
+          name: 'Write',
+          path: '/',
+          steps: [
+            { fill: '#body', text: 'typed words one' },
+            { fill: '#inline', text: 'typed words two' },
+            { fill: '#draft', text: 'typed words three' },
+            { fill: '#to-label', text: 'typed words four' },
+          ],
+        },
+        'desktop',
+        (i) => join(dir!, `w-${i}.png`),
+      );
+      expect(outcome.error).toBeUndefined();
+      const scan = outcome.frames.at(-1)!.scan!;
+      expect(JSON.stringify(scan)).not.toContain('typed');
+      const label = (selector: string) => scan.elements.find((e) => e.selector === selector)?.label;
+      expect(label('[data-testid="composer"]')).toBeUndefined();
+      expect(label('#reply')).toBe('Reply');
+      expect(label('#subject')).toBeUndefined();
+      expect(label('#to')).toBeUndefined();
+    },
+  );
+
+  it.skipIf(!browserAvailable)(
+    'notes a flow that presses keys while a secret field has focus',
+    async () => {
+      dir = mkdtempSync(join(tmpdir(), 'covi-scan-focus-'));
+      writeFileSync(join(dir, 'index.html'), FIELDS);
+      server = await serveStatic(dir);
+      browser = await chromium.launch();
+      const run = (name: string, steps: Parameters<typeof runFlow>[2]['steps']) =>
+        runFlow(browser!, server!.url, { name, path: '/', steps }, 'desktop', (i) =>
+          join(dir!, `${name}-${i}.png`),
+        );
+      const keys = await run('keys', [{ click: '#pw' }, { press: 'KeyH' }, { press: 'KeyU' }]);
+      expect(keys.error).toBeUndefined();
+      expect(keys.secret).toBe(true);
+      // One-time-code digit boxes: click the first, then press each digit.
+      const digits = await run('digits', [{ click: '#d1' }, { press: 'Digit1' }]);
+      expect(digits.error).toBeUndefined();
+      expect(digits.secret).toBe(true);
+      const plain = await run('typing', [{ click: '#name' }, { press: 'KeyB' }, { press: 'Tab' }]);
+      expect(plain.error).toBeUndefined();
+      expect(plain.secret).toBeUndefined();
+    },
+  );
+
+  it.skipIf(!browserAvailable)(
+    'checks a field without waiting, and still flags a secret field that renders late',
+    async () => {
+      dir = mkdtempSync(join(tmpdir(), 'covi-scan-late-'));
+      writeFileSync(
+        join(dir, 'index.html'),
+        `<!doctype html><html><body><script>
+        setTimeout(() => {
+          const pw = document.createElement('input');
+          pw.id = 'late';
+          pw.type = 'password';
+          document.body.append(pw);
+        }, 6000);
+        </script></body></html>`,
+      );
+      server = await serveStatic(dir);
+      browser = await chromium.launch();
+      const page = await browser.newPage();
+      await page.goto(`${server.url}/`);
+      const started = Date.now();
+      expect(await isSecretField(page.locator('#missing').first())).toBe(false);
+      expect(Date.now() - started).toBeLessThan(500);
+      await page.close();
+      // Past the 5 s the frame before the step waits for its target.
+      const late = await runFlow(
+        browser,
+        server.url,
+        { name: 'Late', path: '/', steps: [{ fill: '#late', text: 'hunter2' }] },
+        'desktop',
+        (i) => join(dir!, `l-${i}.png`),
+      );
+      expect(late.error).toBeUndefined();
+      expect(late.secret).toBe(true);
+    },
+    30_000,
+  );
+
+  it.skipIf(!browserAvailable)(
+    'stops a scan that visits too many nodes or takes too long',
+    async () => {
+      browser = await chromium.launch();
+      const page = await browser.newPage();
+      await page.setContent(
+        `${'<button style="width:0;height:0;padding:0;border:0"></button>'.repeat(12_000)}<button id="after">After</button>`,
+      );
+      const crowded = (await scanPage(page))!;
+      expect(crowded.elements).toEqual([]);
+      await page.setContent(`<button id="slow">Slow</button><script>
+        const rect = Element.prototype.getBoundingClientRect;
+        Element.prototype.getBoundingClientRect = function () {
+          const until = Date.now() + 3000;
+          while (Date.now() < until) {}
+          return rect.call(this);
+        };
+      </script>`);
+      const started = Date.now();
+      expect(await scanPage(page, 300)).toBeUndefined();
+      expect(Date.now() - started).toBeLessThan(1500);
+    },
+    20_000,
   );
 });

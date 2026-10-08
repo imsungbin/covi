@@ -1,6 +1,6 @@
 import type { Flow, FlowStep, Rect } from '@covi/core';
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from 'playwright';
-import { isSecretField, type PageScan, scanPage } from './elements.ts';
+import { isFocusSecret, isSecretField, type PageScan, scanPage } from './elements.ts';
 import { collectMutations, observe } from './observe.ts';
 import type { TraceCollector } from './trace.ts';
 
@@ -235,7 +235,7 @@ export interface FlowRun {
   video?: string;
   /** Why recording was asked for and could not start; the flow still ran, unrecorded. */
   recordError?: string;
-  /** The flow typed into, pressed keys in, or chose from a password, one-time code, or card field. */
+  /** It typed into, pressed keys in, or chose from a password, one-time code, or card field. */
   secret?: true;
 }
 
@@ -283,9 +283,13 @@ export async function runFlow(
   const frames: FlowFrame[] = [];
   let current = 'open';
   let secret = false;
-  /** The step's field, noting whether it holds a secret before the flow acts on it. */
+  /**
+   * The step's field, noting whether it holds a secret before the flow acts on it. It waits as the
+   * action would, so a field that renders late is checked too.
+   */
   const field = async (selector: string) => {
     const locator = page.locator(selector).first();
+    await locator.waitFor({ state: 'attached', timeout: 8000 });
     if (await isSecretField(locator)) secret = true;
     return locator;
   };
@@ -354,11 +358,14 @@ export async function runFlow(
       if ('goto' in step) await page.goto(`${baseUrl}${step.goto}`, { waitUntil: 'load' });
       else if ('click' in step) await page.locator(step.click).first().click({ timeout: 8000 });
       else if ('fill' in step) await (await field(step.fill)).fill(step.text, { timeout: 8000 });
-      else if ('press' in step)
-        await (step.selector
-          ? (await field(step.selector)).press(step.press)
-          : page.keyboard.press(step.press));
-      else if ('hover' in step) await page.locator(step.hover).first().hover({ timeout: 8000 });
+      else if ('press' in step) {
+        if (step.selector) await (await field(step.selector)).press(step.press);
+        else {
+          // The key goes to whatever has focus, such as a password field a click focused.
+          if (await isFocusSecret(page)) secret = true;
+          await page.keyboard.press(step.press);
+        }
+      } else if ('hover' in step) await page.locator(step.hover).first().hover({ timeout: 8000 });
       else if ('select' in step)
         await (await field(step.select)).selectOption(step.value, { timeout: 8000 });
       else if ('check' in step) await page.locator(step.check).first().check({ timeout: 8000 });

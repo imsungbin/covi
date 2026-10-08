@@ -110,19 +110,29 @@ function namesSecret(text: string, selector: boolean): boolean {
   return own.length === 1 && own[0] === 'card';
 }
 
+/** The field a step types into, presses keys in, or chooses from, when it names one. */
+function fieldOf(step: FlowStep): string | undefined {
+  if ('fill' in step) return step.fill;
+  if ('press' in step) return step.selector;
+  if ('select' in step) return step.select;
+  return undefined;
+}
+
 /**
- * A step that types into a secret field: one its selector or note names as secret, or one whose
- * selector is an element the page marked secret (`secretSelectors`).
+ * A step that types into, presses keys in, or chooses from a secret field: one its selector or note
+ * names as secret, or one whose selector is an element the page marked secret (`secretSelectors`).
+ * A key pressed without a selector goes to the focused field, which only capture can see.
  */
-export function fillsSecret(
+export function actsOnSecret(
   step: FlowStep,
   secretSelectors: ReadonlySet<string> = new Set(),
 ): boolean {
-  if (!('fill' in step)) return false;
+  const field = fieldOf(step);
+  if (field === undefined) return false;
   return (
-    secretSelectors.has(step.fill) ||
-    namesSecret(step.fill, true) ||
-    (step.note !== undefined && namesSecret(step.note, false))
+    secretSelectors.has(field) ||
+    namesSecret(field, true) ||
+    ('note' in step && step.note !== undefined && namesSecret(step.note, false))
   );
 }
 
@@ -140,7 +150,7 @@ function flowEntry(
   | { outcome: Exclude<FlowOutcome, 'kept'> } {
   // Only a flow that passed at head is worth replaying; one that types a secret is never kept.
   if (!flow.passed) return { outcome: 'failed' };
-  if (flow.secret || flow.steps.some((s) => fillsSecret(s.action, secretSelectors)))
+  if (flow.secret || flow.steps.some((s) => actsOnSecret(s.action, secretSelectors)))
     return { outcome: 'secret' };
   const candidate = FlowEntrySchema.safeParse({
     name: oneLine(flow.name, SUBJECT_LIMITS.label),

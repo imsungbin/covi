@@ -7,8 +7,8 @@ import {
   SubjectSchema,
 } from '../src/model/subject.ts';
 import {
+  actsOnSecret,
   emptySubject,
-  fillsSecret,
   flowKept,
   hasObservations,
   mergeSubject,
@@ -246,7 +246,7 @@ describe('mergeSubject', () => {
       { ...flow, secret: true },
     ])
       expect(mergeSubject(emptySubject(), at(1, { flows: [secret] }), OPTS).flows).toEqual([]);
-    expect(fillsSecret({ fill: '#comment', text: 'Hi' })).toBe(false);
+    expect(actsOnSecret({ fill: '#comment', text: 'Hi' })).toBe(false);
     for (const goto of ['https://evil.example/', '//evil.example/', '/\\evil.example'])
       expect(
         mergeSubject(
@@ -300,9 +300,9 @@ describe('mergeSubject', () => {
       '[data-testid=account-token]',
       '#ssn',
     ])
-      expect(fillsSecret(fill(selector)), selector).toBe(true);
-    expect(fillsSecret(fill('#field', 'Type the card number'))).toBe(true);
-    expect(fillsSecret(fill('#field', 'Enter the PIN'))).toBe(true);
+      expect(actsOnSecret(fill(selector)), selector).toBe(true);
+    expect(actsOnSecret(fill('#field', 'Type the card number'))).toBe(true);
+    expect(actsOnSecret(fill('#field', 'Enter the PIN'))).toBe(true);
     for (const selector of [
       '#passenger-name',
       '#compass',
@@ -318,11 +318,36 @@ describe('mergeSubject', () => {
       '#cardinal',
       '#numeric-card-count',
     ])
-      expect(fillsSecret(fill(selector)), selector).toBe(false);
-    expect(fillsSecret(fill('#field', 'Describe the pricing card'))).toBe(false);
-    expect(fillsSecret({ click: '#password' })).toBe(false);
+      expect(actsOnSecret(fill(selector)), selector).toBe(false);
+    expect(actsOnSecret(fill('#field', 'Describe the pricing card'))).toBe(false);
+    expect(actsOnSecret({ click: '#password' })).toBe(false);
     // An element the page marked secret is secret whatever its selector says.
-    expect(fillsSecret(fill('#f-17'), new Set(['#f-17']))).toBe(true);
+    expect(actsOnSecret(fill('#f-17'), new Set(['#f-17']))).toBe(true);
+  });
+
+  it('tells a secret field a step presses keys in or chooses from, as well as one it fills', () => {
+    for (const step of [
+      { press: 'Digit1', selector: '#otp' },
+      { press: 'Enter', selector: 'input[name=password]' },
+      { select: '#cc-exp-month', value: '01' },
+      { select: '[data-testid=card-pin]', value: '1' },
+    ])
+      expect(actsOnSecret(step), JSON.stringify(step)).toBe(true);
+    expect(actsOnSecret({ press: 'Enter', selector: '#f-9' }, new Set(['#f-9']))).toBe(true);
+    expect(actsOnSecret({ select: '#f-9', value: '1' }, new Set(['#f-9']))).toBe(true);
+    for (const step of [
+      { press: 'Enter', selector: '#search' },
+      { press: 'Enter' },
+      { select: '#size', value: 'M' },
+      { hover: '#password' },
+      { check: '#otp' },
+    ])
+      expect(actsOnSecret(step), JSON.stringify(step)).toBe(false);
+    const presses: SubjectFlowObservation = {
+      ...flow,
+      steps: [{ action: { press: 'Digit1', selector: '#otp' } }],
+    };
+    expect(mergeSubject(emptySubject(), at(1, { flows: [presses] }), OPTS).flows).toEqual([]);
   });
 
   it('never keeps a flow that types into a field the page marked secret', () => {

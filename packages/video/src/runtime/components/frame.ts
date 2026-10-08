@@ -2,6 +2,7 @@ import type { ScreenshotTiming } from '../../timeline/cues.ts';
 import type { ImageAsset, Point, Rect } from '../../timeline/types.ts';
 import { clamp, easeInOutCubic, easeOutBack, easeOutCubic, lerp, seg } from '../anim.ts';
 import { el } from '../dom.ts';
+import { type FrameCamera, type FrameGeometry, frameCamera } from '../framing.ts';
 import { contain } from '../layout.ts';
 
 export interface FrameOptions {
@@ -26,7 +27,7 @@ export class Frame {
   private readonly cursor: HTMLDivElement;
   private readonly ripple: HTMLDivElement;
   private readonly u: (n: number) => number;
-  private camera = { z: 1, ox: 0, oy: 0 };
+  private camera: FrameCamera = { z: 1, ox: 0, oy: 0 };
 
   constructor(parent: HTMLElement, box: Rect, image: ImageAsset, options: FrameOptions) {
     this.u = options.u;
@@ -110,52 +111,25 @@ export class Frame {
     return { x: r.x, y: r.y };
   }
 
+  /** What the camera works with, for the pure camera math in `framing.ts`. */
+  get geometry(): FrameGeometry {
+    return { image: this.image, base: this.base, viewport: this.viewport };
+  }
+
   /** Zoom toward `focus` (image px) by progress `k` (0–1). */
   setCamera(focus: Rect | undefined, k: number, maxZoom = 1.9): void {
-    const { z, ox, oy } = this.cameraFor(focus, k, maxZoom);
-    this.camera = { z, ox, oy };
-    this.img.style.transform = `translate(${(ox - this.base.x).toFixed(2)}px, ${(oy - this.base.y).toFixed(2)}px) scale(${z.toFixed(4)})`;
+    this.apply(this.cameraFor(focus, k, maxZoom));
+  }
+
+  /** Points the camera exactly (a pan between marks blends two cameras). */
+  apply(camera: FrameCamera): void {
+    this.camera = { ...camera };
+    this.img.style.transform = `translate(${(camera.ox - this.base.x).toFixed(2)}px, ${(camera.oy - this.base.y).toFixed(2)}px) scale(${camera.z.toFixed(4)})`;
   }
 
   /** The camera `setCamera` would set, without setting it. */
-  cameraFor(
-    focus: Rect | undefined,
-    k: number,
-    maxZoom = 1.9,
-  ): { z: number; ox: number; oy: number } {
-    const s0 = this.base.width / this.image.width;
-    let z = 1;
-    let fx = this.image.width / 2;
-    let fy = this.image.height / 2;
-    if (focus && k > 0) {
-      const pad = 1.5;
-      const target = Math.min(
-        maxZoom,
-        this.viewport.width / (focus.width * s0 * pad),
-        this.viewport.height / (focus.height * s0 * pad),
-      );
-      z = lerp(1, Math.max(1, target), easeInOutCubic(clamp(k)));
-      fx = focus.x + focus.width / 2;
-      fy = focus.y + focus.height / 2;
-    }
-    const startX = this.base.x + fx * s0;
-    const startY = this.base.y + fy * s0;
-    const e = focus ? easeInOutCubic(clamp(k)) : 0;
-    const cx = lerp(startX, this.viewport.width / 2, e);
-    const cy = lerp(startY, this.viewport.height / 2, e);
-    let ox = cx - fx * s0 * z;
-    let oy = cy - fy * s0 * z;
-    const w = this.image.width * s0 * z;
-    const h = this.image.height * s0 * z;
-    ox =
-      w > this.viewport.width
-        ? clamp(ox, this.viewport.width - w, 0)
-        : (this.viewport.width - w) / 2;
-    oy =
-      h > this.viewport.height
-        ? clamp(oy, this.viewport.height - h, 0)
-        : (this.viewport.height - h) / 2;
-    return { z, ox, oy };
+  cameraFor(focus: Rect | undefined, k: number, maxZoom = 1.9): FrameCamera {
+    return frameCamera(this.geometry, focus, k, maxZoom);
   }
 
   /** Dims everything outside the focus and draws a ring around it. */
@@ -198,18 +172,23 @@ export class Frame {
     });
   }
 
-  /** Moves the cursor from an entry point to `click` (image px) and plays the click ripple. */
-  pointer(click: Point | undefined, move: number, press: number): void {
-    if (!click || move <= 0) {
+  /**
+   * Moves the cursor to `click` (image px) and plays the click ripple. It comes from `from` (image
+   * px; the previous mark, where it already rests), else in from the viewport's corner.
+   */
+  pointer(click: Point | undefined, move: number, press: number, from?: Point): void {
+    if (!click || (move <= 0 && !from)) {
       this.cursor.style.opacity = '0';
       this.ripple.style.opacity = '0';
       return;
     }
     const target = this.mapPoint(click);
-    const start = {
-      x: this.viewport.x + this.viewport.width * 0.82,
-      y: this.viewport.y + this.viewport.height * 0.92,
-    };
+    const start = from
+      ? this.mapPoint(from)
+      : {
+          x: this.viewport.x + this.viewport.width * 0.82,
+          y: this.viewport.y + this.viewport.height * 0.92,
+        };
     const e = easeInOutCubic(clamp(move));
     // Separate easing per axis gives a natural curved path.
     const x = lerp(start.x, target.x, e);
@@ -218,7 +197,7 @@ export class Frame {
     Object.assign(this.cursor.style, {
       left: `${x - this.u(6)}px`,
       top: `${y - this.u(3)}px`,
-      opacity: String(clamp(move * 3).toFixed(3)),
+      opacity: String((from ? 1 : clamp(move * 3)).toFixed(3)),
       transform: `scale(${dip.toFixed(3)})`,
     });
     if (press > 0 && press < 1) {

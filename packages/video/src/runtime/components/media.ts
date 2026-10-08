@@ -7,6 +7,7 @@ import {
   HIGHLIGHT_SWEEP,
   interactionTiming,
   morphTiming,
+  screenshotMarks,
   screenshotTiming,
   TYPE_TO_OUTPUT,
   terminalStarts,
@@ -14,6 +15,7 @@ import {
 import type { Point, Rect, TimelineVisual } from '../../timeline/types.ts';
 import { clamp, easeOutCubic, fade, lerp, rise, seg, typedPrefix } from '../anim.ts';
 import { el, escapeHtml } from '../dom.ts';
+import { center, markProgress, marksCamera } from '../framing.ts';
 import { highlightLine } from '../highlight.ts';
 import { union } from '../narrator.ts';
 import { choreograph, Frame } from './frame.ts';
@@ -24,6 +26,7 @@ import {
   type LayoutItem,
   overflows,
   rectOf,
+  type SceneClock,
 } from './types.ts';
 
 type V<K extends TimelineVisual['kind']> = Extract<TimelineVisual, { kind: K }>;
@@ -55,24 +58,93 @@ function frameTarget(
 // Screenshot
 // ---------------------------------------------------------------------------------------------
 
+/** A gloss: a mark's label in a chip under the frame, inside the media region. */
+function glossChip(ctx: ComponentContext, box: Rect): HTMLSpanElement {
+  const node = chip(ctx.root, '', 'soft');
+  node.classList.add('gloss');
+  Object.assign(node.style, {
+    position: 'absolute',
+    left: `${box.x}px`,
+    top: `${box.y + box.height + ctx.u(16)}px`,
+    maxWidth: `${box.width}px`,
+  });
+  return node;
+}
+
+/** Shows the gloss of the mark the camera is on, fading in as the camera starts toward it. */
+function showGloss(chip: HTMLElement, label: string | undefined, t: number, from: number): void {
+  if (chip.textContent !== (label ?? '')) chip.textContent = label ?? '';
+  fade(chip, label ? seg(t, from, from + 0.3) : 0);
+}
+
 export function screenshot(v: V<'screenshot'>, ctx: ComponentContext): Component {
-  const box = ctx.regions.media;
+  const marks = v.marks ?? [];
+  const media = ctx.regions.media;
+  // A gloss sits under the frame, inside the media region, never in the captions' band.
+  const glossed = marks.some((m) => m.label);
+  const box = glossed ? { ...media, height: media.height - ctx.u(64) } : media;
   const frame = new Frame(ctx.root, box, v.image, {
     chrome: v.device === 'desktop',
     url: v.label,
     u: ctx.u,
   });
+  if (!marks.length)
+    return {
+      update(clock) {
+        const { t, duration } = clock;
+        rise(frame.root, entered(clock, 0, 0.55), ctx.u(28));
+        choreograph(frame, v.focus, v.click, t, screenshotTiming(duration, ctx.phases));
+      },
+      report: () => [
+        ...frameItems([frame]),
+        ...(v.focus ? [{ role: 'focus' as const, rect: frame.map(v.focus) }] : []),
+      ],
+      target: () => frameTarget(frame, v.focus, v.click),
+    };
+  const gloss = glossed ? glossChip(ctx, box) : undefined;
+  const rects = marks.map((m) => m.focus);
+  const pose = ({ t, duration }: Pick<SceneClock, 't' | 'duration'>) => {
+    const timing = screenshotMarks(duration, marks, ctx.phases);
+    return { timing, at: marksCamera(frame.geometry, rects, timing.marks, t) };
+  };
+  // The region framed in the frame drawn last, for the layout report.
+  let framed = rects[0]!;
   return {
     update(clock) {
-      const { t, duration } = clock;
+      const { t } = clock;
       rise(frame.root, entered(clock, 0, 0.55), ctx.u(28));
-      choreograph(frame, v.focus, v.click, t, screenshotTiming(duration, ctx.phases));
+      const { timing, at } = pose(clock);
+      framed = at.focus;
+      frame.apply(at.camera);
+      frame.spotlight(at.focus, at.from < 0 ? seg(t, ...timing.spot) : 1);
+      // The cursor glides from mark to mark, then from the last one to the click.
+      if (v.click && t >= timing.move[0])
+        frame.pointer(
+          v.click,
+          seg(t, ...timing.move),
+          seg(t, ...timing.press),
+          center(rects.at(-1)!),
+        );
+      else
+        frame.pointer(
+          center(rects[at.to]!),
+          at.k,
+          0,
+          at.from < 0 ? undefined : center(rects[at.from]!),
+        );
+      if (gloss) showGloss(gloss, marks[at.to]!.label, t, timing.marks[at.to]!.start);
     },
     report: () => [
       ...frameItems([frame]),
-      ...(v.focus ? [{ role: 'focus' as const, rect: frame.map(v.focus) }] : []),
+      { role: 'focus' as const, rect: frame.map(framed) },
+      ...(gloss
+        ? [{ role: 'text' as const, rect: rectOf(gloss), overflow: overflows(gloss) }]
+        : []),
     ],
-    target: () => frameTarget(frame, v.focus, v.click),
+    target(clock) {
+      const { at } = pose(clock);
+      return frame.map(at.focus, at.camera);
+    },
   };
 }
 
@@ -210,19 +282,38 @@ function wipe(v: V<'before-after'>, ctx: ComponentContext): Component {
 // Interaction: a sequence of screenshots with cursor and click emphasis
 // ---------------------------------------------------------------------------------------------
 
+/** How far an interaction step zooms toward its focus or its marks (less than a screenshot's). */
+const STEP_ZOOM = 1.5;
+
 export function interaction(v: V<'interaction'>, ctx: ComponentContext): Component {
   const box = { ...ctx.regions.media, height: ctx.regions.media.height - ctx.u(64) };
   const frames = v.steps.map((s) => new Frame(ctx.root, box, s.image, { chrome: true, u: ctx.u }));
-  const label = chip(ctx.root, '', 'soft');
-  Object.assign(label.style, {
-    position: 'absolute',
-    left: `${box.x}px`,
-    top: `${box.y + box.height + ctx.u(16)}px`,
-  });
+  // With glosses the chip carries the storyboard's text: it ellipsizes, and QC checks it.
+  const glossed = v.steps.some((s) => s.marks?.some((m) => m.label));
+  const label = glossed ? glossChip(ctx, box) : chip(ctx.root, '', 'soft');
+  if (!glossed)
+    Object.assign(label.style, {
+      position: 'absolute',
+      left: `${box.x}px`,
+      top: `${box.y + box.height + ctx.u(16)}px`,
+    });
+  const marks = v.steps.map((s) => s.marks?.map((m) => m.focus));
+  /** Where the cursor waits as a step opens: on the last mark of the step before, if it had any. */
+  const waiting = (i: number) => {
+    const prior = marks[i - 1]?.at(-1);
+    return prior ? center(prior) : undefined;
+  };
+  const timingOf = (duration: number) =>
+    interactionTiming(
+      duration,
+      v.steps.length,
+      ctx.phases,
+      v.steps.map((s) => s.marks),
+    );
   return {
     update(clock) {
       const { t, duration } = clock;
-      const timing = interactionTiming(duration, v.steps.length, ctx.phases);
+      const timing = timingOf(duration);
       const active = activeStep(timing, t);
       const since = t - timing[active]!.start;
       frames.forEach((f, i) => {
@@ -237,21 +328,64 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
           return;
         }
         const shown = v.steps[i]!;
-        f.setCamera(shown.focus, seg(t, ...step.zoom) * 0.7, 1.5);
-        f.spotlight(shown.focus, shown.focus ? seg(t, ...step.spot) * 0.8 : 0);
-        f.pointer(shown.click, seg(t, ...step.move), seg(t, ...step.press));
+        const rects = marks[i];
+        if (rects && step.marks) {
+          const at = marksCamera(f.geometry, rects, step.marks, t, STEP_ZOOM);
+          f.apply(at.camera);
+          f.spotlight(at.focus, (at.from < 0 ? seg(t, ...step.spot) : 1) * 0.8);
+          if (shown.click && t >= step.move[0])
+            f.pointer(
+              shown.click,
+              seg(t, ...step.move),
+              seg(t, ...step.press),
+              center(rects.at(-1)!),
+            );
+          else
+            f.pointer(
+              center(rects[at.to]!),
+              at.k,
+              0,
+              at.from < 0 ? waiting(i) : center(rects[at.from]!),
+            );
+        } else {
+          f.setCamera(shown.focus, seg(t, ...step.zoom) * 0.7, STEP_ZOOM);
+          f.spotlight(shown.focus, shown.focus ? seg(t, ...step.spot) * 0.8 : 0);
+          f.pointer(shown.click, seg(t, ...step.move), seg(t, ...step.press));
+        }
       });
       const shown = v.steps[active]!;
-      label.textContent = `${active + 1}/${v.steps.length}${shown.label ? `  ${shown.label}` : ''}`;
+      // Once the camera heads for a mark with a gloss, the gloss stands in for the step's label.
+      const now = timing[active]!;
+      const reached = now.marks ? markProgress(now.marks, t) : undefined;
+      const gloss =
+        reached && t >= now.marks![reached.to]!.start
+          ? shown.marks?.[reached.to]?.label
+          : undefined;
+      const note = gloss ?? shown.label;
+      label.textContent = `${active + 1}/${v.steps.length}${note ? `  ${note}` : ''}`;
       fade(label, active === 0 ? entered(clock, 0, 0.3) : seg(since, 0, 0.3));
     },
-    report: () => frameItems(frames.slice(0, 1)),
+    report: () => [
+      ...frameItems(frames.slice(0, 1)),
+      ...(glossed
+        ? [{ role: 'text' as const, rect: rectOf(label), overflow: overflows(label) }]
+        : []),
+    ],
     target({ t, duration }) {
-      const timing = interactionTiming(duration, v.steps.length, ctx.phases);
+      const timing = timingOf(duration);
       // Each step's camera recomputed for this moment, so no frame depends on an earlier one.
       const of = (i: number) => {
         const shown = v.steps[i]!;
-        const camera = frames[i]!.cameraFor(shown.focus, seg(t, ...timing[i]!.zoom) * 0.7, 1.5);
+        const rects = marks[i];
+        if (rects && timing[i]!.marks) {
+          const at = marksCamera(frames[i]!.geometry, rects, timing[i]!.marks!, t, STEP_ZOOM);
+          return frameTarget(frames[i]!, at.focus, undefined, at.camera);
+        }
+        const camera = frames[i]!.cameraFor(
+          shown.focus,
+          seg(t, ...timing[i]!.zoom) * 0.7,
+          STEP_ZOOM,
+        );
         return frameTarget(frames[i]!, shown.focus, shown.click, camera);
       };
       const active = activeStep(timing, t);

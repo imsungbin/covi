@@ -76,6 +76,7 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
 .chip.primary { background: ${c.primary}; color: #fff; }
 .chip.soft { background: ${c.primarySoft}; color: ${c.primary}; }
 .chip.muted { background: ${c.surface}; color: ${c.textMuted}; border: 1px solid ${c.line}; }
+.chip.gloss { display: inline-block; overflow: hidden; text-overflow: ellipsis; }
 
 .card { background: ${c.surface}; border: 1px solid ${c.line}; border-radius: ${u(22)}; box-shadow: ${c.shadow}; }
 

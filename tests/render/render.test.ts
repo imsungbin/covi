@@ -33,7 +33,11 @@ import { type Browser, chromium } from 'playwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../../packages/cli/src/examples.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
-import { morphTiming } from '../../packages/video/src/timeline/cues.ts';
+import {
+  interactionTiming,
+  morphTiming,
+  screenshotMarks,
+} from '../../packages/video/src/timeline/cues.ts';
 import type { TimelineVisual } from '../../packages/video/src/timeline/types.ts';
 import { canRenderVideo, fullRenders } from '../helpers/env.ts';
 
@@ -447,6 +451,32 @@ describe.skipIf(!available)('rendering', () => {
     return { v, m, duration, done: Math.min(m.end + 0.1, duration - 0.05) };
   }
 
+  /** A marked capture in scene s2 at a frame: the gloss, the first frame's camera, ring, and cursor. */
+  function frameState(look: Awaited<ReturnType<typeof compose>>['look'], frame: number) {
+    return look<{
+      gloss: string;
+      shown: number;
+      image: string;
+      zoom: number;
+      ring: number;
+      cursor: number;
+    }>(
+      frame,
+      's2',
+      `const gloss = scene.querySelector('.gloss');
+       const opacity = (selector) => Number.parseFloat(scene.querySelector(selector).style.opacity || '0');
+       const image = scene.querySelector('.frame img').style.transform;
+       return {
+         gloss: gloss.textContent,
+         shown: opacity('.gloss'),
+         image,
+         zoom: Number.parseFloat(image.match(/scale\\(([\\d.]+)\\)/)[1]),
+         ring: opacity('.focus-ring'),
+         cursor: opacity('.cursor'),
+       };`,
+    );
+  }
+
   it('morphs code: the old lines struck to ghosts, the new ones typed where they were', async () => {
     const browser = await chromium.launch();
     try {
@@ -678,6 +708,174 @@ describe.skipIf(!available)('rendering', () => {
       const after = await state(frameAt('s2', Math.min(done + 0.5, duration - 0.02)));
       expect(after.text).toBe(full.trim());
       expect(after.lit).toBeCloseTo(1, 2);
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('tours marks: the camera pans from one to the next, each gloss under the frame', async () => {
+    const browser = await chromium.launch();
+    try {
+      const { timeline, frameAt, look, report, errors } = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'proof',
+          narration: 'The total updates, and the badge clears.',
+          visual: {
+            kind: 'screenshot',
+            image: { path: 'demo/a.png' },
+            device: 'mobile',
+            marks: [
+              { focus: { x: 40, y: 40, width: 160, height: 80 }, label: 'Total' },
+              { focus: { x: 440, y: 280, width: 160, height: 80 }, label: 'Badge' },
+            ],
+            click: { x: 520, y: 320 },
+          },
+        },
+        storyboard.scenes[2]!,
+      ]);
+      const s2 = timeline.scenes[1]!;
+      const v = s2.visual as Extract<TimelineVisual, { kind: 'screenshot' }>;
+      const [first, second] = screenshotMarks(s2.end - s2.start, v.marks!, s2.phases).marks;
+      const state = (seconds: number) => frameState(look, frameAt('s2', seconds));
+      const early = await state(Math.max(0.05, first!.start - 0.1));
+      expect(early.shown).toBe(0);
+      // Arriving at the first mark: its gloss, the ring, and the cursor on it.
+      const onFirst = await state(first!.pan[1] - 0.05);
+      expect(onFirst).toMatchObject({ gloss: 'Total', shown: 1 });
+      expect(onFirst.ring).toBeGreaterThan(0.5);
+      expect(onFirst.cursor).toBe(1);
+      // After the pan: the second gloss, the camera moved.
+      const onSecond = await state(second!.pan[1] + 0.05);
+      expect(onSecond).toMatchObject({ gloss: 'Badge', shown: 1 });
+      expect(onSecond.image).not.toBe(onFirst.image);
+      // Two marks zoom the frame's own camera to 1.6× at most.
+      expect(onSecond.zoom).toBeGreaterThan(1);
+      expect(onSecond.zoom).toBeLessThanOrEqual(1.6);
+      // The gloss is text QC checks, and it stays inside the media region.
+      const items = (await report()).items;
+      const gloss = items.find((i) => i.role === 'text')!;
+      expect(gloss.overflow).toBe(false);
+      const media = computeRegions(timeline).media;
+      expect(gloss.rect.y + gloss.rect.height).toBeLessThanOrEqual(media.y + media.height + 4);
+      expect(items.some((i) => i.role === 'focus')).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('tours a step’s marks, its chip showing each gloss in place of the step’s label', async () => {
+    const browser = await chromium.launch();
+    try {
+      // A step's own label has no length limit; a gloss's 40 characters fit this frame.
+      const long = Array.from({ length: 6 }, () => 'then the receipt opens').join(', ');
+      const { timeline, frameAt, look, report, errors } = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'proof',
+          narration:
+            'Open the cart, read the total and the badge, then check out to see the receipt.',
+          sync: { step2: 'then check out' },
+          visual: {
+            kind: 'interaction',
+            steps: [
+              {
+                image: { path: 'demo/a.png' },
+                label: 'Open the cart',
+                marks: [
+                  { focus: { x: 40, y: 40, width: 160, height: 80 }, label: 'Total' },
+                  { focus: { x: 440, y: 280, width: 160, height: 80 }, label: 'Badge' },
+                ],
+                click: { x: 520, y: 320 },
+              },
+              {
+                image: { path: 'demo/a.png' },
+                label: long,
+                marks: [{ focus: { x: 200, y: 160, width: 200, height: 100 }, label: 'Receipt' }],
+              },
+            ],
+          },
+        },
+        storyboard.scenes[2]!,
+      ]);
+      const s2 = timeline.scenes[1]!;
+      const v = s2.visual as Extract<TimelineVisual, { kind: 'interaction' }>;
+      const timing = interactionTiming(
+        s2.end - s2.start,
+        v.steps.length,
+        s2.phases,
+        v.steps.map((s) => s.marks),
+      );
+      const [first, second] = timing[0]!.marks!;
+      const state = (seconds: number) => frameState(look, frameAt('s2', seconds));
+      // The step's label until the camera heads for a mark, then each mark's gloss.
+      expect((await state(first!.start - 0.1)).gloss).toBe('1/2  Open the cart');
+      const onFirst = await state(first!.pan[1] - 0.05);
+      expect(onFirst.gloss).toBe('1/2  Total');
+      expect(onFirst.ring).toBeGreaterThan(0.5);
+      expect(onFirst.cursor).toBe(1);
+      const onSecond = await state(second!.pan[1] + 0.05);
+      expect(onSecond.gloss).toBe('1/2  Badge');
+      expect(onSecond.image).not.toBe(onFirst.image);
+      // A step zooms no further for its marks than for its focus.
+      expect(onSecond.zoom).toBeGreaterThan(1);
+      expect(onSecond.zoom).toBeLessThanOrEqual(1.5);
+      const fits = (await report()).items.find((i) => i.role === 'text')!;
+      expect(fits.overflow).toBe(false);
+      // A label too long for the chip is ellipsized inside the media region, and QC hears of it.
+      const mark = timing[1]!.marks![0]!;
+      expect((await state(mark.start - 0.05)).gloss).toBe(`2/2  ${long}`);
+      const clipped = (await report()).items.find((i) => i.role === 'text')!;
+      expect(clipped.overflow).toBe(true);
+      const media = computeRegions(timeline).media;
+      // (Within the stage camera's push-in, which scales the whole media layer.)
+      expect(clipped.rect.x + clipped.rect.width).toBeLessThanOrEqual(media.x + media.width + 4);
+      expect((await state(mark.pan[1] - 0.05)).gloss).toBe('2/2  Receipt');
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('tours marks where they would have been when redaction hid their phrase', async () => {
+    const browser = await chromium.launch();
+    try {
+      const { timeline, frameAt, look, errors } = await compose(
+        browser,
+        [
+          cart,
+          {
+            id: 's2',
+            beat: 'proof',
+            narration: 'The total updates, and the badge clears.',
+            sync: { total: 'The total updates' },
+            visual: {
+              kind: 'screenshot',
+              image: { path: 'demo/a.png' },
+              device: 'mobile',
+              marks: [
+                { focus: { x: 40, y: 40, width: 160, height: 80 }, label: 'Total', sync: 'total' },
+                { focus: { x: 440, y: 280, width: 160, height: 80 }, label: 'Badge' },
+              ],
+            },
+          },
+          storyboard.scenes[2]!,
+        ],
+        (narration) => narration.replace('The total updates', '[REDACTED]'),
+      );
+      const s2 = timeline.scenes[1]!;
+      expect(s2.phases?.total).toBeUndefined();
+      const v = s2.visual as Extract<TimelineVisual, { kind: 'screenshot' }>;
+      const duration = s2.end - s2.start;
+      const [first] = screenshotMarks(duration, v.marks!, s2.phases).marks;
+      // At 22% of the scene, as without a phase.
+      expect(first!.start).toBeCloseTo(duration * 0.22, 6);
+      const onFirst = await frameState(look, frameAt('s2', first!.pan[1] - 0.05));
+      expect(onFirst).toMatchObject({ gloss: 'Total', shown: 1 });
       expect(errors).toEqual([]);
     } finally {
       await browser.close();

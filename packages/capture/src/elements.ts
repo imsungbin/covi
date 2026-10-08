@@ -357,9 +357,14 @@ export async function scanPage(page: Page, timeout = SCAN_TIMEOUT): Promise<Page
   });
 }
 
-/** `[type, autocomplete]` as the page reported it, judged by `secretField`. */
+/**
+ * `[type, autocomplete]` as the page reported it, judged by `secretField`. `null` means no element
+ * to judge. Anything else (a page that threw, stalled past its time, or returned something odd)
+ * counts as secret: a flow is kept only when its fields were seen to be ordinary.
+ */
 function secretAttributes(raw: unknown): boolean {
-  if (!Array.isArray(raw)) return false;
+  if (raw === null) return false;
+  if (!Array.isArray(raw)) return true;
   const [type, autocomplete] = raw;
   return secretField(
     typeof type === 'string' ? type.slice(0, 64) : null,
@@ -370,7 +375,8 @@ function secretAttributes(raw: unknown): boolean {
 /**
  * Whether a field holds a password, one-time code, or card secret, by its `type` or an exact
  * `autocomplete` token: a flow that types into, presses keys in, or chooses from one is never kept.
- * It does not wait for the field; the caller waits as the step would.
+ * It does not wait for the field; the caller waits as the step would. A field the page does not
+ * report in time counts as secret.
  */
 export async function isSecretField(locator: Locator): Promise<boolean> {
   return secretAttributes(await within(FIELD_TIMEOUT, () => locator.evaluateAll(fieldAttributes)));
@@ -378,7 +384,8 @@ export async function isSecretField(locator: Locator): Promise<boolean> {
 
 /**
  * Whether the element that has focus, in any frame, is a secret field: a key pressed without a
- * selector goes there, so a flow can type a password key by key.
+ * selector goes there, so a flow can type a password key by key. A frame that does not report in
+ * time counts as secret.
  */
 export async function isFocusSecret(page: Page): Promise<boolean> {
   const focused = await Promise.all(

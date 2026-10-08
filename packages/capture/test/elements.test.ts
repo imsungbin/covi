@@ -6,7 +6,7 @@ import { type Browser, chromium } from 'playwright';
 import { afterEach, describe, expect, it } from 'vitest';
 import { canUseBrowser } from '../../../tests/helpers/env.ts';
 import { capturePage, runFlow } from '../src/browser.ts';
-import { isSecretField, parseScan, scanPage, selectorFor } from '../src/elements.ts';
+import { isFocusSecret, isSecretField, parseScan, scanPage, selectorFor } from '../src/elements.ts';
 
 const browserAvailable = await canUseBrowser();
 let dir: string | undefined;
@@ -383,6 +383,39 @@ describe('scans in the browser', () => {
       expect(plain.error).toBeUndefined();
       expect(plain.secret).toBeUndefined();
     },
+  );
+
+  it.skipIf(!browserAvailable)(
+    'counts a field it cannot read, because the page throws or stalls, as secret',
+    async () => {
+      browser = await chromium.launch();
+      const page = await browser.newPage();
+      await page.setContent('<input id="name" autocomplete="name">');
+      await page.focus('#name');
+      const field = page.locator('#name').first();
+      expect(await isSecretField(field)).toBe(false);
+      expect(await isFocusSecret(page)).toBe(false);
+      // A field that matches nothing is not secret: the step fails on its own.
+      expect(await isSecretField(page.locator('#missing').first())).toBe(false);
+      await page.evaluate(`Element.prototype.getAttribute = () => { throw new Error('no'); }`);
+      expect(await isSecretField(field)).toBe(true);
+      expect(await isFocusSecret(page)).toBe(true);
+      const stalled = await browser.newPage();
+      await stalled.setContent('<input id="name" autocomplete="name">');
+      await stalled.focus('#name');
+      await stalled.evaluate(
+        `setTimeout(() => { const until = Date.now() + 5000; while (Date.now() < until) {} }, 0)`,
+      );
+      const started = Date.now();
+      expect(
+        await Promise.all([
+          isSecretField(stalled.locator('#name').first()),
+          isFocusSecret(stalled),
+        ]),
+      ).toEqual([true, true]);
+      expect(Date.now() - started).toBeLessThan(4000);
+    },
+    20_000,
   );
 
   it.skipIf(!browserAvailable)(

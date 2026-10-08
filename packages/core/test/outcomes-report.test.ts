@@ -52,6 +52,22 @@ describe('labels', () => {
     expect(labelFinding(f(), change('closed'))).toEqual(unlabeled);
   });
 
+  it('counts a finding merged unchanged only when Covi reviewed the head that merged', () => {
+    // A fix pushed and merged before its review finished: the ledger is a push behind.
+    const later = outcomeFile({ changeHead: 'bbbbbbb' }).change;
+    expect(labelFinding(f(), later)).toEqual(unlabeled);
+    expect(labelFinding(f({ certainty: 'confirmed' }), later)).toEqual(unlabeled);
+    // Votes still judge it, and a fix Covi saw still counts for it.
+    expect(labelFinding(f({ thumbs: { up: 0, down: 1 } }), later).label).toBe('wrong');
+    expect(labelFinding(f({ fate: 'addressed' }), later).label).toBe('right');
+    // A platform that did not say which commit merged settles nothing either.
+    expect(labelFinding(f(), outcomeFile({ changeHead: null }).change)).toEqual(unlabeled);
+    expect(labelFinding(f(), outcomeFile({ changeHead: 'aaaaaaa' }).change)).toEqual({
+      label: 'wrong',
+      signal: 'merged-unchanged',
+    });
+  });
+
   it('labels a superseded finding only by its thumbs', () => {
     // A reworded finding was neither fixed nor shipped as reported; only votes judge it.
     const stale = f({ fate: 'superseded', certainty: 'confirmed' });
@@ -199,6 +215,7 @@ describe('buildOutcome', () => {
     url: 'https://github.com/acme/shop/pull/7',
     state: 'merged',
     closedAt: '2026-10-02T09:00:00Z',
+    head: 'a'.repeat(40),
     author: '9001',
     comment: {
       id: '201',
@@ -235,6 +252,7 @@ describe('buildOutcome', () => {
         number: 7,
         url: 'https://github.com/acme/shop/pull/7',
         state: 'merged',
+        head: 'aaaaaaa',
         closedAt: '2026-10-02T09:00:00Z',
       },
       comment: { id: '201', rating: { up: 2, down: 1 }, replies: 1 },
@@ -301,6 +319,26 @@ describe('buildOutcome', () => {
       up: 0,
       down: 1,
     });
+  });
+
+  it('records the head the change ended at, and says when Covi reviewed an older one', () => {
+    const stale = buildOutcome(signals({ head: 'B'.repeat(40) }), '2026-10-09T12:00:00Z');
+    expect(stale.outcome!.change.head).toBe('bbbbbbb');
+    expect(stale.outcome!.head).toBe('aaaaaaa');
+    expect(stale.notes).toEqual([
+      'Covi last reviewed aaaaaaa, but the change merged at bbbbbbb: findings still present then count neither way',
+    ]);
+    expect(labelFinding(stale.outcome!.findings[0]!, stale.outcome!.change).signal).not.toBe(
+      'merged-unchanged',
+    );
+    // A head that is not a commit id is left out, so nothing counts as merged unchanged.
+    const odd = buildOutcome(signals({ head: 'main' }), '2026-10-09T12:00:00Z');
+    expect(odd.outcome!.change.head).toBeUndefined();
+    expect(odd.notes?.[0]).toMatch(/merged at an unknown commit/);
+    // Open or closed without merging: nothing would count as merged unchanged, so no note.
+    expect(
+      buildOutcome(signals({ state: 'open', head: 'b'.repeat(40) }), '2026-10-09T12:00:00Z').notes,
+    ).toBeUndefined();
   });
 
   it('says why it skips a change', () => {

@@ -23,6 +23,8 @@ interface Discussion {
 interface MergeRequest {
   iid?: unknown;
   state?: string;
+  /** The merge request's head commit. */
+  sha?: string | null;
   web_url?: string;
   merged_at?: string | null;
   closed_at?: string | null;
@@ -127,6 +129,7 @@ export class GitLabCollector implements OutcomeCollector {
       number,
       url: mr.web_url,
       state,
+      ...(typeof mr.sha === 'string' ? { head: mr.sha } : {}),
       ...(closedAt ? { closedAt } : {}),
       // Unknown when GitLab leaves it out: then no one's votes are excluded.
       author: author === undefined ? '' : String(author),

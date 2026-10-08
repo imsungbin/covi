@@ -278,8 +278,8 @@ Covi can learn how its reviews held up in your repository. With `outcomes: true`
 
 - **Votes first.** A finding whose anchor has more 👍 than 👎 held up, and one with more 👎 did not, even while the pull request is open. The pull request author's own votes don't count, and neither does someone who voted both ways.
 - **Addressed counts for Covi.** A finding that disappeared after a push held up: the author changed the code until Covi stopped seeing the problem.
-- **Merged unchanged counts against it.** A confirmed or likely finding still there when the pull request merged, and not reverted, did not hold up: the team shipped what Covi called an issue.
-- **Everything else counts neither way:** open pull requests without votes, closed-unmerged ones, reverted changes, findings reworded in a later push, and risks and questions merged as they were.
+- **Merged unchanged counts against it.** A confirmed or likely finding still there when the pull request merged, at the commit Covi last reviewed, and not reverted, did not hold up: the team shipped what Covi called an issue.
+- **Everything else counts neither way:** open pull requests without votes, closed-unmerged ones, reverted changes, findings reworded in a later push, risks and questions merged as they were, and findings still there when a pull request merged at a commit Covi had not reviewed (a push merged before its review finished).
 
 Precision is held up / (held up + not held up). The next review's brief shows it for every certainty with at least five labeled findings. The `covi-review` skill treats it as a hint about how sure to be, and Covi never changes a certainty because of it (`review.calibration: false` leaves it out). The 👍 and 👎 on the comment itself are reported as a rating of the comment; they never label a finding.
 

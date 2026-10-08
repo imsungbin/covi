@@ -104,6 +104,9 @@ export const OutcomeFileSchema = z.strictObject({
     number: z.number().int().positive(),
     url: Url.optional(),
     state: z.enum(OUTCOME_STATES),
+    head: Head.optional().describe(
+      "The change's last commit when collected (7 characters). A finding counts as merged unchanged only when Covi reviewed this commit.",
+    ),
     closedAt: Timestamp.optional(),
     revertedBy: z
       .strictObject({ sha: z.string().regex(/^[0-9a-f]{7,64}$/), url: Url.optional() })
@@ -140,6 +143,8 @@ export interface ChangeSignals {
   number: number;
   url?: string;
   state: OutcomeState;
+  /** The change's last commit, as the platform reports it: the one that merged, for a merge. */
+  head?: string;
   closedAt?: string;
   revertedBy?: { sha: string; url?: string };
   /** Who opened the change: the platform's user id, as reactions name their users. */

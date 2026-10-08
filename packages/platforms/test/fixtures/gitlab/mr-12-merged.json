@@ -1,6 +1,7 @@
 {
   "iid": 12,
   "state": "merged",
+  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "web_url": "https://gitlab.example/acme/shop/-/merge_requests/12",
   "merged_at": "2026-10-02T09:00:00.000Z",
   "closed_at": null,

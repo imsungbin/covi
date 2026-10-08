@@ -25,7 +25,15 @@ export function labelFinding(
   if (finding.fate === 'superseded') return UNLABELED;
   // Shipping code Covi called an issue says the team disagreed. A revert says the change was
   // wrong somehow, not that this finding was; risks and questions are not claims of a defect.
-  if (change.state === 'merged' && !change.revertedBy && isBlockingCandidate(finding))
+  // Only the commit that merged says what shipped: a fix pushed and merged before its review
+  // finished leaves the finding in a ledger one push behind.
+  if (
+    change.state === 'merged' &&
+    !change.revertedBy &&
+    change.head !== undefined &&
+    change.head === finding.lastHead &&
+    isBlockingCandidate(finding)
+  )
     return { label: 'wrong', signal: 'merged-unchanged' };
   return UNLABELED;
 }

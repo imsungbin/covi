@@ -63,6 +63,7 @@ describe('GitLabCollector', () => {
       number: 12,
       url: 'https://gitlab.example/acme/shop/-/merge_requests/12',
       state: 'merged',
+      head: 'a'.repeat(40),
       closedAt: '2026-10-02T09:00:00.000Z',
       author: '5',
       revertedBy: {

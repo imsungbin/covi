@@ -32,6 +32,7 @@ interface Pull {
   closed_at?: string | null;
   merge_commit_sha?: string | null;
   user?: Author;
+  head?: { sha?: string };
   base?: { ref?: string };
 }
 interface Commit {
@@ -118,6 +119,7 @@ export class GitHubCollector implements OutcomeCollector {
       number,
       url: pull.html_url,
       state,
+      ...(typeof pull.head?.sha === 'string' ? { head: pull.head.sha } : {}),
       ...(pull.closed_at ? { closedAt: pull.closed_at } : {}),
       // Unknown when GitHub leaves it out: then no one's votes are excluded.
       author: typeof pull.user?.id === 'number' ? String(pull.user.id) : '',

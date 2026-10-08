@@ -5,6 +5,8 @@ export interface OutcomeOverrides {
   repository?: string;
   state?: OutcomeFile['change']['state'];
   revertedBy?: { sha: string; url?: string };
+  /** The change's head when collected; `null` leaves it out. Default: the head Covi reviewed. */
+  changeHead?: string | null;
   runId?: string;
   collectedAt?: string;
   rating?: { up: number; down: number };
@@ -28,6 +30,7 @@ export function outcomeFile(over: OutcomeOverrides = {}): OutcomeFile {
       number,
       url: `https://github.com/acme/shop/pull/${number}`,
       state: over.state ?? 'merged',
+      ...(over.changeHead === null ? {} : { head: over.changeHead ?? 'aaaaaaa' }),
       ...(over.revertedBy ? { revertedBy: over.revertedBy } : {}),
     },
     comment: { id: String(1000 + number), rating: over.rating ?? { up: 0, down: 0 }, replies: 0 },

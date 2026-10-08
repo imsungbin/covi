@@ -30,8 +30,18 @@ function thumbsOf(anchor: ChangeSignals['anchors'][number], author: string) {
  */
 export function buildOutcome(signals: ChangeSignals, collectedAt: string): BuiltOutcome {
   const built = outcomeOf(signals, collectedAt);
-  return signals.notes?.length ? { ...built, notes: [...signals.notes] } : built;
+  const notes = [...(signals.notes ?? [])];
+  const outcome = built.outcome;
+  if (outcome?.change.state === 'merged' && outcome.change.head !== outcome.head)
+    notes.push(
+      `Covi last reviewed ${outcome.head}, but the change merged at ${outcome.change.head ?? 'an unknown commit'}: findings still present then count neither way`,
+    );
+  return notes.length ? { ...built, notes } : built;
 }
+
+/** The first 7 characters of a commit id, or nothing when the platform sent something else. */
+const shortSha = (sha: string | undefined) =>
+  sha && /^[0-9a-f]{7,64}$/i.test(sha) ? sha.slice(0, 7).toLowerCase() : undefined;
 
 function outcomeOf(signals: ChangeSignals, collectedAt: string): BuiltOutcome {
   if (!signals.comment) return { skipped: 'Covi has not commented on it' };
@@ -53,6 +63,7 @@ function outcomeOf(signals: ChangeSignals, collectedAt: string): BuiltOutcome {
       number: signals.number,
       url: signals.url,
       state: signals.state,
+      head: shortSha(signals.head),
       closedAt: signals.closedAt,
       revertedBy: signals.revertedBy ? defined(signals.revertedBy) : undefined,
     }),

@@ -5,6 +5,7 @@ import {
   mergeLedger,
   normalizeFinding,
   outcomeKey,
+  outcomeReport,
   renderLedger,
 } from '@covi/core';
 import { describe, expect, it } from 'vitest';
@@ -93,6 +94,7 @@ describe('GitHubCollector', () => {
       number: 7,
       url: 'https://github.com/acme/shop/pull/7',
       state: 'merged',
+      head: 'a'.repeat(40),
       closedAt: '2026-10-02T09:00:00Z',
       author: '5',
       revertedBy: {
@@ -315,6 +317,37 @@ describe('GitHubCollector', () => {
     expect((await collector(api.fetch).collect(8)).comment).toBeUndefined();
   });
 
+  it('leaves findings unlabeled when the pull request merged past the head Covi reviewed', async () => {
+    // A fix pushed and merged before its review finished: the comment still shows the older head.
+    const later = {
+      ...merged,
+      [`GET ${API}/pulls/7`]: {
+        json: {
+          number: 7,
+          state: 'closed',
+          merged_at: '2026-10-02T09:00:00Z',
+          merge_commit_sha: '1'.repeat(40),
+          user: { login: 'author', id: 5, type: 'User' },
+          head: { ref: 'fix/totals', sha: 'b'.repeat(40) },
+          base: { ref: 'main' },
+        },
+      },
+      // No votes, so only what merged could label the finding.
+      [`GET ${API}/pulls/7/comments?per_page=100`]: { json: [] },
+    };
+    const api = fixtureFetch({ ...later, ...workflowToken }, replace);
+    const signals = await collector(api.fetch).collect(7);
+    expect(signals.head).toBe('b'.repeat(40));
+    const built = buildOutcome(signals, '2026-10-09T12:00:00.000Z');
+    expect(built.outcome).toMatchObject({ head: 'aaaaaaa', change: { head: 'bbbbbbb' } });
+    expect(built.notes).toContain(
+      'Covi last reviewed aaaaaaa, but the change merged at bbbbbbb: findings still present then count neither way',
+    );
+    const report = outcomeReport([built.outcome!]).repositories[0]!;
+    expect(report.certainty.likely).toMatchObject({ reported: 1, wrong: 0, unlabeled: 1 });
+    expect(report.signals.mergedUnchanged).toBe(0);
+  });
+
   it('reads an open pull request without looking for anchors or reverts', async () => {
     const api = fixtureFetch({
       [`GET ${API}/pulls/8`]: { fixture: 'github/pull-8-open.json' },
@@ -326,6 +359,7 @@ describe('GitHubCollector', () => {
       number: 8,
       url: 'https://github.com/acme/shop/pull/8',
       state: 'open',
+      head: 'c'.repeat(40),
       author: '5',
       anchors: [],
     });

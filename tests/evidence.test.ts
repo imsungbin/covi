@@ -1,8 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { diffHunkEvidence, resolveChange } from '@covi/core';
 import { afterAll, describe, expect, it } from 'vitest';
+import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { covi } from './helpers/cli.ts';
 import { createChangeRepo, type FileMap, type TempRepo } from './helpers/repo.ts';
 
@@ -337,5 +338,81 @@ describe('evidence in reviews', () => {
         expect.objectContaining({ id: 'test-run:tests', path: 'tests.log', revision: 'head' }),
       ]),
     );
+  });
+});
+
+describe('covi evidence', () => {
+  it("lists a run's evidence, rebuilding it read-only when evidence.json is missing", async () => {
+    const dir = await materializeExample(
+      (await listExamples()).find((e) => e.name === 'bugfix-cli-slugify')!,
+    );
+    dirs.push(dir);
+    const demo = covi(['demo', '--repo', dir, '--json']);
+    expect(demo.code).toBe(0);
+    const runDir = demo.json().runDir as string;
+
+    const listed = covi(['evidence', '--repo', dir, '--run', runDir, '--json']);
+    expect(listed.code).toBe(0);
+    const out = listed.json() as {
+      ok: boolean;
+      command: string;
+      runId: string;
+      artifacts: Record<string, string>;
+      warnings: string[];
+      data: { source: string; schemaVersion: number; items: Items['items'] };
+    };
+    expect(out).toMatchObject({
+      ok: true,
+      command: 'evidence',
+      warnings: [],
+      data: { source: 'file', schemaVersion: 1 },
+    });
+    expect(out.artifacts.evidence).toBe(join(runDir, 'evidence.json'));
+    expect(out.data.items).toEqual(read<Items>(runDir, 'evidence.json').items);
+    expect(out.data.items.some((i) => i.kind === 'diff-hunk')).toBe(true);
+    // The CLI command was replayed at base and head.
+    expect(out.data.items.find((i) => i.kind === 'terminal')).toMatchObject({
+      id: 'terminal:1',
+      revision: 'both',
+    });
+
+    const manifest = readFileSync(join(runDir, 'run.json'), 'utf8');
+    rmSync(join(runDir, 'evidence.json'));
+    const rebuilt = covi(['evidence', '--repo', dir, '--run', runDir, '--json']);
+    expect(rebuilt.code).toBe(0);
+    expect(rebuilt.json()).toMatchObject({ data: { source: 'rebuilt', items: out.data.items } });
+    expect(rebuilt.json().artifacts).toEqual({});
+    expect(existsSync(join(runDir, 'evidence.json'))).toBe(false);
+
+    const human = covi(['evidence', '--repo', dir, '--run', runDir]);
+    expect(human.stdout).toMatch(/^terminal:1\s+terminal\s+both\s+/m);
+
+    // A file an old run cannot be read from is skipped with a warning, and still nothing is written.
+    mkdirSync(join(runDir, 'demo'), { recursive: true });
+    writeFileSync(join(runDir, 'demo', 'behavior-diff.json'), '{');
+    const broken = covi(['evidence', '--repo', dir, '--run', runDir, '--json']);
+    expect(broken.code).toBe(0);
+    expect(broken.json()).toMatchObject({
+      ok: true,
+      warnings: [expect.stringContaining('demo/behavior-diff.json')],
+      data: { source: 'rebuilt', items: out.data.items },
+    });
+    expect(broken.stderr).toContain('demo/behavior-diff.json');
+    expect(readFileSync(join(runDir, 'run.json'), 'utf8')).toBe(manifest);
+    expect(existsSync(join(runDir, 'evidence.json'))).toBe(false);
+  });
+
+  it('exits 2 for a run that does not exist and 3 outside a repository', () => {
+    const repo = change({ 'a.txt': 'a\n' }, { 'a.txt': 'b\n' });
+    expect(covi(['evidence', '--repo', repo.root, '--run', 'no-such-run', '--json']).code).toBe(2);
+    const notRepo = mkdtempSync(join(tmpdir(), 'covi-evidence-'));
+    dirs.push(notRepo);
+    expect(covi(['evidence', '--repo', notRepo, '--json']).code).toBe(3);
+  });
+
+  it('prints the JSON Schema of evidence.json', () => {
+    const schema = covi(['schema', 'evidence']);
+    expect(schema.code).toBe(0);
+    expect(schema.stdout).toContain('pixel-diff');
   });
 });

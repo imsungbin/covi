@@ -221,6 +221,31 @@ describe('run evidence', () => {
     expect((await loadEvidence(run)).evidence).toEqual(written);
   });
 
+  it('skips a trace or behavior diff it cannot read, with a warning, instead of failing', async () => {
+    const run = await newRun();
+    writeRaw(
+      run,
+      'demo/captures.json',
+      captures(
+        { path: 'demo/traces/home-desktop-head.json' },
+        'demo/screenshots/home-desktop-after.png',
+      ),
+    );
+    writeRaw(run, 'demo/traces/home-desktop-head.json', '{"id": "home-desktop-head"');
+    writeRaw(run, 'demo/behavior-diff.json', JSON.stringify({ scenarios: [{ id: 'x' }] }));
+    const warnings: string[] = [];
+    const evidence = await collectEvidence(run, (m) => warnings.push(m));
+    // The trace is still listed from captures.json, without the parts its file would name.
+    expect(evidence.items.find((i) => i.id === 'trace:home-desktop-head')?.refs).toBeUndefined();
+    expect(warnings).toEqual([
+      expect.stringContaining('demo/behavior-diff.json'),
+      expect.stringContaining('demo/traces/home-desktop-head.json'),
+    ]);
+    // By default the warnings go to the run, as a stage that writes evidence.json reports them.
+    await collectEvidence(run);
+    expect(run.manifest.warnings).toEqual(warnings);
+  });
+
   it('rejects an evidence.json that is not one', async () => {
     const run = await newRun();
     writeRaw(run, 'evidence.json', JSON.stringify({ schemaVersion: 1, items: [{ id: 'nope' }] }));

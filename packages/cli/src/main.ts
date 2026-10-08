@@ -7,6 +7,7 @@ import {
   CoviError,
   configFromEnv,
   describeCommands,
+  EvidenceFileSchema,
   ExitCode,
   ExplanationSchema,
   errorMessage,
@@ -14,6 +15,7 @@ import {
   LANGUAGE_INPUTS,
   listRuns,
   listSkills,
+  loadEvidence,
   loadRepositoryConfig,
   loadSkill,
   NoChangesError,
@@ -22,6 +24,7 @@ import {
   parseLanguageSetting,
   parseOrThrow,
   parseYamlConfig,
+  RUN_PATHS,
   Run,
   type RunOutcome,
   repositoryCommands,
@@ -1104,9 +1107,45 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
     });
 
   program
+    .command('evidence')
+    .description("List a run's evidence: every id a claim can cite (read-only)")
+    .option('--run <id>', 'run id, directory, or "latest"', 'latest')
+    .action(async (o: { run: string }, cmd: Command) => {
+      const u = ui(cmd);
+      const root = await repoRoot(repoPath(u.flags.repo));
+      const run = await Run.open(o.run, { root, runsDir: await runsDirOf(root, u.flags) });
+      const result = baseResult('evidence');
+      const log = new TerminalLogger(u, '', run.redactor);
+      // Read-only: a run without evidence.json (made before Covi kept one) is rebuilt in memory,
+      // and what it cannot read is reported here rather than recorded in the run.
+      const { evidence, source } = await loadEvidence(run, (message) => {
+        result.warnings.push(message);
+        log.warn(message);
+      });
+      result.runId = run.id;
+      result.runDir = run.dir;
+      if (source === 'file') result.artifacts.evidence = run.path(RUN_PATHS.evidence);
+      result.data = { source, schemaVersion: evidence.schemaVersion, items: evidence.items };
+      if (u.json) printJson(result);
+      else {
+        for (const item of evidence.items)
+          process.stdout.write(
+            `${item.id}  ${pc.dim(item.kind)}  ${pc.dim(item.revision)}  ${item.label}\n`,
+          );
+        if (source === 'rebuilt')
+          process.stdout.write(
+            pc.dim("Rebuilt from the run's files; `covi report` writes evidence.json.\n"),
+          );
+      }
+    });
+
+  program
     .command('schema')
-    .argument('<name>', 'explanation | findings | storyboard | score | demo-plan | config')
-    .description('Print the JSON Schema for a file agents can author')
+    .argument(
+      '<name>',
+      'explanation | findings | storyboard | score | demo-plan | config | evidence',
+    )
+    .description('Print the JSON Schema for a file agents author or read')
     .action(async (name: string) => {
       const schemas: Record<string, z.ZodType> = {
         explanation: ExplanationSchema,
@@ -1115,6 +1154,7 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
         score: ScoreSchema,
         'demo-plan': DemoPlanSchema,
         config: ConfigInputSchema,
+        evidence: EvidenceFileSchema,
       };
       const schema = schemas[name];
       if (!schema)

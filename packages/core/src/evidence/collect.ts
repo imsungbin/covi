@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { parseDiff } from '../git/diff-parser.ts';
 import type { BehaviorDiff, Trace } from '../model/behavior.ts';
 import type { Demonstration } from '../model/demo.ts';
@@ -22,12 +23,54 @@ async function readIf<T>(run: Run, rel: string): Promise<T | undefined> {
   return (await run.has(rel)) ? run.readJson<T>(rel) : undefined;
 }
 
+const part = z.looseObject({ id: z.string() });
+// Only the fields the registry reads: an old or damaged file is checked for what would break it.
+const TraceShape = z.looseObject({
+  id: z.string(),
+  name: z.string(),
+  viewport: z.string(),
+  steps: z.array(part),
+  requests: z.array(part),
+  console: z.array(part),
+});
+const BehaviorShape = z.looseObject({
+  scenarios: z.array(
+    z.looseObject({
+      id: z.string(),
+      name: z.string(),
+      viewport: z.string(),
+      steps: z.array(
+        z.looseObject({ id: z.string(), diff: z.string().optional(), regions: z.array(part) }),
+      ),
+    }),
+  ),
+});
+
+/**
+ * A trace or behavior diff, or undefined with a warning when it cannot be read or lacks what the
+ * registry needs: one damaged file in an old run costs its own entries, not the whole registry.
+ */
+async function readShaped<T>(
+  full: string,
+  rel: string,
+  shape: z.ZodType,
+  warn: (message: string) => void,
+): Promise<T | undefined> {
+  const value = await readJson<unknown>(full).catch(() => undefined);
+  if (value !== undefined && shape.safeParse(value).success) return value as T;
+  warn(`Skipped ${rel} in the evidence: it could not be read.`);
+  return undefined;
+}
+
 /**
  * The run's evidence, built from the files its stages wrote: the diff, the captures, the traces
  * they name, the behavior diff, start-up logs, and test output. Only files inside the run are read.
  * Redacted as writing it would redact it, so a rebuilt registry is the one Covi would write.
  */
-export async function collectEvidence(run: Run): Promise<EvidenceFile> {
+export async function collectEvidence(
+  run: Run,
+  warn: (message: string) => void = (message) => run.warn(message),
+): Promise<EvidenceFile> {
   const diff = (await run.has(RUN_PATHS.diff))
     ? parseDiff(await run.readText(RUN_PATHS.diff))
     : undefined;
@@ -35,11 +78,20 @@ export async function collectEvidence(run: Run): Promise<EvidenceFile> {
   // registry is written or rebuilt, even from a captures.json that was not redacted.
   const captured = await readIf<Demonstration>(run, DEMO_PATHS.captures);
   const demo = captured && run.redactor.redactDeep(captured);
-  const behavior = await readIf<BehaviorDiff>(run, DEMO_PATHS.behaviorDiff);
+  const behavior = (await run.has(DEMO_PATHS.behaviorDiff))
+    ? await readShaped<BehaviorDiff>(
+        run.path(DEMO_PATHS.behaviorDiff),
+        DEMO_PATHS.behaviorDiff,
+        BehaviorShape,
+        warn,
+      )
+    : undefined;
   const traces: Trace[] = [];
   for (const ref of demo?.traces ?? []) {
     const full = inside(run, ref.path);
-    if (full && (await exists(full))) traces.push(await readJson<Trace>(full));
+    if (!full || !(await exists(full))) continue;
+    const trace = await readShaped<Trace>(full, ref.path, TraceShape, warn);
+    if (trace) traces.push(trace);
   }
   const tests = (await run.has(RUN_PATHS.testsLog))
     ? { command: (await run.readText(RUN_PATHS.testsLog)).split('\n')[0]!.replace(/^\$ /, '') }
@@ -79,6 +131,7 @@ export async function writeEvidence(run: Run): Promise<EvidenceFile> {
  */
 export async function loadEvidence(
   run: Run,
+  warn?: (message: string) => void,
 ): Promise<{ evidence: EvidenceFile; source: 'file' | 'rebuilt' }> {
   if (await run.has(RUN_PATHS.evidence))
     return {
@@ -90,5 +143,5 @@ export async function loadEvidence(
       ),
       source: 'file',
     };
-  return { evidence: await collectEvidence(run), source: 'rebuilt' };
+  return { evidence: await collectEvidence(run, warn), source: 'rebuilt' };
 }

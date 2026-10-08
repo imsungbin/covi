@@ -111,6 +111,69 @@ describe('subject stores', () => {
     expect(warnings.join('\n')).toMatch(/@[0-9a-f]{7} \(base\) is larger than 512 KB/);
   });
 
+  it('sets aside a directory at the store path, locally and at the base revision', async () => {
+    const { root, runsRoot } = setup();
+    repo!.commit('Put a directory where the model goes', {
+      [`${SUBJECT_PATHS.repo}/x.json`]: '{}\n',
+    });
+    const baseRevision = repo!.git('rev-parse', 'HEAD');
+    for (const ci of [false, true]) {
+      const warnings: string[] = [];
+      const handle = await openSubject({
+        root,
+        runsRoot,
+        config: config(),
+        ...(ci ? { baseRevision, git: new Git(root) } : {}),
+        warn: (m) => warnings.push(m),
+      });
+      expect(handle!.model, `ci: ${ci}`).toEqual(emptySubject());
+      expect(handle!.writable, `ci: ${ci}`).toBe(false);
+      expect(warnings.join('\n'), `ci: ${ci}`).toMatch(/is not a file; .*will not overwrite it/);
+    }
+  });
+
+  it('in CI, sets aside a runs-directory model the change committed, and never writes it', async () => {
+    const { root } = setup();
+    const runsRoot = join(root, '.covi/runs');
+    const planted = join(runsRoot, SUBJECT_PATHS.runs);
+    repo!.commit('Plant a model', { [`.covi/runs/${SUBJECT_PATHS.runs}`]: modelJson('/planted') });
+    const ci = { baseRevision: repo!.git('rev-parse', 'HEAD'), git: new Git(root) };
+    const warnings: string[] = [];
+    const handle = await openSubject({
+      root,
+      runsRoot,
+      config: config({ store: 'runs' }),
+      ...ci,
+      warn: (m) => warnings.push(m),
+    });
+    expect(handle!.model).toEqual(emptySubject());
+    expect(handle!.writable).toBe(false);
+    expect(warnings.join('\n')).toMatch(
+      /is committed to the repository, so the change could have written it; .*will not overwrite it/,
+    );
+    expect(await saveSubject(handle!.source, seen('/new'), quiet)).toBe('skipped');
+    expect(readFileSync(planted, 'utf8')).toBe(modelJson('/planted'));
+    // Locally it is the user's own file; in CI a model the runs directory kept itself is trusted.
+    const local = await openSubject({
+      root,
+      runsRoot,
+      config: config({ store: 'runs' }),
+      warn: () => {},
+    });
+    expect(local!.model.screens.map((s) => s.path)).toEqual(['/planted']);
+    repo!.git('rm', '-q', '--cached', `.covi/runs/${SUBJECT_PATHS.runs}`);
+    repo!.git('commit', '-q', '-m', 'Stop tracking it');
+    const untracked = await openSubject({
+      root,
+      runsRoot,
+      config: config({ store: 'runs' }),
+      ...ci,
+      warn: () => {},
+    });
+    expect(untracked!.model.screens.map((s) => s.path)).toEqual(['/planted']);
+    expect(untracked!.writable).toBe(true);
+  });
+
   it('keeps the model in the runs directory with subject.store: runs, and nowhere when off', async () => {
     const { root, runsRoot } = setup();
     const handle = await openSubject({
@@ -159,6 +222,10 @@ describe('subject stores', () => {
         screens: [{ ...valid.screens[0], title: '\u001b]0;pwned\u0007' }],
       }),
       'a newer version': JSON.stringify({ ...valid, schemaVersion: 2 }),
+      'an unknown key with a terminal escape': JSON.stringify({
+        ...valid,
+        [`\u001b]0;pwned\u0007${'k'.repeat(100_000)}`]: 1,
+      }),
     };
     for (const [what, text] of Object.entries(hostile)) {
       writeFileSync(file, text);
@@ -172,6 +239,9 @@ describe('subject stores', () => {
       expect(handle!.model, what).toEqual(emptySubject());
       expect(handle!.writable, what).toBe(false);
       expect(warnings.join('\n'), what).toMatch(/will not overwrite it/);
+      // The file's own text never reaches the terminal raw or at length.
+      expect(warnings.join('\n'), what).not.toMatch(/[\u0000-\u001f]/);
+      expect(warnings.join('\n').length, what).toBeLessThan(600);
       // Saving re-reads under the lock: a run that opened the file earlier cannot overwrite it either.
       expect(await saveSubject(handle!.source, seen('/'), quiet), what).toBe('skipped');
       expect(readFileSync(file, 'utf8'), what).toBe(text);
@@ -250,6 +320,28 @@ describe('subject stores', () => {
       /Another Covi run kept .* busy; this run's observations are only in demo\/subject\.json/,
     );
     expect(await withLock(lock, async () => 'ran', { waitMs: 50 })).toBeUndefined();
+  });
+
+  it('gives up, without a crash, on a lock that is not a file', async () => {
+    const { root, runsRoot } = setup();
+    const handle = await openSubject({ root, runsRoot, config: config(), warn: () => {} });
+    const lock = handle!.source.lock;
+    mkdirSync(lock);
+    writeFileSync(join(lock, 'x'), '');
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(lock, old, old);
+    const warnings: string[] = [];
+    const started = Date.now();
+    expect(
+      await saveSubject(handle!.source, seen('/'), { ...quiet, warn: (m) => warnings.push(m) }),
+    ).toBe('skipped');
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(warnings[0]).toMatch(
+      /\.subject\.lock is not a lock file Covi made; .*demo\/subject\.json/,
+    );
+    expect(existsSync(join(lock, 'x'))).toBe(true);
+    expect(existsSync(handle!.source.to!)).toBe(false);
+    expect(await withLock(lock, async () => 'ran')).toBeUndefined();
   });
 
   it('redacts what it saves', async () => {

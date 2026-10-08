@@ -38,7 +38,7 @@ spec:
       description: Render a review video only when the change is worth seeing (auto), always, or never.
     video-mode:
       default: ''
-      description: short (9:16, about 30 s), standard (16:9, 60-120 s), or custom.
+      description: short (9:16, about 30 s), standard (16:9, up to 120 s), or custom.
     duration:
       default: ''
       description: Target video length, for example 30s, or auto.

@@ -817,7 +817,7 @@ question:
     short: 숏폼
     shortDescription: '세로 9:16, 약 30초, 간결하게'
     standard: 표준 리뷰
-    standardDescription: '16:9, 60–120초, 더 자세히'
+    standardDescription: '16:9, 최대 120초, 더 자세히'
     custom: 직접 지정
     customDescription: 크기, 길이, 내레이션을 고릅니다
   duration:

@@ -832,7 +832,7 @@ question:
     short: Short-form
     shortDescription: Vertical 9:16, about 30 seconds, concise
     standard: Standard review
-    standardDescription: 16:9, 60–120 seconds, more explanatory
+    standardDescription: 16:9, up to 120 seconds, more explanatory
     custom: Custom
     customDescription: Choose the size, length, and narration
   duration:

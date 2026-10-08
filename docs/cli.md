@@ -86,7 +86,7 @@ Details:
 | Option | Meaning |
 |---|---|
 | `--short` | Short-form: vertical 9:16 (1080×1920), about 30 seconds (20–35). |
-| `--standard` | Standard review: 16:9 (1920×1080), 60–120 seconds. |
+| `--standard` | Standard review: 16:9 (1920×1080), up to 120 seconds. |
 | `--custom` | Custom size; use `--width` and `--height`. |
 | `--mode <mode>` | The mode by name: `short`, `standard`, or `custom`. Same as the three flags above. |
 | `--width <px>`, `--height <px>` | Size, 240–3840 pixels. For `custom`, a missing side is filled to 16:9. |

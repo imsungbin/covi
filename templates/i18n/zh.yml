@@ -816,7 +816,7 @@ question:
     short: 短视频
     shortDescription: '竖屏 9:16，约 30 秒，简洁'
     standard: 标准审查
-    standardDescription: '16:9，60–120 秒，讲解更详细'
+    standardDescription: '16:9，最长 120 秒，讲解更详细'
     custom: 自定义
     customDescription: 选择尺寸、长度和旁白
   duration:

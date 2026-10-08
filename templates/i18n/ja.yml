@@ -816,7 +816,7 @@ question:
     short: ショート
     shortDescription: '縦 9:16、約 30 秒、簡潔に'
     standard: 標準のレビュー
-    standardDescription: '16:9、60〜120 秒、詳しめに'
+    standardDescription: '16:9、最大 120 秒、詳しめに'
     custom: カスタム
     customDescription: サイズ、長さ、ナレーションを選びます
   duration:

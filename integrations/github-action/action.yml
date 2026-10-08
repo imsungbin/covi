@@ -18,7 +18,7 @@ inputs:
     description: "Render a review video: auto (only when the change is worth seeing), always, or never. Empty: video.when, else auto."
     default: ""
   video-mode:
-    description: "short (9:16, about 30 s), standard (16:9, 60-120 s), or custom. Empty: video.mode, else short."
+    description: "short (9:16, about 30 s), standard (16:9, up to 120 s), or custom. Empty: video.mode, else short."
     default: ""
   duration:
     description: "Target video length, for example 30s, or auto. Empty: video.duration, else auto."

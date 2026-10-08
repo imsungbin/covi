@@ -711,7 +711,7 @@ export const MODE_QUESTION: VideoQuestion = {
     {
       value: 'standard',
       label: 'Standard review',
-      description: '16:9, 60–120 seconds, more explanatory',
+      description: '16:9, up to 120 seconds, more explanatory',
     },
     { value: 'custom', label: 'Custom', description: 'Choose the size, length, and narration' },
   ],

@@ -275,7 +275,7 @@ $ covi video
 
 What kind of video should Covi create?
   1. Short-form · Vertical 9:16, about 30 seconds, concise
-  2. Standard review · 16:9, 60–120 seconds, more explanatory
+  2. Standard review · 16:9, up to 120 seconds, more explanatory
   3. Custom · Choose the size, length, and narration
 Choose 1-3 [1]: 1
 

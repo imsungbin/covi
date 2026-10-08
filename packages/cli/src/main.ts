@@ -259,7 +259,7 @@ function addIntelligence(cmd: Command): Command {
 function addVideo(cmd: Command): Command {
   return cmd
     .option('--short', 'short-form: vertical 9:16, ~30s')
-    .option('--standard', 'standard review: 16:9, 60–120s')
+    .option('--standard', 'standard review: 16:9, up to 120s')
     .option('--custom', 'custom size (use --width/--height)')
     .addOption(
       new Option(

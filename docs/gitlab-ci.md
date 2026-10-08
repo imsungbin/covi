@@ -45,7 +45,7 @@ Inputs that mirror a Covi setting default to empty. Empty means the setting come
 | `covi-package` | empty | Install Covi from this npm package spec or tarball URL instead of from `covi-project`. Use a package you publish and control. |
 | `fail-on` | empty (`review.failOn`, else `none`) | Fail the job on confirmed or likely findings at or above this severity: `none`, `low`, `medium`, or `high`. |
 | `video` | empty (`video.when`, else `auto`) | Render a review video only when the change is worth seeing (`auto`), `always`, or `never`. |
-| `video-mode` | empty (`video.mode`, else `short`) | `short` (9:16, about 30 s), `standard` (16:9, 60–120 s), or `custom`. Passed as `--mode`. |
+| `video-mode` | empty (`video.mode`, else `short`) | `short` (9:16, about 30 s), `standard` (16:9, up to 120 s), or `custom`. Passed as `--mode`. |
 | `duration` | empty (`video.duration`, else `auto`) | Target video length, for example `30s`, or `auto`. |
 | `narration` | empty (`video.narration`, else on) | `true` or `false`. |
 | `language` | empty (`language`, else `auto`) | The language of the review, the note, and the video: `auto` (detected from the merge request), `en`, `ko`, `ja`, or `zh`. Passed as `--language`. |

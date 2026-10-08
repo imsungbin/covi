@@ -13,12 +13,14 @@ import {
   visualMarks,
 } from '../storyboard/grammar.ts';
 import type { Scene, Storyboard, Visual } from '../storyboard/schema.ts';
+import { rectOf } from '../storyboard/subject.ts';
 import { heroScene } from '../templates.ts';
 import { SPEECH_RATE, speechUnits } from '../text.ts';
 import { buildCues } from './cues.ts';
 import {
   type CaptionCue,
   type Expression,
+  type FrameMark,
   HERO_PHASE,
   type ImageAsset,
   type SceneTransition,
@@ -523,14 +525,19 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
   };
 }
 
+/** A visual's marks as the timeline draws them: every focus a rect by now. */
+function frameMarks(visual: Visual): Array<FrameMark & { step?: number }> {
+  return visualMarks(visual).map((m) => ({ ...m, focus: rectOf(m.focus)! }));
+}
+
 function toTimelineVisual(visual: Visual, image: (path: string) => ImageAsset): TimelineVisual {
   switch (visual.kind) {
     case 'screenshot': {
-      const marks = visualMarks(visual);
+      const marks = frameMarks(visual);
       return {
         kind: 'screenshot',
         image: { ...image(visual.image.path), label: visual.image.label },
-        focus: visual.focus,
+        focus: rectOf(visual.focus),
         click: visual.click,
         label: visual.label,
         device: visual.device,
@@ -543,11 +550,11 @@ function toTimelineVisual(visual: Visual, image: (path: string) => ImageAsset): 
         before: image(visual.before.path),
         after: image(visual.after.path),
         layout: visual.layout ?? 'split',
-        focus: visual.focus,
+        focus: rectOf(visual.focus),
         labels: visual.labels,
       };
     case 'interaction': {
-      const marks = visualMarks(visual);
+      const marks = frameMarks(visual);
       return {
         kind: 'interaction',
         steps: visual.steps.map((s, i) => {
@@ -555,7 +562,7 @@ function toTimelineVisual(visual: Visual, image: (path: string) => ImageAsset): 
           return {
             image: image(s.image.path),
             click: s.click,
-            focus: s.focus,
+            focus: rectOf(s.focus),
             label: s.label,
             ...(own.length ? { marks: own } : {}),
           };

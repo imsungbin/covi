@@ -1,4 +1,4 @@
-import { EvidenceIdsSchema, LanguageSchema } from '@covi/core';
+import { EvidenceIdsSchema, LanguageSchema, SubjectRefSchema } from '@covi/core';
 import { z } from 'zod';
 import type { SceneCueKind, TransitionKind } from '../timeline/types.ts';
 import { storyboardIssues } from './grammar.ts';
@@ -16,6 +16,16 @@ const RectSchema = z.strictObject({
 });
 const PointSchema = z.strictObject({ x: z.number(), y: z.number() });
 
+/**
+ * Where to look: a region in image pixels, or an element of the run's subject model. Covi places a
+ * reference at the element's box in the capture before anything renders.
+ */
+const FocusSchema = z
+  .union([RectSchema, SubjectRefSchema])
+  .describe(
+    "Region in image pixels to zoom toward, or subject:<screen>#<element> (`covi subject --run <id>` lists them) for that element's box in this capture.",
+  );
+
 /** Images are paths relative to the run directory (e.g. `demo/screenshots/home-after.png`). */
 const ImageRefSchema = z.strictObject({ path: z.string().min(1), label: z.string().optional() });
 
@@ -29,7 +39,9 @@ const PhaseNameSchema = z
 const MarksSchema = z
   .array(
     z.strictObject({
-      focus: RectSchema.describe('Region in image pixels the camera moves to.'),
+      focus: FocusSchema.describe(
+        "Region in image pixels the camera moves to, or subject:<screen>#<element> for that element's box in this capture.",
+      ),
       label: z
         .string()
         .min(1)
@@ -141,7 +153,7 @@ export const VisualSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('screenshot'),
     image: ImageRefSchema,
-    focus: RectSchema.optional().describe('Region in image pixels to zoom toward.'),
+    focus: FocusSchema.optional(),
     click: PointSchema.optional(),
     label: z.string().optional(),
     device: z.enum(['desktop', 'mobile']).default('desktop'),
@@ -154,7 +166,7 @@ export const VisualSchema = z.discriminatedUnion('kind', [
     before: ImageRefSchema,
     after: ImageRefSchema,
     layout: z.enum(['split', 'stack', 'wipe']).optional(),
-    focus: RectSchema.optional(),
+    focus: FocusSchema.optional(),
     labels: z
       .strictObject({ before: z.string(), after: z.string() })
       .default({ before: 'Before', after: 'After' }),
@@ -166,7 +178,7 @@ export const VisualSchema = z.discriminatedUnion('kind', [
         z.strictObject({
           image: ImageRefSchema,
           click: PointSchema.optional(),
-          focus: RectSchema.optional(),
+          focus: FocusSchema.optional(),
           label: z.string().optional(),
           marks: MarksSchema.optional(),
         }),

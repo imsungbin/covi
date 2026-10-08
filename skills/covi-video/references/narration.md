@@ -29,7 +29,7 @@ Never "This change shows…", "In this video…", or a table of contents ("We'll
 - Evidence: "On the left, a plain array. On the right, a paginated object."
 - The map: "Three places to look." Later: "That's all three. One question left."
 - Review note: "One thing worth reviewing is the rollback when the request fails."
-- Clean result: "Covi didn't find anything blocking. Start with the cart reducer."
+- Clean result: "Nothing blocking. Start with the cart reducer."
 - Wrap: "Cover the rollback with a test, then merge."
 
 ## Patterns to avoid

@@ -61,6 +61,8 @@ export interface MockApi {
   limited: Set<string>;
   /** Paths that answer 502 to the next request, then recover. */
   failOnce: Set<string>;
+  /** Listings that always claim another page (`Link: rel="next"`), so a reader hits its page cap. */
+  endless: Set<string>;
 }
 
 /** GitHub's workflow token has no user of its own: it posts as this bot. */
@@ -79,6 +81,7 @@ export function mockApi(): Promise<MockApi> {
     commits: [] as Array<{ sha: string; message: string }>,
     limited: new Set<string>(),
     failOnce: new Set<string>(),
+    endless: new Set<string>(),
   };
   const server = createServer((req, res) => {
     let body = '';
@@ -87,11 +90,18 @@ export function mockApi(): Promise<MockApi> {
     });
     req.on('end', () => {
       state.calls.push({ method: req.method!, url: req.url!, body, headers: req.headers });
+      const url = new URL(req.url!, 'http://api');
+      const next = state.endless.has(url.pathname)
+        ? `<http://${req.headers.host}${url.pathname}?page=${Number(url.searchParams.get('page') ?? 1) + 1}>; rel="next"`
+        : undefined;
       const json = (status: number, value: unknown, headers: Record<string, string> = {}) =>
         res
-          .writeHead(status, { 'content-type': 'application/json', ...headers })
+          .writeHead(status, {
+            'content-type': 'application/json',
+            ...(next && req.method === 'GET' ? { link: next } : {}),
+            ...headers,
+          })
           .end(JSON.stringify(value));
-      const url = new URL(req.url!, 'http://api');
       if (state.limited.has(url.pathname))
         return json(
           403,
@@ -105,6 +115,18 @@ export function mockApi(): Promise<MockApi> {
         return json(200, { ...GITLAB_BOT, bot: true });
       if (req.method === 'GET' && url.pathname === '/user')
         return json(403, { message: 'Resource not accessible by integration' });
+      // Who reacted to an anchor: one made-up user per 👍 and 👎 in its rollup.
+      const reacted = /^\/repos\/acme\/shop\/pulls\/comments\/(\d+)\/reactions$/.exec(url.pathname);
+      if (reacted && req.method === 'GET') {
+        const anchor = state.reviewComments.find((c) => c.id === Number(reacted[1]));
+        if (!anchor) return json(404, { message: 'not found' });
+        const votes = (content: '+1' | '-1', from: number) =>
+          Array.from({ length: anchor.reactions[content] }, (_, i) => ({
+            content,
+            user: { id: from + i },
+          }));
+        return json(200, [...votes('+1', 9000), ...votes('-1', 9500)]);
+      }
       const review = /^\/repos\/acme\/shop\/pulls\/(\d+)\/comments$/.exec(url.pathname);
       if (review && req.method === 'GET')
         return json(

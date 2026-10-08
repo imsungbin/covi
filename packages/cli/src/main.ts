@@ -23,12 +23,14 @@ import {
   loadSubject,
   loadSubjectSnapshot,
   NoChangesError,
+  OutcomeFileSchema,
   type ParsedConfigInput,
   parseConfigInput,
   parseLanguageSetting,
   parseOrThrow,
   parseYamlConfig,
   Redactor,
+  REPOSITORY_PATTERN,
   RUN_PATHS,
   Run,
   type RunOutcome,
@@ -63,6 +65,7 @@ import { ciWorkflow, publishRun } from './ci.ts';
 import { browserCheck, type DoctorCheck, doctor, installBrowser } from './doctor.ts';
 import { getExample, listExamples, materializeExample } from './examples.ts';
 import { initConfig } from './init.ts';
+import { collectOutcomes, reportOutcomes } from './outcomes.ts';
 import { openSession, reloadChange, repoRoot, type Session, startSession } from './session.ts';
 import { installSkills, type SkillTarget } from './skills.ts';
 import {
@@ -210,6 +213,13 @@ function languageOption(value: string): string {
 
 const explicitSource = (cmd: Command, key: string) =>
   cmd.getOptionValueSource(key) === 'cli' || cmd.getOptionValueSource(key) === 'env';
+
+/** A `--repository` value: owner/name or group/subgroup/project, nothing that could leave the path. */
+function repositoryName(value: string): string {
+  if (value.length > 200 || !REPOSITORY_PATTERN.test(value))
+    throw new InvalidArgumentError('expected owner/name (GitHub) or group/project (GitLab)');
+  return value;
+}
 
 /** Translates command-line flags into the explicit configuration layer. */
 function explicitConfig(cmd: Command): ParsedConfigInput {
@@ -1210,6 +1220,104 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
       }
     });
 
+  const outcomes = program
+    .command('outcomes')
+    .description('Learn how past reviews held up: collect what became of them, then report');
+  outcomes
+    .command('collect')
+    .description(
+      "Fetch what became of Covi's comments (merged, closed, reverted, reactions, replies) into .covi/outcomes/",
+    )
+    .addOption(
+      new Option('--platform <platform>', 'where the comments are (auto: CI, else published runs)')
+        .choices(['auto', 'github', 'gitlab'])
+        .default('auto'),
+    )
+    .option('--number <n>', 'one pull/merge request', int(1, Number.MAX_SAFE_INTEGER))
+    .option('--recent <n>', 'the n most recently closed pull/merge requests', int(1, 100))
+    .option(
+      '--repository <name>',
+      'owner/name (GitHub) or group/project (GitLab); default: from CI or the published runs',
+      repositoryName,
+    )
+    .option(
+      '--api-url <url>',
+      'API base URL (default: GITHUB_API_URL or CI_API_V4_URL, else public)',
+    )
+    .option('--max-requests <n>', 'stop after this many API requests', int(1, 5000), 300)
+    .action(
+      async (
+        o: {
+          platform: 'auto' | 'github' | 'gitlab';
+          number?: number;
+          recent?: number;
+          repository?: string;
+          apiUrl?: string;
+          maxRequests: number;
+        },
+        cmd: Command,
+      ) => {
+        const u = ui(cmd);
+        if (o.number && o.recent)
+          throw new CoviError('Pass --number or --recent, not both.', {
+            exitCode: ExitCode.usage,
+          });
+        if (o.apiUrl && !/^https?:\/\/\S+$/.test(o.apiUrl))
+          // Not echoed: a mistyped URL can still carry credentials.
+          throw new CoviError('--api-url is not an http(s) URL.', {
+            exitCode: ExitCode.usage,
+          });
+        // Collecting reads the API only, so it works outside a checkout too.
+        const root = await repoRoot(repoPath(u.flags.repo)).catch(() => repoPath(u.flags.repo));
+        const result = await collectOutcomes({
+          root,
+          runsDir: await runsDirOf(root, u.flags),
+          platform: o.platform,
+          number: o.number,
+          recent: o.recent,
+          repository: o.repository,
+          apiUrl: o.apiUrl,
+          maxRequests: o.maxRequests,
+          env: process.env,
+          configPath: u.flags.config,
+        });
+        if (u.json) printJson(result);
+        else {
+          // Warnings on stderr, like other progress: stdout carries only the outcome.
+          for (const warning of result.warnings)
+            process.stderr.write(`${pc.yellow('!')} ${warning}\n`);
+          if (!u.quiet) process.stdout.write(`${result.message}\n`);
+        }
+        process.exitCode = result.exitCode;
+      },
+    );
+  outcomes
+    .command('report')
+    .description('Precision by certainty from the collected outcomes, and a short summary')
+    .option('--language <code>', 'language of the summary (default: en)', languageOption)
+    .option(
+      '--repository <name>',
+      'the repository to report on (default: the one the origin remote names)',
+      repositoryName,
+    )
+    .action(async (o: { language?: string; repository?: string }, cmd: Command) => {
+      const u = ui(cmd);
+      const root = await repoRoot(repoPath(u.flags.repo)).catch(() => repoPath(u.flags.repo));
+      const setting = o.language ? parseLanguageSetting(o.language) : undefined;
+      const { result, summary } = await reportOutcomes(
+        root,
+        setting && setting !== 'auto' ? setting : 'en',
+        { repository: o.repository },
+      );
+      if (u.json) printJson(result);
+      else {
+        // Only the summary on stdout, so a CI job can append it to its summary as it is.
+        process.stdout.write(`${summary}\n`);
+        for (const warning of result.warnings)
+          process.stderr.write(`${pc.yellow('!')} ${warning}\n`);
+      }
+    });
+
   program
     .command('subject')
     .description('Show what Covi has seen of the software: screens, elements, flows (read-only)')
@@ -1265,9 +1373,9 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
     .command('schema')
     .argument(
       '<name>',
-      'explanation | findings | storyboard | score | demo-plan | config | evidence | subject',
+      'explanation | findings | storyboard | score | demo-plan | config | evidence | subject | outcome',
     )
-    .description('Print the JSON Schema for a file agents author or read')
+    .description('Print the JSON Schema for files agents author or read')
     .action(async (name: string) => {
       const schemas: Record<string, z.ZodType> = {
         explanation: ExplanationSchema,
@@ -1278,6 +1386,7 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
         config: ConfigInputSchema,
         evidence: EvidenceFileSchema,
         subject: SubjectSchema,
+        outcome: OutcomeFileSchema,
       };
       const schema = schemas[name];
       if (!schema)

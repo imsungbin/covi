@@ -360,7 +360,7 @@ function chooseSessionProvider(
   return choice;
 }
 
-function isInside(root: string, path: string): boolean {
+export function isInside(root: string, path: string): boolean {
   const rel = relative(root, path);
   return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
 }

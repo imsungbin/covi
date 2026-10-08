@@ -1,4 +1,4 @@
-import { screenshotPointer } from '../../timeline/cues.ts';
+import type { ScreenshotTiming } from '../../timeline/cues.ts';
 import type { ImageAsset, Point, Rect } from '../../timeline/types.ts';
 import { clamp, easeInOutCubic, easeOutBack, easeOutCubic, lerp, seg } from '../anim.ts';
 import { el } from '../dom.ts';
@@ -247,11 +247,9 @@ export function choreograph(
   focus: Rect | undefined,
   click: Point | undefined,
   t: number,
-  duration: number,
+  timing: ScreenshotTiming,
 ): void {
-  const zoomIn = seg(t, duration * 0.22, duration * 0.48);
-  frame.setCamera(focus, zoomIn);
-  frame.spotlight(focus, focus ? seg(t, duration * 0.3, duration * 0.5) : 0);
-  const { move, press } = screenshotPointer(duration);
-  frame.pointer(click, seg(t, ...move), seg(t, ...press));
+  frame.setCamera(focus, seg(t, ...timing.zoom));
+  frame.spotlight(focus, focus ? seg(t, ...timing.spot) : 0);
+  frame.pointer(click, seg(t, ...timing.move), seg(t, ...timing.press));
 }

@@ -191,6 +191,7 @@ export class Stage {
         regions: r,
         u,
         root,
+        phases: scene.phases ?? {},
         ...(handoff ? { previousFox: handoff } : {}),
       };
       const component = mountComponent(scene, ctx);

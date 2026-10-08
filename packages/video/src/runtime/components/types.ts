@@ -1,4 +1,5 @@
 import type { FoxOptions } from '@covi/brand';
+import type { Phases } from '../../timeline/cues.ts';
 import type { LayoutItem, Rect, Timeline } from '../../timeline/types.ts';
 import type { Regions } from '../layout.ts';
 
@@ -22,6 +23,8 @@ export interface ComponentContext {
   u: (n: number) => number;
   /** The scene's media layer (absolutely positioned children use stage coordinates). */
   root: HTMLElement;
+  /** The scene's phases (seconds since it started) by name; empty when nothing is synced. */
+  phases: Phases;
   /** The large fox of the scene before, which this scene may take over (the outro does). */
   previousFox?: { fox: LargeFox; sceneStart: number };
 }

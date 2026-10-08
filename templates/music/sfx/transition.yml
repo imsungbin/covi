@@ -1,0 +1,13 @@
+# A scene pushes, wipes, or zooms through: a soft, short whoosh of filtered noise that swells and
+# falls away. It peaks 0.2 s in, its anchor, which lands mid-transition. Sound design, written in
+# Hz: it never transposes.
+id: transition
+description: Soft whoosh for a push, wipe, or zoom-through between scenes.
+license: original
+duration: 0.6
+anchor: 0.2
+layers:
+  - { gen: noise-sweep, color: pink, filter: bandpass, from: 500, to: 2600, q: 1.1, env: { a: 0.2, d: 0.22 }, pan: [-0.4, 0.4] }
+  - { gen: noise-sweep, color: white, filter: highpass, from: 2500, to: 6000, q: 0.7, env: { a: 0.18, d: 0.12 }, gain: -16, pan: [-0.6, 0.6] }
+fx:
+  reverb: { size: 0.4, damp: 0.6, mix: 0.1, width: 1 }

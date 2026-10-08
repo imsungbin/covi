@@ -13,7 +13,7 @@ import { type Kit, loadKits, loadPatches, type Patch } from './synth/patches.ts'
  * Bump whenever rendered output changes (DSP, scheduling, mixing), so cached music is never
  * mistaken for what the engine would render now.
  */
-export const AUDIO_ENGINE_VERSION = 'covi-audio-2';
+export const AUDIO_ENGINE_VERSION = 'covi-audio-3';
 
 /** Everything Covi can play, loaded from a directory laid out like templates/music. */
 export interface MusicLibrary {

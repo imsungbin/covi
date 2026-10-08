@@ -1,0 +1,12 @@
+# Into the hero: filtered noise rising for 0.8 s over a faint sine glide, falling away just as the
+# hero lands, where the hit takes over. It starts at its cue (anchor 0): the timeline places the
+# cue 0.8 s before the hero's moment. Sound design, written in Hz: it never transposes.
+id: riser
+description: Rising swell into the hero moment.
+license: original
+duration: 1
+layers:
+  - { gen: noise-sweep, color: pink, filter: bandpass, from: 300, to: 5000, q: 1.4, env: { a: 0.74, d: 0.06 }, pan: [-0.2, 0.2] }
+  - { gen: tone, wave: sine, from: 180, to: 720, env: { a: 0.74, d: 0.06 }, gain: -14 }
+fx:
+  reverb: { size: 0.35, damp: 0.6, mix: 0.08, width: 1 }

@@ -2,10 +2,12 @@ import { z } from 'zod';
 
 /*
  * Sound effects follow only what happens on screen: a pointer click, the before/after reveal, a
- * finding card landing (heavier for high severity), the verdict appearing, and the outro card
- * settling. If an effect is noticeable, it is too loud: they sit well under the voice, and density
- * limits keep a busy stretch from turning into a rattle. The outro's sign-off plays only when no
- * music does: with music, the music's own sonic logo lands on that moment.
+ * finding card landing (heavier for high severity), the verdict appearing, the outro card
+ * settling, a scene pushing, wiping, or zooming through (a whoosh), and the hero (a riser into
+ * its moment and a hit on it). If an effect is noticeable, it is too loud: they sit well under the
+ * voice, swells lower still, and density limits keep a busy stretch from turning into a rattle;
+ * when effects crowd, the swells give way first. The outro's sign-off plays only when no music
+ * does: with music, the music's own sonic logo lands on that moment.
  */
 
 const Recipe = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
@@ -18,6 +20,8 @@ export const SoundEffectsSchema = z.strictObject({
   verdictBoostDb: z.number().min(0).max(6),
   /** Extra level for the outro's sign-off, which plays in the quiet after the narration (dB). */
   outroBoostDb: z.number().min(0).max(6),
+  /** How far swells (a transition's whoosh, the riser into the hero) sit under the others (dB). */
+  swellCutDb: z.number().min(0).max(12),
   /** Seconds between any two effects at least. */
   minSpacing: z.number().min(0).max(2),
   /** Effects in any one-second window at most. */
@@ -34,6 +38,9 @@ export const SoundEffectsSchema = z.strictObject({
     'outro-looks-good': Recipe,
     'outro-needs-attention': Recipe,
     'outro-needs-changes': Recipe,
+    transition: Recipe,
+    riser: Recipe,
+    hero: Recipe,
   }),
 });
 
@@ -42,7 +49,7 @@ export type SoundEffectsConfig = z.output<typeof SoundEffectsSchema>;
 /** A moment with a sound (the timeline's cues). */
 export interface EffectCue {
   t: number;
-  kind: 'click' | 'reveal' | 'finding' | 'verdict' | 'outro';
+  kind: 'click' | 'reveal' | 'finding' | 'verdict' | 'outro' | 'transition' | 'riser' | 'hero';
   scene: string;
   /** `high` for a high-severity finding; the verdict for a verdict or outro cue. */
   detail?: string;
@@ -79,15 +86,21 @@ export function effectRecipe(
       return cue.detail === 'high'
         ? { recipe: r['finding-high'], priority: 2 }
         : { recipe: r.finding, priority: 1 };
+    case 'hero':
+      return { recipe: r.hero, priority: 3 };
+    case 'transition':
+    case 'riser':
+      return { recipe: r[cue.kind], priority: 0 };
     default:
       return { recipe: r[cue.kind], priority: 1 };
   }
 }
 
 /**
- * Chooses which cues sound. The outro and the verdict first, then high-severity findings, then
- * the rest, each in time order; a cue is dropped when it would come within `minSpacing` of a
- * placed one or make any second hold more than `maxPerSecond`.
+ * Chooses which cues sound. The outro first, then the verdict and the hero's hit, then
+ * high-severity findings, then the rest, and the swells last, each in time order; a cue is dropped
+ * when it would come within `minSpacing` of a placed one or make any second hold more than
+ * `maxPerSecond`.
  */
 export function placeEffects(
   cues: readonly EffectCue[],
@@ -126,7 +139,9 @@ export function placeEffects(
           ? config.verdictBoostDb
           : cue.kind === 'outro'
             ? config.outroBoostDb
-            : 0),
+            : cue.kind === 'transition' || cue.kind === 'riser'
+              ? -config.swellCutDb
+              : 0),
     });
   }
   const byTime = (a: { t: number }, b: { t: number }) => a.t - b.t;

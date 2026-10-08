@@ -6,10 +6,10 @@ import { dbToGain } from './loudness.ts';
  * with the sound low and the music carries them. Bookends: music at the start, in the breaths
  * between lines, and at the end, effectively off under speech, because a two-minute bed under
  * technical narration tires. Before the first line and after the last, both sit at the
- * "elsewhere" level, so the video still opens and closes with music. Ramps are linear in dB and
- * finish falling exactly when speech starts. A bookends rise is done 0.45 s after a line ends:
- * before the hero scene settles (0.5 s after the line before it), so the lift's downbeat is
- * heard at full level.
+ * "elsewhere" level, so the video still opens and closes with music. Ramps are linear in dB: the
+ * music starts to duck 60 ms before speech and is down as it starts, then comes back over the
+ * 300 ms after a line. A bookends rise is done 0.3 s after a line ends: before the hero scene
+ * settles (0.5 s after the line before it), so the lift's downbeat is heard at full level.
  */
 
 export type Placement = 'continuous' | 'bookends';
@@ -28,8 +28,8 @@ export interface PlacementParams {
 }
 
 export const PLACEMENT: Record<Placement, PlacementParams> = {
-  continuous: { speechDb: -20, elsewhereDb: -11, minGap: 0.6, down: 0.08, up: 0.4 },
-  bookends: { speechDb: -40, elsewhereDb: -11, minGap: 1.2, down: 0.25, up: 0.45 },
+  continuous: { speechDb: -20, elsewhereDb: -11, minGap: 0.6, down: 0.06, up: 0.3 },
+  bookends: { speechDb: -40, elsewhereDb: -11, minGap: 1.2, down: 0.06, up: 0.3 },
 };
 
 export type Window = readonly [number, number];

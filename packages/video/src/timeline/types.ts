@@ -37,6 +37,26 @@ export interface SceneTransition {
   seconds: number;
 }
 
+/** Highlighted lines that light together, and the phase that lights them. */
+export interface HighlightGroup {
+  /** Indexes into the code's lines. */
+  lines: number[];
+  /** Its own `sync` name, else `highlight<N>` for the N-th entry of `highlight`. */
+  phase: string;
+}
+
+/** A region of a capture the camera visits, in image pixels, with its gloss and its phase. */
+export interface FrameMark {
+  focus: Rect;
+  /** A short gloss shown under the frame while the camera is on this mark. */
+  label?: string;
+  /** Its own `sync` name, else `mark<N>`, counting the marks of the whole visual. */
+  phase: string;
+}
+
+/** The sound cues a storyboard scene can ask for itself (the verdict and the outro are Covi's). */
+export type SceneCueKind = 'click' | 'reveal' | 'finding' | 'transition' | 'riser' | 'hero';
+
 /** An image placed in the composition, with its natural pixel size (needed for focus math). */
 export interface ImageAsset {
   src: string;

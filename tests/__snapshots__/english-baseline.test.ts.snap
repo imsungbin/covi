@@ -852,6 +852,7 @@ Artifacts live in \`.covi/runs/20260901-090000-analyze-0000000\`.
 
 1. Read the surrounding code for the files above; the diff alone is not enough context.
 2. Write \`explanation.json\` (schema: \`covi schema explanation\`) and \`findings.json\` (schema: \`covi schema findings\`) into the run directory.
+   Cite the evidence behind each claim in \`evidenceIds\` (\`covi evidence --run 20260901-090000-analyze-0000000\` lists it); confirmed and likely findings cite at least one.
 3. Run \`covi report --run 20260901-090000-analyze-0000000\` to validate them and render the Markdown reports.
 "
 `;
@@ -879,6 +880,8 @@ This change paginates GET /api/users. It touches \`app.js\` (+14 −1). The chan
 1 source file changed (14 added lines) and no test files changed: \`app.js\`.
 \`\`\`
 
+Cited evidence: \`app.js:1-16\`
+
 Suggestion: Add tests for the main paths of the new behavior.
 
 **New environment variable USERS\\_PAGE\\_SIZE is not documented**: Deployments and teammates rely on the example file to know what to set; a missing variable usually surfaces as a runtime failure.
@@ -886,6 +889,8 @@ Suggestion: Add tests for the main paths of the new behavior.
 \`\`\`
 \`USERS_PAGE_SIZE\` is read by the code but missing from .env.example.
 \`\`\`
+
+Cited evidence: \`app.js:1-16\`
 
 Suggestion: Add it to .env.example with a safe placeholder value.
 
@@ -1018,6 +1023,8 @@ Evidence:
 1 source file changed (14 added lines) and no test files changed: \`app.js\`.
 \`\`\`
 
+Cited evidence: \`app.js:1-16\`
+
 **Suggestion:** Add tests for the main paths of the new behavior.
 
 ### 2. New environment variable USERS\\_PAGE\\_SIZE is not documented
@@ -1031,6 +1038,8 @@ Evidence:
 \`\`\`
 \`USERS_PAGE_SIZE\` is read by the code but missing from .env.example.
 \`\`\`
+
+Cited evidence: \`app.js:1-16\`
 
 **Suggestion:** Add it to .env.example with a safe placeholder value.
 
@@ -1113,6 +1122,9 @@ exports[`English output (baseline) > api-users-pagination > writes the same rule
       "category": "testing",
       "certainty": "risk",
       "evidence": "1 source file changed (14 added lines) and no test files changed: \`app.js\`.",
+      "evidenceIds": [
+        "diff-hunk:app.js:1",
+      ],
       "explanation": "New behavior without tests is easy to break in later changes.",
       "id": "missing-tests-01e4a91d1b29",
       "location": {
@@ -1130,6 +1142,9 @@ exports[`English output (baseline) > api-users-pagination > writes the same rule
       "category": "configuration",
       "certainty": "risk",
       "evidence": "\`USERS_PAGE_SIZE\` is read by the code but missing from .env.example.",
+      "evidenceIds": [
+        "diff-hunk:app.js:1",
+      ],
       "explanation": "Deployments and teammates rely on the example file to know what to set; a missing variable usually surfaces as a runtime failure.",
       "id": "env-var-undocumented-fb3333296776",
       "location": {
@@ -2054,6 +2069,7 @@ Artifacts live in \`.covi/runs/20260901-090000-analyze-0000000\`.
 
 1. Read the surrounding code for the files above; the diff alone is not enough context.
 2. Write \`explanation.json\` (schema: \`covi schema explanation\`) and \`findings.json\` (schema: \`covi schema findings\`) into the run directory.
+   Cite the evidence behind each claim in \`evidenceIds\` (\`covi evidence --run 20260901-090000-analyze-0000000\` lists it); confirmed and likely findings cite at least one.
 3. Run \`covi report --run 20260901-090000-analyze-0000000\` to validate them and render the Markdown reports.
 "
 `;
@@ -5229,6 +5245,7 @@ Artifacts live in \`.covi/runs/20260901-090000-analyze-0000000\`.
 
 1. Read the surrounding code for the files above; the diff alone is not enough context.
 2. Write \`explanation.json\` (schema: \`covi schema explanation\`) and \`findings.json\` (schema: \`covi schema findings\`) into the run directory.
+   Cite the evidence behind each claim in \`evidenceIds\` (\`covi evidence --run 20260901-090000-analyze-0000000\` lists it); confirmed and likely findings cite at least one.
 3. Run \`covi report --run 20260901-090000-analyze-0000000\` to validate them and render the Markdown reports.
 "
 `;
@@ -6819,6 +6836,7 @@ Artifacts live in \`.covi/runs/20260901-090000-analyze-0000000\`.
 
 1. Read the surrounding code for the files above; the diff alone is not enough context.
 2. Write \`explanation.json\` (schema: \`covi schema explanation\`) and \`findings.json\` (schema: \`covi schema findings\`) into the run directory.
+   Cite the evidence behind each claim in \`evidenceIds\` (\`covi evidence --run 20260901-090000-analyze-0000000\` lists it); confirmed and likely findings cite at least one.
 3. Run \`covi report --run 20260901-090000-analyze-0000000\` to validate them and render the Markdown reports.
 "
 `;
@@ -7822,6 +7840,7 @@ Artifacts live in \`.covi/runs/20260901-090000-analyze-0000000\`.
 
 1. Read the surrounding code for the files above; the diff alone is not enough context.
 2. Write \`explanation.json\` (schema: \`covi schema explanation\`) and \`findings.json\` (schema: \`covi schema findings\`) into the run directory.
+   Cite the evidence behind each claim in \`evidenceIds\` (\`covi evidence --run 20260901-090000-analyze-0000000\` lists it); confirmed and likely findings cite at least one.
 3. Run \`covi report --run 20260901-090000-analyze-0000000\` to validate them and render the Markdown reports.
 "
 `;
@@ -7847,6 +7866,8 @@ This change is a visual update: refresh plan cards and highlight the popular pla
 \`\`\`
 .button:focus { outline: none; }
 \`\`\`
+
+Cited evidence: \`pricing.css:1-17\`
 
 Suggestion: Keep a visible focus style, for example \`:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }\`.
 
@@ -7980,6 +8001,8 @@ Evidence:
 .button:focus { outline: none; }
 \`\`\`
 
+Cited evidence: \`pricing.css:1-17\`
+
 **Suggestion:** Keep a visible focus style, for example \`:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }\`.
 
 ## What Covi checked
@@ -8061,6 +8084,9 @@ exports[`English output (baseline) > visual-pricing-cards > writes the same rule
       "category": "accessibility",
       "certainty": "likely",
       "evidence": ".button:focus { outline: none; }",
+      "evidenceIds": [
+        "diff-hunk:pricing.css:1",
+      ],
       "explanation": "Keyboard users rely on the focus outline to see where they are. Removing it without a :focus-visible replacement makes the interface hard to use without a mouse.",
       "id": "focus-outline-removed-80d64bbad28e",
       "location": {

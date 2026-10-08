@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { LanguageSchema } from '../i18n/schema.ts';
+import { EvidenceIdsSchema } from './evidence.ts';
 
 export const DEPTHS = ['brief', 'standard', 'deep'] as const;
 export type Depth = (typeof DEPTHS)[number];
@@ -20,6 +21,7 @@ export const ExplanationSchema = z.strictObject({
     statement: z.string().min(1).describe('Why the change appears to exist.'),
     confidence: z.enum(['high', 'medium', 'low']),
     evidence: z.array(z.string()).default([]),
+    evidenceIds: EvidenceIdsSchema.optional(),
   }),
   behavior: z
     .strictObject({
@@ -27,6 +29,7 @@ export const ExplanationSchema = z.strictObject({
       before: z.string().optional(),
       after: z.string().optional(),
       notes: z.string().optional(),
+      evidenceIds: EvidenceIdsSchema.optional(),
     })
     .optional(),
   changes: z
@@ -35,6 +38,9 @@ export const ExplanationSchema = z.strictObject({
         area: z.string().min(1),
         description: z.string().min(1),
         files: z.array(z.string()).default([]),
+        evidenceIds: EvidenceIdsSchema.optional().describe(
+          'Evidence ids (`covi evidence`) for this statement, usually the diff hunks of its files.',
+        ),
       }),
     )
     .default([]),

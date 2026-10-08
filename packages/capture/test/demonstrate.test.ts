@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   type BehaviorDiff,
+  type Demonstration,
+  type EvidenceFile,
   Git,
+  indexEvidence,
   parseConfigInput,
   Redactor,
   Run,
@@ -27,7 +30,7 @@ import {
   RETRY_FLOW,
 } from '../../../tests/helpers/behavior-app.ts';
 import { canUseBrowser } from '../../../tests/helpers/env.ts';
-import { createChangeRepo, type TempRepo } from '../../../tests/helpers/repo.ts';
+import { createChangeRepo, type FileMap, type TempRepo } from '../../../tests/helpers/repo.ts';
 import { demonstrate } from '../src/demonstrate.ts';
 import { flowScenario, uniqueIds } from '../src/ids.ts';
 import { observeFlow, recordingStatus } from '../src/scenarios.ts';
@@ -47,8 +50,12 @@ afterEach(async () => {
 
 async function setup(
   configFor: (repoRoot: string) => unknown | Promise<unknown> = () => BEHAVIOR_CONFIG,
+  extra: { base: FileMap; head: FileMap } = { base: {}, head: {} },
 ) {
-  repo = createChangeRepo(BEHAVIOR_APP.base, BEHAVIOR_APP.head);
+  repo = createChangeRepo(
+    { ...BEHAVIOR_APP.base, ...extra.base },
+    { ...BEHAVIOR_APP.head, ...extra.head },
+  );
   const { config } = resolveConfig([
     { name: 'repository', values: parseConfigInput(await configFor(repo.root), 't') },
   ]);
@@ -81,6 +88,18 @@ async function expectNoSecrets(run: Run) {
 }
 
 const json = <T>(run: Run, rel: string) => JSON.parse(readFileSync(run.path(rel), 'utf8')) as T;
+
+/**
+ * Every id a demo finding cites is in the run's evidence. A finding citing an id that drifted would
+ * be demoted to a risk by the review and silently stop failing a CI gate.
+ */
+function expectCitedEvidence(run: Run, findings: Demonstration['findings']) {
+  const index = indexEvidence(json<EvidenceFile>(run, 'evidence.json'));
+  for (const f of findings) {
+    expect(f.evidenceIds?.length, f.source?.id).toBeGreaterThan(0);
+    for (const id of f.evidenceIds!) expect(index.find(id), `${f.source?.id}: ${id}`).toBeDefined();
+  }
+}
 
 describe('scenario ids', () => {
   it('gives flows whose names make the same id distinct ids, in order', () => {
@@ -186,6 +205,25 @@ describe.skipIf(!browser)('behavior diff capture', () => {
     expect(steps.length).toBeGreaterThan(0);
     expect(steps.every((s) => s.before?.path.endsWith('-base.png'))).toBe(true);
     expect(demo.findings).toEqual([]);
+    // Everything the run captured is evidence a claim can cite, and every file it names exists.
+    const evidence = json<EvidenceFile>(run, 'evidence.json');
+    const byId = new Map(evidence.items.map((i) => [i.id, i]));
+    for (const id of [
+      'screenshot:home-desktop-after',
+      'pixel-diff:home-desktop#load',
+      'pixel-diff:flow-load-items#end',
+      'trace:flow-load-items-base',
+      'trace:flow-load-items-head',
+      'recording:flow-load-items-head',
+    ])
+      expect(byId.has(id), id).toBe(true);
+    expect(byId.get('pixel-diff:flow-load-items#end')!.refs).toContain(
+      'pixel-diff:flow-load-items#end.r1',
+    );
+    const traceRefs = byId.get('trace:flow-load-items-head')!.refs ?? [];
+    expect(traceRefs).toContain('trace:flow-load-items-head#end');
+    expect(traceRefs.some((r) => /#n\d+$/.test(r))).toBe(true);
+    for (const item of evidence.items) expect(existsSync(run.path(item.path)), item.id).toBe(true);
     await expectNoSecrets(run);
   });
 
@@ -267,6 +305,64 @@ describe.skipIf(!browser)('behavior diff capture', () => {
     expect(demo.skipped.length).toBeGreaterThan(0);
     expect(demo.recordings).toBeUndefined();
     expect(demo.recording).toBeUndefined();
+    // The start-up error is kept, and the head's app-start finding cites it.
+    expect(demo.findings.find((f) => f.source?.id === 'app-start')?.evidenceIds).toEqual([
+      'terminal:app-start-head',
+    ]);
+    const ids = json<EvidenceFile>(run, 'evidence.json').items.map((i) => i.id);
+    expect(ids).toEqual(
+      expect.arrayContaining(['terminal:app-start-base', 'terminal:app-start-head']),
+    );
+    expectCitedEvidence(run, demo.findings);
+    expect(existsSync(run.path('demo/app-head.log'))).toBe(true);
+  });
+
+  it('cites evidence the run has in every finding it makes, a broken flow its head trace', async () => {
+    const broken = { name: 'Broken', path: '/', steps: [{ click: '#missing', note: 'Missing' }] };
+    const page = (body: string) => `<!doctype html><title>Page</title><p>Page</p>${body}\n`;
+    const { config, change, context, run } = await setup(
+      () => ({
+        ...BEHAVIOR_CONFIG,
+        demo: {
+          ...BEHAVIOR_CONFIG.demo,
+          flows: [broken],
+          pages: ['/gone.html', '/boom.html'],
+          requests: [{ name: 'Data', path: '/data.json' }],
+          // items.json is gone at head.
+          commands: [{ name: 'Items', run: 'test -f items.json' }],
+        },
+      }),
+      {
+        base: {
+          'gone.html': page(''),
+          'boom.html': page(''),
+          'data.json': '{"items": ["Apples"]}\n',
+        },
+        head: {
+          'gone.html': null,
+          'boom.html': page("<script>throw new Error('boom')</script>"),
+          'data.json': '{"list": ["Apples"]}\n',
+        },
+      },
+    );
+    const demo = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      recording: { enabled: false, required: false },
+    });
+    expect([...new Set(demo.findings.map((f) => f.source?.id))].sort()).toEqual([
+      'api-shape',
+      'command-failure',
+      'flow-failure',
+      'page-error',
+      'page-status',
+    ]);
+    const failure = demo.findings.find((f) => f.source?.id === 'flow-failure')!;
+    expect(failure.evidenceIds).toEqual(['trace:flow-broken-head']);
+    expectCitedEvidence(run, demo.findings);
   });
 
   it('records and traces only the head for an app given by URL, and writes no behavior diff', async () => {

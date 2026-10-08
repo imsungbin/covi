@@ -25,6 +25,7 @@ import {
   type ResolvedConfig,
   type ResolvedLanguage,
   type ReviewContext,
+  RUN_PATHS,
   Run,
   renderFileDiff,
   repositoryCommands,
@@ -35,6 +36,7 @@ import {
   TrustStore,
   understandChange,
   withoutRepositoryCommands,
+  writeEvidence,
 } from '@covi/core';
 import type { PlatformContext } from '@covi/platforms';
 import { coviVersion } from './version.ts';
@@ -244,7 +246,9 @@ export async function startSession(options: SessionOptions): Promise<Session> {
     understandChange(change, { git, config, logger, language: language.language }),
   );
   await run.writeJson('context.json', context, 'context');
-  await run.writeText('diff.patch', renderPatch(change), 'diff');
+  await run.writeText(RUN_PATHS.diff, renderPatch(change), 'diff');
+  // Diff hunks are evidence from the start: rule findings and authors cite them.
+  await writeEvidence(run);
 
   const providerChoice = chooseSessionProvider(config, execution, run, repoConfig.source);
   const provider = createProvider(providerChoice, config, root);

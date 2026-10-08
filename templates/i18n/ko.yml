@@ -95,6 +95,7 @@ report:
     untitled: 코드 변경
     findings: 발견 사항
     evidence: '근거:'
+    cited: '인용한 근거: {refs}'
     suggestion: '**제안:**'
     tests: 테스트
     testsPassed: 통과
@@ -122,6 +123,7 @@ comment:
   where: 위치
   details: 발견 사항 자세히
   suggestion: '제안:'
+  cited: '인용한 근거: {refs}'
   changes: 변경 내용
   notVerified: 확인하지 못한 부분
   artifacts: 산출물
@@ -177,6 +179,7 @@ brief:
   artifacts: '산출물은 {dir}에 있습니다.'
   step1: '1. 위 파일들의 주변 코드를 읽으세요. diff만으로는 맥락이 부족합니다.'
   step2: '2. 실행 디렉터리에 `explanation.json`(스키마: `covi schema explanation`)과 `findings.json`(스키마: `covi schema findings`)을 작성하세요.'
+  cite: '   각 주장의 근거를 `evidenceIds`에 적으세요(`covi evidence --run {runId}`로 목록을 볼 수 있습니다). 확인된 문제와 가능성 높은 문제에는 근거가 하나 이상 있어야 합니다.'
   step3: '3. `covi report --run {runId}`를 실행해 검증하고 Markdown 보고서를 만드세요.'
 
 intent:

@@ -1,4 +1,4 @@
-import { LanguageSchema } from '@covi/core';
+import { EvidenceIdsSchema, LanguageSchema } from '@covi/core';
 import { z } from 'zod';
 import type { TransitionKind } from '../timeline/types.ts';
 import { storyboardIssues } from './grammar.ts';
@@ -211,6 +211,9 @@ export const SceneSchema = z.strictObject({
       'Spoken form when it differs from the caption text: identifiers, paths, and names a voice would misread. Covi still spells out acronyms and applies video.narration.pronunciations to it before synthesis.',
     ),
   visual: VisualSchema,
+  evidenceIds: EvidenceIdsSchema.optional().describe(
+    "Ids from the run's evidence.json (`covi evidence --run <id>`) this scene rests on. A scene that shows a capture, code from the diff, a request, a command, or findings cites them without listing them.",
+  ),
   expression: z.enum(EXPRESSION_VALUES).optional(),
   minSeconds: z.number().min(1).max(30).optional(),
   optional: z.boolean().optional().describe('May be dropped to fit the target duration.'),

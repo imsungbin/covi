@@ -191,6 +191,7 @@ export function renderBrief(
   out.push('');
   out.push(say('step1'));
   out.push(say('step2'));
+  out.push(say('cite', { runId: options.runId }));
   out.push(say('step3', { runId: options.runId }));
   out.push('');
   return out.join('\n');

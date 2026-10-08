@@ -173,7 +173,7 @@ A dependency change is reviewed by what it does to the code that uses it, not by
 
 1. `covi analyze --json`. Read `brief.md` and `context.json` → `dependencies` (name, manifest, ecosystem, from → to, major, dev).
 2. For each major upgrade, find the call sites in the repository and the package's changelog entries for the versions crossed.
-3. Write `findings.json` (`covi schema findings`, category `dependency`), then run `covi report --run <id>`.
+3. Write `findings.json` (`covi schema findings`, category `dependency`), citing the manifest's diff hunks in `evidenceIds` (`covi evidence --run <id> --json` lists them), then run `covi report --run <id>`.
 
 ## Method
 

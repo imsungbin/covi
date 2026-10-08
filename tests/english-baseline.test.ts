@@ -3,10 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   type BehaviorDiff,
+  buildEvidence,
   buildReview,
   type Demonstration,
   explainHeuristically,
   Git,
+  indexEvidence,
   loadRepositoryConfig,
   Redactor,
   renderBrief,
@@ -68,7 +70,8 @@ async function analyzeOnce(name: string) {
     generatedBy: { provider: 'heuristic' },
   });
   const explanation = explainHeuristically(context);
-  return { change, context, rules, review, explanation, config };
+  const evidence = indexEvidence(buildEvidence({ diff: change.files }));
+  return { change, context, rules, review, explanation, config, evidence };
 }
 
 /** Evidence of every kind, so drafts exercise each visual and its narration. */
@@ -235,21 +238,32 @@ describe('English output (baseline)', () => {
   for (const example of examples) {
     describe(example.name, () => {
       it('writes the same rule findings, explanation, and reports', async () => {
-        const { change, context, rules, review, explanation } = await analyze(example.name);
+        const { change, context, rules, review, explanation, evidence } = await analyze(
+          example.name,
+        );
         expect({ findings: rules.findings, checked: rules.checked }).toMatchSnapshot('rules');
         expect(explanation).toMatchSnapshot('explanation');
         expect(review.summary).toMatchSnapshot('review summary');
         expect(review.notVerified).toMatchSnapshot('not verified');
         expect(renderExplanation(explanation, context)).toMatchSnapshot('explanation.md');
-        expect(renderReview(review, explanation, context)).toMatchSnapshot('review.md');
+        expect(renderReview(review, explanation, context, undefined, evidence)).toMatchSnapshot(
+          'review.md',
+        );
         expect(renderSummary(explanation, review, context)).toMatchSnapshot('summary.md');
         expect(renderSummary(explanation, review, context, 'text')).toMatchSnapshot('summary.txt');
         expect(
-          renderComment(review, explanation, context, {
-            video: { url: 'https://example.com/v.mp4', seconds: 31 },
-            artifacts: 'https://example.com/artifacts',
-            run: 'https://example.com/run',
-          }),
+          renderComment(
+            review,
+            explanation,
+            context,
+            {
+              video: { url: 'https://example.com/v.mp4', seconds: 31 },
+              artifacts: 'https://example.com/artifacts',
+              run: 'https://example.com/run',
+            },
+            undefined,
+            evidence,
+          ),
         ).toMatchSnapshot('comment.md');
         expect(
           renderBrief(change, context, rules.findings, {

@@ -94,6 +94,7 @@ report:
     untitled: 代码变更
     findings: 发现
     evidence: '依据：'
+    cited: '引用的依据：{refs}'
     suggestion: '**建议：**'
     tests: 测试
     testsPassed: 通过
@@ -121,6 +122,7 @@ comment:
   where: 位置
   details: 发现详情
   suggestion: '建议：'
+  cited: '引用的依据：{refs}'
   changes: 变更内容
   notVerified: 未能验证的内容
   artifacts: 产物
@@ -176,6 +178,7 @@ brief:
   artifacts: '产物位于 {dir}。'
   step1: '1. 阅读上述文件周围的代码；只看 diff 无法获得足够的上下文。'
   step2: '2. 在运行目录中写入 `explanation.json`（模式：`covi schema explanation`）和 `findings.json`（模式：`covi schema findings`）。'
+  cite: '   在 `evidenceIds` 中写明每个结论的依据（用 `covi evidence --run {runId}` 列出）。已确认的问题和可能的问题至少引用一条依据。'
   step3: '3. 运行 `covi report --run {runId}` 进行验证并生成 Markdown 报告。'
 
 intent:

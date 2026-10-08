@@ -827,3 +827,17 @@ export async function runQc(input: QcInput): Promise<QcReport> {
       : 'pass';
   return { status, checks, measured };
 }
+
+/**
+ * A report with one more check and its status recomputed, for checks made outside `runQc` (such
+ * as grounding, which needs the run's evidence rather than the rendered file).
+ */
+export function withCheck(report: QcReport, check: QcCheck): QcReport {
+  const checks = [...report.checks, check];
+  const status: QcStatus = checks.some((c) => c.status === 'fail')
+    ? 'fail'
+    : checks.some((c) => c.status === 'warn')
+      ? 'warn'
+      : 'pass';
+  return { ...report, status, checks };
+}

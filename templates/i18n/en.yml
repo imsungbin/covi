@@ -97,6 +97,7 @@ report:
     untitled: Code change
     findings: Findings
     evidence: 'Evidence:'
+    cited: 'Cited evidence: {refs}'
     suggestion: '**Suggestion:**'
     tests: Tests
     testsPassed: passed
@@ -124,6 +125,7 @@ comment:
   where: Where
   details: Finding details
   suggestion: 'Suggestion:'
+  cited: 'Cited evidence: {refs}'
   changes: What changed
   notVerified: Not verified
   artifacts: artifacts
@@ -179,6 +181,7 @@ brief:
   artifacts: Artifacts live in {dir}.
   step1: '1. Read the surrounding code for the files above; the diff alone is not enough context.'
   step2: '2. Write `explanation.json` (schema: `covi schema explanation`) and `findings.json` (schema: `covi schema findings`) into the run directory.'
+  cite: '   Cite the evidence behind each claim in `evidenceIds` (`covi evidence --run {runId}` lists it); confirmed and likely findings cite at least one.'
   step3: '3. Run `covi report --run {runId}` to validate them and render the Markdown reports.'
 
 intent:

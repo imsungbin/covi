@@ -11,6 +11,7 @@ import {
   type Timeline,
 } from '../timeline/types.ts';
 import type { Media } from './ffmpeg.ts';
+import { HIDE_LABEL_SCRIPT, sheetLabel, showLabelScript } from './sheet.ts';
 
 export interface RenderOptions {
   /** Directory holding the composition's index.html. */
@@ -155,6 +156,77 @@ export function sheetColumns(tiles: number, vertical: boolean): number {
   return Math.max(1, Math.min(tiles, vertical ? 6 : tiles > 12 ? 4 : 3));
 }
 
+/**
+ * A contact sheet tile of the frame the page shows: the scene it belongs to and the evidence it
+ * cites, on a strip that is removed again, so the video's own frames stay clean.
+ */
+async function shootTile(
+  page: Page,
+  timeline: Pick<Timeline, 'fps' | 'scenes' | 'width'>,
+  frame: number,
+): Promise<Buffer> {
+  await page.evaluate(showLabelScript(sheetLabel(timeline, frame), timeline.width));
+  try {
+    return await page.screenshot({
+      type: 'jpeg',
+      quality: 94,
+      animations: 'disabled',
+      caret: 'hide',
+    });
+  } finally {
+    await page.evaluate(HIDE_LABEL_SCRIPT);
+  }
+}
+
+export interface ContactSheetOptions {
+  compositionDir: string;
+  timeline: RenderOptions['timeline'];
+  media: Media;
+  /** Where the sheet goes: `contact-sheet.jpg` beside the video. */
+  output: string;
+}
+
+/**
+ * Shoots only the contact sheet, for reused frames: the frames key leaves out what the tiles
+ * name (the evidence scenes cite), so the labels may have changed while the pixels did not.
+ */
+export async function renderContactSheet(options: ContactSheetOptions): Promise<string> {
+  const { timeline, media } = options;
+  const workDir = join(dirname(options.output), '.render-contact-sheet');
+  await rm(workDir, { recursive: true, force: true });
+  await mkdir(workDir, { recursive: true });
+  const server = await serveStatic(options.compositionDir);
+  const browser = await chromium.launch({ args: LAUNCH_ARGS });
+  try {
+    const errors: string[] = [];
+    const page = await openPage(
+      browser,
+      `${server.url}/index.html`,
+      timeline.width,
+      timeline.height,
+      errors,
+    );
+    const tiles: Buffer[] = [];
+    for (const frame of contactSheetFrames(timeline)) {
+      await page.evaluate((f) => (globalThis as CompositionWindow).covi!.seek(f), frame);
+      tiles.push(await shootTile(page, timeline, frame));
+    }
+    if (errors.length) throw new Error(`Composition error: ${errors[0]}`);
+    return await contactSheet(
+      media,
+      tiles,
+      options.output,
+      workDir,
+      timeline.width,
+      timeline.height,
+    );
+  } finally {
+    await browser.close().catch(() => undefined);
+    await server.close();
+    await rm(workDir, { recursive: true, force: true });
+  }
+}
+
 /** Renders a composition to H.264 MP4 by seeking every frame in headless Chromium. */
 export async function renderComposition(options: RenderOptions): Promise<RenderResult> {
   const started = Date.now();
@@ -228,7 +300,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
             layouts.push(
               await page.evaluate(() => (globalThis as CompositionWindow).covi!.layout()),
             );
-          if (sheetFrames.has(frame)) sheet.set(frame, jpeg);
+          if (sheetFrames.has(frame)) sheet.set(frame, await shootTile(page, timeline, frame));
           if (frame === posterFrame) poster = await page.screenshot({ type: 'png' });
           done++;
           if (done % 15 === 0 || done === total) options.onProgress?.(done, total);

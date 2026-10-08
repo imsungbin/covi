@@ -161,6 +161,8 @@ export interface TimelineScene {
   hero?: boolean;
   /** The storyboard asked the picture to hold still: no drift, no linger. */
   camera?: 'static';
+  /** The evidence the scene rests on (ids in the run's evidence.json); contact sheets name it. */
+  evidenceIds?: string[];
 }
 
 /**

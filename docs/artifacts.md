@@ -4,7 +4,7 @@ Every Covi command that looks at a change writes a run: a directory of inspectab
 
 ## Where runs live
 
-Runs are written to `.covi/runs/<run-id>/` inside the reviewed repository. Set `output.dir` (relative to the repository root) to use another directory; `covi report`, `covi render`, `covi publish`, and `covi runs` look for runs there too. Pass `--out <dir>` to write one run to an exact directory; the CI integrations do this so artifact paths are predictable.
+Runs are written to `.covi/runs/<run-id>/` inside the reviewed repository. Set `output.dir` (relative to the repository root) to use another directory; `covi report`, `covi render`, `covi publish`, `covi evidence`, and `covi runs` look for runs there too. Pass `--out <dir>` to write one run to an exact directory; the CI integrations do this so artifact paths are predictable.
 
 ```
 .covi/
@@ -67,6 +67,7 @@ Paths are relative to the run directory. The kind is the `kind` recorded for the
 | `run.json` | | every command | The manifest |
 | `context.json` | `context` | every command | The `ReviewContext` from the Understand phase: change digest, size, intent, areas, surfaces, symbols, routes, dependencies, environment variables, data changes, tests, demonstration assessment, reading order, signals |
 | `diff.patch` | `diff` | every command | The change as a unified diff, rebuilt from the parsed hunks |
+| `evidence.json` | `evidence` | every command that starts a run; rewritten after a demonstration and after the review | The evidence registry: every diff hunk, screenshot, pixel diff, recording, trace, request, command, app start-up error, and test run in the run, with its id, kind, file, revision, sha256, and a short label. See [Evidence](#evidence). |
 | `brief.md` | `brief` | `analyze` | The agent brief: author description, what Covi determined, signals, reading order, the prioritized diff, and next steps |
 | `rule-findings.json` | `findings` | `analyze`, `review`, `video`, `summarize`, `ci` | Findings from the deterministic rules (plus observations from a demonstration in the same run), each with a stable id, and the list of what the rules checked |
 | `explanation.draft.json` | `explanation` | `analyze` | Covi's structural explanation, a starting point for an agent's `explanation.json` |
@@ -75,6 +76,7 @@ Paths are relative to the run directory. The kind is the `kind` recorded for the
 | `review.json`, `review.md` | `review` | `review`, `video`, `summarize`, `ci`, `report` | The merged review: verdict, summary, findings shown, dismissals, what was checked and not verified, test results, who generated it; `review.json` also lists the findings beyond `review.maxFindings` under `omitted` |
 | `summary.md` | `summary` | `review`, `video`, `summarize`, `ci`, `report` | A short summary for a PR/MR description or a chat message |
 | `comment.md` | `comment` | `review`, `video`, `summarize`, `ci`, `report` | A preview of the PR/MR comment. `covi publish` re-renders the comment from the JSON files instead of posting this file. |
+| `tests.log` | `log` | `review`, `video`, `summarize`, `ci` when tests ran | The test command and the redacted tail of its output: the evidence `test-run:tests` names |
 
 The Markdown files escape every piece of text that comes from the change (titles, paths, branch names, descriptions, and model-written text), so it renders as text: no links, images, HTML, or headings it did not ask for. Inline code stays code, and evidence sits in fences it cannot close. `review.md` is also what the GitHub job summary shows.
 
@@ -96,8 +98,9 @@ Written when a demonstration runs: `covi demo` and `covi review --demo` on reque
 | `demo/traces/<scenario>-base.json`, `-head.json` | `trace` | What happened while a page loaded or a flow ran: steps (id, action, target, label, seconds from the start of the recording, duration, status, screenshot, target box, DOM changes), network requests (method, URL relative to the app, resource type, status or failure, timing), console messages (level, text, location), and DOM change counts and regions. No headers or bodies. |
 | `demo/behavior-diff.json` | `behavior-diff` | Per scenario (page or flow) observed at both revisions: `status` (`changed`, `unchanged`, `incomplete`), steps that look different (at least 64 changed pixels, or 64 × scale² on a high-density viewport, however small a share of the frame; with region ids) or ended differently, requests added, removed, or answered with another status, console errors added or removed, and timing deltas of at least 500 ms and half the base time (timing alone never makes a scenario `changed`). Not written when only head ran (`app.url`). |
 | `demo/diffs/<page>-<viewport>.png` | `screenshot` | The pixel difference between base and head |
+| `demo/app-base.log`, `demo/app-head.log` | `log` | Why the app did not start at that revision (`terminal:app-start-<revision>`); an `app-start` finding cites the head log |
 
-**Ids.** A scenario is `flow-<flow>` or `<page>-<viewport>`, and its trace at a revision is `<scenario>-<revision>` (also the recording's file stem). Steps are `open`, `load` (a page), `s1`… (the flow's steps in order), and `end`, the same at base and head. Inside a trace, requests are `n1`… and console messages `c1`…; in `behavior-diff.json`, changed regions are `r1`… within their step. `<trace>#<id>` (`flow-load-items-head#n2`) and `<scenario>#<step>.<region>` (`flow-load-items#end.r1`) each name one piece of evidence in a run.
+**Ids.** A scenario is `flow-<flow>` or `<page>-<viewport>`, and its trace at a revision is `<scenario>-<revision>` (also the recording's file stem). Steps are `open`, `load` (a page), `s1`… (the flow's steps in order), and `end`, the same at base and head. Inside a trace, requests are `n1`… and console messages `c1`…; in `behavior-diff.json`, changed regions are `r1`… within their step. Claims cite them through [evidence ids](#evidence): `trace:flow-load-items-head#n2`, `pixel-diff:flow-load-items#end.r1`.
 
 ### Video
 
@@ -134,6 +137,27 @@ Written by `covi ci`. See [GitHub Action](github-action.md) and [GitLab CI](gitl
 
 On GitHub, annotations go to the job log, and step outputs and the job summary go to the files GitHub provides; none of them are written into the run.
 
+## Evidence
+
+`evidence.json` lists every piece of evidence in a run. Claims cite it: findings (`findings.json`), explanation statements (`intent`, `behavior`, and each entry of `changes` in `explanation.json`), and storyboard scenes, each in `evidenceIds`. `covi evidence --run <id> --json` prints it.
+
+| Kind | Id | Revision |
+|---|---|---|
+| `diff-hunk` | `diff-hunk:<path>:<start>`, `<start>` being the `+` start of the hunk's `@@` header (`0` for a deleted file) | `both` |
+| `screenshot` | `screenshot:<file name without .png>` | `base` for a before image, `head` for an after image |
+| `pixel-diff` | `pixel-diff:<scenario>#<step>`; a changed region is `pixel-diff:<scenario>#<step>.r<N>` | `both` |
+| `recording` | `recording:<scenario>-<revision>` | that revision |
+| `trace` | `trace:<scenario>-<revision>`; a step, request, or console message in it is `…#<step>`, `…#n<N>`, `…#c<N>` | that revision |
+| `http` | `http:<N>`, the N-th request in `demo/captures.json` | `both` when base answered too, else `head` |
+| `terminal` | `terminal:<N>`, the N-th command in `demo/captures.json`; `terminal:app-start-<revision>` when the app did not start | `both`, `head`, or that revision |
+| `test-run` | `test-run:tests` | `head` |
+
+Each item has `path` (the run file that holds it), `sha256` (the file's, or for a hunk, request, or command, its own text's), a language-neutral `label` (redacted), a `location` for hunks, and `refs`, the parts that can be cited on their own.
+
+Covi grounds what it writes. A rule finding cites the hunk at its location, a demo finding cites what it observed, Covi's explanation cites the hunks of each change's files and, for its intent, what those changes cite, and a scene cites what its visual shows from the run. A model's findings keep only ids the run has and otherwise cite the hunk at their location. A confirmed or likely finding Covi wrote that has nothing to cite is reported as a risk; for a demonstration's or a model's finding, a run warning says so. What an agent writes is checked: `covi report` and `covi render` exit 2 on an id the run does not have, naming the claim, and `findings.json` version 2 requires at least one id on every confirmed or likely finding. Explanation statements and scenes without evidence are reported as warnings: by `covi report`, and by the `grounding` check in `video/qc.json`.
+
+A run made before Covi kept a registry has no `evidence.json`. `covi evidence` rebuilds it in memory without writing, and `covi report` rebuilds and writes it.
+
 ## Files agents author
 
 An agent can write these files and hand them to Covi, which validates them against Zod schemas. `covi schema <name>` prints each schema as JSON Schema. A file that does not match fails with exit code 2 and a list of the problems.
@@ -146,6 +170,7 @@ An agent can write these files and hand them to Covi, which validates them again
 | `video/storyboard.json` in the run, or any path | `covi schema storyboard` | `covi render`, `covi render --storyboard <file>`, `covi video --storyboard <file>` |
 | `video/score.json` in the run | `covi schema score` | `covi render` with `--music compose` (or `video.music.use: compose`). At most 64 KB, and only the bundled patches and kits; see `skills/covi-video/references/music.md`. |
 | `.covi/config.yml` (or `.covi/config.yaml`) | `covi schema config` | every command |
+| — | `covi schema evidence` | `evidence.json` is Covi's; the schema documents what `covi evidence` prints |
 
 The objects are strict: unknown keys are rejected rather than ignored. A minimal `explanation.json`:
 
@@ -162,10 +187,11 @@ The objects are strict: unknown keys are rejected rather than ignored. A minimal
 }
 ```
 
-A `findings.json` that adds one finding and dismisses a rule finding by its id from `rule-findings.json`:
+A `findings.json` that adds one finding, cites the diff hunk behind it, and dismisses a rule finding by its id from `rule-findings.json`:
 
 ```json
 {
+  "schemaVersion": 2,
   "findings": [
     {
       "title": "Response shape change breaks existing clients",
@@ -174,6 +200,7 @@ A `findings.json` that adds one finding and dismisses a rule finding by its id f
       "category": "api-compatibility",
       "location": { "path": "app.js", "line": 10 },
       "evidence": "res.json(users) became res.json({ items, page, pageSize, total }).",
+      "evidenceIds": ["diff-hunk:app.js:8"],
       "explanation": "Clients that iterate over the array will fail."
     }
   ],
@@ -185,13 +212,13 @@ A `findings.json` that adds one finding and dismisses a rule finding by its id f
 }
 ```
 
-Dismissing an id that is not in `rule-findings.json` is an error (exit code 2).
+Dismissing an id that is not in `rule-findings.json` is an error (exit code 2). So is citing an evidence id the run does not have, or leaving a confirmed or likely finding without one in version 2.
 
 ## Schema versions
 
 `explanation.json`, `findings.json`, and `video/storyboard.json` accept an optional `language` (`en`, `ko`, `ja`, or `zh`; `zh-CN` and `zh-Hans` are read as `zh`). It says what language the prose is in: reports rendered from the file use its headings, and a storyboard's language sets the narration language. Covi writes it on what it generates in Korean, Japanese, and Chinese, and on every drafted storyboard; English explanations and reviews leave it out, as before. Text Covi writes into `context.json` (signals, notes, reading order, ambiguities, demonstration reasons) and `rule-findings.json` is in the run's language too.
 
-JSON files that agents write or that later stages read back carry `schemaVersion: 1`: `run.json`, `context.json`, `rule-findings.json`, `explanation.json`, `explanation.draft.json`, `findings.json`, `review.json`, `demo/captures.json`, `demo/traces/*.json`, `demo/behavior-diff.json`, `video/storyboard.json`, `video/score.json`, `video/audio.json`, and `video/frames.json`. Agent-authored files may omit it; it defaults to 1. A demo plan has no version field. `video/timeline.json` carries its own `version: 1`, read by the browser runtime; `video/speech.json` carries `schemaVersion: 1`; `video/decision.json` and `video/qc.json` are diagnostic records.
+JSON files that agents write or that later stages read back carry a `schemaVersion`: `findings.json` is at 2 (confirmed and likely findings cite evidence; version 1 files are still read, without that rule, and `covi report` warns about what it let through), and `run.json`, `context.json`, `rule-findings.json`, `explanation.json`, `explanation.draft.json`, `review.json`, `evidence.json`, `demo/captures.json`, `demo/traces/*.json`, `demo/behavior-diff.json`, `video/storyboard.json`, `video/score.json`, `video/audio.json`, and `video/frames.json` are at 1. Agent-authored files may omit it; it defaults to the current version. A demo plan has no version field. `video/timeline.json` carries its own `version: 1`, read by the browser runtime; `video/speech.json` carries `schemaVersion: 1`; `video/decision.json` and `video/qc.json` are diagnostic records.
 
 Additive changes, such as a new optional field, keep the version. A breaking change to a versioned file bumps `schemaVersion`. The configuration and the demo plan have no version, so they only grow: keys are added, never repurposed. Either way, the skills that describe the file are updated with it.
 
@@ -213,10 +240,10 @@ Screenshots and recordings are pictures of the running software, and the video s
 
 Commands that continue a run take `--run <ref>`, where `<ref>` is `latest` (the default), a run id, or a path to a run directory (absolute, containing `/`, or starting with `.`).
 
-- **`covi report`** validates `explanation.json` and `findings.json` in the run, checks that every dismissal names an id in `rule-findings.json`, merges the authored findings with the rule findings, renders `explanation.md`, `review.json`, `review.md`, `summary.md`, and `comment.md`, and updates the run's `outcome` (verdict, finding counts, gate status). It rewrites the two input files in normalized form (defaults filled in, the explanation marked as written by an agent). If `explanation.json` is missing, Covi uses its structural explanation; if `findings.json` is missing, the review contains rule findings only. Both cases are recorded as warnings. A failed gate (`--fail-on` or `review.failOn`) exits with code 1.
-- **`covi render`** validates the storyboard (`video/storyboard.json`, or `--storyboard <file>`), reads `review.json`, `explanation.json`, and `demo/captures.json` when present, re-reads the change from the base and head recorded in `run.json`, and renders into the run's `video/` directory. For runs of staged or uncommitted work, the change is read again from the current index or working tree. It keeps the video spec saved in `video/decision.json` when the storyboard was drafted (mode, size, length, style, captions, narration on or off, theme, frame rate, and voice); video flags such as `--no-narration` change only what they name, and choosing a different mode (`--short`, `--standard`, `--custom`, `--mode`) resets the size, length, and style that came with the old one. It updates only `outcome.video`.
+- **`covi report`** validates `explanation.json` and `findings.json` in the run, checks every evidence id they cite against `evidence.json`, checks that every dismissal names an id in `rule-findings.json`, merges the authored findings with the rule findings, renders `explanation.md`, `review.json`, `review.md`, `summary.md`, and `comment.md`, and updates the run's `outcome` (verdict, finding counts, gate status). It rewrites the two input files in normalized form (defaults filled in, the explanation marked as written by an agent). If `explanation.json` is missing, Covi uses its structural explanation; if `findings.json` is missing, the review contains rule findings only. Both cases are recorded as warnings. A failed gate (`--fail-on` or `review.failOn`) exits with code 1.
+- **`covi render`** validates the storyboard (`video/storyboard.json`, or `--storyboard <file>`) and the evidence ids its scenes cite, reads `review.json`, `explanation.json`, and `demo/captures.json` when present, re-reads the change from the base and head recorded in `run.json`, and renders into the run's `video/` directory. For runs of staged or uncommitted work, the change is read again from the current index or working tree. It keeps the video spec saved in `video/decision.json` when the storyboard was drafted (mode, size, length, style, captions, narration on or off, theme, frame rate, and voice); video flags such as `--no-narration` change only what they name, and choosing a different mode (`--short`, `--standard`, `--custom`, `--mode`) resets the size, length, and style that came with the old one. It updates only `outcome.video`.
 - **`covi publish`** re-renders the comment from `review.json` and `explanation.json` (validated against their schemas) and `context.json` (only hex commit ids are printed from it), links the video recorded in `run.json`, and posts or updates the comment. With `--expect-head <sha>`, it refuses to publish a run that reviewed a different head commit. In a GitHub `workflow_run` event the expected head comes from the event, and the pull request is found from the event too, never from the run directory, which may come from an untrusted artifact. See [GitHub Action](github-action.md).
 
-`covi report` and `covi render` append their stage (`report`, `video`) to `run.json`, update the artifact records and the outcome, and set `updatedAt`; the original timing stays. `covi publish` only reads the run. `covi runs list` lists runs, newest first; `covi runs show [ref]` prints a run's stages and artifacts.
+`covi report` and `covi render` append their stage (`report`, `video`) to `run.json`, update the artifact records and the outcome, and set `updatedAt`; the original timing stays. `covi publish` and `covi evidence` only read the run. `covi runs list` lists runs, newest first; `covi runs show [ref]` prints a run's stages and artifacts.
 
 With `--json`, commands that create or continue a run print a result object on stdout that includes `runId`, `runDir`, and absolute paths to the main artifacts. See [CLI](cli.md).

@@ -1,4 +1,6 @@
 import type { CoviConfig } from '../config/schema.ts';
+import { diffHunkEvidence } from '../evidence/build.ts';
+import { groundFinding, indexEvidence } from '../evidence/cite.ts';
 import type { Git } from '../git/git.ts';
 import { RevisionReader } from '../git/reader.ts';
 import { hasMessage, t } from '../i18n/catalog.ts';
@@ -50,6 +52,8 @@ export async function runRules(
     files: reviewableFiles(change),
     language,
   };
+  // Rule findings cite the diff hunks they point at, so every report can show where they come from.
+  const hunks = indexEvidence({ items: diffHunkEvidence(change.files) });
   const findings: Finding[] = [];
   const errors: RuleRunResult['errors'] = [];
   for (const rule of rules) {
@@ -57,8 +61,17 @@ export async function runRules(
       const source = { kind: 'rule', id: rule.id } as const;
       const inputs = await rule.run(ctx);
       const ids = language === 'en' ? [] : await englishIds(rule, ctx, inputs.length);
-      for (const [i, input] of inputs.entries())
-        findings.push(normalizeFinding(ids[i] ? { ...input, id: ids[i] } : input, source));
+      for (const [i, input] of inputs.entries()) {
+        const grounded = groundFinding(
+          normalizeFinding(ids[i] ? { ...input, id: ids[i] } : input, source),
+          hunks,
+        );
+        if (grounded.demoted)
+          logger.debug(
+            `Rule ${rule.id}: "${input.title}" points outside the diff; reported as a risk.`,
+          );
+        findings.push(grounded.finding);
+      }
     } catch (error) {
       const message = (error as Error).message;
       logger.debug(`Rule ${rule.id} failed: ${message}`);

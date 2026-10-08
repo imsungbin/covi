@@ -3,8 +3,9 @@ import type { CoviConfig } from '../config/schema.ts';
 import { LANGUAGE_NAME, type Language } from '../i18n/language.ts';
 import type { CodeChange } from '../model/change.ts';
 import type { ReviewContext } from '../model/context.ts';
+import { type EvidenceItem, withinCitationLimits } from '../model/evidence.ts';
 import { type Explanation, ExplanationSchema } from '../model/explanation.ts';
-import { type Finding, type FindingsFile, FindingsFileSchema } from '../model/finding.ts';
+import { type Finding, type FindingsFile, FindingsFileBaseSchema } from '../model/finding.ts';
 import { renderBrief } from '../report/brief.ts';
 import { loadSkill, methodologyOf } from '../resources.ts';
 import type { Redactor } from '../security/redact.ts';
@@ -12,10 +13,13 @@ import { AnthropicProvider } from './anthropic.ts';
 import { CommandProvider } from './command.ts';
 import type { ModelProvider, ProviderChoice } from './provider.ts';
 
-export const ModelAnalysisSchema = z.strictObject({
-  explanation: ExplanationSchema,
-  review: FindingsFileSchema,
-});
+export const ModelAnalysisSchema = z.preprocess(
+  withinCitationLimits,
+  z.strictObject({
+    explanation: ExplanationSchema,
+    review: FindingsFileBaseSchema,
+  }),
+);
 
 export function createProvider(
   choice: ProviderChoice,
@@ -78,6 +82,8 @@ export async function analyzeWithModel(
     runId: string;
     /** The language the explanation and findings are written in. Default: English. */
     language?: Language;
+    /** The run's evidence; captured items (not hunks, which the diff shows) are listed for citing. */
+    evidence?: readonly EvidenceItem[];
   },
 ): Promise<ModelAnalysis> {
   const language = input.language ?? 'en';
@@ -96,7 +102,12 @@ export async function analyzeWithModel(
     severity: f.severity,
     location: f.location,
     evidence: f.evidence,
+    evidenceIds: f.evidenceIds,
   }));
+  const captured = (input.evidence ?? [])
+    .filter((e) => e.kind !== 'diff-hunk')
+    .slice(0, 60)
+    .map((e) => `- \`${e.id}\`: ${e.label}`);
   const prompt = [
     material,
     '## Rule findings (JSON)',
@@ -105,6 +116,7 @@ export async function analyzeWithModel(
     JSON.stringify(rules, null, 2),
     '```',
     '',
+    ...(captured.length ? ['## Captured evidence (ids)', '', ...captured, ''] : []),
     'Produce `explanation` (choose depth to fit the change) and `review` (findings, dismissed, checked, notVerified, summary).',
     ...(language === 'en' ? [] : ['', outputLanguageInstruction(language)]),
   ].join('\n');

@@ -641,6 +641,8 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
     expect(still.message).toMatch(/\bpixels \(/);
     // The code scene pushes in from its entrance through the gap before its pinned highlights.
     expect(still.message).not.toMatch(/\b(open|type|code|compare) \(/);
+    // Every scene rests on a capture or a hunk, and every statement of Covi's explanation cites.
+    expect(status.grounding).toBe('pass');
     expect(qc.checks.filter((c) => c.id !== 'still' && c.status !== 'pass')).toEqual([]);
     expect(existsSync(join(run, 'video', 'contact-sheet.jpg'))).toBe(true);
   }, 900_000);

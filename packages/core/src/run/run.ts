@@ -12,6 +12,7 @@ import { sha256File } from '../util/hash.ts';
 export type ArtifactKind =
   | 'context'
   | 'diff'
+  | 'evidence'
   | 'brief'
   | 'explanation'
   | 'review'

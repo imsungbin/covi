@@ -305,7 +305,7 @@ Without a model provider, the terminal leaves out "Compose for this video": nobo
 
 Each run writes a directory under `.covi/runs/` in the reviewed repository. Its name is `<YYYYMMDD-HHMMSS>-<workflow>-<head7>`, with the timestamp in UTC.
 
-- **Latest run:** `.covi/runs/LATEST` names it. `covi report`, `covi render`, `covi publish`, and `covi runs show` use it by default. All of them, and `covi runs`, look in `output.dir` when you configure another runs directory.
+- **Latest run:** `.covi/runs/LATEST` names it. `covi report`, `covi render`, `covi publish`, `covi evidence`, and `covi runs show` use it by default. All of them, and `covi runs`, look in `output.dir` when you configure another runs directory.
 - **Retention:** Covi keeps the 20 most recent runs (`output.keep`).
 - **Git:** the runs directory contains a `.gitignore` with `*`, so runs never show up in `git status`. Covi does not edit your own `.gitignore`.
 - **Other locations:** `--out <dir>` writes a run to an exact directory and does not update `LATEST`. Pass that directory to `--run` later.

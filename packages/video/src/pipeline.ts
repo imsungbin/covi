@@ -4,6 +4,7 @@ import { normalizeVoice } from '@covi/audio';
 import {
   type CodeChange,
   type Demonstration,
+  type EvidenceIndex,
   type Explanation,
   exists,
   LANGUAGE_NAME,
@@ -18,6 +19,7 @@ import {
 } from '@covi/core';
 import { toSrt, toVtt } from './captions.ts';
 import { AssetCollector, writeComposition } from './composition/build.ts';
+import { groundingCheck, sceneEvidence, unknownSceneEvidence } from './grounding.ts';
 import {
   type Pronunciations,
   resolveSpeechLanguage,
@@ -33,7 +35,7 @@ import {
   syntheticMouth,
   writeWav,
 } from './narration/wav.ts';
-import { type QcReport, runQc } from './qc.ts';
+import { type QcReport, runQc, withCheck } from './qc.ts';
 import { Media } from './render/ffmpeg.ts';
 import {
   canReuseFrames,
@@ -41,6 +43,7 @@ import {
   framesKey,
   remuxAudio,
   renderComposition,
+  renderContactSheet,
 } from './render/renderer.ts';
 import {
   AUDIO_PATHS,
@@ -114,6 +117,11 @@ export interface ProduceVideoInput {
   languageSettings?: { flag?: Language; configured?: Language };
   /** video.narration.pronunciations: how the voice should say particular words. */
   pronunciations?: Pronunciations;
+  /**
+   * The run's evidence: storyboard citations are checked against it, and scenes cite what they
+   * show.
+   */
+  evidence?: EvidenceIndex;
 }
 
 export interface ProduceVideoResult {
@@ -183,6 +191,12 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
       ...storyboard,
       scenes: storyboard.scenes.map((s, i) => ({ ...s, id: s.id ?? `s${i + 1}` })),
     });
+    const unknown = input.evidence ? unknownSceneEvidence(storyboard.scenes, input.evidence) : [];
+    if (unknown.length)
+      throw new UsageError(
+        `storyboard.json cites evidence the run does not have:\n  ${unknown.join('\n  ')}`,
+        `List the run's evidence with \`covi evidence --run ${run.id}\`.`,
+      );
   } else {
     logger.step('Drafting the storyboard');
     // A language named in the request ("a Korean video") wins over the run's language.
@@ -369,7 +383,15 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   await assets.prepare(imagePaths);
   const timeline: Timeline = buildTimeline({
     title: storyboard.title,
-    scenes: fit.scenes,
+    // Each scene records the evidence it rests on: what it cites and what its visual shows.
+    // Redacted like the storyboard: a finding's ids may come from the raw change, and the
+    // contact sheet draws them into an image.
+    scenes: input.evidence
+      ? fit.scenes.map((s) => ({
+          ...s,
+          evidenceIds: redact(sceneEvidence(s, input.evidence!, input.review.findings)),
+        }))
+      : fit.scenes,
     layout: fit.layout,
     spec,
     image: assets.image,
@@ -439,8 +461,13 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
       await remuxAudio({ video: output, audio: sound.master, duration: timeline.duration, media });
       layouts = previous!.layouts;
       if (await exists(run.path('video/poster.png'))) poster = run.path('video/poster.png');
-      if (await exists(run.path('video/contact-sheet.jpg')))
-        contactSheet = run.path('video/contact-sheet.jpg');
+      // The tiles name the evidence each scene cites, which the frames key leaves out.
+      contactSheet = await renderContactSheet({
+        compositionDir,
+        timeline,
+        media,
+        output: run.path('video/contact-sheet.jpg'),
+      });
       notes.push('Reused the rendered frames; only the audio changed.');
     } else {
       // The old key no longer describes the video once a new render starts.
@@ -481,16 +508,27 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
 
   // 8. Check.
   logger.step('Checking the video');
-  const qc = await runQc({
-    video: output,
-    spec,
-    timeline,
-    layouts,
-    narrated: Boolean(voice),
-    media,
-    speech: await run.readJson<SpeechRecord>('video/speech.json'),
-    audio: sound.record,
-  });
+  const qc = withCheck(
+    await runQc({
+      video: output,
+      spec,
+      timeline,
+      layouts,
+      narrated: Boolean(voice),
+      media,
+      speech: await run.readJson<SpeechRecord>('video/speech.json'),
+      audio: sound.record,
+    }),
+    groundingCheck(
+      storyScenes(timeline.scenes).map((s) => ({
+        id: s.id,
+        narration: s.speech?.text ?? '',
+        kind: s.visual.kind,
+        evidenceIds: s.evidenceIds,
+      })),
+      input.explanation,
+    ),
+  );
   await run.writeJson('video/qc.json', qc, 'qc');
   for (const check of qc.checks.filter((c) => c.status !== 'pass'))
     run.warn(`Video QC ${check.status}: ${check.message}`);

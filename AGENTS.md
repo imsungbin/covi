@@ -40,7 +40,7 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
 - **The domain model is platform-independent.** Core speaks of a `CodeChange` (repository, base and head revisions, changed files, commits, metadata), never of pull requests. GitHub and GitLab specifics live only in `packages/platforms` and `integrations/`. Core never reads CI environment variables.
 - **One methodology source.** Skills are read by agents and also loaded into model prompts (`methodologyOf` in `packages/core/src/resources.ts`). Sections named `Run it`, `Commands`, `Tools`, `Workflow with the CLI`, `Asking the user`, `Output files`, `Related skills`, or `When not to use` are agent-only and are left out of model prompts; everything else is methodology. Change methodology in the skill, not in code.
 - **Deterministic tools, judgment in skills.** If something must be computed the same way every time (resolution, rules, timing, rendering, QC), it belongs in code with tests. If it needs judgment (intent, findings, narration), it belongs in a skill, with a schema for the result.
-- **Artifacts are the interface.** Every stage reads and writes files in a run directory (`.covi/runs/<run-id>/`), so stages can run independently and agents can author the inputs Covi validates: `explanation.json` and `findings.json` in the run, a demo plan passed with `--plan` (kept as `demo/plan.json`), `video/storyboard.json`, and `video/score.json`. Paths are defined once, in code.
+- **Artifacts are the interface.** Every stage reads and writes files in a run directory (`.covi/runs/<run-id>/`), so stages can run independently and agents can author the inputs Covi validates: `explanation.json` and `findings.json` in the run, a demo plan passed with `--plan` (kept as `demo/plan.json`), `video/storyboard.json`, and `video/score.json`. Findings, explanations, and storyboard scenes cite evidence ids from `evidence.json`, which Covi derives from the run's own files. Paths are defined once, in code.
 - **Interactive and non-interactive parity.** Every choice an agent may ask the user about has a configuration key and a default. CI never waits for input.
 
 ## Using the CLI as a tool
@@ -48,7 +48,8 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
 - Run `./bin/covi.mjs` (or `npm run covi --`) from this checkout. It runs the TypeScript sources directly on Node 22.18+, so edits apply without a build. `./bin/covi` is the launcher the Claude Code plugin puts on PATH: it installs the locked dependencies on its first run, then runs `bin/covi.mjs`.
 - Pass `--json` to get a stable result object on stdout; progress goes to stderr.
 - Exit codes: `0` ok · `1` review gate failed · `2` usage or invalid input (including schema errors in agent-authored files) · `3` environment (not a repo, missing ffmpeg or browser) · `4` internal error.
-- `covi schema <explanation|findings|storyboard|score|demo-plan|config>` prints the JSON Schema for files agents write.
+- `covi schema <explanation|findings|storyboard|score|demo-plan|config|evidence>` prints the JSON Schema for files agents author or read.
+- `covi evidence --run <id> --json` lists the run's evidence ids (read-only).
 - `covi examples create <name>` builds a real git repository for an example change; point any command at it with `--repo <dir>`.
 
 ## Run outputs
@@ -57,10 +58,12 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
 .covi/runs/<YYYYMMDD-HHMMSS>-<workflow>-<head7>/
   run.json             manifest: inputs, config with provenance, stages, commands, artifacts (sha256), outcome
   context.json         Understand output          diff.patch           redacted diff
+  evidence.json        evidence registry: the ids findings, explanations, and scenes cite
   brief.md             agent brief                rule-findings.json   deterministic findings with ids
   explanation.json/.md findings.json              review.json/.md      summary.md   comment.md
-  demo/                plan.json (when given), captures.json, screenshots/, diffs/, demo.md,
-                       recordings/, traces/, behavior-diff.json
+  tests.log            test command and output tail (when tests ran)
+  demo/                plan.json (when given), captures.json, screenshots/, diffs/, recordings/, traces/,
+                       behavior-diff.json, app-<revision>.log (when the app did not start), demo.md
   video/               decision.json, storyboard.json, speech.json, timeline.json, narration.wav,
                        score.json (composed music), audio.json, music.wav, captions.vtt/.srt,
                        composition/, covi-review.mp4, frames.json, poster.png, contact-sheet.jpg,

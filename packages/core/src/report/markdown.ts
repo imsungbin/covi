@@ -1,9 +1,11 @@
+import type { EvidenceIndex } from '../evidence/cite.ts';
 import { listOf, t } from '../i18n/catalog.ts';
 import type { Language } from '../i18n/language.ts';
 import type { ReviewContext } from '../model/context.ts';
 import type { Explanation } from '../model/explanation.ts';
 import type { Finding, Review } from '../model/finding.ts';
 import { escapeMarkdownKeepCode, fence } from '../util/text.ts';
+import { evidenceRefs } from './evidence.ts';
 
 /**
  * Text in these reports comes from the change (titles, paths, branch names, code) or from a model
@@ -111,6 +113,7 @@ export function renderReview(
   explanation?: Explanation,
   context?: ReviewContext,
   language: Language = review.language ?? explanation?.language ?? 'en',
+  evidence?: EvidenceIndex,
 ): string {
   const say = (key: string, params?: Record<string, string | number>) =>
     t(language, `report.review.${key}`, params);
@@ -132,6 +135,8 @@ export function renderReview(
       );
       out.push(md(f.explanation), '');
       out.push(say('evidence'), '', fence(f.evidence), '');
+      const cited = evidenceRefs(f.evidenceIds, evidence, { style: 'path' });
+      if (cited.length) out.push(say('cited', { refs: cited.join(' · ') }), '');
       if (f.suggestion) out.push(`${say('suggestion')} ${md(f.suggestion)}`, '');
     });
   }

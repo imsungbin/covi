@@ -157,6 +157,7 @@ Everything Covi writes as text passes through a `Redactor`:
 - command records, and the captured output of tests and demo commands
 - video storyboards, before narration, captions, frames, and the composition are made from them
 - every prompt sent to a model, including the prompts that refine a video's narration and compose its music
+- `evidence.json`: labels and paths, and the registry `covi evidence` rebuilds in memory for an older run
 
 It masks four kinds of text:
 
@@ -235,6 +236,8 @@ Covi's safeguards govern Covi's own behavior. A pipeline definition that comes f
 - Evidence goes into code fences its content can't close.
 - Provider and model names are escaped like any other text, and only hexadecimal commit ids are printed; anything else becomes `unknown`.
 - Links are limited to `http(s)` URLs without characters that could break out of Markdown link syntax.
+
+Cited evidence in a comment is shown as code: ids, labels, and file names. It becomes a link only when the platform serves run files one by one (GitLab job artifacts), the path stays inside the run and uses only letters, digits, `.`, `_`, `-`, and `/`, and the URL passes the same http(s) check as every other link.
 
 Comments are capped at 60,000 characters. Covi edits its own comment, identified by a hidden marker, instead of posting new ones.
 

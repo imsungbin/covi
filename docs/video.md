@@ -265,6 +265,7 @@ How beats become scenes:
 | `transition` | How the scene enters: `fade` (default), `cut`, `push`, `wipe`, or `zoom-through` (the hero's default) |
 | `hero` | The one scene where the change clicks: it holds 0.4 s after its line, enters with `zoom-through` unless it sets `transition`, plays the hero accent, and carries the music's lift |
 | `camera` | `drift` (default) or `static`: a static scene neither drifts nor pushes in |
+| `evidenceIds` | Optional: evidence ids from the run that the scene rests on (see [Evidence](artifacts.md#evidence)). A scene that shows a capture, code from the diff, a request, a command, or findings cites them without listing them; `covi render` exits 2 on an id the run does not have. `video/timeline.json` records each scene's evidence. |
 
 | Visual `kind` | Shows |
 |---|---|
@@ -637,12 +638,13 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | `speech-share` | Narration fills at least 70% of the video before the outro | warn |
 | `speech-acronyms` | Non-English narration: the text sent to the voice has no all-caps Latin token left (outside URLs, e-mail addresses, and versions). Names the scene and the token | warn: write the spoken form in `say` or add a pronunciation |
 | `voice-language` | The system voice's locale matches the narration language (hosted voices are not checked) | warn, with a voice to choose instead; also warn when the system voice list could not be read, so the voice's language is unknown |
+| `grounding` | Every story scene with narration that is not framing (title, change map, summary) cites evidence, counting what its visual shows from the run, and every explanation statement (the intent, a behavior with a before or after, each change) cites evidence | warn, naming the scenes and statements |
 
 Covi samples the layout checks at two frames per scene, 35% and 70% of the way through.
 
 The overall status is `fail` if any check fails, `warn` if any warns, and `pass` otherwise. QC never deletes the video and never changes the exit code. Failed and warning checks are added to the run's warnings. The result object carries `video.qc`, and a failed QC adds the warning "Video QC failed; see video/qc.json."
 
-After a render, read `qc.json`, then open `contact-sheet.jpg` and `poster.png`. If a scene is wrong, crowded, or not grounded in evidence, fix the storyboard and run `covi render` again.
+After a render, read `qc.json`, then open `contact-sheet.jpg` (each tile is labeled with its scene and the evidence it cites, `—` for none) and `poster.png`. If a scene is wrong, crowded, or not grounded in evidence, fix the storyboard and run `covi render` again.
 
 ## Videos in CI
 

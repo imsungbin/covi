@@ -61,6 +61,8 @@ describe('demonstrations', () => {
           certainty: 'confirmed',
           severity: 'high',
           category: 'api-compatibility',
+          // The first captured request: positional, as the registry counts requests.
+          evidenceIds: ['http:1'],
         }),
       ]);
       // Written in Korean, the finding keeps its id: SARIF and GitLab track findings by id.
@@ -69,6 +71,35 @@ describe('demonstrations', () => {
       const ids = (d: Demonstration) =>
         d.findings.map((f) => normalizeFinding(f, { kind: 'demo' }).id);
       expect(ids(korean)).toEqual(ids(result));
+    },
+  );
+
+  it.skipIf(!browser)(
+    "reviews with a demonstration, and Covi's own findings.json reports again",
+    async () => {
+      const dir = await materializeExample(
+        examples.find((e) => e.name === 'api-users-pagination')!,
+      );
+      dirs.push(dir);
+      const reviewed = covi(['review', '--demo', '--repo', dir, '--json']);
+      const runDir = reviewed.json().runDir as string;
+      const runFile = <T>(rel: string) => JSON.parse(readFileSync(join(runDir, rel), 'utf8')) as T;
+      const ids = runFile<{ items: Array<{ id: string }> }>('evidence.json').items.map((i) => i.id);
+      // Without a model, findings.json holds the rule and demo findings as a version 2 file.
+      const written = runFile<{
+        schemaVersion: number;
+        findings: Array<{ source: { kind: string }; certainty: string; evidenceIds?: string[] }>;
+      }>('findings.json');
+      expect(written.schemaVersion).toBe(2);
+      const demoFindings = written.findings.filter((f) => f.source.kind === 'demo');
+      expect(demoFindings).toEqual([
+        expect.objectContaining({ certainty: 'confirmed', evidenceIds: ['http:1'] }),
+      ]);
+      for (const f of written.findings)
+        for (const id of f.evidenceIds ?? []) expect(ids).toContain(id);
+      const reported = covi(['report', '--repo', dir, '--run', runDir, '--json']);
+      expect(reported.code, reported.stderr).toBe(reviewed.code);
+      expect(reported.json().verdict).toBe(reviewed.json().verdict);
     },
   );
 

@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -108,6 +108,21 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
     expect(full.result.video.qc).not.toBe('fail');
     const run = full.result.runDir;
     const qc = read<Qc>(run, 'video/qc.json');
+    // Scenes that show captures cite them, every cited id is in the run, and QC checked grounding.
+    const evidence = new Set(
+      read<{ items: Array<{ id: string }> }>(run, 'evidence.json').items.map((i) => i.id),
+    );
+    const timeline = read<{
+      scenes: Array<{ visual: { kind: string }; evidenceIds?: string[] }>;
+    }>(run, 'video/timeline.json');
+    const shown = timeline.scenes.filter((s) =>
+      ['screenshot', 'before-after', 'interaction'].includes(s.visual.kind),
+    );
+    expect(shown.length).toBeGreaterThan(0);
+    for (const s of shown) expect(s.evidenceIds?.length).toBeGreaterThan(0);
+    for (const id of timeline.scenes.flatMap((s) => s.evidenceIds ?? []))
+      expect(evidence.has(id), id).toBe(true);
+    expect(qc.checks.find((c) => c.id === 'grounding')).toBeDefined();
     expect(Math.abs(qc.measured.loudness! + 16)).toBeLessThanOrEqual(1);
     for (const id of ['audio', 'music-under-speech', 'music-fit', 'music-audible', 'sound-effects'])
       expect(qc.checks.find((c) => c.id === id)?.status, id).toBe('pass');
@@ -120,6 +135,17 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
     expect(audio.music.logo!.landing).toBeCloseTo(audio.music.outro!, 3);
     expect(audio.effects.dropped.map((d) => d.kind)).toContain('outro');
 
+    // Citing evidence changes only what the contact sheet's tiles name: the frames are reused,
+    // and the sheet is shot again.
+    const sheetSha = () =>
+      read<{ artifacts: Array<{ path: string; sha256: string }> }>(run, 'run.json').artifacts.find(
+        (a) => a.path === 'video/contact-sheet.jpg',
+      )!.sha256;
+    const framesKey = () => read<{ key: string }>(run, 'video/frames.json').key;
+    const before = { sheet: sheetSha(), key: framesKey() };
+    const board = read<{ scenes: Array<{ evidenceIds?: string[] }> }>(run, 'video/storyboard.json');
+    board.scenes[0]!.evidenceIds = [[...evidence][0]!];
+    writeFileSync(join(run, 'video/storyboard.json'), JSON.stringify(board));
     const remix = covi(['render', '--repo', repo, '--run', full.result.runId, '--music', 'none']);
     expect(remix.result.video).toMatchObject({
       rendered: true,
@@ -127,6 +153,8 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
       music: { use: 'none', source: 'none' },
     });
     expect(remix.ms).toBeLessThan(full.ms * 0.5);
+    expect(framesKey()).toBe(before.key);
+    expect(sheetSha()).not.toBe(before.sheet);
     expect(read<Qc>(run, 'video/qc.json').status).not.toBe('fail');
     // Without music, the outro signs off with its own sting, on the same moment.
     const remixed = read<Audio>(run, 'video/audio.json');

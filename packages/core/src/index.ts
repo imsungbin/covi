@@ -16,6 +16,30 @@ export {
 } from './config/resolve.ts';
 export * from './config/schema.ts';
 export {
+  buildEvidence,
+  diffHunkEvidence,
+  type EvidenceSources,
+  evidenceFiles,
+} from './evidence/build.ts';
+export {
+  citationProblems,
+  citeExplanation,
+  type EvidenceIndex,
+  type GroundableFinding,
+  type Grounded,
+  groundFinding,
+  groundingNote,
+  groundModelExplanation,
+  groundModelFindings,
+  hunksAt,
+  hunksOf,
+  indexEvidence,
+  ungroundedStatements,
+  unknownCitations,
+} from './evidence/cite.ts';
+export { collectEvidence, loadEvidence, writeEvidence } from './evidence/collect.ts';
+export { evidenceId, evidencePart } from './evidence/ids.ts';
+export {
   type ExecResult,
   exec,
   execShell,
@@ -74,11 +98,13 @@ export * from './model/behavior.ts';
 export * from './model/change.ts';
 export * from './model/context.ts';
 export * from './model/demo.ts';
+export * from './model/evidence.ts';
 export * from './model/explanation.ts';
 export * from './model/finding.ts';
 export { renderBrief } from './report/brief.ts';
 export { COMMENT_MARKER, type CommentLinks, renderComment, safeUrl } from './report/comment.ts';
 export { renderDiffDigest, renderFileDiff, renderHunk } from './report/digest.ts';
+export { type EvidenceRefOptions, evidenceRefs } from './report/evidence.ts';
 export {
   locationText,
   renderExplanation,

@@ -16,6 +16,8 @@ import {
   toSarif,
   writeOutputs,
 } from '../src/index.ts';
+import { artifactFileBase } from '../src/links.ts';
+import type { PlatformContext } from '../src/types.ts';
 
 let dir: string | undefined;
 afterEach(() => {
@@ -339,5 +341,36 @@ describe('SARIF', () => {
     expect(sarif.runs[0]!.tool.driver.rules).toHaveLength(1);
     expect(sarif.runs[0]!.results.map((r) => r.level)).toEqual(['error', 'note']);
     expect(sarif.runs[0]!.results[1]!.locations).toEqual([]);
+  });
+});
+
+describe('artifactFileBase', () => {
+  const gitlab = {
+    platform: 'gitlab',
+    links: { job: 'https://gitlab.example/acme/shop/-/jobs/9' },
+  } as PlatformContext;
+
+  it('serves GitLab job artifacts file by file, and nothing on GitHub', () => {
+    expect(
+      artifactFileBase(
+        gitlab,
+        { CI_PROJECT_DIR: '/builds/acme/shop' },
+        '/builds/acme/shop/.covi/run',
+      ),
+    ).toBe('https://gitlab.example/acme/shop/-/jobs/9/artifacts/file/.covi/run/');
+    expect(
+      artifactFileBase(gitlab, { CI_PROJECT_DIR: '/builds/acme/shop' }, '/builds/acme/shop'),
+    ).toBe('https://gitlab.example/acme/shop/-/jobs/9/artifacts/file/');
+    expect(
+      artifactFileBase(gitlab, { CI_PROJECT_DIR: '/builds/acme/shop' }, '/tmp/elsewhere'),
+    ).toBeUndefined();
+    expect(artifactFileBase(gitlab, {}, '/builds/acme/shop/run')).toBeUndefined();
+    expect(
+      artifactFileBase(
+        { ...gitlab, platform: 'github' } as PlatformContext,
+        { CI_PROJECT_DIR: '/b' },
+        '/b/run',
+      ),
+    ).toBeUndefined();
   });
 });

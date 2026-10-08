@@ -1,9 +1,11 @@
+import type { EvidenceIndex } from '../evidence/cite.ts';
 import { t } from '../i18n/catalog.ts';
 import type { Language } from '../i18n/language.ts';
 import type { ReviewContext } from '../model/context.ts';
 import type { Explanation } from '../model/explanation.ts';
 import type { Finding, Review } from '../model/finding.ts';
 import { escapeMarkdownKeepCode, fence, truncate } from '../util/text.ts';
+import { evidenceRefs } from './evidence.ts';
 
 /** Hidden marker used to find and update Covi's own comment instead of posting duplicates. */
 export const COMMENT_MARKER = '<!-- covi:review -->';
@@ -13,6 +15,11 @@ export interface CommentLinks {
   video?: { url: string; seconds?: number; markdown?: string };
   artifacts?: string;
   run?: string;
+  /**
+   * Base URL of the run's files (`<files><run-relative path>`), where the platform serves them one
+   * by one (GitLab job artifacts). Without it, cited captures are named, not linked.
+   */
+  files?: string;
 }
 
 const SEVERITY_ICON: Record<Finding['severity'], string> = { high: '🔴', medium: '🟠', low: '🔵' };
@@ -31,6 +38,15 @@ function codeSpan(text: string): string {
   return `\`${text.replace(/`/g, "'").replace(/\n/g, ' ').replace(/\|/g, '\\|')}\``;
 }
 
+/** Run-relative paths that cannot leave the run or break out of a URL. */
+const SAFE_RUN_PATH = /^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+
+function runFileUrl(base: string | undefined, path: string): string | undefined {
+  if (!base || !SAFE_RUN_PATH.test(path)) return undefined;
+  const url = safeUrl(`${base}${path}`);
+  return url === '#' ? undefined : url;
+}
+
 /**
  * Renders the pull/merge request comment. Every dynamic string is escaped: titles, evidence, and
  * paths can originate from untrusted pull request content, so the comment must not be able to
@@ -42,6 +58,7 @@ export function renderComment(
   context: ReviewContext,
   links: CommentLinks = {},
   language: Language = explanation.language ?? review.language ?? 'en',
+  evidence?: EvidenceIndex,
 ): string {
   const say = (key: string, params?: Record<string, string | number>) =>
     t(language, `comment.${key}`, params);
@@ -76,6 +93,11 @@ export function renderComment(
     for (const f of review.findings) {
       out.push(`**${inline(f.title, 160)}**: ${inline(f.explanation, 500)}`, '');
       out.push(fence(truncate(f.evidence, 800)), '');
+      const cited = evidenceRefs(f.evidenceIds, evidence, {
+        style: 'name',
+        link: (path) => runFileUrl(links.files, path),
+      });
+      if (cited.length) out.push(say('cited', { refs: cited.join(' · ') }), '');
       if (f.suggestion) out.push(`${say('suggestion')} ${inline(f.suggestion, 300)}`, '');
     }
     out.push('</details>', '');

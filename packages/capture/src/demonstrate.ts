@@ -3,10 +3,14 @@ import {
   type CodeChange,
   type CoviConfig,
   childEnv,
+  DEMO_PATHS,
   type DemoCommandResult,
   type Demonstration,
+  type DemoRecording,
   type DemoRequestResult,
   type DemoShot,
+  type DemoTraceRef,
+  demoPath,
   type ExecutionPolicy,
   execShell,
   type FindingInput,
@@ -16,21 +20,30 @@ import {
   type Params,
   type ReviewContext,
   type Run,
+  type Trace,
   t,
 } from '@covi/core';
 import { type Browser, chromium } from 'playwright';
 import { type RunningApp, startApp } from './app.ts';
-import {
-  capturePage,
-  type PageCapture,
-  runFlow,
-  VIEWPORT_PRESETS,
-  type ViewportName,
-} from './browser.ts';
+import type { ScenarioObservation, StepPixels } from './behavior.ts';
+import { capturePage, type PageCapture, VIEWPORT_PRESETS, type ViewportName } from './browser.ts';
 import { checkoutRevision, tempWorkspace } from './checkout.ts';
-import { comparePngs, cropPng, readPng } from './pixels.ts';
+import { flowScenario, pageScenario, uniqueIds } from './ids.ts';
+import { comparePngs, cropPng } from './pixels.ts';
 import { type DemoPlan, flowViewport, planDemo } from './plan.ts';
+import { RecordingUnavailableError } from './recording.ts';
 import { describeShapeChange, type HttpResult, normalizeBody, performRequest } from './requests.ts';
+import {
+  compareSteps,
+  flowShots,
+  type ObservedFlow,
+  observeFlow,
+  type RecordingNote,
+  recordingStatus,
+  runRelative,
+  writeBehaviorDiff,
+} from './scenarios.ts';
+import { TraceCollector } from './trace.ts';
 
 /**
  * A demo finding's title in the run's language, and the id its English title gives it: SARIF and
@@ -57,22 +70,29 @@ export interface DemonstrateInput {
   prefer?: ViewportName;
   /** The language of findings and notes. Default: English. */
   language?: Language;
+  /**
+   * Whether flows are recorded, and whether a recording that cannot be made fails the run (exit 3).
+   * Default: `demo.record`, not required.
+   */
+  recording?: { enabled: boolean; required: boolean };
+  /** Finds ffmpeg for converting recordings to MP4; without it, recordings stay WebM. */
+  locateFfmpeg?: () => Promise<string | undefined>;
 }
 
 type Revision = 'base' | 'head';
 
-function slug(text: string): string {
-  return (
-    text
-      .replace(/^\/+/, '')
-      .replace(/[^a-zA-Z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .toLowerCase()
-      .slice(0, 40) || 'home'
-  );
-}
-
 const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
+
+async function launchBrowser(recordingRequired: boolean): Promise<Browser> {
+  try {
+    return await chromium.launch();
+  } catch (error) {
+    // Without a browser nothing is recorded; that fails the run only when recording was asked for.
+    if (recordingRequired)
+      throw new RecordingUnavailableError((error as Error).message.split('\n')[0]!);
+    throw error;
+  }
+}
 
 /**
  * The Demonstrate phase: run the software at both revisions and capture what a reviewer needs to
@@ -87,6 +107,12 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
   const policy: ExecutionPolicy = input.execution ?? { allowed: true, withheld: [] };
   const withheld = new Set(policy.withheld.map((c) => c.key));
   const plan = planDemo(context, config, input.plan);
+  const recording = input.recording ?? { enabled: config.demo.record, required: false };
+  let ffmpeg: Promise<string | undefined> | undefined;
+  const locateFfmpeg = () => {
+    ffmpeg ??= input.locateFfmpeg?.() ?? Promise.resolve(undefined);
+    return ffmpeg;
+  };
   const result: Demonstration = {
     schemaVersion: 1,
     shots: [],
@@ -130,7 +156,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
       what: say('skip.demonstration'),
       reason: context.demonstration.reasons.at(-1) ?? say('reason.nothing'),
     });
-    await run.writeJson('demo/captures.json', result, 'capture');
+    await run.writeJson(DEMO_PATHS.captures, result, 'capture');
     return result;
   }
   if (wantsApp && !mode) {
@@ -151,8 +177,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
   result.app = mode ? { mode, revisions } : undefined;
 
   const workspace = await tempWorkspace();
-  const shotsDir = 'demo/screenshots';
-  await mkdir(run.path(shotsDir), { recursive: true });
+  await mkdir(run.path(DEMO_PATHS.screenshots), { recursive: true });
   let browser: Browser | undefined;
   const pages = new Map<string, Partial<Record<Revision, PageCapture>>>();
   const requests = new Map<string, Partial<Record<Revision, HttpResult>>>();
@@ -160,9 +185,19 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
     string,
     Partial<Record<Revision, { exitCode: number | null; output: string }>>
   >();
+  const pageTraces = new Map<
+    string,
+    { name: string; viewport: ViewportName; traces: Partial<Record<Revision, Trace>> }
+  >();
+  const flowIds = uniqueIds(plan.flows.map((f) => flowScenario(f.name)));
+  const flows = new Map<number, Partial<Record<Revision, ObservedFlow>>>();
+  const notes: RecordingNote[] = [];
 
   try {
-    if (wantsBrowser && mode) browser = await chromium.launch();
+    if (wantsBrowser && mode)
+      browser = await launchBrowser(
+        recording.enabled && recording.required && plan.flows.length > 0,
+      );
     for (const revision of revisions) {
       const needsCheckout = mode === 'static' || mode === 'command' || commandsToRun.length > 0;
       const checkout = needsCheckout
@@ -202,67 +237,88 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
       }
       try {
         if (app && browser) {
+          const origin = new URL(app.url).origin;
           for (const path of plan.pages) {
             for (const viewport of plan.viewports) {
               const key = `${path}|${viewport}`;
-              const file = run.path(`${shotsDir}/${slug(path)}-${viewport}-${revision}.full.png`);
+              const id = pageScenario(path, viewport);
+              const file = run.path(demoPath.pageFull(id, revision));
               logger.info(`  capturing ${path} (${viewport}, ${revision})`);
+              const collector = new TraceCollector(
+                {
+                  id: `${id}-${revision}`,
+                  scenario: id,
+                  kind: 'page',
+                  name: path,
+                  revision,
+                  viewport,
+                  path,
+                },
+                { origin, redactor: run.redactor, relative: (f) => runRelative(run, f) },
+              );
+              let trace: Trace;
               try {
-                const capture = await capturePage(browser, `${app.url}${path}`, viewport, file);
+                const capture = await capturePage(
+                  browser,
+                  `${app.url}${path}`,
+                  viewport,
+                  file,
+                  collector,
+                );
                 pages.set(key, { ...pages.get(key), [revision]: capture });
+                collector.stop();
+                trace = collector.finish({ title: capture.title });
               } catch (error) {
-                result.skipped.push({
-                  what: `${path} (${viewport}, ${revision})`,
-                  reason: (error as Error).message.split('\n')[0]!,
-                });
+                const reason = (error as Error).message.split('\n')[0]!;
+                result.skipped.push({ what: `${path} (${viewport}, ${revision})`, reason });
+                collector.stop();
+                trace = collector.finish({ error: reason });
               }
+              await run.writeJson(demoPath.trace(id, revision), trace, 'trace');
+              const seen = pageTraces.get(id) ?? { name: path, viewport, traces: {} };
+              seen.traces[revision] = trace;
+              pageTraces.set(id, seen);
             }
           }
-          if (revision === 'head') {
-            for (const flow of plan.flows) {
-              const viewport = flowViewport(flow, plan.viewports, input.prefer);
-              logger.info(`  running flow "${flow.name}" (${viewport})`);
-              const outcome = await runFlow(browser, app.url, flow, viewport, (i) =>
-                run.path(
-                  `${shotsDir}/flow-${slug(flow.name)}-${String(i + 1).padStart(2, '0')}.png`,
-                ),
-              );
-              if (outcome.error) {
-                result.skipped.push({
-                  what: say('skip.flow', { name: flow.name }),
-                  reason: outcome.error,
-                });
-                result.findings.push({
-                  ...titled(language, 'flow-failure', 'capture.finding.flow.title', {
-                    name: flow.name,
-                  }),
-                  certainty: 'likely',
-                  severity: 'medium',
-                  category: 'regression',
-                  evidence: outcome.error,
-                  explanation: say('finding.flow.explanation'),
-                  source: { kind: 'demo', id: 'flow-failure' },
-                });
-              }
-              for (const [i, frame] of outcome.frames.entries()) {
-                const size = await readPng(frame.file);
-                result.shots.push({
-                  id: `flow-${slug(flow.name)}-${i + 1}`,
-                  kind: 'flow-step',
-                  name: frame.label,
-                  flow: flow.name,
-                  step: i + 1,
-                  viewport,
-                  after: {
-                    path: relativeTo(run, frame.file),
-                    width: size.width,
-                    height: size.height,
-                  },
-                  click: frame.click,
-                  focus: frame.focus,
-                  label: frame.label,
-                });
-              }
+          for (const [index, flow] of plan.flows.entries()) {
+            const viewport = flowViewport(flow, plan.viewports, input.prefer);
+            logger.info(`  running flow "${flow.name}" (${viewport}, ${revision})`);
+            const observed = await observeFlow({
+              run,
+              browser,
+              baseUrl: app.url,
+              flow,
+              scenario: flowIds[index]!,
+              viewport,
+              revision,
+              record: recording.enabled,
+              ffmpeg: locateFfmpeg,
+            });
+            flows.set(index, { ...flows.get(index), [revision]: observed });
+            if (observed.note) {
+              if (observed.note.status === 'unavailable' && recording.required)
+                throw new RecordingUnavailableError(
+                  observed.note.detail ?? 'the recorder did not start',
+                );
+              notes.push(observed.note);
+            }
+            // A flow may fail at base because the change adds what it uses; only head failures count.
+            if (revision === 'head' && observed.outcome.error) {
+              result.skipped.push({
+                what: say('skip.flow', { name: flow.name }),
+                reason: observed.outcome.error,
+              });
+              result.findings.push({
+                ...titled(language, 'flow-failure', 'capture.finding.flow.title', {
+                  name: flow.name,
+                }),
+                certainty: 'likely',
+                severity: 'medium',
+                category: 'regression',
+                evidence: observed.outcome.error,
+                explanation: say('finding.flow.explanation'),
+                source: { kind: 'demo', id: 'flow-failure' },
+              });
             }
           }
         }
@@ -321,15 +377,88 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
       }
     }
 
-    result.shots.unshift(...(await assemblePageShots(run, pages, result.findings, language)));
+    const pixels = new Map<string, StepPixels>();
+    const pageShots = await assemblePageShots(run, pages, result.findings, language, pixels);
+    const observations = [...pageTraces].map(([id, seen]): ScenarioObservation => {
+      const load = pixels.get(id);
+      return {
+        id,
+        kind: 'page',
+        name: seen.name,
+        viewport: seen.viewport,
+        traces: seen.traces,
+        pixels: load ? { load } : {},
+      };
+    });
+    const flowShotList: DemoShot[] = [];
+    const recordings: DemoRecording[] = [];
+    for (const [index, flow] of plan.flows.entries()) {
+      const observed = flows.get(index);
+      if (!observed) continue;
+      const scenario = flowIds[index]!;
+      const viewport = flowViewport(flow, plan.viewports, input.prefer);
+      const { base, head } = observed;
+      const stepPixels =
+        base && head ? await compareSteps(run, scenario, base.trace, head.trace) : {};
+      if (head)
+        flowShotList.push(
+          ...(await flowShots(run, {
+            scenario,
+            flow,
+            viewport,
+            head: head.outcome,
+            base: base?.outcome,
+            pixels: stepPixels,
+          })),
+        );
+      observations.push({
+        id: scenario,
+        kind: 'flow',
+        name: flow.name,
+        viewport,
+        traces: { ...(base ? { base: base.trace } : {}), ...(head ? { head: head.trace } : {}) },
+        pixels: stepPixels,
+      });
+      for (const o of [base, head]) if (o?.recording) recordings.push(o.recording);
+    }
+    result.shots = [...pageShots, ...flowShotList];
     result.requests = compareRequests(plan, requests, result.findings, language);
     result.commands = compareCommands(plan, commands, result.findings, language);
+    const traces: DemoTraceRef[] = observations.flatMap((o) =>
+      (['base', 'head'] as const).flatMap((revision) => {
+        const trace = o.traces[revision];
+        return trace
+          ? [
+              {
+                id: trace.id,
+                scenario: o.id,
+                kind: o.kind,
+                revision,
+                path: demoPath.trace(o.id, revision),
+              },
+            ]
+          : [];
+      }),
+    );
+    if (traces.length) result.traces = traces;
+    if (recordings.length) result.recordings = recordings;
+    if (browser && plan.flows.length)
+      result.recording = recordingStatus(recording.enabled, notes, recordings.length);
+    // Without base there is nothing to compare (an app given by URL runs at head only).
+    if (revisions.includes('base') && observations.length) {
+      const diff = await writeBehaviorDiff(run, observations);
+      result.behavior = {
+        path: DEMO_PATHS.behaviorDiff,
+        scenarios: diff.summary.scenarios,
+        changed: diff.summary.changed,
+      };
+    }
   } finally {
     await browser?.close().catch(() => undefined);
     await workspace.dispose();
   }
 
-  await run.writeJson('demo/captures.json', result, 'capture');
+  await run.writeJson(DEMO_PATHS.captures, result, 'capture');
   for (const shot of result.shots) {
     for (const image of [shot.before, shot.after])
       if (image) await run.record(image.path, 'screenshot');
@@ -338,16 +467,13 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
   return result;
 }
 
-function relativeTo(run: Run, file: string): string {
-  return file.startsWith(run.dir) ? file.slice(run.dir.length + 1) : file;
-}
-
 /** Crops full-page captures to a viewport-sized window around the change and records diffs. */
 async function assemblePageShots(
   run: Run,
   pages: Map<string, Partial<Record<Revision, PageCapture>>>,
   findings: FindingInput[],
   language: Language,
+  pixels: Map<string, StepPixels>,
 ): Promise<DemoShot[]> {
   const shots: DemoShot[] = [];
   for (const [key, captures] of pages) {
@@ -357,13 +483,19 @@ async function assemblePageShots(
       width: preset.width * preset.deviceScaleFactor,
       height: preset.height * preset.deviceScaleFactor,
     };
-    const id = `${slug(path)}-${viewport}`;
+    const id = pageScenario(path, viewport);
     const shot: DemoShot = { id, kind: 'page', name: path, viewport };
     let crop = { x: 0, y: 0, ...windowSize };
     if (captures.base && captures.head) {
-      const diffPath = `demo/diffs/${id}.png`;
-      await mkdir(run.path('demo/diffs'), { recursive: true });
+      const diffPath = demoPath.pageDiff(id);
+      await mkdir(run.path(DEMO_PATHS.diffs), { recursive: true });
       const diff = await comparePngs(captures.base.file, captures.head.file, run.path(diffPath));
+      pixels.set(id, {
+        changedRatio: diff.changedRatio,
+        diff: diffPath,
+        regions: diff.regions,
+        ...(diff.bounds ? { bounds: diff.bounds } : {}),
+      });
       if (diff.bounds) {
         const cy = diff.bounds.y + diff.bounds.height / 2;
         crop = {
@@ -424,7 +556,7 @@ async function assemblePageShots(
     for (const revision of ['base', 'head'] as const) {
       const capture = captures[revision];
       if (!capture) continue;
-      const out = `demo/screenshots/${id}-${revision === 'base' ? 'before' : 'after'}.png`;
+      const out = demoPath.pageCrop(id, revision === 'base' ? 'before' : 'after');
       const size = await cropPng(capture.file, crop, run.path(out));
       shot[revision === 'base' ? 'before' : 'after'] = { path: out, ...size };
     }

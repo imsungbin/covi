@@ -27,11 +27,11 @@ export const demoPath = {
     `${DEMO_PATHS.screenshots}/${page}-${side}.png`,
   pageDiff: (page: string) => `${DEMO_PATHS.diffs}/${page}.png`,
   /** A flow frame, numbered from 1; head frames keep the names they had before base ran too. */
-  flowFrame: (flow: string, frame: number, revision: DemoRevision) =>
-    `${DEMO_PATHS.screenshots}/${flow}-${frameNumber(frame)}${revision === 'base' ? '-base' : ''}.png`,
+  flowFrame: (scenario: string, frame: number, revision: DemoRevision) =>
+    `${DEMO_PATHS.screenshots}/${scenario}-${frameNumber(frame)}${revision === 'base' ? '-base' : ''}.png`,
   stepDiff: (scenario: string, step: string) => `${DEMO_PATHS.diffs}/${scenario}-${step}.png`,
-  recording: (flow: string, revision: DemoRevision, format: 'mp4' | 'webm') =>
-    `${DEMO_PATHS.recordings}/${flow}-${revision}.${format}`,
+  recording: (scenario: string, revision: DemoRevision, format: 'mp4' | 'webm') =>
+    `${DEMO_PATHS.recordings}/${scenario}-${revision}.${format}`,
   trace: (scenario: string, revision: DemoRevision) =>
     `${DEMO_PATHS.traces}/${scenario}-${revision}.json`,
 } as const;

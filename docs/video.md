@@ -263,28 +263,29 @@ How beats become scenes:
 | `optional` | May be dropped to fit the duration (never the hero) |
 | `sync` | Pins moments of the visual to phrases of `narration`: a phase name → a phrase that appears exactly once (see [Timing](#timing)) |
 | `transition` | How the scene enters: `fade` (default), `cut`, `push`, `wipe`, or `zoom-through` (the hero's default) |
-| `hero` | The one scene where the change clicks: it holds 0.4 s after its line, enters with `zoom-through` unless it sets `transition`, plays the hero accent, and carries the music's lift |
+| `hero` | The one scene where the change clicks: it holds 0.4 s after its line, enters with `zoom-through` unless it sets `transition`, plays the hero accent with a riser into it and a hit on it, and carries the music's lift |
 | `camera` | `drift` (default) or `static`: a static scene neither drifts nor pushes in |
 | `evidenceIds` | Optional: evidence ids from the run that the scene rests on (see [Evidence](artifacts.md#evidence)). A scene that shows a capture, code from the diff, a request, a command, or findings cites them without listing them; `covi render` exits 2 on an id the run does not have. `video/timeline.json` records each scene's evidence. |
+| `cues` | Up to 4 sound effects of the scene's own: `at` (a phase the scene pins, or seconds into the scene) and `kind` (`click`, `reveal`, `finding`, `transition`, and on the hero `riser`, which ends at `at`, or `hero`). See [Sound effects](#sound-effects) |
 
 | Visual `kind` | Shows |
 |---|---|
 | `title` | Title card with subtitle, eyebrow, and meta chips; with `background` (a capture), the capture fills the media region and the title goes in the header, without the subtitle and meta: a cold open |
 | `change-map` | Up to 8 areas with their surfaces and line counts |
-| `code` | Up to 40 diff lines (`add`, `del`, `context`) with highlighted line indexes |
-| `screenshot` | One capture, with an optional `focus` region to zoom toward, a `click` point, and a `device` frame |
+| `code` | Up to 40 diff lines (`add`, `del`, `context`). `highlight` entries (up to 40) are line indexes, or groups (`{ "lines": [3, 4], "sync": "fix" }`) that light together at a phase. `mode: "morph"` shows the old code, then strikes the deleted lines to ghosts and types the added ones in their place at the `morph` phase. An optional `caption` sits under the code |
+| `screenshot` | One capture, with an optional `focus` region to zoom toward, or up to three `marks` (a `focus`, a `label` gloss shown under the frame, a `sync` phase) the camera pans between; a `click` point; and a `device` frame |
 | `before-after` | Two captures in a `split`, `stack`, or `wipe` layout, with an optional focus region |
-| `interaction` | 1–8 flow steps, each with a capture, click point, focus, and label |
+| `interaction` | 1–8 flow steps, each with a capture, click point, focus or up to three marks, and label |
 | `terminal` | A command with its output, and optionally the base revision's output |
 | `api` | A request with the base and head status and body, highlighted in colors that stay readable on the light cards |
 | `findings` | 1–3 findings with certainty, severity, and location |
 | `callout` | An `info`, `warning`, or `success` card |
-| `diagram` | 2–8 nodes (marked changed or not) and edges |
+| `diagram` | 2–8 nodes (marked changed or not) and edges, each with an optional label drawn on its line |
 | `summary` | Verdict, headline, up to 4 points, and change stats |
 
 Image paths are relative to the run directory (for example `demo/screenshots/home-desktop-after.png`) and must resolve inside it, so a storyboard cannot pull other files from the machine into a video. If an image is missing, rendering stops with an error that lists it.
 
-Validation also checks what the JSON Schema cannot express, and stops with a usage error (exit 2) that names the scene: a `sync` phrase missing from its narration or appearing more than once, a phase the visual does not have, interaction steps synced out of order, `sync.hero` on a scene that is not the hero, a second hero, and a second, empty, or unbalanced `[[…]]`.
+Validation also checks what the JSON Schema cannot express, and stops with a usage error (exit 2) that names the scene: a `sync` phrase missing from its narration or appearing more than once, a phase the visual does not have, interaction steps synced out of order, `sync.hero` on a scene that is not the hero, a second hero, a second, empty, or unbalanced `[[…]]`, `marks` together with `focus`, two marks sharing a phase or synced out of order, a highlight group or mark naming a phase that `sync` does not define, a cue at a phase the scene does not pin, and a `riser` or `hero` cue off the hero.
 
 The narrator, Covi's fox, appears in the header corner of content scenes. Title cards (without a `background`) and summary cards draw it large instead, and the outro takes the summary's fox over (see [The outro](#the-outro)). See [Visual system](visual-system.md).
 
@@ -432,7 +433,7 @@ Timing starts from the narration. Covi measures each scene's take (or, when ther
 - The first line starts 0.2 s in (0.3 s in narrated standard reviews), so the hook is heard by 0.5 s.
 - A scene stays up for at least its visual's minimum (below), and the next line waits for it. The hero holds 0.4 s after its line. The last scene lingers 0.8 s after its last word before the outro.
 - The video ends with [the outro](#the-outro), which enters like a scene. With `video.outro: false` (`--no-outro`), the last scene lingers 0.5 s and the video holds it for 1 s more: room for the sonic logo after the last line.
-- **Phases.** A scene's `sync` phrases become `phases` in `video/timeline.json`: seconds since the scene started, placed within the line's speech by the text-weighted split the captions use. Components start those moments there (a zoom, a click, a step, a highlight, the after state, a finding card, terminal output, the after response) and keep their default fractions of the scene otherwise. The hero's `hero` phase is its `sync.hero` phrase, else the start of its line but never before its transition has finished. A phrase that redaction later removed from the line pins nothing.
+- **Phases.** A scene's `sync` phrases become `phases` in `video/timeline.json`: seconds since the scene started, placed within the line's speech by the text-weighted split the captions use. Components start those moments there (a zoom, a click, a step, a mark, a highlight, a morph, the after state, a finding card, terminal output, the after response) and keep their default fractions of the scene otherwise; a scene's sound `cues` can name them too. The hero's `hero` phase is its `sync.hero` phrase, else the start of its line but never before its transition has finished. A phrase that redaction later removed from the line pins nothing.
 
 **Breathing room.** A narrated standard review (the standard preset, including landscape custom sizes) leaves the narration room to breathe, so music placed around the narration has somewhere to play:
 
@@ -454,9 +455,10 @@ Minimum time on screen per visual (a scene's `minSeconds` overrides it):
 |---|---|
 | `title` | 1.5 s |
 | `summary` | 3.4 s |
-| `code` | 2.0 s |
+| `code` | 2.0 s, or 2.5 s for a morph |
+| `screenshot` with marks | 3.0 s, or 1.5 s + 0.7 s per mark when that is more |
 | `before-after` | 2.5 s |
-| `interaction` | 1.2 s per step |
+| `interaction` | 1.2 s per step + 0.4 s per mark |
 | `terminal` | 3.4 s, or 4.4 s with base output |
 | `api` | 3.6 s, or 4.6 s with a base response |
 | `findings` | 2.0 s + 0.4 s per finding |
@@ -492,7 +494,7 @@ What the viewer hears, besides the narration:
 
 - **Music:** the Covi theme (the default), a score composed for this video, or none. It lifts on a downbeat at the story's payoff, and its ending follows the review's verdict and rings out over the outro.
 - **The sonic logo:** three notes Covi adds after the last line whenever music plays, landing as the outro card settles.
-- **Sound effects** for what happens on screen: a pointer click, the before/after reveal, a finding card landing (heavier for high severity), the verdict appearing, and, when no music plays, the outro's sign-off. Ordinary scene transitions, code highlights, terminal output, API panels, and diagrams make no sound. If an effect is noticeable, it is too loud.
+- **Sound effects** for what happens on screen: a pointer click, the before/after reveal, a finding card landing (heavier for high severity), the verdict appearing, a soft whoosh when a scene pushes, wipes, or zooms through, a riser into the hero and a hit on it, and, when no music plays, the outro's sign-off. Fades, cuts, code, terminal output, API panels, and diagrams make no sound of their own; a scene's `cues` can add one. If an effect is noticeable, it is too loud.
 
 The narration stays the product. All of it is synthesized from data in `templates/music/` by `@covi/audio`: nothing is sampled or downloaded, so the sound is license-clean (people post these videos publicly), exactly as long as the video, and the same bytes every time.
 
@@ -513,8 +515,8 @@ With `video.music.placement: auto` (the default), the kind of video decides (`sp
 
 | Placement | Used by `auto` for | Music under speech | Music elsewhere | Shortest gap that swells | Ramp down / up |
 |---|---|---|---|---|---|
-| continuous | short-form; custom vertical or square; any video without narration | −20 dB | −11 dB | 0.6 s | 0.08 s before speech / 0.4 s after |
-| bookends | narrated standard reviews; custom landscape | −40 dB (effectively off) | −11 dB | 1.2 s | 0.25 s / 0.45 s |
+| continuous | short-form; custom vertical or square; any video without narration | −20 dB | −11 dB | 0.6 s | 0.06 s before speech / 0.3 s after |
+| bookends | narrated standard reviews; custom landscape | −40 dB (effectively off) | −11 dB | 1.2 s | 0.06 s / 0.3 s |
 
 The gains apply to the music after it is brought to the voice's loudness (−16 LUFS). Before the first line and after the last, music sits at the "elsewhere" level, so bookends still open and close the video with music. Without narration there is no speech to duck under, so music plays at the "elsewhere" level throughout.
 
@@ -552,9 +554,12 @@ The logo plays on `form.logo.track` and, when given, `form.logo.double` (the the
 | The before/after reveal | `reveal` | as the after state starts to appear |
 | A finding card landing | `finding`, or `finding-high` for high severity | as the card arrives |
 | The summary's verdict | `verdict-looks-good`, `verdict-needs-attention`, `verdict-needs-changes` | as the badge rises |
+| A scene entering with `push`, `wipe`, or `zoom-through` | `transition` | its peak mid-transition; none when the riser into the hero already carries that move |
+| The hero | `riser`, `hero` | the riser swells over the 0.8 s before the hero's moment (left out when the hero comes in a video's first 0.8 s); the hit lands on it, with the accent |
+| A storyboard cue (`cues`) | its kind's recipe | at its `at` (a riser ends there); one past its scene's end is not played, one repeating Covi's own is merged, and a `riser` or `hero` cue elsewhere in the hero scene adds a second |
 | The outro card settling, when no music plays | `outro-looks-good`, `outro-needs-attention`, `outro-needs-changes` | its landing as the card settles |
 
-The moments come from `timeline.cues`, computed by the same functions the runtime draws with (`packages/video/src/timeline/cues.ts`), so a click is heard when it is seen. `templates/music/sound-effects.yml` maps cues to recipes and sets the level: each recipe is rendered to a −3 dBFS peak and played 14 dB under (the verdict and the outro 12 dB). Effects are at least 0.15 s apart (except the riser into the hero, whose onset is quiet) and at most 3 in any second; when cues compete, the outro wins, then the verdict, then a high-severity finding, then the rest. Pitched layers of a recipe are written in C and move into the music's key (the major scale sharing its notes, by the nearest octave); without music they play as written.
+The moments come from `timeline.cues`, computed by the same functions the runtime draws with (`packages/video/src/timeline/cues.ts`), so a click is heard when it is seen. `templates/music/sound-effects.yml` maps cues to recipes and sets the level: each recipe is rendered to a −3 dBFS peak and played 14 dB under (the verdict and the outro 12 dB; swells, the whoosh and the riser, 18 dB). Effects are at least 0.15 s apart (except a riser, whose onset is quiet: it neither crowds another effect nor is crowded) and at most 3 in any second, a riser included; when cues compete, the outro wins, then the verdict and the hero's hit, then a high-severity finding, then the rest, and the swells last. Pitched layers of a recipe are written in C and move into the music's key (the major scale sharing its notes, by the nearest octave); without music they play as written.
 
 The outro's sign-off is the sonic logo on its own: the theme's bell doubled by its glass pluck play the pickup of 5 and 1 and land on 3, 2, or 6 below the tonic, as the verdict says, over a soft e-piano chord and a round-bass root, like the theme's endings. A recipe's `anchor` names the moment of the sound that meets its cue (0.45 s in, the landing), so the pickup starts before it. Every note's release ends inside the sound, which is silent before the shortest outro ends. With music, the music's own logo lands on that moment, so the sign-off is left out (`video/audio.json` lists it as dropped, with the reason); with music and effects both off, the outro is silent.
 

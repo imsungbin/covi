@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { buildCaptions, chunkCaption, toSrt, toVtt } from '../src/captions.ts';
 import { resolveVideoSpec } from '../src/spec.ts';
 import type { Scene, Storyboard } from '../src/storyboard/schema.ts';
-import { buildTimeline, fitToDuration, layoutScenes, TRANSITION } from '../src/timeline/build.ts';
+import {
+  buildTimeline,
+  fitToDuration,
+  LINE_GAP,
+  layoutScenes,
+  pacingFor,
+  TRANSITION,
+} from '../src/timeline/build.ts';
 
 const options = { maxChars: 30, maxLines: 2, minDuration: 0.9 };
 
@@ -85,10 +92,12 @@ describe('timeline', () => {
     const [a, b, c] = layout.scenes;
     expect(a!.start).toBe(0);
     expect(b!.start).toBeCloseTo(a!.end - TRANSITION, 3);
-    expect(b!.end - b!.start).toBeCloseTo(0.3 + 6 + 0.5, 3);
-    expect(a!.end - a!.start).toBe(2.6);
-    expect(c!.speechStart).toBeCloseTo(c!.start + 0.3, 3);
-    // A 1 s hold after the last scene leaves room for the sonic logo after the last line.
+    // Lead 0.6·d, the line, then the tail to the next cut (0.35 s gap + 0.4·d).
+    expect(b!.end - b!.start).toBeCloseTo(0.6 * TRANSITION + 6 + LINE_GAP + 0.4 * TRANSITION, 3);
+    expect(a!.end - a!.start).toBeCloseTo(0.2 + 1 + LINE_GAP + 0.4 * TRANSITION, 3);
+    expect(c!.speechStart).toBeCloseTo(c!.start + 0.6 * TRANSITION, 3);
+    // A summary card stays up 3.4 s, and a 1 s hold follows it.
+    expect(c!.end - c!.start).toBeCloseTo(3.4, 3);
     expect(layout.duration).toBeCloseTo(c!.end + 1, 3);
   });
 
@@ -127,7 +136,7 @@ describe('timeline', () => {
     expect(fit.tempo).toBeLessThanOrEqual(1.15);
   });
 
-  it('extends visual holds to reach the minimum', () => {
+  it('never pads a short video to reach the minimum', () => {
     const config = resolveConfig([
       { name: 'explicit', values: parseConfigInput({ video: { mode: 'standard' } }, 't') },
     ]).config;
@@ -139,17 +148,17 @@ describe('timeline', () => {
       draft: true,
       scenes: [scene('s1', 'title', 'a'), scene('s2', 'callout', 'b'), scene('s3', 'summary', 'c')],
     };
-    const fit = fitToDuration(
-      storyboard,
-      new Map([
-        ['s1', 2],
-        ['s2', 8],
-        ['s3', 2],
-      ]),
-      spec,
+    const speech = new Map([
+      ['s1', 2],
+      ['s2', 8],
+      ['s3', 2],
+    ]);
+    const fit = fitToDuration(storyboard, speech, spec);
+    expect(fit.layout).toEqual(
+      layoutScenes(storyboard.scenes, speech, new Map(), 'en', pacingFor(spec)),
     );
-    expect(fit.extraHold.get('s2')).toBeGreaterThan(0);
-    expect(fit.extraHold.has('s1')).toBe(false);
+    expect(fit.layout.duration).toBeLessThan(spec.duration.min);
+    expect(fit.notes).toEqual([]);
   });
 
   it('builds a timeline with captions, frames, and narrator placement', () => {

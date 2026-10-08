@@ -60,4 +60,10 @@ describe('story templates', () => {
     expect(heroScene(scenes, ['interaction'])).toBeUndefined();
     expect(heroScene(scenes, undefined)).toBeUndefined();
   });
+
+  it('prefer the scene marked as the hero over the hero list', () => {
+    const scenes = [{ beat: 'context' }, { beat: 'fix' }, { beat: 'review', hero: true }];
+    expect(heroScene(scenes, ['fix'])).toBe(2);
+    expect(heroScene(scenes, undefined)).toBe(2);
+  });
 });

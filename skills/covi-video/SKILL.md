@@ -52,28 +52,50 @@ After rendering, **check the result yourself**: read `video/qc.json`, open `vide
 
 ## Method
 
-**Pick the story** (`covi templates`): `bug-fix` (problem → before → fix → after → concern), `feature-demo` (what users can do now → the interaction → how it works → what to check), `before-after` (visual changes), `api-change`, `cli-change`, `architecture-explainer`, `quick-review`. Covi picks one from the change; override with `--template` when another tells the story better.
+**Pick the story** (`covi templates`): `bug-fix` (problem → before → fix → after → concern), `feature-demo` (what users can do now → the interaction → how it works → what to check), `before-after` (visual changes), `api-change`, `cli-change`, `architecture-explainer`, `quick-review`. Covi picks one from the change; override with `--template` when another tells the story better. A template is a suggestion, not a script: order the beats the way the evidence tells the story. Only two points are fixed: the cold open at the start and a short wrap at the end. Covi's draft is a scaffold, title card and all: rewrite every line of its narration and set `"draft": false`.
 
 **Ground every scene in evidence.** Visuals come from captures (`demo/`), the diff, and findings. Do not show a screen that was not captured or code that is not in the change. If the software could not run, tell the story with code callouts and findings instead of inventing screens.
 
+**Open cold.** The first scene is not a title card. Its first frame already shows the subject: the captured screen, the terminal, or the key lines of code. A short form of the title goes in its `eyebrow`; leave `heading` off, since the subject is the headline. Its line is the first thing the viewer hears, with nothing silent before it, and it is a hook: a question, a surprising fact, or the payoff. Never open with "This change shows…", and never with a table of contents ("We'll look at A, B, and C").
+
+**Name the hero.** Every video has one moment where the change clicks: the bug reproducing, the key lines side by side with the thing they fix, the after state landing. That scene is the hero. Covi finds it by beat: it walks the template's `hero` list in order (`covi templates show <id>`) and takes the first scene playing one of those beats, and the music lifts there. So give the hero scene the first beat of that list as its `beat`, whatever it shows (viewers read the `eyebrow`, not the beat); give no earlier scene that beat; and never mark it `optional`. Then make it the biggest moment: the strongest capture, and the line that pays off the hook.
+
+**Let the list be the map.** When there are two to four things to check, promise them up front ("three places to look"), visit each in turn (numbered eyebrows such as "1 of 3" help the viewer keep count), and come back to strike them off. A bonus question at the end is fine. Use it when the change hands you such a list; it is a narrative device, not a template.
+
 **Storyboard rules** (`covi schema storyboard`):
 
-- 4–6 scenes for short-form, 6–9 for standard. First a title scene, last a summary scene. Covi ends every video with its own outro (the fox, the logo, the verdict, and the sign-off) and leaves room to breathe in standard reviews; never write an outro scene or pad the narration with pauses.
+- 6–9 scenes for short-form, 10–14 for standard. Each scene lasts 2–5 seconds; the hero may hold a moment longer. When a beat needs more time, split it across two scenes (an interaction's setup, then the click that matters) rather than holding one picture. A storyboard holds at most 14 scenes, so a long standard review lets its scenes run a little past five seconds. Never invent a scene to reach the count: fewer scenes grounded in evidence beat more that are not.
+- End on a wrap of about two seconds: the summary card with its verdict, its headline, and at most two short points; a line of eight words or fewer, or none; and `minSeconds: 1.5` so the card does not outstay its line. Covi ends every video with its own outro (the fox, the logo, the verdict, and the sign-off); never write an outro scene or pad the narration with pauses.
 - One idea per scene; the visual must match what the narration says at that moment.
+- Give every scene an `eyebrow`; without one, the video shows the beat's id as the label.
 - `narration` is what Covi says and the captions show; `say` is only for the spoken form of identifiers and paths (`useCartTotals` → "use cart totals"). Set `language` (`en`, `ko`, `ja`, `zh`) when the narration is not in English; see `references/narration.md` for acronyms and particles.
 - Budget about 2.5 spoken words per second: roughly 60–75 words for a 30-second video, 150–250 for 90 seconds. In Korean count about 4 syllables per second, in Japanese about 4 characters, in Chinese about 3; the same idea takes longer to say in them, so say less. Covi times scenes from the real narration audio and fits the total to the target.
 - Set `optional: true` on scenes that can be dropped to fit the length.
 - Expressions for the narrator: `explaining` (default), `thinking` (problems, before states), `reviewing` (findings), `warning` (serious findings), `success` (fixes that work, summaries).
 
-**Narration voice** (see `references/narration.md`): concise, natural, technically accurate, conversational, focused on the reviewer, no hype. Speak to a teammate:
+**Narration** (see `references/narration.md`): a calm senior engineer walking a teammate through the change. No hype means the facts are never exaggerated; tone, metaphor, and structure are yours.
 
-> This change updates the comment flow to use optimistic updates.
-> The comment now appears immediately while the request runs in the background.
-> One thing worth reviewing is the rollback behavior when the request fails.
+- One line per scene, 15 words at most; about ten keeps a scene within five seconds.
+- Build each line around one key phrase the viewer should remember, and put it where the voice lands (in English, at the end).
+- Punctuation shapes delivery: "." settles, "?" lifts, "!" lands. Save "!" for the hero.
+- Call back to the hook's keyword when the story pays it off.
+- The last line is eight words or fewer, or absent: the outro carries the verdict.
+- Never claim more than the evidence shows.
+
+> Your comment now appears before the server answers.
+> Before this change, you waited for a spinner.
+> The reducer now adds the comment optimistically.
+> And if the server says no? It rolls back.
+> But no test covers the rollback.
+> Add one, and it's ready to merge.
 
 ## Quality bar
 
 - Watchable without sound (captions) and without the code open.
+- The first frame shows the subject and makes a viewer want to keep watching; the first line is a hook, not an agenda.
+- One hero, and it is visibly the biggest moment.
+- No scene holds a still picture while the narration keeps talking.
+- It looks like the software under review, not a slide deck or a SaaS dashboard: most scenes show captures, code, or output rather than cards.
 - The product being demonstrated is never covered: captions and the narrator have their own areas.
 - No scene claims more than the evidence shows; the review note is the most important finding or an honest "nothing blocking".
 - QC passes, or every warning is understood.

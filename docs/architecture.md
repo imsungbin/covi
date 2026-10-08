@@ -75,7 +75,7 @@ Key points:
                                    ▼
   resolve         CodeChange
                                    │
-  understand      ReviewContext ──────────────────► context.json, diff.patch
+  understand      ReviewContext ──────────────────► context.json, diff.patch, evidence.json
                                    │
   demonstrate     Demonstration (optional) ──────────► demo/
                                    │ observations become demo findings
@@ -92,7 +92,7 @@ Key points:
                                                 PR/MR comment
 ```
 
-Every workflow starts with a session (`startSession` in `packages/cli/src/session.ts`): resolve configuration, withhold repository commands that are not trusted (see [Security](security.md)), resolve the change, create the run, set the execution policy, understand the change, and write `context.json` and `diff.patch`. The workflows in `packages/cli/src/workflows.ts` (`analyze`, `explain`, `review`, `demo`, `video`, `render`, `report`, `summarize`) and `packages/cli/src/ci.ts` (`ci`, `publish`) then run the stages they need. `covi report` and `covi render` reopen an existing run instead of starting a new one (`openSession`), and update its recorded outcome.
+Every workflow starts with a session (`startSession` in `packages/cli/src/session.ts`): resolve configuration, withhold repository commands that are not trusted (see [Security](security.md)), resolve the change, create the run, set the execution policy, understand the change, and write `context.json`, `diff.patch`, and `evidence.json`, the evidence registry that a demonstration and the review rewrite as they add evidence (see [Evidence](artifacts.md#evidence)). The workflows in `packages/cli/src/workflows.ts` (`analyze`, `explain`, `review`, `demo`, `video`, `render`, `report`, `summarize`) and `packages/cli/src/ci.ts` (`ci`, `publish`) then run the stages they need. `covi report` and `covi render` reopen an existing run instead of starting a new one (`openSession`), and update its recorded outcome.
 
 The session's `ExecutionPolicy` (`packages/core/src/security/trust.ts`) tells every stage what it may run: `allowed` is false under `pull_request_target`, so no project command runs at all, and `withheld` lists repository commands that were not used because they are not trusted on this machine yet. Stages report what they skipped and why.
 

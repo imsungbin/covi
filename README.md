@@ -271,6 +271,7 @@ In CI, Covi never asks questions. It reads `.covi/config.yml` (and a `--config` 
 | `explanation.md`, `explanation.json` | What changed, why, how behavior differs, and where to start reading |
 | `summary.md`, `comment.md` | A compact summary for the PR/MR description, and the comment body |
 | `context.json`, `diff.patch` | The structured understanding of the change, and the redacted diff |
+| `evidence.json` | Every diff hunk, capture, request, command, and test run, with the ids findings, explanations, and video scenes cite |
 | `demo/` | Before/after screenshots, pixel diffs, flow steps, command output, API responses |
 | `video/` | `covi-review.mp4`, `poster.png`, `contact-sheet.jpg`, captions (`.vtt`, `.srt`), the storyboard, and QC results |
 | `run.json` | The manifest: inputs, configuration with provenance, stages, commands, artifact hashes, and the outcome. It never contains secrets. |

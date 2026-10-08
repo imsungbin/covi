@@ -14,4 +14,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- A `findings.json` without `schemaVersion` is read as version 2, so its confirmed and likely findings must cite evidence ids; `schemaVersion: 1` keeps the old rule.
 - The `covi-video` skill now tells review videos as stories: a cold open on the subject with a hook for a first line, 2–5 second scenes, one hero moment, the list of things to check as the map, and a self review of every render.

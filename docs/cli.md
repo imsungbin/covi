@@ -448,7 +448,7 @@ Prints the Covi version, like `covi --version`.
 
 ## The result object
 
-With `--json`, workflow commands print one JSON object on stdout. These commands are `analyze`, `explain`, `review`, `demo`, `video`, `summarize`, `report`, `render`, `ci`, and `publish`:
+With `--json`, workflow commands print one JSON object on stdout. These commands are `analyze`, `explain`, `review`, `demo`, `video`, `summarize`, `report`, `render`, `ci`, `publish`, and `evidence`:
 
 ```ts
 {

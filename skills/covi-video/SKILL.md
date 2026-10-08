@@ -32,11 +32,11 @@ Covi decides first (`video/decision.json`): a video is worth making when the cha
 ```bash
 # Draft the storyboard from Covi's evidence, then improve it
 covi video --short --duration 30s --draft --json        # writes video/storyboard.json
-# edit video/storyboard.json (see the method below)
+# rewrite video/storyboard.json (see the method below)
 covi render --run <id> --json                           # narrate, compose, render, check
 ```
 
-`covi render` keeps the size, length, music, and outro chosen at draft time; pass flags only to change them. Or in one step, accepting Covi's draft: `covi video --short --duration 30s`. Use `--standard` for 16:9 reviews of 60–120 seconds, `--custom --width W --height H` for anything else, `--no-narration` for captions only, `--music none` or `--no-sound-effects` for less sound, and `--no-outro` to end on the last scene instead of Covi's outro.
+`covi render` keeps the size, length, music, and outro chosen at draft time; pass flags only to change them. `covi video --short --duration 30s` does it all in one step, but it renders Covi's draft as written; the draft is a scaffold, so draft, rewrite, then render. Use `--standard` for 16:9 reviews of 60–120 seconds, `--custom --width W --height H` for anything else, `--no-narration` for captions only, `--music none` or `--no-sound-effects` for less sound, and `--no-outro` to end on the last scene instead of Covi's outro.
 
 **Music.** By default the Covi theme plays, arranged to the story and the verdict, with subtle sound effects for clicks, reveals, findings, and the verdict. Where it plays follows the kind of video: a quiet bed under short-form narration; in a narrated standard review, mainly in the opening, the breaths Covi leaves between lines (before the payoff's line, before the verdict, after long stretches of talk), and over the outro, where its sonic logo lands. `--music-placement continuous` keeps a quiet bed under a standard review too; `bookends` plays it only around the narration. When the result carries `video.music.hint` (nobody chose the music), tell the user in one sentence, for example: "It has the Covi theme as music; say if you'd like none or a score composed for this change." To compose:
 
@@ -48,7 +48,16 @@ covi render --run <id> --json
 
 Music never moves frames: changing only the music or the effects (`covi render --run <id> --music none`) keeps the rendered frames and re-mixes the sound in seconds.
 
-After rendering, **check the result yourself**: read `video/qc.json`, open `video/contact-sheet.jpg` (one frame per scene, the outro last) and `video/poster.png`. Fix the storyboard and re-render if a scene is wrong, crowded, or not grounded in evidence. For narration in Korean, Japanese, or Chinese, also read `video/speech.json`: it shows the text each scene's voice was given after Covi spelled out acronyms. For the sound, read `video/audio.json` (the music's tempo, hero and logo times, how many seconds of music are heard, and the levels of the mix) with the `audio`, `music-fit`, `music-under-speech`, `music-audible`, and `sound-effects` checks. When `music-audible` warns, the music asked for is barely heard: give the narration room (shorter lines, a scene that holds its visual), or choose `--music-placement continuous`.
+**Review it yourself** after every render. Open `video/contact-sheet.jpg` (a frame from the middle of each scene, the outro last) and `video/poster.png` (a frame from the opening), read `video/qc.json`, and answer in order:
+
+1. Is the opening frame legible and intriguing with the sound off? The poster and the first tile show the subject, readable at a glance, not a title card.
+2. Is the hero visibly the biggest moment? Its tile is the one you would pick as the thumbnail.
+3. Does any scene hold a still picture while the narration continues? In `video/timeline.json`, a scene running past five seconds (`end` minus `start`; the hero may run a little longer), or a screenshot with no `focus` or `click` under a long line, is one: split the scene or shorten its line.
+4. Would this look at home in a SaaS dashboard? If most tiles are cards (titles, callouts, diagrams, summaries) rather than the product, its code, or its output, it would: trade cards for captured evidence.
+
+If any answer is wrong, or a scene is wrong, crowded, or not grounded in evidence, fix the storyboard, not the renderer, and render again with `covi render --run <id> --json`: it renders `video/storyboard.json` as you left it (`--storyboard <file>` renders one kept elsewhere) and synthesizes only the lines that changed.
+
+For narration in Korean, Japanese, or Chinese, also read `video/speech.json`: it shows the text each scene's voice was given after Covi spelled out acronyms. For the sound, read `video/audio.json` (the music's tempo, hero and logo times, how many seconds of music are heard, and the levels of the mix) with the `audio`, `music-fit`, `music-under-speech`, `music-audible`, and `sound-effects` checks. When `music-audible` warns, the music asked for is barely heard: give the narration room (shorter lines, a scene that holds its visual), or choose `--music-placement continuous`.
 
 ## Method
 

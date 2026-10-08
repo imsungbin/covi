@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -284,6 +285,53 @@ describe('subject stores', () => {
       expect(readFileSync(join(outside, 'subject.json'), 'utf8'), what).toBe(modelJson('/'));
       expect(existsSync(join(outside, 'subject', 'subject.json')), what).toBe(false);
     }
+  });
+
+  it('refuses a runs directory the repository made a link, and reads and writes nothing outside', async () => {
+    const { root } = setup();
+    const outside = mkdtempSync(join(tmpdir(), 'covi-subject-outside-'));
+    elsewhere.push(outside);
+    writeFileSync(join(outside, SUBJECT_PATHS.runs), modelJson('/outside'));
+    mkdirSync(join(root, '.covi'), { recursive: true });
+    symlinkSync(outside, join(root, '.covi/runs'));
+    repo!.commit('Point the runs directory elsewhere');
+    const runsRoot = join(root, '.covi/runs');
+    const before = readdirSync(outside).sort();
+    const ci = { baseRevision: repo!.git('rev-parse', 'HEAD'), git: new Git(root) };
+    for (const [what, where] of Object.entries({ ci, local: {} })) {
+      const warnings: string[] = [];
+      const handle = await openSubject({
+        root,
+        runsRoot,
+        config: config({ store: 'runs' }),
+        ...where,
+        warn: (m) => warnings.push(m),
+      });
+      expect(handle!.model, what).toEqual(emptySubject());
+      expect(handle!.writable, what).toBe(false);
+      expect(warnings.join('\n'), what).toMatch(/symbolic link; .*will not overwrite it/);
+      // Even asked directly, nothing is written there: not the model, not the lock.
+      const saveWarnings: string[] = [];
+      expect(
+        await saveSubject(handle!.source, seen('/new'), {
+          ...quiet,
+          warn: (m) => saveWarnings.push(m),
+        }),
+        what,
+      ).toBe('skipped');
+      expect(saveWarnings.join('\n'), what).toMatch(
+        /\.subject\.lock is reached through a symbolic link/,
+      );
+      expect(readdirSync(outside).sort(), what).toEqual(before);
+      expect(readFileSync(join(outside, SUBJECT_PATHS.runs), 'utf8'), what).toBe(
+        modelJson('/outside'),
+      );
+    }
+    // The repository store's lock lives in the runs directory too: it is not taken through the link.
+    const handle = await openSubject({ root, runsRoot, config: config(), warn: () => {} });
+    expect(handle!.writable).toBe(true);
+    expect(await saveSubject(handle!.source, seen('/'), quiet)).toBe('skipped');
+    expect(readdirSync(outside).sort()).toEqual(before);
   });
 
   it("keeps both runs' observations when two runs save at once", async () => {

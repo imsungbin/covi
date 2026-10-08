@@ -918,7 +918,7 @@ export async function videoWorkflow(
     await session.run.skip('video', decision.reason);
     return result;
   }
-  const produced = await session.run.stage('video', async () =>
+  const produced = await session.run.stage('video', () =>
     produceVideo({
       run: session.run,
       change,
@@ -938,7 +938,7 @@ export async function videoWorkflow(
       languageSettings: session.languageSettings,
       pronunciations: session.config.video.narration.pronunciations,
       evidence: outcome.evidence,
-      subject: await loadSubjectSnapshot(session.run),
+      subject: () => loadSubjectSnapshot(session.run),
     }),
   );
   await applyVideoResult(session, result, produced, {
@@ -1040,7 +1040,7 @@ export async function renderWorkflow(
   const demo = (await run.has(DEMO_PATHS.captures))
     ? await run.readJson<Demonstration>(DEMO_PATHS.captures)
     : undefined;
-  const produced = await run.stage('video', async () =>
+  const produced = await run.stage('video', () =>
     produceVideo({
       run,
       change,
@@ -1068,7 +1068,7 @@ export async function renderWorkflow(
       languageSettings: session.languageSettings,
       pronunciations: session.config.video.narration.pronunciations,
       evidence,
-      subject: await loadSubjectSnapshot(run),
+      subject: () => loadSubjectSnapshot(run),
     }),
   );
   await applyVideoResult(session, result, produced, { musicDefault: options.musicDefault });

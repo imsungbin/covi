@@ -3,6 +3,7 @@ import { demonstrate, RecordingUnavailableError } from '@covi/capture';
 import {
   type CommentLinks,
   type CoviConfig,
+  DEMO_PATHS,
   type EvidenceIndex,
   ExitCode,
   type Explanation,
@@ -143,10 +144,11 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
     manifest: 'run.json',
   }))
     result.artifacts[name] = run.path(rel);
+  if (demo?.subject?.path) result.artifacts.subject = run.path(DEMO_PATHS.subject);
 
   if (decision.render) {
     try {
-      const produced = await run.stage('video', async () =>
+      const produced = await run.stage('video', () =>
         produceVideo({
           run,
           change: resolvedChange,
@@ -162,7 +164,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
           languageSettings: session.languageSettings,
           pronunciations: config.video.narration.pronunciations,
           evidence: outcome.evidence,
-          subject: await loadSubjectSnapshot(run),
+          subject: () => loadSubjectSnapshot(run),
         }),
       );
       await applyVideoResult(session, result, produced);

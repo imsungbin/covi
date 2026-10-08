@@ -312,5 +312,31 @@ describe('placing references in the pipeline', () => {
       'video/storyboard.json',
     );
     expect(written.scenes[0]!.visual.focus).toBe('subject:home#load');
+    // The snapshot is read only for a storyboard that names an element: a damaged one never stops
+    // a storyboard that gives its regions as rects.
+    let reads = 0;
+    const damaged = async () => {
+      reads++;
+      throw new Error('demo/subject.json is invalid');
+    };
+    await produceVideo({
+      ...input,
+      subject: damaged,
+      storyboard: raw({
+        kind: 'screenshot',
+        image: { path: AFTER },
+        focus: { x: 1, y: 1, width: 10, height: 10 },
+      }),
+    });
+    expect(reads).toBe(0);
+    await expect(
+      produceVideo({ ...input, subject: damaged, storyboard: shot('subject:home#load') }),
+    ).rejects.toThrow(/demo\/subject\.json is invalid/);
+    expect(reads).toBe(1);
+    await produceVideo({
+      ...input,
+      subject: async () => SNAPSHOT,
+      storyboard: shot('subject:home#load'),
+    });
   });
 });

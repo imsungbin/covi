@@ -16,7 +16,7 @@ import {
 import { DEMO_PATHS, SUBJECT_PATHS } from '../run/paths.ts';
 import type { Run } from '../run/run.ts';
 import type { Redactor } from '../security/redact.ts';
-import { ensureDir, writeFileAtomic } from '../util/fs.ts';
+import { ensureDir, isWithin, linkedOrOutside, writeFileAtomic } from '../util/fs.ts';
 import { parseOrThrow } from '../util/zod.ts';
 import { emptySubject, mergeSubject } from './merge.ts';
 
@@ -67,7 +67,9 @@ export function subjectSource(options: {
       from: {
         kind: 'file',
         path,
-        base: options.runsRoot,
+        // Checked from the repository root when the runs directory is inside it: the repository
+        // could commit `.covi/runs` itself as a link.
+        base: isWithin(options.root, options.runsRoot) ? options.root : options.runsRoot,
         ...(options.baseRevision ? { checkout: options.root } : {}),
       },
       to: path,
@@ -119,6 +121,8 @@ async function readStoreFile(from: {
   }
   if (!info?.isFile()) return { refused: 'is not a file' };
   if (info.size > SUBJECT_LIMITS.bytes) return { refused: 'is larger than 512 KB' };
+  const escapes = from.checkout ? await linkedOrOutside(from.checkout, from.path) : undefined;
+  if (escapes) return { refused: escapes };
   if (from.checkout && (await tracked(from.checkout, from.path)))
     return { refused: 'is committed to the repository, so the change could have written it' };
   try {
@@ -303,6 +307,14 @@ export async function saveSubject(
 ): Promise<'saved' | 'skipped'> {
   const { from, to } = source;
   if (!to || from.kind !== 'file') return 'skipped';
+  // The lock is created before the store is read again, so its place is checked first.
+  const misplaced = await linkedOrOutside(from.base, source.lock);
+  if (misplaced) {
+    options.warn(
+      `${source.lock} ${misplaced}; this run's observations are only in ${DEMO_PATHS.subject}.`,
+    );
+    return 'skipped';
+  }
   const saved = await withLock(
     source.lock,
     async () => {

@@ -40,6 +40,17 @@ export function resolveFocusRefs(
   );
 }
 
+/** Whether any `focus` in the storyboard names an element of the subject model. */
+export function hasSubjectRefs(storyboard: Storyboard): boolean {
+  let found = false;
+  for (const scene of storyboard.scenes)
+    resolveFocusRefs(scene.visual, () => {
+      found = true;
+      return undefined;
+    });
+  return found;
+}
+
 const LISTED = 20;
 
 /** What exists, for a message: the first few, and how many more. */

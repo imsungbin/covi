@@ -59,7 +59,7 @@ import { draftStoryboard } from './storyboard/draft.ts';
 import { stripEmphasis } from './storyboard/grammar.ts';
 import { refineNarration } from './storyboard/model.ts';
 import { type Scene, type Storyboard, StoryboardSchema } from './storyboard/schema.ts';
-import { resolveSubjectFocus } from './storyboard/subject.ts';
+import { hasSubjectRefs, resolveSubjectFocus } from './storyboard/subject.ts';
 import { loadTemplates } from './templates.ts';
 import { buildTimeline, fitToDuration, pacingFor, storyScenes } from './timeline/build.ts';
 import type { Timeline } from './timeline/types.ts';
@@ -124,8 +124,12 @@ export interface ProduceVideoInput {
    * show.
    */
   evidence?: EvidenceIndex;
-  /** The run's subject model snapshot (`demo/subject.json`): `focus` references are placed with it. */
-  subject?: SubjectSnapshot;
+  /**
+   * The run's subject model snapshot (`demo/subject.json`): `focus` references are placed with it.
+   * A function is called only when the storyboard has a reference, so a damaged snapshot never
+   * stops a storyboard that does not use it.
+   */
+  subject?: SubjectSnapshot | (() => Promise<SubjectSnapshot | undefined>);
 }
 
 export interface ProduceVideoResult {
@@ -234,7 +238,12 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   }
   // A `focus` may name an element of the subject model. It is placed before anything is written,
   // and the storyboard is kept as written, so rendering again places it the same way.
-  const placed = resolveSubjectFocus(storyboard, input.subject);
+  const snapshot = !hasSubjectRefs(storyboard)
+    ? undefined
+    : typeof input.subject === 'function'
+      ? await input.subject()
+      : input.subject;
+  const placed = resolveSubjectFocus(storyboard, snapshot);
   if (placed.problems.length)
     throw new UsageError(
       `storyboard.json focuses on elements Covi cannot place:\n  ${placed.problems.join('\n  ')}`,

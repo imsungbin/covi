@@ -468,9 +468,15 @@ describe('GitHub Actions', () => {
     async () => {
       const repo = await prRepo('visual-pricing-cards');
       const gh = githubEnv(repo);
-      covi(['ci', '--repo', repo.dir, '--out', gh.out, '--video', 'never', '--no-comment'], {
-        env: gh.env,
-      });
+      const result = covi(
+        ['ci', '--repo', repo.dir, '--out', gh.out, '--video', 'never', '--no-comment', '--json'],
+        { env: gh.env },
+      );
+      // Annotations go to stdout first in GitHub Actions; the result follows them.
+      const json = JSON.parse(result.stdout.slice(result.stdout.indexOf('\n{') + 1)) as {
+        artifacts: Record<string, string>;
+      };
+      expect(json.artifacts.subject).toBe(join(gh.out, 'demo/subject.json'));
       const snapshot = JSON.parse(readFileSync(join(gh.out, 'demo/subject.json'), 'utf8')) as {
         store: string;
         model: { screens: Array<{ key: string }> };

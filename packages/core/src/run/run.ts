@@ -5,8 +5,8 @@ import type { ResolvedLanguage } from '../i18n/language.ts';
 import type { ChangeSource, CodeChange, Revision } from '../model/change.ts';
 import type { Certainty, Verdict } from '../model/finding.ts';
 import { Redactor } from '../security/redact.ts';
-import { UsageError } from '../util/errors.ts';
-import { ensureDir, exists, readJson, writeFileAtomic } from '../util/fs.ts';
+import { EnvironmentError, UsageError } from '../util/errors.ts';
+import { ensureDir, exists, linkedOrOutside, readJson, writeFileAtomic } from '../util/fs.ts';
 import { sha256File } from '../util/hash.ts';
 
 export type ArtifactKind =
@@ -130,6 +130,12 @@ export interface CreateRunOptions {
   dir?: string;
   /** Runs root override (`output.dir`), relative to the repository root. */
   runsDir?: string;
+  /**
+   * Refuse a runs root inside the repository that a symbolic link leads to, or that resolves
+   * outside it. Set in CI, where the checkout is the change's, so it could commit `.covi/runs` as
+   * a link and have Covi write (and prune) a directory elsewhere on the runner.
+   */
+  confined?: boolean;
   headSha?: string;
   keep?: number;
   redactor?: Redactor;
@@ -167,6 +173,14 @@ export class Run {
       id = base;
     } else {
       const runsRoot = runsRootFor(options.root, options.runsDir);
+      const misplaced = options.confined
+        ? await linkedOrOutside(options.root, runsRoot)
+        : undefined;
+      if (misplaced)
+        throw new EnvironmentError(
+          `The runs directory ${runsRoot} ${misplaced}; Covi does not write runs there in CI.`,
+          'Choose where runs go with --out <dir> or COVI_OUTPUT_DIR.',
+        );
       await ensureSelfIgnored(runsRoot);
       id = base;
       for (let n = 2; await exists(join(runsRoot, id)); n++) id = `${base}-${n}`;

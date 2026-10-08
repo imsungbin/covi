@@ -1,4 +1,14 @@
-import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { emptySubject, mergeSubject, SUBJECT_PATHS, silentLogger } from '@covi/core';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -83,6 +93,60 @@ describe('the subject model in sessions', () => {
       /subject\.json is committed to the repository, so the change could have written it/,
     );
     expect((await open('off')).subject).toBeUndefined();
+  });
+
+  it('in CI, takes subject settings from the base configuration, not the change', async () => {
+    const repo = createChangeRepo(
+      { 'index.html': '<h1>a</h1>\n' },
+      { 'index.html': '<h1>b</h1>\n', '.covi/config.yml': 'subject:\n  store: off\n' },
+    );
+    dirs.push(repo.root);
+    const open = (trustedConfig: boolean) =>
+      startSession({
+        workflow: 'analyze',
+        selection: { repo: repo.root, scope: 'auto', fetch: false },
+        explicit: {},
+        entryPoint: 'cli',
+        interactive: false,
+        logger: silentLogger,
+        trustedConfig,
+      });
+    expect((await open(true)).subject!.source.store).toBe('repo');
+    expect((await open(false)).subject).toBeUndefined();
+  });
+
+  it('in CI, never follows a runs directory the change made a link: no run, no model', async () => {
+    const repo = createChangeRepo({ 'index.html': '<h1>a</h1>\n' }, {});
+    dirs.push(repo.root);
+    const outside = mkdtempSync(join(tmpdir(), 'covi-outside-'));
+    dirs.push(outside);
+    writeFileSync(join(outside, SUBJECT_PATHS.runs), modelOf('/outside'));
+    mkdirSync(join(repo.root, '.covi'), { recursive: true });
+    symlinkSync(outside, join(repo.root, '.covi/runs'));
+    repo.commit('Point the runs directory elsewhere', { 'index.html': '<h1>b</h1>\n' });
+    const open = (out?: string) =>
+      startSession({
+        workflow: 'analyze',
+        selection: { repo: repo.root, scope: 'auto', fetch: false },
+        explicit: { subject: { store: 'runs' } },
+        entryPoint: 'cli',
+        interactive: false,
+        logger: silentLogger,
+        trustedConfig: true,
+        out,
+      });
+    await expect(open()).rejects.toMatchObject({
+      exitCode: 3,
+      message: expect.stringContaining('.covi/runs is reached through a symbolic link'),
+    });
+    // With --out, as the integrations run it, the run is written there and the model is set aside.
+    const ci = await open(join(outside, '..', `${outside.split('/').pop()}-run`));
+    dirs.push(ci.run.dir);
+    expect(ci.subject!.model.screens).toEqual([]);
+    expect(ci.subject!.writable).toBe(false);
+    expect(ci.run.manifest.warnings.join('\n')).toMatch(/symbolic link; Covi planned without it/);
+    expect(readdirSync(outside)).toEqual([SUBJECT_PATHS.runs]);
+    expect(readFileSync(join(outside, SUBJECT_PATHS.runs), 'utf8')).toBe(modelOf('/outside'));
   });
 
   it('says which observed flows the model did not keep, and why, with names only', () => {

@@ -91,7 +91,10 @@ export interface Session {
   language: ResolvedLanguage;
   /** The language settings speech resolution honors: a flag, or a configured language. */
   languageSettings: LanguageSettings;
-  /** What Covi has seen of the software, for this run to read and update; absent when `subject.store` is off. */
+  /**
+   * What Covi has seen of the software, for this run to read and update; absent when
+   * `subject.store` is off.
+   */
   subject?: SubjectHandle;
 }
 
@@ -228,6 +231,10 @@ export async function startSession(options: SessionOptions): Promise<Session> {
     coviVersion: await coviVersion(),
     dir: options.out,
     runsDir: config.output.dir,
+    // In CI the checkout is the change's: a runs directory it links elsewhere is refused, unless
+    // the user chose the place (--out, or output.dir on the command line or in the environment).
+    confined:
+      Boolean(options.trustedConfig) && !/^explicit/.test(resolved.provenance['output.dir'] ?? ''),
     headSha: change.head.sha,
     keep: config.output.keep,
     redactor,

@@ -108,7 +108,10 @@ export async function capturePage(
       clip: { x: 0, y: 0, width: v.width, height },
     });
     trace?.frame(file);
-    trace?.endStep({ mutations: await collectMutations(page, v.deviceScaleFactor) });
+    // The capture is the page's full height (capped), not only the viewport.
+    trace?.endStep({
+      mutations: await collectMutations(page, v.deviceScaleFactor, { width: v.width, height }),
+    });
     return {
       file,
       width: v.width * v.deviceScaleFactor,
@@ -302,7 +305,8 @@ export async function runFlow(
     trace?.frame(file, box);
   };
   // Read after each step, so the DOM changes describe what that step's action caused.
-  const endStep = async () => trace?.endStep({ mutations: await collectMutations(page, scale) });
+  const endStep = async () =>
+    trace?.endStep({ mutations: await collectMutations(page, scale, VIEWPORT_PRESETS[viewport]) });
   let result: FlowRun;
   try {
     trace?.beginStep({ id: 'open', action: 'goto', target: flow.path });

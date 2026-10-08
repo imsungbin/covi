@@ -5,8 +5,9 @@ import { ExitCode, Redactor, type StaticServer, serveStatic } from '@covi/core';
 import { type Browser, type BrowserContextOptions, chromium } from 'playwright';
 import { afterEach, describe, expect, it } from 'vitest';
 import { canUseBrowser } from '../../../tests/helpers/env.ts';
-import { contextOptions, runFlow } from '../src/browser.ts';
+import { capturePage, contextOptions, runFlow } from '../src/browser.ts';
 import { finalizeRecording, RecordingUnavailableError } from '../src/recording.ts';
+import { MAX_REGIONS } from '../src/regions.ts';
 import { TraceCollector } from '../src/trace.ts';
 
 const browserAvailable = await canUseBrowser();
@@ -30,6 +31,16 @@ document.getElementById('add').addEventListener('click', async () => {
   console.error('Could not load: HTTP ' + r.status);
   document.getElementById('list').appendChild(document.createElement('li')).textContent = 'Added';
 });
+</script></body></html>`;
+
+// After load, adds a banner far wider than any viewport.
+const WIDE = `<!doctype html><html><head><title>Wide</title></head><body><main>Items</main>
+<script>
+addEventListener('load', () => setTimeout(() => {
+  const banner = document.body.appendChild(document.createElement('div'));
+  banner.style.cssText = 'width:5000px;height:40px';
+  banner.textContent = 'Loaded';
+}, 0));
 </script></body></html>`;
 
 const FLOW = {
@@ -168,5 +179,61 @@ describe.skipIf(!browserAvailable)('runFlow with a trace and a recording', () =>
     expect(outcome.video).toBeUndefined();
     expect(outcome.recordError).toMatch(/Executable doesn't exist/);
     expect(outcome.frames.length).toBeGreaterThan(0);
+  });
+});
+
+describe.skipIf(!browserAvailable)('capturePage with a trace', () => {
+  it('traces one load step, its requests, the title, and DOM changes within the frame', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'covi-page-'));
+    writeFileSync(join(dir, 'index.html'), WIDE);
+    server = await serveStatic(dir);
+    browser = await chromium.launch();
+    const trace = new TraceCollector(
+      {
+        id: 'page-root-head',
+        scenario: 'page-root',
+        kind: 'page',
+        name: '/',
+        revision: 'head',
+        viewport: 'desktop',
+        path: '/',
+      },
+      {
+        origin: new URL(server.url).origin,
+        redactor: new Redactor(),
+        relative: (f) => relative(dir!, f),
+      },
+    );
+    const capture = await capturePage(
+      browser,
+      `${server.url}/`,
+      'desktop',
+      join(dir, 'page.png'),
+      trace,
+    );
+    const result = trace.finish({ title: capture.title });
+    expect(capture.title).toBe('Wide');
+    expect(result.title).toBe('Wide');
+    expect(result.steps).toEqual([
+      expect.objectContaining({ id: 'load', action: 'goto', status: 'ok', screenshot: 'page.png' }),
+    ]);
+    expect(result.requests).toContainEqual(
+      expect.objectContaining({
+        step: 'load',
+        method: 'GET',
+        url: '/',
+        status: 200,
+        type: 'document',
+      }),
+    );
+    expect(Number.isInteger(result.mutations.count)).toBe(true);
+    expect(result.mutations.count).toBeGreaterThan(0);
+    expect(result.mutations.regions.length).toBeGreaterThan(0);
+    expect(result.mutations.regions.length).toBeLessThanOrEqual(MAX_REGIONS);
+    // The banner is 5000 CSS px wide; its change is clipped to the screenshot.
+    for (const r of result.mutations.regions) {
+      expect(r.x + r.width).toBeLessThanOrEqual(capture.width);
+      expect(r.y + r.height).toBeLessThanOrEqual(capture.height);
+    }
   });
 });

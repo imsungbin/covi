@@ -40,12 +40,49 @@ const TAKE_MUTATIONS = `(() => {
   return out;
 })()`;
 
-/** DOM changes since the last call, as merged regions in image pixels. */
-export async function collectMutations(page: Page, scale: number): Promise<MutationSummary> {
-  const taken = (await page.evaluate(TAKE_MUTATIONS).catch(() => undefined)) as
-    | { count: number; rects: Rect[] }
-    | undefined;
-  if (!taken) return { count: 0, regions: [] };
+/** The init script remembers at most this many changed elements. */
+const MAX_TARGETS = 200;
+
+const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+const clamp = (n: number, max: number) => Math.min(Math.max(n, 0), max);
+
+/**
+ * Checks what `TAKE_MUTATIONS` returned. The page can overwrite `window.__coviMutations`, so the
+ * result is page input: the count becomes a whole number (0 when it is not a finite number), and
+ * a box is kept only when its four fields are finite, clipped to the frame, at most 200 of them.
+ * Boxes stay in CSS pixels.
+ */
+export function parseMutations(
+  raw: unknown,
+  frame: { width: number; height: number },
+): { count: number; rects: Rect[] } {
+  const taken = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+  const count = finite(taken.count) ? Math.max(0, Math.floor(taken.count)) : 0;
+  const listed: unknown[] = Array.isArray(taken.rects) ? taken.rects.slice(0, MAX_TARGETS) : [];
+  const rects = listed.flatMap((r): Rect[] => {
+    const { x, y, width, height } = (r ?? {}) as Record<string, unknown>;
+    if (!(finite(x) && finite(y) && finite(width) && finite(height))) return [];
+    const left = clamp(x, frame.width);
+    const top = clamp(y, frame.height);
+    const right = clamp(x + width, frame.width);
+    const bottom = clamp(y + height, frame.height);
+    return right > left && bottom > top
+      ? [{ x: left, y: top, width: right - left, height: bottom - top }]
+      : [];
+  });
+  return { count, rects };
+}
+
+/**
+ * DOM changes since the last call, as merged regions in image pixels. `frame` is the screenshot's
+ * size in CSS pixels: changes outside it are not in the picture.
+ */
+export async function collectMutations(
+  page: Page,
+  scale: number,
+  frame: { width: number; height: number },
+): Promise<MutationSummary> {
+  const taken = parseMutations(await page.evaluate(TAKE_MUTATIONS).catch(() => undefined), frame);
   return { count: taken.count, regions: mergeRegions(taken.rects, { scale }) };
 }
 

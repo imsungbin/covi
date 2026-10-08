@@ -25,6 +25,7 @@ export type ArtifactKind =
   | 'recording'
   | 'trace'
   | 'behavior-diff'
+  | 'subject'
   | 'terminal'
   | 'storyboard'
   | 'timeline'

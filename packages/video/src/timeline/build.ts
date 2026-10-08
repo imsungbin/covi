@@ -437,6 +437,7 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
       ...(phases ? { phases } : {}),
       ...(scene.hero ? { hero: true } : {}),
       ...(scene.camera === 'static' ? { camera: 'static' as const } : {}),
+      ...(scene.evidenceIds?.length ? { evidenceIds: [...scene.evidenceIds] } : {}),
     };
   });
   if (layout.outro) {

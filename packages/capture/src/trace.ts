@@ -133,7 +133,7 @@ export class TraceCollector {
     const { step } = open;
     step.durationMs = Math.round(this.elapsed() - open.startedAt);
     step.status = end.status ?? 'ok';
-    if (end.error) step.error = truncate(end.error, TRACE_LIMITS.text);
+    if (end.error) step.error = this.text(end.error, TRACE_LIMITS.text);
     if (end.mutations) step.mutations = end.mutations;
     this.steps.push(step);
   }
@@ -183,9 +183,7 @@ export class TraceCollector {
       ...(this.open ? { step: this.open.step.id } : {}),
       level: LEVELS[message.level] ?? 'log',
       source: message.source ?? 'console',
-      text: redactBounded(message.text.split(this.origin).join(''), TRACE_LIMITS.text, (text) =>
-        this.redactor.redactUrls(text),
-      ),
+      text: this.text(message.text.split(this.origin).join(''), TRACE_LIMITS.text),
       ...(where && message.location
         ? { location: `${where}:${message.location.line + 1}:${message.location.column + 1}` }
         : {}),
@@ -200,7 +198,7 @@ export class TraceCollector {
     const trace: Trace = {
       schemaVersion: 1,
       ...this.meta,
-      ...(extra.title ? { title: truncate(extra.title, 200) } : {}),
+      ...(extra.title ? { title: this.text(extra.title, 200) } : {}),
       ...(extra.recording ? { recording: extra.recording } : {}),
       durationMs: Math.round(this.stoppedAt ?? this.elapsed()),
       steps: this.steps,
@@ -211,7 +209,7 @@ export class TraceCollector {
         regions: mergeRegions(summaries.flatMap((m) => m.regions)),
       },
     };
-    if (extra.error) trace.error = truncate(extra.error, TRACE_LIMITS.text);
+    if (extra.error) trace.error = this.text(extra.error, TRACE_LIMITS.text);
     const dropped = {
       requests: this.requestCount - this.requests.length,
       console: this.consoleCount - this.messages.length,
@@ -222,6 +220,11 @@ export class TraceCollector {
         ...(dropped.console ? { console: dropped.console } : {}),
       };
     return trace;
+  }
+
+  /** Free text from the page or the browser (messages, errors, titles), with its URLs masked. */
+  private text(raw: string, max: number): string {
+    return redactBounded(raw, max, (text) => this.redactor.redactUrls(text));
   }
 
   private elapsed(): number {

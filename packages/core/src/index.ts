@@ -33,6 +33,7 @@ export {
   groundModelFindings,
   hunksAt,
   hunksOf,
+  hunksOfFiles,
   indexEvidence,
   ungroundedStatements,
   unknownCitations,

@@ -133,16 +133,20 @@ export function groundFinding<T extends GroundableFinding>(
   return { finding: { ...grounded, certainty: 'risk' } as T, dropped, demoted: finding.certainty };
 }
 
-/** Ids one statement in Covi's own explanation cites. */
+/** Ids one statement in Covi's own explanation (or its drafted video) cites. */
 const CITED_PER_STATEMENT = 6;
+
+/** The hunks of these files, in order, as many as one of Covi's own statements cites. */
+export function hunksOfFiles(index: EvidenceIndex, paths: readonly string[]): string[] {
+  return [...new Set(paths.flatMap((path) => hunksOf(index, path)))].slice(0, CITED_PER_STATEMENT);
+}
 
 /**
  * Covi's own explanation cites the hunks of each change's files, and its intent what those changes
  * cite (else the hunks of the files to read first); an agent's cites its own.
  */
 export function citeExplanation(explanation: Explanation, index: EvidenceIndex): Explanation {
-  const hunks = (paths: readonly string[]) =>
-    [...new Set(paths.flatMap((path) => hunksOf(index, path)))].slice(0, CITED_PER_STATEMENT);
+  const hunks = (paths: readonly string[]) => hunksOfFiles(index, paths);
   const changes = explanation.changes.map((c) => {
     if (c.evidenceIds?.length) return c;
     const ids = hunks(c.files);

@@ -140,7 +140,17 @@ export {
   withoutRepositoryCommands,
 } from './security/trust.ts';
 export { type StaticServer, serveStatic } from './serve/static-server.ts';
-export { emptySubject, fillsSecret, hasObservations, mergeSubject } from './subject/merge.ts';
+export {
+  emptySubject,
+  type FlowMerge,
+  type FlowOutcome,
+  fillsSecret,
+  flowKept,
+  hasObservations,
+  mergeSubject,
+  mergeSubjectWithOutcomes,
+  SUBJECT_EXPIRE_AFTER,
+} from './subject/merge.ts';
 export { areaKey, groupAreas } from './understand/areas.ts';
 export { type Classification, classifyFile, ignoreReason } from './understand/classify.ts';
 export { assessDemonstration, pagePathFor, type RepoShape } from './understand/demonstration.ts';

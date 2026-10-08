@@ -6,7 +6,14 @@ import {
   type SubjectObservation,
   SubjectSchema,
 } from '../src/model/subject.ts';
-import { emptySubject, fillsSecret, hasObservations, mergeSubject } from '../src/subject/merge.ts';
+import {
+  emptySubject,
+  fillsSecret,
+  flowKept,
+  hasObservations,
+  mergeSubject,
+  mergeSubjectWithOutcomes,
+} from '../src/subject/merge.ts';
 
 const rev = (n: number) => String(n).padStart(12, '0');
 const at = (
@@ -255,6 +262,144 @@ describe('mergeSubject', () => {
       OPTS,
     );
     expect(comment.flows[0]!.steps[0]!.action).toEqual({ fill: '#comment', text: 'Looks good' });
+  });
+
+  it('tells a secret field by the words of its selector or note, not by substrings', () => {
+    const fill = (selector: string, note?: string) => ({
+      fill: selector,
+      text: 'x',
+      ...(note ? { note } : {}),
+    });
+    for (const selector of [
+      '#password',
+      'input[name=otp]',
+      '#pinCode',
+      '#user_pin',
+      '#pwd',
+      '#passwd',
+      '#cc-number',
+      '#cc-csc',
+      '#cc-exp',
+      '#ccExpMonth',
+      '#security-code',
+      '#verification-code',
+      '#mfa-code',
+      '#totp',
+      '#twoFactor2faCode',
+      '#apiKey',
+      '#oneTimeCode',
+      '#creditCard',
+      '#card',
+      'input[name=card]',
+      '[data-testid=account-token]',
+      '#ssn',
+    ])
+      expect(fillsSecret(fill(selector)), selector).toBe(true);
+    expect(fillsSecret(fill('#field', 'Type the card number'))).toBe(true);
+    expect(fillsSecret(fill('#field', 'Enter the PIN'))).toBe(true);
+    for (const selector of [
+      '#passenger-name',
+      '#compass',
+      '#bypass-note',
+      '#footprint',
+      'input[name=classname]',
+      '#discard-reason',
+      '#tokenizer-input',
+      '#pricing-card-title',
+      '#comment',
+      '#spinner',
+      '#opinion',
+    ])
+      expect(fillsSecret(fill(selector)), selector).toBe(false);
+    expect(fillsSecret(fill('#field', 'Describe the pricing card'))).toBe(false);
+    expect(fillsSecret({ click: '#password' })).toBe(false);
+    // An element the page marked secret is secret whatever its selector says.
+    expect(fillsSecret(fill('#f-17'), new Set(['#f-17']))).toBe(true);
+  });
+
+  it('never keeps a flow that types into a field the page marked secret', () => {
+    const typesIntoCode: SubjectFlowObservation = {
+      ...flow,
+      steps: [{ action: { fill: '#f-17', text: '123456' } }],
+    };
+    const seenSecret = { ...load, selector: '#f-17', key: 'f', secret: true };
+    // Marked in this run's own observation...
+    const now = mergeSubjectWithOutcomes(
+      emptySubject(),
+      at(1, { screens: [home([seenSecret])], flows: [typesIntoCode] }),
+      OPTS,
+    );
+    expect(now.model.flows).toEqual([]);
+    expect(now.flows).toEqual([{ name: 'Load items', outcome: 'secret' }]);
+    // ...or in the model from an earlier run.
+    const later = mergeSubject(now.model, at(2, { flows: [typesIntoCode] }), OPTS);
+    expect(later.flows).toEqual([]);
+    expect(
+      mergeSubject(emptySubject(), at(1, { flows: [typesIntoCode] }), OPTS).flows,
+    ).toHaveLength(1);
+  });
+
+  it('says why each flow is or is not remembered, without its values', () => {
+    const steps = (n: number) =>
+      Array.from({ length: n }, () => ({ action: { click: '#load' } as const }));
+    const cases: Array<[SubjectFlowObservation, string]> = [
+      [flow, 'kept'],
+      [{ ...flow, name: 'Broken', passed: false }, 'failed'],
+      [
+        { ...flow, name: 'Login', steps: [{ action: { fill: '#password', text: 'hunter2' } }] },
+        'secret',
+      ],
+      [
+        { ...flow, name: 'Notes', steps: [{ action: { fill: '#notes', text: 'one\ntwo' } }] },
+        'invalid',
+      ],
+      [{ ...flow, name: 'Long', steps: steps(SUBJECT_LIMITS.steps + 1) }, 'invalid'],
+      [
+        { ...flow, name: 'Away', steps: [{ action: { goto: 'https://evil.example/' } }] },
+        'invalid',
+      ],
+      [{ ...flow, name: '\n' }, 'invalid'],
+    ];
+    for (const [observed, outcome] of cases)
+      expect(flowKept(observed), observed.name).toBe(outcome);
+    const merged = mergeSubjectWithOutcomes(
+      emptySubject(),
+      at(1, { flows: cases.map(([f]) => f) }),
+      OPTS,
+    );
+    expect(merged.flows).toEqual([
+      { name: 'Load items', outcome: 'kept' },
+      { name: 'Broken', outcome: 'failed' },
+      { name: 'Login', outcome: 'secret' },
+      { name: 'Notes', outcome: 'invalid' },
+      { name: 'Long', outcome: 'invalid' },
+      { name: 'Away', outcome: 'invalid' },
+      { outcome: 'invalid' },
+    ]);
+    expect(merged.model.flows.map((f) => f.name)).toEqual(['Load items']);
+    expect(JSON.stringify(merged.flows)).not.toContain('hunter2');
+  });
+
+  it('falls back to the default expiry when expireAfter is not a number', () => {
+    const model = mergeSubject(emptySubject(), at(1, { screens: [home([load])] }), OPTS);
+    for (const expireAfter of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const next = mergeSubject(model, at(2, { screens: [home([])] }), { expireAfter });
+      expect(next.revisions).toEqual([rev(2), rev(1)]);
+      expect(next.screens[0]!.elements.map((e) => e.key)).toEqual(['load']);
+    }
+  });
+
+  it('cuts long text without splitting a character made of two code units', () => {
+    const fox = '\u{1F98A}';
+    const model = mergeSubject(
+      emptySubject(),
+      at(1, { screens: [home([{ ...load, label: fox.repeat(SUBJECT_LIMITS.label) }])] }),
+      OPTS,
+    );
+    // The cut at 119 code units falls inside the 60th fox, which goes whole.
+    const label = model.screens[0]!.elements[0]!.label!;
+    expect(label.isWellFormed()).toBe(true);
+    expect(label).toBe(`${fox.repeat((SUBJECT_LIMITS.label - 2) / 2)}…`);
   });
 
   it('records CLI and HTTP scenarios without their command lines or query strings', () => {

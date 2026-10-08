@@ -7,6 +7,7 @@ import {
   SUBJECT_LIMITS,
   type Subject,
   type SubjectElement,
+  type SubjectFlow,
   type SubjectFlowObservation,
   SubjectFlowSchema,
   type SubjectObservation,
@@ -18,10 +19,59 @@ import {
 } from '../model/subject.ts';
 
 /**
- * Fields whose selector or note says they hold a secret. A flow that types into one is never kept:
- * the model is committed, and the text a flow types would be committed with it.
+ * Words a field's selector or note uses when it holds a secret. A flow that types into one is never
+ * kept: the model is committed, and the text a flow types would be committed with it. Matched on
+ * whole words so `#passenger-name` or `#footprint` stay ordinary while `#pinCode` does not.
  */
-const SECRET_HINT = /pass(?:word|code|phrase)?|secret|token|otp|one-time|cvc|cvv|card|ssn|\bpin\b/i;
+const SECRET_WORDS = new Set([
+  'password',
+  'passwd',
+  'pwd',
+  'pass',
+  'passcode',
+  'passphrase',
+  'secret',
+  'token',
+  'otp',
+  'totp',
+  'mfa',
+  'pin',
+  'cvc',
+  'cvv',
+  'csc',
+  'ssn',
+]);
+/** Adjacent words that name a secret together; `2fa` splits at its digit, so it is a pair too. */
+const SECRET_PHRASES = new Set([
+  '2 fa',
+  'one time',
+  'security code',
+  'verification code',
+  'card number',
+  'credit card',
+  'cc number',
+  'cc csc',
+  'cc exp',
+  'api key',
+]);
+/** Selector syntax rather than what the field is: `input[name=card]` is a field named card. */
+const SELECTOR_WORDS = new Set([
+  'input',
+  'textarea',
+  'name',
+  'id',
+  'data',
+  'testid',
+  'test',
+  'aria',
+  'label',
+  'placeholder',
+  'role',
+  'textbox',
+  'field',
+  'type',
+  'text',
+]);
 const CONTROLS = new RegExp(`${SUBJECT_CONTROL.source}+`, 'g');
 
 export function emptySubject(): Subject {
@@ -32,15 +82,88 @@ export function hasObservations(observation: SubjectObservation): boolean {
   return observation.screens.length + observation.flows.length + observation.commands.length > 0;
 }
 
-export function fillsSecret(step: FlowStep): boolean {
-  return 'fill' in step && SECRET_HINT.test(`${step.fill} ${step.note ?? ''}`);
+/** Lowercase words, split at anything not a letter or digit, at camelCase, and at digits. */
+function words(text: string): string[] {
+  return text
+    .replace(/([a-z])(?=[A-Z])/g, '$1 ')
+    .replace(/([A-Z])(?=[A-Z][a-z])/g, '$1 ')
+    .replace(/([A-Za-z])(?=[0-9])|([0-9])(?=[A-Za-z])/g, '$1$2 ')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function namesSecret(text: string, selector: boolean): boolean {
+  const all = words(text);
+  if (all.some((w, i) => SECRET_WORDS.has(w) || SECRET_PHRASES.has(`${w} ${all[i + 1]}`)))
+    return true;
+  // Alone, `card` names a card field; beside other words it is usually a pricing card or the like.
+  const own = selector ? all.filter((w) => !SELECTOR_WORDS.has(w)) : all;
+  return own.length === 1 && own[0] === 'card';
+}
+
+/**
+ * A step that types into a secret field: one its selector or note names as secret, or one whose
+ * selector is an element the page marked secret (`secretSelectors`).
+ */
+export function fillsSecret(
+  step: FlowStep,
+  secretSelectors: ReadonlySet<string> = new Set(),
+): boolean {
+  if (!('fill' in step)) return false;
+  return (
+    secretSelectors.has(step.fill) ||
+    namesSecret(step.fill, true) ||
+    (step.note !== undefined && namesSecret(step.note, false))
+  );
+}
+
+/** Why a flow is or is not remembered; a warning names the flow and this, never its values. */
+export type FlowOutcome = 'kept' | 'failed' | 'secret' | 'invalid';
+
+const FlowEntrySchema = SubjectFlowSchema.omit({ key: true, passed: true });
+
+/** The flow as the model keeps it, without its key and revision, or why it is not kept. */
+function flowEntry(
+  flow: SubjectFlowObservation,
+  secretSelectors: ReadonlySet<string>,
+):
+  | { outcome: 'kept'; entry: Omit<SubjectFlow, 'key' | 'passed'> }
+  | { outcome: Exclude<FlowOutcome, 'kept'> } {
+  // Only a flow that passed at head is worth replaying; one that types a secret is never kept.
+  if (!flow.passed) return { outcome: 'failed' };
+  if (flow.secret || flow.steps.some((s) => fillsSecret(s.action, secretSelectors)))
+    return { outcome: 'secret' };
+  const candidate = FlowEntrySchema.safeParse({
+    name: oneLine(flow.name, SUBJECT_LIMITS.label),
+    path: flow.path,
+    viewport: flow.viewport,
+    steps: flow.steps.map((s) => {
+      const label = oneLine(s.label, SUBJECT_LIMITS.label);
+      return { action: s.action, ...(label ? { label } : {}) };
+    }),
+  });
+  // No name, too many steps, a value over the limit or on several lines, or a goto off the app:
+  // not a flow Covi would replay.
+  return candidate.success ? { outcome: 'kept', entry: candidate.data } : { outcome: 'invalid' };
+}
+
+/** Whether the model would remember this flow, given the selectors of fields marked secret. */
+export function flowKept(
+  flow: SubjectFlowObservation,
+  secretSelectors: ReadonlySet<string> = new Set(),
+): FlowOutcome {
+  return flowEntry(flow, secretSelectors).outcome;
 }
 
 /** Page or user text as one line within a limit; undefined when nothing is left. */
 function oneLine(text: string | undefined, max: number): string | undefined {
   const t = text?.replace(CONTROLS, ' ').replace(/\s+/g, ' ').trim();
   if (!t) return undefined;
-  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+  if (t.length <= max) return t;
+  // The limit counts UTF-16 units; never keep half of a surrogate pair.
+  const cut = t.slice(0, max - 1).replace(/[\uD800-\uDBFF]$/, '');
+  return `${cut}…`;
 }
 
 /** Page geometry is page input too: whole pixels within the schema's range, whatever it reported. */
@@ -121,28 +244,21 @@ function upsertScreen(model: Subject, seen: ObservedScreen, revision: string): v
   screen.elements = [...observed, ...screen.elements.filter((e) => !observed.has(e))];
 }
 
-function upsertFlow(model: Subject, flow: SubjectFlowObservation, revision: string): void {
-  // Only a flow that passed at head is worth replaying; one that types a secret is never kept.
-  if (!flow.passed || flow.secret || flow.steps.some((s) => fillsSecret(s.action))) return;
-  const name = oneLine(flow.name, SUBJECT_LIMITS.label);
-  if (!name) return;
-  const existing = model.flows.find((f) => f.name === name);
-  const candidate = SubjectFlowSchema.safeParse({
-    key:
-      existing?.key ?? uniqueKey(subjectKey(name, 'flow'), new Set(model.flows.map((f) => f.key))),
-    name,
-    path: flow.path,
-    viewport: flow.viewport,
-    steps: flow.steps.map((s) => {
-      const label = oneLine(s.label, SUBJECT_LIMITS.label);
-      return { action: s.action, ...(label ? { label } : {}) };
-    }),
-    passed: revision,
-  });
-  // Too long, a value over the limit, or a goto off the app: not a flow Covi would replay.
-  if (!candidate.success) return;
-  if (existing) model.flows[model.flows.indexOf(existing)] = candidate.data;
-  else model.flows.push(candidate.data);
+function upsertFlow(model: Subject, flow: SubjectFlowObservation, revision: string): FlowOutcome {
+  const secretSelectors = new Set(
+    model.screens.flatMap((s) => s.elements.filter((e) => e.secret).map((e) => e.selector)),
+  );
+  const judged = flowEntry(flow, secretSelectors);
+  if (judged.outcome !== 'kept') return judged.outcome;
+  const { entry } = judged;
+  const existing = model.flows.find((f) => f.name === entry.name);
+  const key =
+    existing?.key ??
+    uniqueKey(subjectKey(entry.name, 'flow'), new Set(model.flows.map((f) => f.key)));
+  const kept = { key, ...entry, passed: revision };
+  if (existing) model.flows[model.flows.indexOf(existing)] = kept;
+  else model.flows.push(kept);
+  return 'kept';
 }
 
 function upsertCommand(model: Subject, seen: ObservedCommand, revision: string): void {
@@ -232,27 +348,55 @@ function bound(model: Subject): Subject {
   };
 }
 
+/** How many revisions the model keeps when configuration does not say (`subject.expireAfter`). */
+export const SUBJECT_EXPIRE_AFTER = 20;
+
+/** One observed flow and whether the model now remembers it. */
+export interface FlowMerge {
+  /** The flow's name as one line; absent when it had none. */
+  name?: string;
+  outcome: FlowOutcome;
+}
+
 /**
  * Merges what one run saw at head into the model: entries are upserted by identity (screen path,
  * element selector, flow name, scenario kind and name) and keep the key they were given; the run's
  * revision moves to the front of `revisions`, which keeps `expireAfter` of them; whatever was last
- * seen at a revision no longer kept is forgotten. A run that saw nothing changes nothing.
+ * seen at a revision no longer kept is forgotten. A run that saw nothing changes nothing. Also says
+ * what became of each observed flow, so a run can warn about one it could not remember.
  */
-export function mergeSubject(
+export function mergeSubjectWithOutcomes(
   current: Subject,
   observation: SubjectObservation,
   options: { expireAfter: number },
-): Subject {
-  if (!hasObservations(observation)) return current;
-  const keep = Math.min(SUBJECT_LIMITS.revisions, Math.max(1, Math.floor(options.expireAfter)));
+): { model: Subject; flows: FlowMerge[] } {
+  if (!hasObservations(observation)) return { model: current, flows: [] };
+  // A missing or broken setting falls back to the default rather than forgetting everything.
+  const expireAfter = Number.isFinite(options.expireAfter)
+    ? Math.floor(options.expireAfter)
+    : SUBJECT_EXPIRE_AFTER;
+  const keep = Math.min(SUBJECT_LIMITS.revisions, Math.max(1, expireAfter));
   const model: Subject = structuredClone(current);
   model.revisions = [
     observation.revision,
     ...current.revisions.filter((r) => r !== observation.revision),
   ].slice(0, keep);
   for (const screen of observation.screens) upsertScreen(model, screen, observation.revision);
-  for (const flow of observation.flows) upsertFlow(model, flow, observation.revision);
+  // After the screens, so a field this run saw marked secret counts for its flows.
+  const flows = observation.flows.map((flow): FlowMerge => {
+    const name = oneLine(flow.name, SUBJECT_LIMITS.label);
+    return { ...(name ? { name } : {}), outcome: upsertFlow(model, flow, observation.revision) };
+  });
   for (const command of observation.commands) upsertCommand(model, command, observation.revision);
   // Checked like everything Covi writes: a model its own loader would reject is never returned.
-  return SubjectSchema.parse(bound(expire(model)));
+  return { model: SubjectSchema.parse(bound(expire(model))), flows };
+}
+
+/** `mergeSubjectWithOutcomes` for callers that need only the model. */
+export function mergeSubject(
+  current: Subject,
+  observation: SubjectObservation,
+  options: { expireAfter: number },
+): Subject {
+  return mergeSubjectWithOutcomes(current, observation, options).model;
 }

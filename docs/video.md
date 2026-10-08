@@ -186,7 +186,7 @@ Where questions are asked:
 | Stage | What happens | Writes |
 |---|---|---|
 | Decide | Applies the decision rules above | `video/decision.json` |
-| Capture | Runs the software at base and head when a video will be made, the project is runnable, and the change has something to show (the same demonstration as `covi demo`, at desktop and mobile unless `demo.viewports` says otherwise) | `demo/captures.json`, `demo/screenshots/`, `demo/diffs/`, `demo/demo.md` |
+| Capture | Runs the software at base and head when a video will be made, the project is runnable, and the change has something to show (the same demonstration as `covi demo`, at desktop and mobile unless `demo.viewports` says otherwise) | `demo/captures.json`, `demo/screenshots/`, `demo/diffs/`, `demo/recordings/`, `demo/traces/`, `demo/behavior-diff.json`, `demo/demo.md` |
 | Review | Explains and reviews the change; the story's review note comes from here | `explanation.json`, `review.json`, `review.md`, `summary.md`, … |
 | Storyboard | Drafts scenes from the evidence with a storytelling template, or validates the one you supply, then redacts it | `video/storyboard.json` |
 | Narration | Picks the narration language and the voice, rewrites each scene's spoken text for that voice (acronyms spelled out, your pronunciations applied), then synthesizes and measures one take per scene and places them on the voice stem, at −16 LUFS | `video/speech.json`, `video/narration.wav` |

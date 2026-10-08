@@ -305,10 +305,11 @@ What to demonstrate. Covi adds what it detects: pages rendered by changed files,
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `pages` | list of paths | `[]` | Pages captured at base and head in every viewport, with a pixel diff and a crop around the change. At most four pages per run, including detected ones. |
-| `flows` | list of flows | `[]` | Scripted interactions run at the head. Each interactive step is captured before it happens, and the flow ends with the resulting state. |
+| `flows` | list of flows | `[]` | Scripted interactions run at base and head, each recorded and traced. Each interactive step is captured before it happens, and the flow ends with the resulting state. A flow that fails at base is expected when the change adds what it uses; one that fails at head is a finding. |
 | `commands` | list of commands | `[]` | Commands run in each revision's checkout; their output is compared. |
 | `requests` | list of requests | `[]` | HTTP requests sent to the running app at base and head. Status and JSON shape are compared. At most four per run, including detected ones. |
 | `viewports` | list of `desktop`, `tablet`, `mobile` | `[desktop]`; `[desktop, mobile]` for `covi demo`, `covi video`, and `covi ci` | Viewports for pages. A flow uses its own first viewport, or the first one here. |
+| `record` | `true`, `false` | `true` | Record every flow at base and head into `demo/recordings/` (MP4 when ffmpeg is installed, else WebM). When it is set explicitly — here, with `--record`, or with `COVI_DEMO_RECORD` — a recording that cannot be made (Chromium is missing, the recorder does not start, or a recording cannot be saved) fails the run with exit code 3; otherwise Covi records what it can and says why in `captures.json`. |
 
 The viewport sizes are:
 
@@ -381,7 +382,7 @@ demo:
 
 Commands in `demo.commands` run only once [trusted](#trusted-commands) on your machine.
 
-Differences Covi observes become findings in `covi review --demo`, `covi video`, and `covi ci`. Examples are a changed response shape, a new server error, a page error, a command that now fails, a flow that cannot complete, or an app that no longer starts.
+Differences Covi observes become findings in `covi review --demo`, `covi video`, and `covi ci`. Examples are a changed response shape, a new server error, a page error, a command that now fails, a flow that cannot complete, or an app that no longer starts. Every demonstration that runs at both revisions also writes `demo/behavior-diff.json`, the step-by-step comparison of each page and flow.
 
 ### `video`
 
@@ -468,6 +469,7 @@ These variables set configuration keys in the explicit layer. Command-line flags
 | `COVI_PROVIDER` | `intelligence.provider` |
 | `COVI_MODEL` | `intelligence.model` |
 | `COVI_FAIL_ON` | `review.failOn` |
+| `COVI_DEMO_RECORD` | `demo.record` (same values as `COVI_NARRATION`) |
 | `COVI_VIDEO_MODE` | `video.mode` |
 | `COVI_VIDEO_DURATION` | `video.duration` |
 | `COVI_NARRATION` | `video.narration.enabled` (`1`, `true`, `yes`, `on` mean on; anything else off) |

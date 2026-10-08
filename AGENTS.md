@@ -59,7 +59,8 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
   context.json         Understand output          diff.patch           redacted diff
   brief.md             agent brief                rule-findings.json   deterministic findings with ids
   explanation.json/.md findings.json              review.json/.md      summary.md   comment.md
-  demo/                plan.json (when given), captures.json, screenshots/, diffs/, demo.md
+  demo/                plan.json (when given), captures.json, screenshots/, diffs/, demo.md,
+                       recordings/, traces/, behavior-diff.json
   video/               decision.json, storyboard.json, speech.json, timeline.json, narration.wav,
                        score.json (composed music), audio.json, music.wav, captions.vtt/.srt,
                        composition/, covi-review.mp4, frames.json, poster.png, contact-sheet.jpg,

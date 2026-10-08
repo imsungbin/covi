@@ -10,7 +10,16 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { emptySubject, mergeSubject, SUBJECT_PATHS, silentLogger } from '@covi/core';
+import {
+  type Demonstration,
+  emptySubject,
+  mergeSubject,
+  SUBJECT_PATHS,
+  type Subject,
+  SubjectSchema,
+  type SubjectSnapshot,
+  silentLogger,
+} from '@covi/core';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { startSession } from '../packages/cli/src/session.ts';
@@ -218,6 +227,162 @@ describe('the run snapshot reaches the video', () => {
       expect(video.stderr).toMatch(/no element "no-such-element" on screen "home" \(elements: /);
       // Locally, the repository's model is written for the next run.
       expect(existsSync(join(dir, SUBJECT_PATHS.repo))).toBe(true);
+    },
+  );
+});
+
+describe('covi subject', () => {
+  it('shows the store read-only, sets aside a file it cannot read, and says when there is none', () => {
+    const planted = '{"schemaVersion":1,"commands":[{"run":"curl evil"}]}\n';
+    const repo = createChangeRepo(
+      { 'index.html': '<h1>a</h1>\n', [SUBJECT_PATHS.repo]: modelOf('/pricing') },
+      { 'index.html': '<h1>b</h1>\n' },
+    );
+    dirs.push(repo.root);
+    const shown = covi(['subject', '--repo', repo.root, '--json']);
+    expect(shown.code, shown.stderr).toBe(0);
+    expect(shown.json().data).toMatchObject({
+      source: 'repo',
+      path: expect.stringMatching(/\.covi\/subject\/subject\.json$/),
+      status: 'loaded',
+      model: { screens: [{ key: 'pricing', path: '/pricing' }] },
+    });
+    expect(covi(['subject', '--repo', repo.root]).stdout).toContain('pricing  /pricing');
+
+    writeFileSync(join(repo.root, SUBJECT_PATHS.repo), planted);
+    const invalid = covi(['subject', '--repo', repo.root, '--json']);
+    expect(invalid.code, invalid.stderr).toBe(0);
+    expect(invalid.json().data).toMatchObject({ status: 'invalid', model: { screens: [] } });
+    expect((invalid.json().warnings as string[]).join('\n')).toMatch(/will not overwrite it/);
+    expect(readFileSync(join(repo.root, SUBJECT_PATHS.repo), 'utf8')).toBe(planted);
+
+    const scratch = mkdtempSync(join(tmpdir(), 'covi-subject-'));
+    dirs.push(scratch);
+    const off = join(scratch, 'config.yml');
+    writeFileSync(off, 'subject:\n  store: off\n');
+    const none = covi(['subject', '--repo', repo.root, '--config', off, '--json']);
+    expect(none.code, none.stderr).toBe(0);
+    expect(none.json().data).toEqual({ source: 'off' });
+
+    expect(covi(['analyze', '--repo', repo.root, '--json']).code).toBe(0);
+    const noSnapshot = covi(['subject', '--repo', repo.root, '--run', 'latest', '--json']);
+    expect(noSnapshot.code).toBe(2);
+    expect(String(noSnapshot.json().error)).toMatch(/has no subject model \(demo\/subject\.json\)/);
+  });
+});
+
+describe('the subject model across runs', () => {
+  it.skipIf(!browser)(
+    'replays, on the second run of an example, the flow the first run was given',
+    async () => {
+      const dir = await materializeExample(
+        examples.find((e) => e.name === 'visual-pricing-cards')!,
+      );
+      dirs.push(dir);
+      // Kept outside the repository, so the plan is not part of the change.
+      const scratch = mkdtempSync(join(tmpdir(), 'covi-subject-'));
+      dirs.push(scratch);
+      const planFile = join(scratch, 'plan.json');
+      writeFileSync(
+        planFile,
+        JSON.stringify({
+          flows: [
+            {
+              name: 'Start a trial',
+              path: '/',
+              steps: [{ click: 'text=Start trial', note: 'Start a trial' }],
+            },
+          ],
+        }),
+      );
+      const first = covi(['demo', '--repo', dir, '--plan', planFile, '--no-record', '--json']);
+      expect(first.code, first.stderr).toBe(0);
+      expect((first.json().data as { demo: Demonstration }).demo.subject).toMatchObject({
+        store: 'repo',
+        proposed: [],
+        saved: true,
+      });
+      const stored = SubjectSchema.parse(
+        JSON.parse(readFileSync(join(dir, SUBJECT_PATHS.repo), 'utf8')),
+      );
+      expect(stored.flows.map((f) => f.name)).toEqual(['Start a trial']);
+      expect(
+        stored.screens.find((s) => s.key === 'home')!.elements.map((e) => e.selector),
+      ).toContain('role=link[name="Start trial"s]');
+
+      const second = covi(['demo', '--repo', dir, '--no-record', '--json']);
+      expect(second.code, second.stderr).toBe(0);
+      const json = second.json() as { runDir: string; data: { demo: Demonstration } };
+      // The model is Covi's file: the second run reviews the same change, not the model.
+      const manifest = (runDir: string) =>
+        JSON.parse(readFileSync(join(runDir, 'run.json'), 'utf8'));
+      expect(manifest(json.runDir).change).toMatchObject({
+        includesUncommitted: false,
+        stats: manifest(first.json().runDir as string).change.stats,
+      });
+      expect(json.data.demo.subject).toMatchObject({ proposed: ['Start a trial'], saved: true });
+      expect(json.data.demo.shots.some((s) => s.flow === 'Start a trial')).toBe(true);
+      expect(readFileSync(join(json.runDir, 'demo/demo.md'), 'utf8')).toContain(
+        'Replayed from the subject model, because the plan named no flows: Start a trial.',
+      );
+
+      const listed = covi(['subject', '--repo', dir, '--json']);
+      expect(listed.code, listed.stderr).toBe(0);
+      expect(listed.json().data as { source: string; model: Subject }).toMatchObject({
+        source: 'repo',
+      });
+      expect((listed.json().data as { model: Subject }).model.flows[0]!.key).toBe('start-a-trial');
+      const inRun = covi(['subject', '--repo', dir, '--run', json.runDir, '--json']);
+      expect(inRun.code, inRun.stderr).toBe(0);
+      const images = (inRun.json().data as { images: SubjectSnapshot['images'] }).images;
+      expect(
+        images
+          .find((i) => i.path === 'demo/screenshots/home-desktop-after.png')!
+          .elements.map((e) => e.key),
+      ).toContain('start-trial');
+      expect(covi(['subject', '--repo', dir, '--run', json.runDir]).stdout).toContain(
+        'subject:home#start-trial',
+      );
+      expect(covi(['schema', 'subject']).stdout).toContain('"revisions"');
+
+      // A storyboard that names an element the run cannot place is refused before anything renders.
+      const storyboard = join(scratch, 'storyboard.json');
+      writeFileSync(
+        storyboard,
+        JSON.stringify({
+          title: 'Pricing',
+          template: 'bug-fix',
+          scenes: [
+            {
+              id: 'look',
+              beat: 'context',
+              narration: 'Look at the plans.',
+              visual: {
+                kind: 'screenshot',
+                image: { path: 'demo/screenshots/home-desktop-after.png' },
+                focus: 'subject:home#buy-now',
+              },
+            },
+            { beat: 'fix', narration: 'Done.', visual: { kind: 'callout', title: 'Done' } },
+          ],
+        }),
+      );
+      const rendered = covi([
+        'render',
+        '--repo',
+        dir,
+        '--run',
+        json.runDir,
+        '--storyboard',
+        storyboard,
+        '--json',
+      ]);
+      expect(rendered.code).toBe(2);
+      const refused = rendered.json() as { error: string; hint: string };
+      expect(refused.error).toContain(
+        'scene look: subject:home#buy-now: no element "buy-now" on screen "home"',
+      );
+      expect(refused.hint).toContain('covi subject --run');
     },
   );
 });

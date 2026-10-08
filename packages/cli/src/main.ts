@@ -4,8 +4,10 @@ import { FOX_FRAME, foxMarkSvg, foxSvg, logoSvg } from '@covi/brand';
 import { DemoPlanSchema } from '@covi/capture';
 import {
   ConfigInputSchema,
+  type CoviConfig,
   CoviError,
   configFromEnv,
+  DEMO_PATHS,
   describeCommands,
   EvidenceFileSchema,
   ExitCode,
@@ -18,18 +20,27 @@ import {
   loadEvidence,
   loadRepositoryConfig,
   loadSkill,
+  loadSubject,
+  loadSubjectSnapshot,
   NoChangesError,
   type ParsedConfigInput,
   parseConfigInput,
   parseLanguageSetting,
   parseOrThrow,
   parseYamlConfig,
+  Redactor,
   RUN_PATHS,
   Run,
   type RunOutcome,
   repositoryCommands,
   resolveConfig,
+  runsRootFor,
+  type Subject,
+  type SubjectImage,
+  SubjectSchema,
+  subjectSource,
   TrustStore,
+  UsageError,
 } from '@covi/core';
 import { detectPlatform, platformContext } from '@covi/platforms';
 import {
@@ -110,8 +121,8 @@ function repoPath(value: string): string {
   return resolve(value);
 }
 
-/** Where runs live: output.dir from configuration (no commands are read, so no trust needed). */
-async function runsDirOf(root: string, flags: GlobalFlags): Promise<string> {
+/** Configuration for read-only commands: the worktree's (or --config), and COVI_* variables. */
+async function readOnlyConfig(root: string, flags: GlobalFlags): Promise<CoviConfig> {
   const loaded = await loadRepositoryConfig(
     root,
     flags.config ? { kind: 'file', path: resolve(flags.config) } : { kind: 'worktree' },
@@ -120,7 +131,40 @@ async function runsDirOf(root: string, flags: GlobalFlags): Promise<string> {
   return resolveConfig([
     ...(loaded.values ? [{ name: 'repository' as const, values: loaded.values }] : []),
     ...(Object.keys(env).length ? [{ name: 'explicit' as const, values: env }] : []),
-  ]).config.output.dir;
+  ]).config;
+}
+
+/** Where runs live: output.dir from configuration (no commands are read, so no trust needed). */
+async function runsDirOf(root: string, flags: GlobalFlags): Promise<string> {
+  return (await readOnlyConfig(root, flags)).output.dir;
+}
+
+/** Screens with each element's reference, then flows and scenarios; with images, what each capture shows. */
+function printSubject(model: Subject, images: readonly SubjectImage[] = []): void {
+  const out: string[] = [];
+  for (const s of model.screens) {
+    const viewports = s.viewports.map((v) => v.name).join(', ');
+    out.push(`${pc.bold(s.key)}  ${s.path}  ${pc.dim(viewports)}${s.title ? `  ${s.title}` : ''}`);
+    for (const e of s.elements)
+      out.push(`  subject:${s.key}#${e.key}  ${pc.dim(e.role ?? '')}  ${e.label ?? e.selector}`);
+  }
+  for (const f of model.flows)
+    out.push(
+      `${pc.dim('flow')}  ${f.key}  ${f.name}  ${pc.dim(`${f.path}, passed at ${f.passed}`)}`,
+    );
+  for (const c of model.commands)
+    out.push(
+      `${pc.dim(c.kind)}  ${c.key}  ${c.name}  ${
+        c.kind === 'http'
+          ? `${c.method ?? 'GET'} ${c.path ?? ''} ${c.status ?? ''}`
+          : `exit ${c.exitCode ?? 'timeout'}`
+      }`,
+    );
+  for (const i of images)
+    out.push(`${pc.dim(i.path)}  ${i.elements.map((e) => e.key).join(', ') || '—'}`);
+  if (!out.length)
+    out.push(pc.dim('Covi has not seen this software yet; `covi demo` adds what it captures.'));
+  process.stdout.write(`${out.join('\n')}\n`);
 }
 
 function printChecks(checks: readonly DoctorCheck[], json: boolean): void {
@@ -1140,10 +1184,61 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
     });
 
   program
+    .command('subject')
+    .description('Show what Covi has seen of the software: screens, elements, flows (read-only)')
+    .option('--run <id>', "a run's own snapshot, with the elements each capture shows")
+    .action(async (o: { run?: string }, cmd: Command) => {
+      const u = ui(cmd);
+      const root = await repoRoot(repoPath(u.flags.repo));
+      const config = await readOnlyConfig(root, u.flags);
+      const result = baseResult('subject');
+      if (o.run) {
+        const run = await Run.open(o.run, { root, runsDir: config.output.dir });
+        const snapshot = await loadSubjectSnapshot(run);
+        if (!snapshot)
+          throw new UsageError(
+            `Run ${run.id} has no subject model (${DEMO_PATHS.subject}).`,
+            'Demonstrate the change in a run first: `covi demo` or `covi review --demo`.',
+          );
+        const shown = run.redactor.redactDeep(snapshot);
+        result.runId = run.id;
+        result.runDir = run.dir;
+        result.artifacts.subject = run.path(DEMO_PATHS.subject);
+        result.data = { source: 'run', ...shown };
+        if (u.json) printJson(result);
+        else printSubject(shown.model, shown.images);
+        return;
+      }
+      const source = subjectSource({
+        root,
+        runsRoot: runsRootFor(root, config.output.dir),
+        config,
+      });
+      if (!source) {
+        result.data = { source: 'off' };
+        result.message = 'subject.store is off: Covi keeps no subject model.';
+        if (u.json) printJson(result);
+        else process.stdout.write(`${result.message}\n`);
+        return;
+      }
+      const loaded = await loadSubject(source, {
+        warn: (message) => result.warnings.push(message),
+      });
+      // The repository's file is repository data: shown as Covi would write it, redacted.
+      const model = Redactor.fromProcess().redactDeep(loaded.model);
+      result.data = { source: source.store, path: source.from.path, status: loaded.status, model };
+      if (u.json) printJson(result);
+      else {
+        for (const w of result.warnings) process.stderr.write(`${pc.yellow('!')} ${w}\n`);
+        printSubject(model);
+      }
+    });
+
+  program
     .command('schema')
     .argument(
       '<name>',
-      'explanation | findings | storyboard | score | demo-plan | config | evidence',
+      'explanation | findings | storyboard | score | demo-plan | config | evidence | subject',
     )
     .description('Print the JSON Schema for a file agents author or read')
     .action(async (name: string) => {
@@ -1155,6 +1250,7 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
         'demo-plan': DemoPlanSchema,
         config: ConfigInputSchema,
         evidence: EvidenceFileSchema,
+        subject: SubjectSchema,
       };
       const schema = schemas[name];
       if (!schema)

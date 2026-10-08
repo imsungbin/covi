@@ -11,6 +11,7 @@ export {
   writeOutputs,
 } from './github.ts';
 export { codeQualityReport, dotenvReport, GitLabPublisher, gitlabContext } from './gitlab.ts';
+export { artifactFileBase } from './links.ts';
 export { toSarif } from './sarif.ts';
 export type {
   CiOutputs,

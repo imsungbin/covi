@@ -94,6 +94,7 @@ report:
     untitled: コードの変更
     findings: 指摘
     evidence: '根拠:'
+    cited: '引用した根拠: {refs}'
     suggestion: '**提案:**'
     tests: テスト
     testsPassed: 成功
@@ -121,6 +122,7 @@ comment:
   where: 場所
   details: 指摘の詳細
   suggestion: '提案:'
+  cited: '引用した根拠: {refs}'
   changes: 変更内容
   notVerified: 確認できなかったこと
   artifacts: 成果物
@@ -176,6 +178,7 @@ brief:
   artifacts: '成果物は {dir} にあります。'
   step1: '1. 上のファイルの周辺コードを読んでください。diff だけでは文脈が足りません。'
   step2: '2. 実行ディレクトリに `explanation.json`（スキーマ: `covi schema explanation`）と `findings.json`（スキーマ: `covi schema findings`）を書いてください。'
+  cite: '   各主張の根拠を `evidenceIds` に書いてください（一覧は `covi evidence --run {runId}`）。確認済みの問題と問題の可能性が高いものには、根拠が少なくとも一つ必要です。'
   step3: '3. `covi report --run {runId}` を実行して検証し、Markdown のレポートを生成してください。'
 
 intent:

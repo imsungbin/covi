@@ -12,8 +12,9 @@ export function sheetLabel(timeline: Pick<Timeline, 'fps' | 'scenes'>, frame: nu
   const scene = timeline.scenes.findLast((s) => s.start <= t) ?? timeline.scenes[0];
   if (!scene) return '';
   const ids = scene.evidenceIds ?? [];
+  // The count comes first: a long id is cut by the strip's ellipsis, never the count.
   const cited = ids.length
-    ? `${ids.slice(0, 2).join(' · ')}${ids.length > 2 ? ` +${ids.length - 2}` : ''}`
+    ? [...(ids.length > 2 ? [`+${ids.length - 2}`] : []), ...ids.slice(0, 2)].join(' · ')
     : '—';
   const text = `${scene.id} · ${cited}`;
   return text.length > MAX_LABEL ? `${text.slice(0, MAX_LABEL - 1)}…` : text;

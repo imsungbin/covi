@@ -70,8 +70,8 @@ export async function writeComposition(
   const fonts = fontFiles();
   await copyFile(fonts.sans, join(dir, 'assets', 'fonts', 'inter.woff2'));
   await copyFile(fonts.mono, join(dir, 'assets', 'fonts', 'jetbrains-mono.woff2'));
-  // Citations are never drawn. Leaving them out keeps the frames key, so a change in the run's
-  // evidence alone does not render frames whose pixels are the same.
+  // Citations appear only on the contact sheet, which is shot separately. Leaving them out keeps
+  // the frames key, so a change in what scenes cite does not render the same pixels again.
   const composed = { ...timeline, scenes: timeline.scenes.map(({ evidenceIds: _, ...s }) => s) };
   // CJK text draws with bundled Noto slices, never with whatever the machine has installed.
   const { mouth: _mouth, ...drawn } = composed;

@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -135,6 +135,17 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
     expect(audio.music.logo!.landing).toBeCloseTo(audio.music.outro!, 3);
     expect(audio.effects.dropped.map((d) => d.kind)).toContain('outro');
 
+    // Citing evidence changes only what the contact sheet's tiles name: the frames are reused,
+    // and the sheet is shot again.
+    const sheetSha = () =>
+      read<{ artifacts: Array<{ path: string; sha256: string }> }>(run, 'run.json').artifacts.find(
+        (a) => a.path === 'video/contact-sheet.jpg',
+      )!.sha256;
+    const framesKey = () => read<{ key: string }>(run, 'video/frames.json').key;
+    const before = { sheet: sheetSha(), key: framesKey() };
+    const board = read<{ scenes: Array<{ evidenceIds?: string[] }> }>(run, 'video/storyboard.json');
+    board.scenes[0]!.evidenceIds = [[...evidence][0]!];
+    writeFileSync(join(run, 'video/storyboard.json'), JSON.stringify(board));
     const remix = covi(['render', '--repo', repo, '--run', full.result.runId, '--music', 'none']);
     expect(remix.result.video).toMatchObject({
       rendered: true,
@@ -142,6 +153,8 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
       music: { use: 'none', source: 'none' },
     });
     expect(remix.ms).toBeLessThan(full.ms * 0.5);
+    expect(framesKey()).toBe(before.key);
+    expect(sheetSha()).not.toBe(before.sheet);
     expect(read<Qc>(run, 'video/qc.json').status).not.toBe('fail');
     // Without music, the outro signs off with its own sting, on the same moment.
     const remixed = read<Audio>(run, 'video/audio.json');

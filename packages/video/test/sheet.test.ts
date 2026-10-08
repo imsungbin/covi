@@ -20,7 +20,7 @@ describe('contact sheet labels', () => {
   it('names the scene a frame shows and the evidence it cites', () => {
     expect(sheetLabel(timeline, 15)).toBe('s1 · screenshot:cart-desktop-after');
     // During a transition the incoming scene is named.
-    expect(sheetLabel(timeline, 57)).toBe('s2 · diff-hunk:src/cart.ts:10 · http:1 +1');
+    expect(sheetLabel(timeline, 57)).toBe('s2 · +1 · diff-hunk:src/cart.ts:10 · http:1');
     expect(sheetLabel(timeline, 135)).toBe('s3 · —');
   });
 

@@ -43,6 +43,7 @@ import {
   framesKey,
   remuxAudio,
   renderComposition,
+  renderContactSheet,
 } from './render/renderer.ts';
 import {
   AUDIO_PATHS,
@@ -460,8 +461,13 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
       await remuxAudio({ video: output, audio: sound.master, duration: timeline.duration, media });
       layouts = previous!.layouts;
       if (await exists(run.path('video/poster.png'))) poster = run.path('video/poster.png');
-      if (await exists(run.path('video/contact-sheet.jpg')))
-        contactSheet = run.path('video/contact-sheet.jpg');
+      // The tiles name the evidence each scene cites, which the frames key leaves out.
+      contactSheet = await renderContactSheet({
+        compositionDir,
+        timeline,
+        media,
+        output: run.path('video/contact-sheet.jpg'),
+      });
       notes.push('Reused the rendered frames; only the audio changed.');
     } else {
       // The old key no longer describes the video once a new render starts.

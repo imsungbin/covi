@@ -501,6 +501,8 @@ Inside a coding agent, the agent is the reasoning provider:
    - `findings.json`, following `covi schema findings`. List what you can cite with `covi evidence --run <id> --json`.
 3. `covi report --run <run-id>` validates both files and renders the reports.
 
+Evidence ids belong to one run, and `covi analyze` and `covi demo` each make their own. To cite captures, demonstrate in the run you report on: `covi review --demo --plan plan.json --provider heuristic --json` makes one run with the rule findings, the captures, and their evidence; write both files there and pass its id to `covi report`.
+
 A minimal `findings.json`:
 
 ```json

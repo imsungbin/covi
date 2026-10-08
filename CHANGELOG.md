@@ -10,9 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Behavior diff capture: browser flows run at base and head with a recording (MP4, or WebM without ffmpeg) and a redacted trace each, and `demo/behavior-diff.json` and `demo/demo.md` show what changed (`demo.record`, `--record`, `--no-record`).
 - A timing and motion grammar for review videos: `sync`, `transition`, `hero`, `camera`, `[[…]]` caption emphasis, and a title over a capture. Videos are never padded; QC flags stills, late hooks, and a low speech share.
-- Evidence model: `evidence.json` gives every diff hunk and capture an id; findings, explanations, and scenes cite them in `evidenceIds` (required on confirmed and likely findings in `findings.json` v2), and `covi evidence` lists them.
+- Evidence model: `evidence.json` gives every diff hunk and capture an id; findings, explanations, and scenes cite them in `evidenceIds` (required on confirmed and likely findings in `findings.json` v2, which is also how a file without `schemaVersion` is read), and `covi evidence` lists them.
 
 ### Changed
 
-- A `findings.json` without `schemaVersion` is read as version 2, so its confirmed and likely findings must cite evidence ids; `schemaVersion: 1` keeps the old rule.
 - The `covi-video` skill now tells review videos as stories: a cold open on the subject with a hook for a first line, 2–5 second scenes, one hero moment, the list of things to check as the map, and a self review of every render.

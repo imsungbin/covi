@@ -23,6 +23,11 @@ function outsideCode(markdown: string): string {
   return markdown.replace(/(`{3,})[^\n]*\n[\s\S]*?\n\1/g, '').replace(/`[^`\n]*`/g, '');
 }
 
+/** Lines that open or close a fenced code block; CommonMark ends a line at CR, LF, or CRLF. */
+function fenceLines(markdown: string): string[] {
+  return markdown.split(/\r\n?|\n/).filter((line) => /^ {0,3}(`{3,}|~{3,})/.test(line));
+}
+
 describe('renderComment', () => {
   // Everything below can come from a pull request (titles, code, descriptions) or, in the
   // workflow_run pattern, from an artifact the pull request's own workflow produced.
@@ -353,8 +358,7 @@ describe('publishing extras', () => {
     expect(long.indexOf('(truncated)')).toBeLessThan(long.indexOf('Was this useful?'));
     expect(parseLedger(long)).toEqual(ledger);
     // Cut inside a finding's evidence, the notice and the rating line still render as text.
-    const fences = long.split('\n').filter((line) => /^`{3,}/.test(line));
-    expect(fences.length % 2).toBe(0);
+    expect(fenceLines(long).length % 2).toBe(0);
     expect(long.match(/<details>/g)?.length).toBe(long.match(/<\/details>/g)?.length);
   });
 
@@ -399,5 +403,93 @@ describe('publishing extras', () => {
     expect(text).not.toMatch(/(?<!\\)\]\((https:\/\/evil|javascript:)/);
     expect(text).not.toMatch(/@everyone/);
     expect(drafts.some((d) => d.path === 'src/cart2.ts' || d.path === 'src/x.ts')).toBe(false);
+  });
+
+  const rated = (body: string) =>
+    body.endsWith(`\n\nWas this useful? 👍 👎 (react to this comment)\n${renderLedger(ledger)}`);
+  const extras = { ledger, rating: true };
+
+  it('keeps a tilde fence or a lone carriage return from swallowing the rating line', () => {
+    const cases: [Review, Explanation][] = [
+      [review([finding(0)]), { ...explanation, summary: '~~~ x' }],
+      [review([finding(0, { title: 'abc\r~~~' })]), explanation],
+      [review([finding(0, { explanation: 'Overcharged.\r~~~' })]), explanation],
+      [review([finding(0, { explanation: 'See `a\r~~~` here.' })]), explanation],
+      [{ ...review([finding(0)]), notVerified: ['a\r~~~'] }, explanation],
+      [
+        review([finding(0)]),
+        { ...explanation, changes: [{ area: 'cart\r~~~', description: 'x\r~~~ y' }] },
+      ] as [Review, Explanation],
+      [
+        review(Array.from({ length: 120 }, (_, i) => finding(i, { title: `xyz ${i}\r~~~` }))),
+        explanation,
+      ],
+    ];
+    for (const [r, e] of cases) {
+      const body = renderComment(r, e, context, {}, 'en', undefined, extras);
+      expect(body).not.toContain('\r');
+      expect(fenceLines(body).filter((line) => line.includes('~'))).toEqual([]);
+      expect(fenceLines(body).length % 2).toBe(0);
+      expect(rated(body)).toBe(true);
+      expect(parseLedger(body)).toEqual(ledger);
+    }
+    const [anchor] = anchorsFor(
+      [finding(0, { title: '~~~ abc\r~~~', explanation: 'x\r~~~\n```' })],
+      'en',
+    );
+    expect(anchor!.body).not.toContain('\r');
+    expect(fenceLines(anchor!.body)).toEqual([]);
+    expect(
+      anchor!.body.endsWith('\n\n<sub>React 👍 if this finding is right, 👎 if it is not.</sub>'),
+    ).toBe(true);
+  });
+
+  it('drops a tilde block the cut left open', () => {
+    const markdown = `~~~\n${'v\n'.repeat(35_000)}~~~`;
+    const body = renderComment(
+      review([finding(0)]),
+      explanation,
+      context,
+      { video: { url: 'https://v.example/a.mp4', markdown } },
+      'en',
+      undefined,
+      extras,
+    );
+    expect(body).toContain('(truncated)');
+    expect(fenceLines(body).length % 2).toBe(0);
+    expect(rated(body)).toBe(true);
+  });
+
+  it('never leaves a partial tag or half a surrogate pair where it cuts', () => {
+    // A single line of video markdown pushes the findings' <details> line to where the cut lands.
+    const filler = (n: number) => ({
+      video: { url: 'https://v.example/a.mp4', markdown: 'v'.repeat(n) },
+    });
+    const r = review([finding(0)]);
+    const tail = `\n\n${'Was this useful? 👍 👎 (react to this comment)'}\n${renderLedger(ledger)}`;
+    const cut = 60_000 - tail.length - 40;
+    const open = renderComment(r, explanation, context, filler(0)).indexOf('<details>');
+    for (let offset = 1; offset <= 40; offset++) {
+      const body = renderComment(
+        r,
+        explanation,
+        context,
+        filler(cut - open - offset),
+        'en',
+        undefined,
+        extras,
+      );
+      const kept = body.slice(0, body.indexOf('\n\n…(truncated)'));
+      expect(kept).not.toMatch(/<[^>]*$/);
+      expect(body.match(/<details>/g)?.length ?? 0).toBe(body.match(/<\/details>/g)?.length ?? 0);
+      expect(rated(body)).toBe(true);
+    }
+    const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    for (const lead of ['', 'x']) {
+      const video = { url: 'https://v.example/a.mp4', markdown: `${lead}${'😀'.repeat(40_000)}` };
+      const body = renderComment(r, explanation, context, { video }, 'en', undefined, extras);
+      expect(body).toContain('(truncated)');
+      expect(body).not.toMatch(lone);
+    }
   });
 });

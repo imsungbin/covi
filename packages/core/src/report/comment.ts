@@ -147,19 +147,24 @@ export function renderComment(
 
 /**
  * Cuts the comment without leaving a code block or `<details>` open, so the notice and the rating
- * line after it render as text rather than as code or collapsed. A cut code block is left out.
+ * line after it render as text rather than as code or collapsed. A cut code block is left out, and
+ * so is a tag or a surrogate pair the cut would split.
  */
 function cutClosed(markdown: string, max: number): string {
-  let cut = markdown.slice(0, max);
-  let fence: { ticks: string; at: number } | undefined;
+  let cut = markdown.slice(0, /[\uD800-\uDBFF]/.test(markdown[max - 1] ?? '') ? max - 1 : max);
+  const tag = cut.lastIndexOf('<');
+  if (tag > cut.lastIndexOf('>')) cut = cut.slice(0, tag);
+  let fence: { char: string; length: number; at: number } | undefined;
   let details = false;
   let at = 0;
   for (const line of cut.split('\n')) {
     if (fence) {
-      if (line === fence.ticks) fence = undefined;
+      // CommonMark closes a fence with the same character, at least as many, and nothing after.
+      const close = /^ {0,3}(`+|~+) *$/.exec(line)?.[1];
+      if (close?.[0] === fence.char && close.length >= fence.length) fence = undefined;
     } else {
-      const ticks = /^`{3,}/.exec(line)?.[0];
-      if (ticks) fence = { ticks, at };
+      const open = /^ {0,3}(`{3,}(?!.*`)|~{3,})/.exec(line)?.[1];
+      if (open) fence = { char: open[0]!, length: open.length, at };
       else if (line.startsWith('<details>')) details = true;
       else if (line === '</details>') details = false;
     }

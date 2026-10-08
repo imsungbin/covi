@@ -236,18 +236,22 @@ export function indent(text: string, spaces = 2): string {
     .join('\n');
 }
 
-/** Escapes text for safe inclusion in Markdown rendered by GitHub/GitLab (no HTML, no mentions). */
+/**
+ * Escapes text for safe inclusion in Markdown rendered by GitHub/GitLab (no HTML, no mentions).
+ * Text stays on one line: CommonMark ends a line at a lone CR too, and a `~~~` that starts a line
+ * opens a code block that runs to the end of the comment.
+ */
 export function escapeMarkdown(text: string): string {
   return text
-    .replace(/[\\`*_{}[\]<>|#]/g, (c) => `\\${c}`)
+    .replace(/[\\`*_{}[\]<>|#~]/g, (c) => `\\${c}`)
     .replace(/@(?=[A-Za-z0-9-])/g, '@​')
-    .replace(/\r?\n/g, ' ');
+    .replace(/[\r\n]+/g, ' ');
 }
 
 /** Like escapeMarkdown, but keeps inline `code` spans (safe: GitHub/GitLab render them literally). */
 export function escapeMarkdownKeepCode(text: string): string {
   return text
-    .split(/(`[^`\n]{1,200}`)/)
+    .split(/(`[^`\r\n]{1,200}`)/)
     .map((part, i) => (i % 2 === 1 ? part : escapeMarkdown(part)))
     .join('');
 }

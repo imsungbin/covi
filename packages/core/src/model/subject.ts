@@ -35,7 +35,7 @@ export const SUBJECT_REF = /^subject:([a-z0-9][a-z0-9-]{0,47})#([a-z0-9][a-z0-9-
  * What one line of page text must not hold: C0 and C1 controls (terminal escapes among them), the
  * Unicode line and paragraph separators, and the bidi overrides and isolates that reorder text.
  */
-const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
+export const SUBJECT_CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
 const APP_ORIGIN = 'http://app.invalid';
 
 export function parseSubjectRef(ref: string): { screen: string; element: string } | undefined {
@@ -101,7 +101,7 @@ const line = (max: number) =>
     .string()
     .min(1)
     .max(max)
-    .refine((v) => !CONTROL.test(v), 'one line, without control or bidi characters');
+    .refine((v) => !SUBJECT_CONTROL.test(v), 'one line, without control or bidi characters');
 const Key = z.string().regex(SUBJECT_KEY, 'lowercase letters, digits, and dashes');
 const Revision = z.string().regex(/^[0-9a-f]{7,40}$/, 'a commit SHA');
 const AppPath = line(SUBJECT_LIMITS.path).refine(
@@ -177,7 +177,7 @@ const SubjectStepSchema = FlowStepSchema.refine(
       ([field, v]) =>
         typeof v !== 'string' ||
         (v.length <= (STEP_SELECTORS.has(field) ? SUBJECT_LIMITS.selector : SUBJECT_LIMITS.value) &&
-          !CONTROL.test(v)),
+          !SUBJECT_CONTROL.test(v)),
     ),
   'step values are single lines: selectors of at most 300 characters, other values 500',
 ).refine(

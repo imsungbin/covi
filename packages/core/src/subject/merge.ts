@@ -1,4 +1,4 @@
-import { type FlowStep, VIEWPORTS } from '../config/schema.ts';
+import { type FlowStep, SUBJECT_EXPIRE_AFTER, VIEWPORTS } from '../config/schema.ts';
 import type { Rect } from '../model/demo.ts';
 import {
   type ObservedCommand,
@@ -347,9 +347,6 @@ function bound(model: Subject): Subject {
     commands: [...out.commands].sort(byKey),
   };
 }
-
-/** How many revisions the model keeps when configuration does not say (`subject.expireAfter`). */
-export const SUBJECT_EXPIRE_AFTER = 20;
 
 /** One observed flow and whether the model now remembers it. */
 export interface FlowMerge {

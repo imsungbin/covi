@@ -379,7 +379,12 @@ export async function detectBaseBranch(git: Git, configured?: string): Promise<s
 }
 
 /** Paths Covi itself writes; they never make a tree dirty or join a change. */
-const COVI_OWNED = [':(exclude).covi/runs', ':(exclude).covi/cache', ':(exclude).covi/.gitignore'];
+const COVI_OWNED = [
+  ':(exclude).covi/runs',
+  ':(exclude).covi/cache',
+  ':(exclude).covi/subject',
+  ':(exclude).covi/.gitignore',
+];
 
 async function isDirty(git: Git): Promise<boolean> {
   const status = await git.tryOut([

@@ -129,4 +129,25 @@ describe('resolveChange', () => {
     expect(byPath['snapshots/x.snap']).toMatchObject({ ignored: true });
     expect(byPath['docs/guide.md']).toMatchObject({ ignored: true, ignoreReason: 'config' });
   });
+  it('never lets the subject model join or dirty a change', async () => {
+    repo = createChangeRepo(
+      { 'a.ts': 'export const a = 1;\n', '.covi/subject/subject.json': '{}\n' },
+      { 'a.ts': 'export const a = 2;\n' },
+    );
+    // A local run rewrote the committed model and added a file next to it: neither is the change.
+    repo.write({
+      '.covi/subject/subject.json': '{"schemaVersion":1}\n',
+      '.covi/subject/other.json': '{}\n',
+    });
+    const change = await resolveChange({ repo: repo.root });
+    expect(change.includesUncommitted).toBe(false);
+    expect(change.files.map((f) => f.path)).toEqual(['a.ts']);
+    // A change that commits it shows Covi's own file set aside, like generated code.
+    repo.commit('Update the subject model');
+    const committed = await resolveChange({ repo: repo.root });
+    expect(committed.files.find((f) => f.path === '.covi/subject/subject.json')).toMatchObject({
+      ignored: true,
+      ignoreReason: 'generated',
+    });
+  });
 });

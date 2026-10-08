@@ -149,8 +149,18 @@ export {
   hasObservations,
   mergeSubject,
   mergeSubjectWithOutcomes,
-  SUBJECT_EXPIRE_AFTER,
 } from './subject/merge.ts';
+export {
+  loadSubject,
+  loadSubjectSnapshot,
+  openSubject,
+  type SubjectHandle,
+  type SubjectSource,
+  saveSubject,
+  subjectSource,
+  withLock,
+  writeSubjectSnapshot,
+} from './subject/store.ts';
 export { areaKey, groupAreas } from './understand/areas.ts';
 export { type Classification, classifyFile, ignoreReason } from './understand/classify.ts';
 export { assessDemonstration, pagePathFor, type RepoShape } from './understand/demonstration.ts';

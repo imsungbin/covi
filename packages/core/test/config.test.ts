@@ -132,6 +132,28 @@ describe('configuration', () => {
     expect(configFromEnv({ COVI_DEMO_RECORD: 'yes' }).demo?.record).toBe(true);
     expect(() => parseConfigInput({ demo: { record: 'yes' } }, 't')).toThrow(/demo\.record/);
   });
+
+  it('keeps the subject model in the repository by default and checks its keys', () => {
+    expect(DEFAULT_CONFIG.subject).toEqual({ store: 'repo', expireAfter: 20 });
+    const { config, provenance } = resolveConfig([
+      {
+        name: 'repository',
+        source: '.covi/config.yml',
+        values: parseConfigInput({ subject: { store: 'runs', expireAfter: 5 } }, 't'),
+      },
+    ]);
+    expect(config.subject).toEqual({ store: 'runs', expireAfter: 5 });
+    expect(provenance['subject.store']).toBe('repository (.covi/config.yml)');
+    for (const subject of [
+      { store: 'nowhere' },
+      { expireAfter: 0 },
+      { expireAfter: 101 },
+      { keep: true },
+    ])
+      expect(() => parseConfigInput({ subject }, '.covi/config.yml')).toThrow(
+        /\.covi\/config\.yml is invalid/,
+      );
+  });
 });
 
 describe('music and sound effects', () => {

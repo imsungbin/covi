@@ -1,14 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import type { Rect } from '@covi/core';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 import { changedRegions } from './regions.ts';
-
-export interface Rect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
 
 export interface PixelDiff {
   changedRatio: number;

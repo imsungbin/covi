@@ -714,7 +714,6 @@ video:
 # Narration and on-screen text Covi drafts for videos (packages/video/src/storyboard/draft.ts).
 narration:
   meta: '{files} · +{additions} −{deletions}'
-  touches: ' It touches {areas}.'
   changeMap:
     text: The change spans {areas}, mostly {names}.
     heading: '{files} changed'
@@ -804,18 +803,6 @@ narration:
       risk: Risk
       question: Question
     pointLine: '{label}: {title}'
-  roadmap:
-    text: "{first} We'll look at {stops}."
-    api: the response before and after
-    apiNew: the new response
-    terminal: the command before and after
-    terminalNew: the command's output
-    beforeAfter: the page before and after
-    screenshot: what it looks like
-    interaction: the new flow
-    code: the code behind it
-    structure: how the pieces fit together
-    findings: what to check before merging
   # How a file is said aloud: "the totals module".
   file:
     phrase: the {name} {noun}

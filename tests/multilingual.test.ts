@@ -153,8 +153,11 @@ describe('heuristic output in every language', () => {
         // Short labels can be all kanji in Japanese (互換性); sentences always carry kana.
         const label =
           language === 'ja' ? /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u : script;
-        for (const scene of storyboard.scenes) {
-          expect(scene.eyebrow, scene.beat).toMatch(label);
+        for (const [i, scene] of storyboard.scenes.entries()) {
+          // A cold open without captures wears the change's title, text from the change kept as
+          // written, as its eyebrow; every other label is in the run's language.
+          if (i > 0 || scene.visual.kind === 'title')
+            expect(scene.eyebrow, scene.beat).toMatch(label);
           expect(scene.narration, scene.beat).toMatch(script);
           const { eyebrow } = scene.visual as { eyebrow?: string };
           if (eyebrow) expect(eyebrow, `${scene.beat} title card`).toMatch(label);

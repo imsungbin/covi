@@ -45,6 +45,12 @@ describe('story templates', () => {
     expect(Object.fromEntries([...templates].map(([id, t]) => [id, t.hero]))).toEqual(HERO);
   });
 
+  it('never make a hero beat optional', async () => {
+    for (const t of (await loadTemplates()).values())
+      for (const id of t.hero)
+        expect(t.beats.find((b) => b.id === id)!.optional, `${t.id}: ${id}`).toBe(false);
+  });
+
   it('reject a hero that is not one of their beats', async () => {
     await expect(loadTemplates(templateDir('[context]'))).resolves.toBeDefined();
     await expect(loadTemplates(templateDir('[proof]'))).rejects.toThrow(

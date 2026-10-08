@@ -4,6 +4,7 @@ import {
   type Demonstration,
   explainHeuristically,
   Git,
+  intentSentence,
   loadRepositoryConfig,
   parseConfigInput,
   resolveChange,
@@ -94,7 +95,19 @@ describe('example changes', () => {
             templates,
           });
           expect(StoryboardSchema.safeParse(storyboard).success).toBe(true);
-          expect(storyboard.scenes[0]!.visual.kind).toBe('title');
+          // A cold open: without captures the subject itself (code, a run, a response) comes
+          // first; only a change with none of those keeps a title card.
+          const subjects = ['code', 'terminal', 'api'];
+          const first = storyboard.scenes[0]!.visual.kind;
+          if (storyboard.scenes.some((s) => subjects.includes(s.visual.kind)))
+            expect(subjects).toContain(first);
+          else expect(first).toBe('title');
+          expect(storyboard.scenes.filter((s) => s.hero).length).toBeLessThanOrEqual(1);
+          expect(storyboard.scenes[0]!.optional).toBeUndefined();
+          for (const s of storyboard.scenes) expect(s.narration).not.toMatch(/We'll look at/);
+          // The fitter may drop an optional scene, never the hero.
+          for (const s of storyboard.scenes.filter((s) => s.hero))
+            expect(s.optional).toBeUndefined();
           expect(storyboard.scenes.at(-1)!.visual.kind).toBe('summary');
           expect(storyboard.scenes.length).toBeGreaterThanOrEqual(3);
           const words = storyboard.scenes.reduce(
@@ -151,6 +164,138 @@ describe('templates', () => {
   });
 });
 
+describe('the drafted opening and hero', () => {
+  it('puts the title over the most-changed capture when a page was captured', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('visual-pricing-cards');
+    const image = (path: string) => ({ path, width: 1280, height: 800 });
+    const shot = (id: string, changedRatio: number) => ({
+      id,
+      kind: 'page' as const,
+      name: `/${id}`,
+      viewport: 'desktop' as const,
+      before: image(`demo/screenshots/${id}-before.png`),
+      after: image(`demo/screenshots/${id}-after.png`),
+      diff: { changedRatio, bounds: { x: 0, y: 0, width: 100, height: 100 } },
+    });
+    const demo: Demonstration = {
+      schemaVersion: 1,
+      shots: [shot('faq', 0.01), shot('pricing', 0.2)],
+      commands: [],
+      requests: [],
+      skipped: [],
+      findings: [],
+    };
+    const storyboard = draftStoryboard({
+      change,
+      context,
+      explanation,
+      review,
+      demo,
+      spec: resolveVideoSpec(config, { mode: 'standard' }),
+      templates: await loadTemplates(),
+    });
+    expect(StoryboardSchema.safeParse(storyboard).success).toBe(true);
+    const opening = storyboard.scenes[0]!;
+    expect(opening.visual).toMatchObject({
+      kind: 'title',
+      background: { path: 'demo/screenshots/pricing-after.png', label: '/pricing' },
+    });
+    const heroes = storyboard.scenes.filter((s) => s.hero);
+    expect(heroes.map((s) => s.beat)).toEqual(['compare']);
+    expect(heroes[0]!.optional).toBeUndefined();
+  });
+
+  it('leaves out a hero beat without evidence, and opens on the hero when it is all there is', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('bugfix-cli-slugify');
+    for (const mode of ['short', 'standard'] as const) {
+      const storyboard = draftStoryboard({
+        change,
+        context,
+        explanation,
+        review,
+        spec: resolveVideoSpec(config, { mode }),
+        templates: await loadTemplates(),
+      });
+      expect(storyboard.template).toBe('bug-fix');
+      // Nothing showed the fixed behavior, so there is no proof scene (and no callout for it).
+      expect(storyboard.scenes.some((s) => s.beat === 'proof')).toBe(false);
+      // The fix is the only scene that shows the subject: it opens the video, as its hero.
+      expect(storyboard.scenes[0]).toMatchObject({ beat: 'fix', hero: true });
+      expect(storyboard.scenes[0]!.optional).toBeUndefined();
+      expect(storyboard.scenes.filter((s) => s.hero)).toHaveLength(1);
+    }
+  });
+
+  it('keeps the title card when nothing shows the subject', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('refactor-retry-helper');
+    const storyboard = draftStoryboard({
+      change: { ...change, files: [] },
+      context,
+      explanation,
+      review,
+      spec: resolveVideoSpec(config, { mode: 'standard' }),
+      templates: await loadTemplates(),
+    });
+    const opening = storyboard.scenes[0]!;
+    expect(opening.visual.kind).toBe('title');
+    expect((opening.visual as { background?: unknown }).background).toBeUndefined();
+    // The opening line is the intent alone: no list of areas, no table of contents.
+    expect(opening.narration).toBe(intentSentence(context));
+  });
+
+  it('never lets text from the change write [[…]] markup into a line', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('api-users-pagination');
+    const marked = (text: string) => `[[${text}]] ]] [[`;
+    const storyboard = draftStoryboard({
+      change,
+      context: { ...context, intent: { ...context.intent, summary: marked('Paginate users') } },
+      explanation: {
+        ...explanation,
+        headline: marked(explanation.headline),
+        summary: marked(explanation.summary),
+        changes: explanation.changes.map((c) => ({ ...c, description: marked(c.description) })),
+      },
+      review: {
+        ...review,
+        findings: review.findings.map((f) => ({
+          ...f,
+          title: marked(f.title),
+          explanation: marked(f.explanation),
+        })),
+      },
+      demo: {
+        schemaVersion: 1,
+        shots: [],
+        commands: [],
+        skipped: [],
+        findings: [],
+        requests: [
+          {
+            name: 'list users',
+            method: 'GET',
+            path: '/api/users',
+            changed: true,
+            before: { status: 200, body: '[]' },
+            after: { status: 200, body: '{"items":[]}' },
+            shapeChange: marked('the response changed shape'),
+          },
+        ],
+      },
+      spec: resolveVideoSpec(config, { mode: 'standard' }),
+      templates: await loadTemplates(),
+    });
+    expect(StoryboardSchema.safeParse(storyboard).success).toBe(true);
+    for (const s of storyboard.scenes) {
+      expect(s.narration, s.beat).not.toMatch(/\[\[|\]\]/);
+      expect(s.say ?? '', s.beat).not.toMatch(/\[\[|\]\]/);
+    }
+  });
+});
+
 describe('standard-length narration', () => {
   it('goes deeper than a short video, using only what was observed', async () => {
     const { change, context, review, explanation, config } =
@@ -191,9 +336,17 @@ describe('standard-length narration', () => {
     expect(words(standard)).toBeGreaterThan(words(draft('short')) * 1.5);
 
     const scene = (kind: string) => standard.scenes.find((s) => s.visual.kind === kind)!;
-    expect(scene('title').narration).toContain(
-      "We'll look at the response before and after, the code behind it, and what to check before merging.",
+    // The cold open: no captures here, so the code moves to the front under a short title,
+    // and the API exchange (the template's payoff) is the hero.
+    const opening = standard.scenes[0]!;
+    expect(opening.visual.kind).toBe('code');
+    expect(opening.eyebrow).toBe('Paginate GET /api/users');
+    expect(opening.heading).toBeUndefined();
+    expect(opening.narration).toMatch(
+      /^This change paginates GET \/api\/users\. The key change is in app\.js/,
     );
+    expect(standard.scenes.find((s) => s.hero)?.beat).toBe('exchange');
+    expect(standard.scenes.some((s) => /We'll look at/.test(s.narration))).toBe(false);
     expect(scene('api').narration).toContain(
       'The old response listed 3 entries; the new items array holds 1.',
     );

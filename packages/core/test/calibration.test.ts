@@ -87,7 +87,7 @@ describe('calibration in the brief', () => {
     expect(prompts[0]).toContain('- Likely issue: 4 of 5 held up (80%)');
   });
 
-  it('is material for the model, never a change to what it reports', async () => {
+  it("reaches the model's material, and Covi never changes a reported certainty because of it", async () => {
     a = await analyze(
       { 'src/cart.ts': 'export const total = (xs) => xs.length;\n' },
       { 'src/cart.ts': 'export const total = (xs) => xs.reduce((s, x) => s + x, 0);\n' },

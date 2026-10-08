@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { outcomeFile } from '../../../tests/helpers/outcomes.ts';
 import { createRepo, type TempRepo } from '../../../tests/helpers/repo.ts';
 import { Git } from '../src/git/git.ts';
+import { OUTCOME_LIMITS } from '../src/model/outcome.ts';
 import { outcomesOfRepository, readOutcomes, writeOutcome } from '../src/outcomes/store.ts';
 import { Redactor } from '../src/security/redact.ts';
 import { ignoreReason } from '../src/understand/classify.ts';
@@ -66,9 +67,11 @@ describe('outcome store', () => {
     at('20261009-120001-ci-aaaaaaa', 7);
     at('20261009-130001-ci-bbbbbbb', 7, '2026-10-09T13:00:00.000Z');
     at('20261009-120002-ci-ccccccc', 8);
-    put('notes.json', 'not json');
-    put('bad.json', { schemaVersion: 1 });
-    put('big.json', `"${'x'.repeat(300 * 1024)}"`);
+    put('20261009-110001-ci-1111111.json', 'not json');
+    put('20261009-110002-ci-2222222.json', { schemaVersion: 1 });
+    put('20261009-110003-ci-3333333.json', `"${'x'.repeat(300 * 1024)}"`);
+    // Not named after a run: not an outcome Covi wrote, so not even looked at.
+    put('notes.json', outcomeFile({ number: 10 }));
     // A link is not a file Covi wrote, wherever it points.
     const elsewhere = join(tempDir(), 'outcome.json');
     writeFileSync(elsewhere, JSON.stringify(outcomeFile({ number: 9 })));
@@ -95,6 +98,53 @@ describe('outcome store', () => {
     repo.git('add', '-f', '.covi/outcomes');
     repo.git('commit', '-qm', 'Commit outcomes');
     expect(await read()).toEqual([]);
+    expect(warnings.join('\n')).toMatch(/committed to the repository/);
+  });
+
+  it('does not let stray files crowd real outcomes out of the files it reads', async () => {
+    const root = tempDir();
+    await writeOutcome(root, outcomeFile({ number: 7 }), new Redactor());
+    // Names that sort after every run id, as many as Covi reads.
+    for (let i = 0; i < OUTCOME_LIMITS.files; i++)
+      writeFileSync(
+        join(root, `.covi/outcomes/zz-${String(i).padStart(3, '0')}.json`),
+        JSON.stringify(outcomeFile({ number: 100 + i })),
+      );
+    expect((await readOutcomes(root)).map((o) => o.change.number)).toEqual([7]);
+  });
+
+  it('ignores committed outcomes whatever the case of their path', async () => {
+    repo = createRepo({ 'README.md': 'shop\n' });
+    // A case-insensitive file system (macOS, Windows) reads .COVI/outcomes as .covi/outcomes.
+    repo.write({
+      '.COVI/outcomes/20261009-120003-ci-aaaaaaa.json': JSON.stringify(
+        outcomeFile({ number: 7, runId: '20261009-120003-ci-aaaaaaa' }),
+      ),
+    });
+    repo.git('add', '-f', '.COVI');
+    repo.git('commit', '-qm', 'Commit outcomes');
+    const warnings: string[] = [];
+    expect(
+      await readOutcomes(repo.root, { git: new Git(repo.root), warn: (m) => warnings.push(m) }),
+    ).toEqual([]);
+    expect(warnings.join('\n')).toMatch(/committed to the repository/);
+  });
+
+  it('ignores outcomes that a submodule at .covi brings along', async () => {
+    const sub = createRepo({
+      'outcomes/20261009-120003-ci-aaaaaaa.json': JSON.stringify(
+        outcomeFile({ number: 7, runId: '20261009-120003-ci-aaaaaaa' }),
+      ),
+    });
+    roots.push(sub.root);
+    repo = createRepo({ 'README.md': 'shop\n' });
+    repo.git('-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub.root, '.covi');
+    repo.git('commit', '-qm', 'Add .covi as a submodule');
+    expect(readdirSync(join(repo.root, '.covi/outcomes'))).toHaveLength(1);
+    const warnings: string[] = [];
+    expect(
+      await readOutcomes(repo.root, { git: new Git(repo.root), warn: (m) => warnings.push(m) }),
+    ).toEqual([]);
     expect(warnings.join('\n')).toMatch(/committed to the repository/);
   });
 

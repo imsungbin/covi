@@ -2,6 +2,7 @@ import { lstat, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Git } from '../git/git.ts';
 import { OUTCOME_LIMITS, type OutcomeFile, OutcomeFileSchema } from '../model/outcome.ts';
+import { RUN_ID_PATTERN } from '../run/paths.ts';
 import { ensureSelfIgnored } from '../run/run.ts';
 import type { Redactor } from '../security/redact.ts';
 import { EnvironmentError } from '../util/errors.ts';
@@ -38,13 +39,16 @@ interface Listed {
   outcome: OutcomeFile;
 }
 
-/** Outcome files in a directory, newest name (run id) first, valid ones only. */
+/**
+ * Outcome files in a directory, newest name (run id) first, valid ones only. Names that are not
+ * run ids are left out before the limit, so stray files cannot crowd real outcomes out.
+ */
 async function listOutcomes(
   dir: string,
   options: { limit?: number; warn?: (message: string) => void } = {},
 ): Promise<Listed[]> {
   const names = (await readdir(dir).catch(() => [] as string[]))
-    .filter((name) => name.endsWith('.json'))
+    .filter((name) => name.endsWith('.json') && RUN_ID_PATTERN.test(name.slice(0, -5)))
     .sort()
     .reverse()
     .slice(0, options.limit);
@@ -91,11 +95,12 @@ export async function writeOutcome(
   const dir = outcomesDir(root);
   await ensureSelfIgnored(dir);
   const name = `${valid.runId}.json`;
+  const path = join(dir, name);
+  // Written before the older file goes, so a failed write loses nothing.
+  await writeFileAtomic(path, `${JSON.stringify(valid, null, 2)}\n`);
   for (const other of await listOutcomes(dir))
     if (other.file !== name && changeKey(other.outcome) === changeKey(valid))
       await rm(join(dir, other.file), { force: true });
-  const path = join(dir, name);
-  await writeFileAtomic(path, `${JSON.stringify(valid, null, 2)}\n`);
   return path;
 }
 
@@ -114,7 +119,14 @@ export async function readOutcomes(
     return [];
   }
   if (options.git) {
-    const tracked = await options.git.tryOut(['ls-files', '--', OUTCOMES_DIR]);
+    // Any case (a case-insensitive file system reads .COVI/outcomes as ours), and inside a
+    // submodule a change could put at .covi.
+    const tracked = await options.git.tryOut([
+      'ls-files',
+      '--recurse-submodules',
+      '--',
+      `:(icase)${OUTCOMES_DIR}`,
+    ]);
     // A failed check counts as tracked: without an answer, the files could be anyone's.
     if (tracked === undefined) {
       options.warn?.(`Ignored ${OUTCOMES_DIR}: Covi could not check whether git tracks it.`);

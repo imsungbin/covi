@@ -230,8 +230,9 @@ export interface Layout {
  * and the transition into each scene starts where `cutStart` puts it. A scene stays up for its
  * visual's minimum, and the next line waits for it; the hero holds `HERO_HOLD` after its line. A
  * breath belongs to the scene after it: the transition starts as at any scene change and the new
- * picture holds the breath, so no scene outstays its line by more than 0.6 s. The video ends with
- * the outro or a short hold.
+ * picture holds the breath, so an ordinary scene never outstays its line by more than 0.6 s (the
+ * hero's hold, a scene kept up for its minimum, and the last scene's tail can). The video ends
+ * with the outro or a short hold.
  */
 export function layoutScenes(
   scenes: readonly Scene[],
@@ -336,7 +337,9 @@ export function fitToDuration(
   const { max } = spec.duration;
 
   while (layout.duration > max && scenes.length > 3) {
-    const index = findLastIndex(scenes, (s) => Boolean(s.optional) && !s.hero);
+    // The hero (marked, else the scene playing the template's hero beat) always stays.
+    const hero = heroScene(scenes, pacing.hero);
+    const index = findLastIndex(scenes, (s, i) => Boolean(s.optional) && i !== hero);
     if (index === -1) break;
     notes.push(`Dropped optional scene "${scenes[index]!.beat}" to fit ${Math.round(max)}s.`);
     scenes = scenes.filter((_, i) => i !== index);
@@ -352,8 +355,11 @@ export function fitToDuration(
   return { scenes, layout, tempo, notes };
 }
 
-function findLastIndex<T>(items: readonly T[], predicate: (item: T) => boolean): number {
-  for (let i = items.length - 1; i >= 0; i--) if (predicate(items[i]!)) return i;
+function findLastIndex<T>(
+  items: readonly T[],
+  predicate: (item: T, index: number) => boolean,
+): number {
+  for (let i = items.length - 1; i >= 0; i--) if (predicate(items[i]!, i)) return i;
   return -1;
 }
 

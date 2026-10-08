@@ -199,8 +199,9 @@ describe('pacing', () => {
   });
 
   it('trims only past the window’s maximum, and never drops the hero', () => {
+    // The hero is the last optional scene: only the guard keeps it.
     const scenes = story.map((s, i) =>
-      i === 2 ? { ...s, optional: true, hero: true } : i === 3 ? { ...s, optional: true } : s,
+      i === 1 ? { ...s, optional: true } : i === 3 ? { ...s, optional: true, hero: true } : s,
     );
     const storyboard: Storyboard = {
       schemaVersion: 1,
@@ -211,9 +212,25 @@ describe('pacing', () => {
     };
     const long = new Map([...talk].map(([id, s]) => [id, s * 2.4]));
     const fit = fitToDuration(storyboard, long, standard, 'en', pacingFor(standard, HERO));
-    expect(fit.scenes.map((s) => s.id)).toEqual(['s1', 's2', 's3', 's5']);
-    expect(fit.notes[0]).toMatch(/Dropped optional scene "review"/);
+    expect(fit.scenes.map((s) => s.id)).toEqual(['s1', 's3', 's4', 's5']);
+    expect(fit.notes[0]).toMatch(/Dropped optional scene "problem"/);
     expect(fit.layout.duration).toBeLessThanOrEqual(standard.duration.max);
+  });
+
+  it('never drops the scene playing the template’s hero beat when none is marked', () => {
+    // bug-fix's hero is its proof, else its fix: here the fix (s3), the last optional scene.
+    const scenes = story.map((s, i) => (i === 1 || i === 2 ? { ...s, optional: true } : s));
+    const storyboard: Storyboard = {
+      schemaVersion: 1,
+      title: 'x',
+      template: 'bug-fix',
+      draft: true,
+      scenes,
+    };
+    const long = new Map([...talk].map(([id, s]) => [id, s * 2.4]));
+    const fit = fitToDuration(storyboard, long, standard, 'en', pacingFor(standard, HERO));
+    expect(fit.scenes.map((s) => s.id)).toEqual(['s1', 's3', 's4', 's5']);
+    expect(fit.notes[0]).toMatch(/Dropped optional scene "problem"/);
   });
 });
 

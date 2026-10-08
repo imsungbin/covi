@@ -15,6 +15,15 @@ export const DEMO_PATHS = {
   behaviorDiff: 'demo/behavior-diff.json',
 } as const;
 
+/** Files at the top of a run that more than one stage writes or reads. */
+export const RUN_PATHS = {
+  diff: 'diff.patch',
+  /** The evidence registry: every id a claim may cite. */
+  evidence: 'evidence.json',
+  /** The test command and the tail of its output, when tests ran. */
+  testsLog: 'tests.log',
+} as const;
+
 const frameNumber = (n: number) => String(n).padStart(2, '0');
 
 /** Run-relative paths of the files one scenario (a page at a viewport, or a flow) produces. */
@@ -40,4 +49,6 @@ export const demoPath = {
     `${DEMO_PATHS.recordings}/.${scenario}-${revision}`,
   trace: (scenario: string, revision: DemoRevision) =>
     `${DEMO_PATHS.traces}/${scenario}-${revision}.json`,
+  /** Why the app did not start at a revision: the evidence an `app-start` finding cites. */
+  appLog: (revision: DemoRevision) => `demo/app-${revision}.log`,
 } as const;

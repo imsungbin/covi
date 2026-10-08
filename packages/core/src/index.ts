@@ -16,6 +16,13 @@ export {
 } from './config/resolve.ts';
 export * from './config/schema.ts';
 export {
+  buildEvidence,
+  diffHunkEvidence,
+  type EvidenceSources,
+  evidenceFiles,
+} from './evidence/build.ts';
+export { evidenceId, evidencePart } from './evidence/ids.ts';
+export {
   type ExecResult,
   exec,
   execShell,
@@ -74,6 +81,7 @@ export * from './model/behavior.ts';
 export * from './model/change.ts';
 export * from './model/context.ts';
 export * from './model/demo.ts';
+export * from './model/evidence.ts';
 export * from './model/explanation.ts';
 export * from './model/finding.ts';
 export { renderBrief } from './report/brief.ts';

@@ -4,11 +4,14 @@ import {
   type Demonstration,
   type DemoRequestResult,
   type DemoShot,
+  type EvidenceIndex,
   type Explanation,
   endSentence,
   ensurePeriod,
   type Finding,
   humanizeIdentifier,
+  hunksAt,
+  hunksOfFiles,
   intentSentence,
   isImperativeVerb,
   joinSentences,
@@ -40,6 +43,8 @@ export interface DraftInput {
   templateId?: string;
   /** The language to narrate in (the run's language). Default: English. */
   language?: Language;
+  /** The run's evidence: a drafted scene that shows none of it cites what backs what it says. */
+  evidence?: EvidenceIndex;
 }
 
 /** Natural speech for narration: ~2.5 words per second (see SPEECH_RATE for other languages). */
@@ -154,6 +159,7 @@ function buildScene(beat: Beat, budget: number, ctx: BeatContext): Scene | undef
     ctx.used.add(key);
     const narration = narrate(beat, visual, ctx, budget);
     const text = fitWords(stripEmphasis(narration.text), budget, ctx.language);
+    const cites = visual.kind === 'callout' ? reviewEvidence(ctx) : [];
     return {
       beat: beat.id,
       eyebrow: eyebrowOf(beat, ctx.language),
@@ -165,10 +171,28 @@ function buildScene(beat: Beat, budget: number, ctx: BeatContext): Scene | undef
       visual,
       expression: expressionFor(beat, ctx),
       optional: beat.optional || undefined,
+      ...(cites.length ? { evidenceIds: cites } : {}),
     };
   }
   // A callout is never the payoff: a hero beat without evidence is left out instead.
   return beat.optional || ctx.heroBeats.has(beat.id) ? undefined : fallbackScene(beat, budget, ctx);
+}
+
+/**
+ * What the review's callout rests on: the evidence of the finding it shows (else the hunks at its
+ * location), or, when there are no findings, the hunks the review read.
+ */
+function reviewEvidence(ctx: BeatContext): string[] {
+  const index = ctx.evidence;
+  if (!index) return [];
+  const top = ctx.review.findings[0];
+  if (!top)
+    return hunksOfFiles(
+      index,
+      ctx.change.files.map((f) => f.path),
+    );
+  const cited = (top.evidenceIds ?? []).filter((id) => index.find(id));
+  return cited.length ? cited : hunksAt(index, top.location);
 }
 
 function fallbackScene(beat: Beat, budget: number, ctx: BeatContext): Scene | undefined {

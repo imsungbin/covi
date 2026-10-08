@@ -11,15 +11,15 @@ describe('music placement', () => {
       speechDb: -20,
       elsewhereDb: -11,
       minGap: 0.6,
-      down: 0.08,
-      up: 0.4,
+      down: 0.06,
+      up: 0.3,
     });
     expect(PLACEMENT.bookends).toEqual({
       speechDb: -40,
       elsewhereDb: -11,
       minGap: 1.2,
-      down: 0.25,
-      up: 0.45,
+      down: 0.06,
+      up: 0.3,
     });
   });
 
@@ -40,13 +40,13 @@ describe('music placement', () => {
     expect(env.length).toBe(10 * SR);
   });
 
-  it('finishes ducking as speech starts and swells after it ends', () => {
+  it('starts ducking 60 ms before speech and releases over 300 ms after it', () => {
     const env = placementEnvelope([[1, 3]], 'continuous', { duration: 5, sampleRate: SR });
     expect(at(env, 1)).toBeCloseTo(-20, 5);
-    expect(at(env, 0.96)).toBeCloseTo(-15.5, 1);
-    expect(at(env, 0.9)).toBeCloseTo(-11, 5);
-    expect(at(env, 3.2)).toBeCloseTo(-15.5, 1);
-    expect(at(env, 3.41)).toBeCloseTo(-11, 5);
+    expect(at(env, 0.97)).toBeCloseTo(-15.5, 1);
+    expect(at(env, 0.93)).toBeCloseTo(-11, 5);
+    expect(at(env, 3.15)).toBeCloseTo(-15.5, 1);
+    expect(at(env, 3.31)).toBeCloseTo(-11, 5);
   });
 
   it('keeps short gaps ducked: only gaps from minGap up swell', () => {
@@ -94,7 +94,7 @@ describe('music placement', () => {
     expect(at(env, 1.5)).toBeCloseTo(-11, 5);
   });
 
-  it('rises in a bookends breath within 0.45 s, in time for a hero settling 0.5 s after a line', () => {
+  it('rises in a bookends breath within 0.3 s, in time for a hero settling 0.5 s after a line', () => {
     const env = placementEnvelope(
       [
         [1, 3],
@@ -103,7 +103,8 @@ describe('music placement', () => {
       'bookends',
       { duration: 8, sampleRate: SR },
     );
-    expect(at(env, 3.45)).toBeCloseTo(-11, 5);
+    expect(at(env, 3.15)).toBeLessThan(-20);
+    expect(at(env, 3.3)).toBeCloseTo(-11, 5);
     expect(at(env, 3.5)).toBeCloseTo(-11, 5);
   });
 
@@ -113,10 +114,10 @@ describe('music placement', () => {
       [5, 7],
     ];
     expect(clearOfSpeech(2, speech, 'bookends')).toBe(false);
-    expect(clearOfSpeech(3.3, speech, 'bookends')).toBe(false);
-    expect(clearOfSpeech(3.5, speech, 'bookends')).toBe(true);
-    expect(clearOfSpeech(4.75, speech, 'bookends')).toBe(true);
-    expect(clearOfSpeech(4.8, speech, 'bookends')).toBe(false);
+    expect(clearOfSpeech(3.2, speech, 'bookends')).toBe(false);
+    expect(clearOfSpeech(3.3, speech, 'bookends')).toBe(true);
+    expect(clearOfSpeech(4.9, speech, 'bookends')).toBe(true);
+    expect(clearOfSpeech(4.95, speech, 'bookends')).toBe(false);
     expect(clearOfSpeech(0.5, speech, 'bookends')).toBe(true);
     // A gap too short to rise in counts as speech.
     expect(

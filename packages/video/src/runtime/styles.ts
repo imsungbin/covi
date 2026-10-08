@@ -76,6 +76,7 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
 .chip.primary { background: ${c.primary}; color: #fff; }
 .chip.soft { background: ${c.primarySoft}; color: ${c.primary}; }
 .chip.muted { background: ${c.surface}; color: ${c.textMuted}; border: 1px solid ${c.line}; }
+.chip.gloss { display: inline-block; overflow: hidden; text-overflow: ellipsis; }
 
 .card { background: ${c.surface}; border: 1px solid ${c.line}; border-radius: ${u(22)}; box-shadow: ${c.shadow}; }
 
@@ -131,6 +132,13 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
 .code .ln.del .mark { color: ${c.delText}; }
 .code .ln.del .txt { opacity: 0.75; }
 .code .ln .hl { position: absolute; inset: 0; border-left: ${u(5)} solid ${c.primary}; background: rgba(59,91,255,0.22); transform-origin: left center; }
+.code.morph .ln.add { overflow: hidden; }
+.code.morph .ln.del:not(.struck) { background: transparent; }
+.code .ln .strike { position: absolute; left: 4.9em; right: 1em; top: 52%; height: max(2px, 0.08em); background: ${c.delText};
+  transform-origin: left center; transform: scaleX(0); }
+.code .caret { display: inline-block; width: 0.5em; height: 1.05em; margin-left: 0.05em; vertical-align: text-bottom; background: ${c.codeText}; opacity: 0.75; }
+.code-caption { position: absolute; color: ${c.textMuted}; font-weight: 560; line-height: 1.3; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 ${syntaxRules('', c.syntax)}
 ${syntaxRules('.api-panel ', c.surfaceSyntax)}
 
@@ -192,5 +200,7 @@ ${languageRules(t)}
 .node.changed { border-color: ${c.primary}; background: ${c.primarySoft}; }
 .node .nlabel { font-weight: 700; line-height: 1.15; word-break: break-word; }
 .node .ndetail { color: ${c.textMuted}; }
+.edge-label { position: absolute; padding: ${u(5)} ${u(12)}; border-radius: 999px; background: ${c.surface}; border: 1px solid ${c.line};
+  color: ${c.textMuted}; font-weight: 620; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 `;
 }

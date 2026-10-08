@@ -1,9 +1,13 @@
 import { rmSync } from 'node:fs';
 import {
+  buildEvidence,
   buildReview,
+  citeExplanation,
   type Demonstration,
   explainHeuristically,
   Git,
+  hunksAt,
+  indexEvidence,
   intentSentence,
   loadRepositoryConfig,
   parseConfigInput,
@@ -23,6 +27,7 @@ import {
 } from '@covi/video';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
+import { groundingCheck, sceneEvidence } from '../packages/video/src/grounding.ts';
 
 const examples = await listExamples();
 const dirs: string[] = [];
@@ -393,6 +398,72 @@ describe('the drafted opening and hero', () => {
     const opening = storyboard.scenes[0]!;
     expect(opening.eyebrow).not.toMatch(/\[\[|\]\]/);
     expect(opening.narration).toContain('Paginate users');
+  });
+});
+
+describe('drafted grounding', () => {
+  it("grounds every scene Covi drafts in the run's evidence, its verdict callout too", async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('ui-comment-composer');
+    expect(review.findings).toEqual([]);
+    const evidence = indexEvidence(buildEvidence({ diff: change.files }));
+    for (const mode of ['short', 'standard'] as const) {
+      const storyboard = draftStoryboard({
+        change,
+        context,
+        explanation,
+        review,
+        evidence,
+        spec: resolveVideoSpec(config, { mode }),
+        templates: await loadTemplates(),
+      });
+      const callout = storyboard.scenes.find((s) => s.visual.kind === 'callout');
+      // No findings: the verdict rests on the reviewed hunks, every changed file's (four here).
+      const hunks = evidence.items.filter((i) => i.kind === 'diff-hunk').map((i) => i.id);
+      expect(hunks).toHaveLength(4);
+      expect(callout?.evidenceIds, mode).toEqual(hunks);
+      // As the pipeline checks it: what each scene cites and what its visual shows.
+      const check = groundingCheck(
+        storyboard.scenes.map((s) => ({
+          id: s.id!,
+          narration: s.narration,
+          kind: s.visual.kind,
+          evidenceIds: sceneEvidence(s, evidence, review.findings),
+        })),
+        citeExplanation(explanation, evidence),
+      );
+      expect(check, mode).toMatchObject({ status: 'pass' });
+    }
+  });
+
+  it('cites the evidence of the finding a callout shows, else the hunks at its location', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('api-users-pagination');
+    const evidence = indexEvidence(buildEvidence({ diff: change.files }));
+    // Every template shows findings as cards; a template whose review is a callout shows the top one.
+    const quick = (await loadTemplates()).get('quick-review')!;
+    const beats = quick.beats.map((b) => (b.id === 'review' ? { ...b, visuals: ['callout'] } : b));
+    const templates = new Map([['quick-review', { ...quick, beats }]]);
+    const callout = (findings: typeof review.findings) =>
+      draftStoryboard({
+        change,
+        context,
+        explanation,
+        review: { ...review, findings },
+        evidence,
+        spec: resolveVideoSpec(config, { mode: 'standard' }),
+        templates,
+        templateId: 'quick-review',
+      }).scenes.find((s) => s.visual.kind === 'callout')?.evidenceIds;
+    const [top, ...rest] = review.findings;
+    expect(top?.location).toBeDefined();
+    const at = hunksAt(evidence, top!.location);
+    expect(at.length).toBeGreaterThan(0);
+    expect(callout(review.findings)).toEqual(at);
+    // A cited id the run does not have is left out.
+    const other = evidence.items.find((i) => i.kind === 'diff-hunk' && !at.includes(i.id))!.id;
+    const cited = { ...top!, evidenceIds: [other, 'screenshot:gone'] };
+    expect(callout([cited, ...rest])).toEqual([other]);
   });
 });
 

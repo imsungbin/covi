@@ -1,6 +1,6 @@
 import { EvidenceIdsSchema, LanguageSchema } from '@covi/core';
 import { z } from 'zod';
-import type { TransitionKind } from '../timeline/types.ts';
+import type { SceneCueKind, TransitionKind } from '../timeline/types.ts';
 import { storyboardIssues } from './grammar.ts';
 
 /**
@@ -18,6 +18,41 @@ const PointSchema = z.strictObject({ x: z.number(), y: z.number() });
 
 /** Images are paths relative to the run directory (e.g. `demo/screenshots/home-after.png`). */
 const ImageRefSchema = z.strictObject({ path: z.string().min(1), label: z.string().optional() });
+
+/** A phase name, as `sync` keys are written (bounded: names are untrusted input). */
+const PhaseNameSchema = z
+  .string()
+  .max(32)
+  .regex(/^[a-z]+\d*$/);
+
+/** A region the camera visits; 1–3 of them make a screenshot (or a step) a short tour. */
+const MarksSchema = z
+  .array(
+    z.strictObject({
+      focus: RectSchema.describe('Region in image pixels the camera moves to.'),
+      label: z
+        .string()
+        .min(1)
+        .max(40)
+        .optional()
+        .describe('A short gloss shown under the frame while the camera is on this mark.'),
+      sync: PhaseNameSchema.optional().describe(
+        "The phase that brings this mark on: a key of the scene's `sync` (or `hero` on the hero scene). Default: mark<N>, counting the marks of the visual.",
+      ),
+    }),
+  )
+  .min(1)
+  .max(3);
+
+/** The sound cues a scene can place itself. */
+export const CUE_KINDS = [
+  'click',
+  'reveal',
+  'finding',
+  'transition',
+  'riser',
+  'hero',
+] as const satisfies readonly SceneCueKind[];
 
 export const EXPRESSION_VALUES = [
   'neutral',
@@ -78,10 +113,30 @@ export const VisualSchema = z.discriminatedUnion('kind', [
       .min(1)
       .max(40),
     highlight: z
-      .array(z.number().int().min(0))
+      .array(
+        z.union([
+          z.number().int().min(0),
+          z.strictObject({
+            lines: z.union([
+              z.number().int().min(0),
+              z.array(z.number().int().min(0)).min(1).max(8),
+            ]),
+            sync: PhaseNameSchema.optional().describe(
+              "The phase that lights these lines together: a key of the scene's `sync` (or `hero`). Default: highlight<N>.",
+            ),
+          }),
+        ]),
+      )
+      .max(40)
       .default([])
-      .describe('Indexes into lines to emphasize.'),
-    caption: z.string().optional(),
+      .describe('Indexes into lines to emphasize, or groups of them that light together.'),
+    caption: z.string().max(160).optional().describe('A short line shown under the code.'),
+    mode: z
+      .enum(['diff', 'morph'])
+      .optional()
+      .describe(
+        'diff (default): the lines as a diff. morph: the old code first; at the `morph` phase the deleted lines are struck to ghosts and the added lines type in where they were.',
+      ),
   }),
   z.strictObject({
     kind: z.literal('screenshot'),
@@ -90,6 +145,9 @@ export const VisualSchema = z.discriminatedUnion('kind', [
     click: PointSchema.optional(),
     label: z.string().optional(),
     device: z.enum(['desktop', 'mobile']).default('desktop'),
+    marks: MarksSchema.optional().describe(
+      'Up to three regions the camera visits in turn, each with an optional gloss. `focus` is the one-mark shorthand; never set both.',
+    ),
   }),
   z.strictObject({
     kind: z.literal('before-after'),
@@ -110,6 +168,7 @@ export const VisualSchema = z.discriminatedUnion('kind', [
           click: PointSchema.optional(),
           focus: RectSchema.optional(),
           label: z.string().optional(),
+          marks: MarksSchema.optional(),
         }),
       )
       .min(1)
@@ -164,7 +223,10 @@ export const VisualSchema = z.discriminatedUnion('kind', [
       .min(2)
       .max(8),
     edges: z
-      .array(z.strictObject({ from: z.string(), to: z.string(), label: z.string().optional() }))
+      .array(
+        z.strictObject({ from: z.string(), to: z.string(), label: z.string().max(40).optional() }),
+      )
+      .max(16)
       .default([]),
   }),
   z.strictObject({
@@ -218,10 +280,10 @@ export const SceneSchema = z.strictObject({
   minSeconds: z.number().min(1).max(30).optional(),
   optional: z.boolean().optional().describe('May be dropped to fit the target duration.'),
   sync: z
-    .record(z.string().regex(/^[a-z]+\d*$/), z.string().min(1).max(200))
+    .record(PhaseNameSchema, z.string().min(1).max(200))
     .optional()
     .describe(
-      'Pins a moment of the visual to when a phrase of `narration` is spoken: phase name → a phrase that appears exactly once in the narration. Screenshot: zoom, click. Interaction: step2…stepN, and zoom or click for the step showing then. Code: highlight, or highlight1… for each `highlight` entry. Before-after: reveal. Findings: finding1…. Terminal: output. API: after. The hero scene: hero.',
+      'Pins a moment of the visual to when a phrase of `narration` is spoken: phase name → a phrase that appears exactly once in the narration. Screenshot: zoom, click, mark1…. Interaction: step2…stepN, zoom or click for the step showing then, and mark1… counting the marks of all steps. Code: highlight, highlight1… for each `highlight` entry, and morph. Before-after: reveal. Findings: finding1…. Terminal: output. API: after. The hero scene: hero. A highlight group or a mark can name its own phase with `sync`.',
     ),
   transition: z
     .enum(TRANSITION_KINDS)
@@ -240,6 +302,18 @@ export const SceneSchema = z.strictObject({
     .optional()
     .describe(
       'drift (default): captures drift slowly, and a visual that has finished pushes in while its line continues. static: the picture holds still.',
+    ),
+  cues: z
+    .array(
+      z.strictObject({
+        at: z.union([PhaseNameSchema, z.number().min(0).max(30)]),
+        kind: z.enum(CUE_KINDS),
+      }),
+    )
+    .max(4)
+    .optional()
+    .describe(
+      "Sound effects of the scene's own: at a phase it pins (a `sync` key, or `hero`) or seconds into the scene. A riser ends at `at`; riser and hero belong to the hero scene. Covi already sounds clicks, reveals, findings, the verdict, whooshes, and the hero.",
     ),
 });
 

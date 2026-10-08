@@ -407,7 +407,12 @@ export function soundChecks(
     checks.push({ id: 'sound-effects', status: 'pass', message: 'Sound effects are off.' });
   else {
     const times = effects.placed.map((p) => p.t).sort((a, b) => a - b);
-    const crowded = times.some((t, i) => i > 0 && t - times[i - 1]! < limits.minSpacing - 1e-6);
+    // A riser's onset is quiet, so placement lets it start beside another effect.
+    const spaced = effects.placed
+      .filter((p) => p.kind !== 'riser')
+      .map((p) => p.t)
+      .sort((a, b) => a - b);
+    const crowded = spaced.some((t, i) => i > 0 && t - spaced[i - 1]! < limits.minSpacing - 1e-6);
     const max = limits.maxPerSecond;
     const dense = times.some((t, i) => i >= max && t - times[i - max]! < 1 - 1e-6);
     const level = record.levels.effectsBelowVoiceDb;

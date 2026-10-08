@@ -6,8 +6,9 @@ import { easeInOutCubic, easeInOutSine, easeOutCubic, seg } from './anim.ts';
 /*
  * The camera: a scene never holds still while its line is spoken. A capture drifts through its
  * whole scene; any other visual pushes in once its own choreography is done, or once it has
- * entered when an event is pinned to the line (the visual would otherwise wait still for it); the
- * hero punches in at its phase. Pure functions of the scene clock.
+ * entered when an event is pinned to the line (the visual would otherwise wait still for it) or
+ * when it is a diagram (its edges draw mostly under its nodes, so the frame looks still while they
+ * do); the hero punches in at its phase. Pure functions of the scene clock.
  */
 
 export interface CameraPlan {
@@ -15,7 +16,7 @@ export interface CameraPlan {
   /** A capture: the camera drifts through the whole scene. */
   drift: boolean;
   /** When the push-in may start (seconds since the scene started): the choreography is done, or
-   * the visual has entered when an event is pinned to its line. */
+   * the visual has entered when an event is pinned to its line or it is a diagram. */
   settled: number;
   /** When its line ends; a visual that settles before it pushes in. */
   speechEnd?: number;
@@ -43,10 +44,11 @@ export function cameraPlan(scene: TimelineScene): CameraPlan | undefined {
   const hero = scene.hero ? scene.phases?.[HERO_PHASE] : undefined;
   const settled = settledAt(v, duration, scene.phases);
   const pinned = Object.keys(scene.phases ?? {}).some((name) => name !== HERO_PHASE);
+  const early = pinned || v.kind === 'diagram';
   return {
     duration,
     drift: CAPTURES.has(v.kind) || (v.kind === 'title' && v.background !== undefined),
-    settled: pinned ? Math.min(settled, ENTERED) : settled,
+    settled: early ? Math.min(settled, ENTERED) : settled,
     ...(scene.speech ? { speechEnd: scene.speech.end - scene.start } : {}),
     still: scene.camera === 'static',
     ...(hero === undefined ? {} : { hero }),

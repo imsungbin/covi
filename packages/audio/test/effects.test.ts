@@ -11,6 +11,7 @@ const config: SoundEffectsConfig = {
   gainDb: -14,
   verdictBoostDb: 2,
   outroBoostDb: 2,
+  swellCutDb: 4,
   minSpacing: 0.15,
   maxPerSecond: 3,
   recipes: {
@@ -24,6 +25,9 @@ const config: SoundEffectsConfig = {
     'outro-looks-good': 'outro-looks-good',
     'outro-needs-attention': 'outro-needs-attention',
     'outro-needs-changes': 'outro-needs-changes',
+    transition: 'transition',
+    riser: 'riser',
+    hero: 'hero',
   },
 };
 
@@ -125,5 +129,90 @@ describe('effectTranspose', () => {
     expect(effectTranspose(key(6, 'minor'))).toBe(-3); // F♯ minor → A major
     expect(effectTranspose(key(11, 'major'))).toBe(-1);
     expect(effectTranspose(key(6, 'major'))).toBe(6);
+  });
+});
+
+describe('the hero stack and the swells', () => {
+  it('map the hit, the riser, and the whoosh to their recipes and priorities', () => {
+    expect(effectRecipe(cue(1, 'hero'), config)).toEqual({ recipe: 'hero', priority: 3 });
+    expect(effectRecipe(cue(1, 'riser'), config)).toEqual({ recipe: 'riser', priority: 0 });
+    expect(effectRecipe(cue(1, 'transition'), config)).toEqual({
+      recipe: 'transition',
+      priority: 0,
+    });
+  });
+
+  it('play swells 4 dB under the other effects', () => {
+    const { placed } = placeEffects(
+      [cue(1, 'transition'), cue(2, 'riser'), cue(2.8, 'hero')],
+      config,
+    );
+    expect(placed.map((p) => [p.kind, p.gainDb])).toEqual([
+      ['transition', -18],
+      ['riser', -18],
+      ['hero', -14],
+    ]);
+  });
+
+  it("keeps a riser and a click on its start: the riser's onset is quiet", () => {
+    const { placed, dropped } = placeEffects(
+      [cue(2, 'riser'), cue(2.04, 'click'), cue(2.1, 'transition')],
+      config,
+    );
+    expect(placed.map((p) => [p.kind, p.t])).toEqual([
+      ['riser', 2],
+      ['click', 2.04],
+    ]);
+    // The whoosh is a transient: the click still crowds it out, the riser does not.
+    expect(dropped.map((d) => [d.kind, d.reason])).toEqual([
+      ['transition', expect.stringMatching(/0\.15 s/)],
+    ]);
+  });
+
+  it('drops a riser from a full second, even one that starts it', () => {
+    const { placed, dropped } = placeEffects(
+      [cue(2, 'riser'), cue(2.3, 'click'), cue(2.6, 'finding'), cue(2.9, 'reveal')],
+      config,
+    );
+    expect(placed.map((p) => p.kind)).toEqual(['click', 'finding', 'reveal']);
+    expect(dropped.map((d) => [d.kind, d.reason])).toEqual([
+      ['riser', expect.stringMatching(/3 per second/)],
+    ]);
+  });
+
+  it("keeps the hero's hit over a click at the same moment", () => {
+    const { placed, dropped } = placeEffects([cue(3, 'click'), cue(3.05, 'hero')], config);
+    expect(placed.map((p) => p.kind)).toEqual(['hero']);
+    expect(dropped.map((d) => d.kind)).toEqual(['click']);
+  });
+
+  it('gives up a swell first when a second is full, even one that comes first', () => {
+    // In time order the whoosh would be placed and the reveal dropped; the whoosh yields.
+    const { placed, dropped } = placeEffects(
+      [cue(1, 'transition'), cue(1.3, 'click'), cue(1.6, 'finding'), cue(1.9, 'reveal')],
+      config,
+    );
+    expect(placed.map((p) => p.kind)).toEqual(['click', 'finding', 'reveal']);
+    expect(dropped.map((d) => [d.kind, d.reason])).toEqual([
+      ['transition', expect.stringMatching(/3 per second/)],
+    ]);
+  });
+
+  it("keeps the hero's hit over a high-severity finding landing with it", () => {
+    const { placed, dropped } = placeEffects(
+      [cue(3, 'finding', 'high'), cue(3.05, 'hero')],
+      config,
+    );
+    expect(placed.map((p) => p.kind)).toEqual(['hero']);
+    expect(dropped.map((d) => [d.kind, d.recipe])).toEqual([['finding', 'finding-high']]);
+  });
+
+  it('keeps the earlier of a verdict and a hero hit, which rank the same', () => {
+    const heroFirst = placeEffects([cue(3.05, 'verdict', 'looks-good'), cue(3, 'hero')], config);
+    expect(heroFirst.placed.map((p) => p.kind)).toEqual(['hero']);
+    expect(heroFirst.dropped.map((d) => d.kind)).toEqual(['verdict']);
+    const verdictFirst = placeEffects([cue(3.05, 'hero'), cue(3, 'verdict', 'looks-good')], config);
+    expect(verdictFirst.placed.map((p) => p.kind)).toEqual(['verdict']);
+    expect(verdictFirst.dropped.map((d) => d.kind)).toEqual(['hero']);
   });
 });

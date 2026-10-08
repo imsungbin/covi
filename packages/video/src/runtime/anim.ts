@@ -30,6 +30,12 @@ export function fade(el: HTMLElement | SVGElement, p: number): void {
   el.style.opacity = String(easeOutCubic(clamp(p)).toFixed(3));
 }
 
+/** The first share `k` (0–1) of a text, by character (code point), so typing never splits one. */
+export function typedPrefix(text: string, k: number): string {
+  const chars = [...text];
+  return chars.slice(0, Math.floor(chars.length * clamp(k) + 1e-9)).join('');
+}
+
 /** Deterministic pseudo-random sequence (mulberry32). */
 export function seeded(seed: number): () => number {
   let a = seed >>> 0;

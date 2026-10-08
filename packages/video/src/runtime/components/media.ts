@@ -2,17 +2,22 @@ import {
   activeStep,
   apiPanels,
   beforeAfterTiming,
+  codeHighlights,
+  edgeEntrance,
+  edgeLabelEntrance,
   findingEntrance,
   HIGHLIGHT_SWEEP,
-  highlightStarts,
   interactionTiming,
+  morphTiming,
+  screenshotMarks,
   screenshotTiming,
   TYPE_TO_OUTPUT,
   terminalStarts,
 } from '../../timeline/cues.ts';
 import type { Point, Rect, TimelineVisual } from '../../timeline/types.ts';
-import { clamp, easeOutCubic, fade, lerp, rise, seg } from '../anim.ts';
+import { clamp, easeOutCubic, fade, lerp, rise, seg, typedPrefix } from '../anim.ts';
 import { el, escapeHtml } from '../dom.ts';
+import { center, marksCamera, tourNote } from '../framing.ts';
 import { highlightLine } from '../highlight.ts';
 import { union } from '../narrator.ts';
 import { choreograph, Frame } from './frame.ts';
@@ -23,6 +28,7 @@ import {
   type LayoutItem,
   overflows,
   rectOf,
+  type SceneClock,
 } from './types.ts';
 
 type V<K extends TimelineVisual['kind']> = Extract<TimelineVisual, { kind: K }>;
@@ -54,24 +60,113 @@ function frameTarget(
 // Screenshot
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * A chip for the storyboard's own text under a frame (a mark's gloss, a step's label): it
+ * ellipsizes, and QC checks it for fit.
+ */
+function noteChip(ctx: ComponentContext): HTMLSpanElement {
+  const node = chip(ctx.root, '', 'soft');
+  node.classList.add('gloss');
+  node.style.position = 'absolute';
+  return node;
+}
+
+/**
+ * Places a note chip just under a frame, from its left edge, so it reads with the capture however
+ * narrow it is. It stays in the band reserved under `box`, and never runs past its right edge.
+ */
+function underFrame(node: HTMLElement, frame: Frame, box: Rect, ctx: ComponentContext): void {
+  const v = frame.viewport;
+  Object.assign(node.style, {
+    left: `${v.x}px`,
+    top: `${v.y + v.height + ctx.u(16)}px`,
+    maxWidth: `${box.x + box.width - v.x}px`,
+  });
+}
+
+/** Shows a tour's note in `node`, at its fade. */
+function showNote(node: HTMLElement, note: { text: string | undefined; k: number }): void {
+  if (node.textContent !== (note.text ?? '')) node.textContent = note.text ?? '';
+  fade(node, note.k);
+}
+
 export function screenshot(v: V<'screenshot'>, ctx: ComponentContext): Component {
-  const box = ctx.regions.media;
+  const marks = v.marks ?? [];
+  const media = ctx.regions.media;
+  // A gloss sits under the frame, inside the media region, never in the captions' band.
+  const glossed = marks.some((m) => m.label);
+  const box = glossed ? { ...media, height: media.height - ctx.u(64) } : media;
   const frame = new Frame(ctx.root, box, v.image, {
     chrome: v.device === 'desktop',
     url: v.label,
     u: ctx.u,
   });
+  if (!marks.length)
+    return {
+      update(clock) {
+        const { t, duration } = clock;
+        rise(frame.root, entered(clock, 0, 0.55), ctx.u(28));
+        choreograph(frame, v.focus, v.click, t, screenshotTiming(duration, ctx.phases));
+      },
+      report: () => [
+        ...frameItems([frame]),
+        ...(v.focus ? [{ role: 'focus' as const, rect: frame.map(v.focus) }] : []),
+      ],
+      target: () => frameTarget(frame, v.focus, v.click),
+    };
+  const gloss = glossed ? noteChip(ctx) : undefined;
+  if (gloss) underFrame(gloss, frame, box, ctx);
+  const rects = marks.map((m) => m.focus);
+  const pose = ({ t, duration }: Pick<SceneClock, 't' | 'duration'>) => {
+    const timing = screenshotMarks(duration, marks, ctx.phases);
+    return { timing, at: marksCamera(frame.geometry, rects, timing.marks, t) };
+  };
+  // The region framed in the frame drawn last, for the layout report.
+  let framed = rects[0]!;
   return {
     update(clock) {
-      const { t, duration } = clock;
+      const { t } = clock;
       rise(frame.root, entered(clock, 0, 0.55), ctx.u(28));
-      choreograph(frame, v.focus, v.click, t, screenshotTiming(duration, ctx.phases));
+      const { timing, at } = pose(clock);
+      framed = at.focus;
+      frame.apply(at.camera);
+      frame.spotlight(at.focus, at.from < 0 ? seg(t, ...timing.spot) : 1);
+      // The cursor glides from mark to mark, then from the last one to the click.
+      if (v.click && t >= timing.move[0])
+        frame.pointer(
+          v.click,
+          seg(t, ...timing.move),
+          seg(t, ...timing.press),
+          center(rects.at(-1)!),
+        );
+      else
+        frame.pointer(
+          center(rects[at.to]!),
+          at.k,
+          0,
+          at.from < 0 ? undefined : center(rects[at.from]!),
+        );
+      if (gloss)
+        showNote(
+          gloss,
+          tourNote(
+            marks.map((m) => m.label),
+            timing.marks.map((m) => m.start),
+            t,
+          ),
+        );
     },
     report: () => [
       ...frameItems([frame]),
-      ...(v.focus ? [{ role: 'focus' as const, rect: frame.map(v.focus) }] : []),
+      { role: 'focus' as const, rect: frame.map(framed) },
+      ...(gloss
+        ? [{ role: 'text' as const, rect: rectOf(gloss), overflow: overflows(gloss) }]
+        : []),
     ],
-    target: () => frameTarget(frame, v.focus, v.click),
+    target(clock) {
+      const { at } = pose(clock);
+      return frame.map(at.focus, at.camera);
+    },
   };
 }
 
@@ -209,19 +304,37 @@ function wipe(v: V<'before-after'>, ctx: ComponentContext): Component {
 // Interaction: a sequence of screenshots with cursor and click emphasis
 // ---------------------------------------------------------------------------------------------
 
+/** How far an interaction step zooms toward its focus or its marks: less than a screenshot. */
+const STEP_ZOOM = 1.5;
+
 export function interaction(v: V<'interaction'>, ctx: ComponentContext): Component {
   const box = { ...ctx.regions.media, height: ctx.regions.media.height - ctx.u(64) };
   const frames = v.steps.map((s) => new Frame(ctx.root, box, s.image, { chrome: true, u: ctx.u }));
-  const label = chip(ctx.root, '', 'soft');
-  Object.assign(label.style, {
-    position: 'absolute',
-    left: `${box.x}px`,
-    top: `${box.y + box.height + ctx.u(16)}px`,
-  });
+  // The step's number, then its label or the gloss of the mark the camera is on.
+  const label = noteChip(ctx);
+  const count = el('span', '', label);
+  const note = el('span', '', label);
+  const marks = v.steps.map((s) => s.marks?.map((m) => m.focus));
+  /**
+   * Where the cursor waits as a step opens: where the step before left it, on its click, else on
+   * its last mark; with neither, it comes in from the corner.
+   */
+  const waiting = (i: number) => {
+    const click = v.steps[i - 1]?.click;
+    const prior = marks[i - 1]?.at(-1);
+    return click ?? (prior ? center(prior) : undefined);
+  };
+  const timingOf = (duration: number) =>
+    interactionTiming(
+      duration,
+      v.steps.length,
+      ctx.phases,
+      v.steps.map((s) => s.marks),
+    );
   return {
     update(clock) {
       const { t, duration } = clock;
-      const timing = interactionTiming(duration, v.steps.length, ctx.phases);
+      const timing = timingOf(duration);
       const active = activeStep(timing, t);
       const since = t - timing[active]!.start;
       frames.forEach((f, i) => {
@@ -236,21 +349,66 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
           return;
         }
         const shown = v.steps[i]!;
-        f.setCamera(shown.focus, seg(t, ...step.zoom) * 0.7, 1.5);
-        f.spotlight(shown.focus, shown.focus ? seg(t, ...step.spot) * 0.8 : 0);
-        f.pointer(shown.click, seg(t, ...step.move), seg(t, ...step.press));
+        const rects = marks[i];
+        if (rects && step.marks) {
+          const at = marksCamera(f.geometry, rects, step.marks, t, STEP_ZOOM);
+          f.apply(at.camera);
+          f.spotlight(at.focus, (at.from < 0 ? seg(t, ...step.spot) : 1) * 0.8);
+          if (shown.click && t >= step.move[0])
+            f.pointer(
+              shown.click,
+              seg(t, ...step.move),
+              seg(t, ...step.press),
+              center(rects.at(-1)!),
+            );
+          else
+            f.pointer(
+              center(rects[at.to]!),
+              at.k,
+              0,
+              at.from < 0 ? waiting(i) : center(rects[at.from]!),
+            );
+        } else {
+          f.setCamera(shown.focus, seg(t, ...step.zoom) * 0.7, STEP_ZOOM);
+          f.spotlight(shown.focus, shown.focus ? seg(t, ...step.spot) * 0.8 : 0);
+          f.pointer(shown.click, seg(t, ...step.move), seg(t, ...step.press));
+        }
       });
       const shown = v.steps[active]!;
-      label.textContent = `${active + 1}/${v.steps.length}${shown.label ? `  ${shown.label}` : ''}`;
+      underFrame(label, frames[active]!, box, ctx);
+      count.textContent = `${active + 1}/${v.steps.length}`;
+      // Once the camera heads for a mark with a gloss, the gloss stands in for the step's label.
+      const tour = timing[active]!.marks;
+      const now = tour
+        ? tourNote(
+            shown.marks!.map((m) => m.label ?? shown.label),
+            tour.map((m) => m.start),
+            t,
+            shown.label,
+          )
+        : { text: shown.label, k: 1 };
+      showNote(note, { ...now, text: now.text && `  ${now.text}` });
       fade(label, active === 0 ? entered(clock, 0, 0.3) : seg(since, 0, 0.3));
     },
-    report: () => frameItems(frames.slice(0, 1)),
+    report: () => [
+      ...frameItems(frames.slice(0, 1)),
+      { role: 'text' as const, rect: rectOf(label), overflow: overflows(label) },
+    ],
     target({ t, duration }) {
-      const timing = interactionTiming(duration, v.steps.length, ctx.phases);
+      const timing = timingOf(duration);
       // Each step's camera recomputed for this moment, so no frame depends on an earlier one.
       const of = (i: number) => {
         const shown = v.steps[i]!;
-        const camera = frames[i]!.cameraFor(shown.focus, seg(t, ...timing[i]!.zoom) * 0.7, 1.5);
+        const rects = marks[i];
+        if (rects && timing[i]!.marks) {
+          const at = marksCamera(frames[i]!.geometry, rects, timing[i]!.marks!, t, STEP_ZOOM);
+          return frameTarget(frames[i]!, at.focus, undefined, at.camera);
+        }
+        const camera = frames[i]!.cameraFor(
+          shown.focus,
+          seg(t, ...timing[i]!.zoom) * 0.7,
+          STEP_ZOOM,
+        );
         return frameTarget(frames[i]!, shown.focus, shown.click, camera);
       };
       const active = activeStep(timing, t);
@@ -274,23 +432,69 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
 // Code callout
 // ---------------------------------------------------------------------------------------------
 
+/** A deleted line's ghost after a morph: still readable, clearly gone. */
+const GHOST = 0.4;
+
+/**
+ * The order rows are drawn in. In a morph each added line sits directly under the deleted line
+ * it replaces (the k-th added line of a change under its k-th deleted line), so it types in where
+ * the old code was; lines a change adds or deletes beyond those pairs follow them.
+ */
+function morphOrder(lines: V<'code'>['lines']): number[] {
+  const order: number[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i]!.type === 'context') {
+      order.push(i++);
+      continue;
+    }
+    const deleted: number[] = [];
+    const added: number[] = [];
+    for (; i < lines.length && lines[i]!.type !== 'context'; i++)
+      (lines[i]!.type === 'del' ? deleted : added).push(i);
+    for (let k = 0; k < Math.max(deleted.length, added.length); k++) {
+      if (k < deleted.length) order.push(deleted[k]!);
+      if (k < added.length) order.push(added[k]!);
+    }
+  }
+  return order;
+}
+
 export function code(v: V<'code'>, ctx: ComponentContext): Component {
-  const box = ctx.regions.media;
-  const panel = el('div', 'code mono', ctx.root);
+  const vertical = ctx.timeline.orientation === 'vertical';
+  // The caption sits under the card, inside the media region, so the captions' band stays clear.
+  const band = v.caption ? ctx.u(vertical ? 96 : 72) : 0;
+  const gap = ctx.u(12);
+  const box = { ...ctx.regions.media, height: ctx.regions.media.height - band };
+  const morph = v.mode === 'morph';
+  const panel = el('div', morph ? 'code mono morph' : 'code mono', ctx.root);
   const head = el('div', 'code-head', panel);
   el('span', 'dot', head);
   el('span', 'file', head, v.path);
   if (v.language) el('span', '', head, v.language);
   const body = el('div', 'lines', panel);
+  const lit = new Set(v.highlight);
   const rows = v.lines.map((line, i) => {
     const row = el('div', `ln ${line.type}`, body);
     el('span', 'gutter', row, line.number !== undefined ? String(line.number) : '');
-    el('span', 'mark', row, line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ');
+    const mark = el(
+      'span',
+      'mark',
+      row,
+      line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ',
+    );
     const txt = el('span', 'txt', row);
     txt.innerHTML = highlightLine(line.text, v.language) || ' ';
-    const hl = v.highlight.includes(i) ? el('div', 'hl', row) : undefined;
-    return { row, hl };
+    const strike = morph && line.type === 'del' ? el('div', 'strike', row) : undefined;
+    const hl = lit.has(i) ? el('div', 'hl', row) : undefined;
+    // What the typed text last drew, so a frame redraws a line only when it changed.
+    return { row, mark, txt, strike, hl, drawn: '', place: i };
   });
+  if (morph)
+    morphOrder(v.lines).forEach((i, place) => {
+      body.append(rows[i]!.row);
+      rows[i]!.place = place;
+    });
   // Size code by its typical (90th percentile) line so one long line does not shrink everything;
   // longer lines end in an ellipsis rather than wrapping.
   const lengths = v.lines.map((l) => l.text.length + 7).sort((a, b) => a - b);
@@ -306,23 +510,66 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
     width: `${box.width}px`,
     height: `${height}px`,
   });
+  const caption = v.caption ? el('div', 'code-caption', ctx.root, v.caption) : undefined;
+  if (caption)
+    Object.assign(caption.style, {
+      left: `${box.x}px`,
+      top: `${box.y + (box.height + height) / 2 + gap}px`,
+      width: `${box.width}px`,
+      maxHeight: `${band - gap}px`,
+      fontSize: `${ctx.u(vertical ? 28 : 23)}px`,
+    });
   return {
     update(clock) {
       const { t, duration } = clock;
       rise(panel, entered(clock, 0, 0.5), ctx.u(30));
-      const starts = highlightStarts(duration, v.highlight, ctx.phases);
-      rows.forEach(({ row, hl }, i) => {
-        fade(row, entered(clock, 0.15 + i * 0.035, 0.45 + i * 0.035));
-        if (hl) {
-          // A row has `hl` exactly when its index is in `highlight`, so it has a start.
+      if (caption) rise(caption, entered(clock, 0.2, 0.6), ctx.u(12));
+      const swap = morph ? morphTiming(duration, v.lines, ctx.phases) : undefined;
+      const starts = codeHighlights(v, duration, ctx.phases);
+      rows.forEach((r, i) => {
+        const typing = swap?.typing.get(i);
+        if (typing) {
+          // An added line opens under the deleted one it replaces, then types in behind a caret.
+          const open = easeOutCubic(seg(t, typing[0], typing[0] + 0.15));
+          r.row.style.height = `${(open * 1.55).toFixed(4)}em`;
+          r.row.style.opacity = open.toFixed(3);
+          const k = seg(t, ...typing);
+          const text = typedPrefix(v.lines[i]!.text, k);
+          const caret = k > 0 && k < 1;
+          const key = `${text.length}${caret ? '|' : ''}`;
+          if (key !== r.drawn) {
+            r.drawn = key;
+            r.txt.innerHTML =
+              (highlightLine(text, v.language) || ' ') +
+              (caret ? '<span class="caret"></span>' : '');
+          }
+        } else {
+          fade(r.row, entered(clock, 0.15 + r.place * 0.035, 0.45 + r.place * 0.035));
+          if (swap && r.strike) {
+            // Struck through over the first 60% of the strike, then faded to a ghost. Before it,
+            // the line reads as the old code: no tint and no "−".
+            const k = seg(t, ...swap.strike);
+            r.strike.style.transform = `scaleX(${easeOutCubic(seg(k, 0, 0.6)).toFixed(4)})`;
+            r.txt.style.opacity = lerp(1, GHOST, easeOutCubic(seg(k, 0.6, 1))).toFixed(3);
+            r.row.classList.toggle('struck', k > 0);
+            r.mark.textContent = k > 0 ? '−' : ' ';
+          }
+        }
+        if (r.hl) {
+          // A row has `hl` exactly when its index is highlighted, so it has a start.
           const start = starts.get(i)!;
           const k = easeOutCubic(seg(t, start, start + HIGHLIGHT_SWEEP));
-          hl.style.transform = `scaleX(${k.toFixed(4)})`;
-          hl.style.opacity = String(k.toFixed(3));
+          r.hl.style.transform = `scaleX(${k.toFixed(4)})`;
+          r.hl.style.opacity = String(k.toFixed(3));
         }
       });
     },
-    report: () => [{ role: 'media', rect: rectOf(panel) }],
+    report: () => [
+      { role: 'media', rect: rectOf(panel) },
+      ...(caption
+        ? [{ role: 'text' as const, rect: rectOf(caption), overflow: overflows(caption) }]
+        : []),
+    ],
     target: () => {
       const highlighted = rows.filter((r) => r.hl).map((r) => rectOf(r.row));
       return highlighted.length ? union(highlighted) : undefined;
@@ -715,6 +962,7 @@ export function diagram(v: V<'diagram'>, ctx: ComponentContext): Component {
   const nodeW = (box.width - gapX * (perRow - 1)) / perRow;
   const nodeH = Math.min(ctx.u(170), (box.height - gapY * (rowsCount - 1)) / rowsCount);
   const totalH = rowsCount * nodeH + (rowsCount - 1) * gapY;
+  const vertical = ctx.timeline.orientation === 'vertical';
   const positions = new Map<string, Rect>();
   const svgLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   Object.assign(svgLayer.style, {
@@ -745,49 +993,66 @@ export function diagram(v: V<'diagram'>, ctx: ComponentContext): Component {
       height: `${rect.height}px`,
     });
     const label = el('div', 'nlabel mono', node, n.label);
-    label.style.fontSize = `${ctx.u(ctx.timeline.orientation === 'vertical' ? 28 : 24)}px`;
+    label.style.fontSize = `${ctx.u(vertical ? 28 : 24)}px`;
     if (n.detail) el('div', 'ndetail mono', node, n.detail).style.fontSize = `${ctx.u(19)}px`;
     return node;
   });
-  const edges = v.edges
-    .filter((e) => positions.has(e.from) && positions.has(e.to))
-    .map((e) => {
-      const a = positions.get(e.from)!;
-      const b = positions.get(e.to)!;
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      const [x1, y1, x2, y2] = [
-        a.x + a.width / 2,
-        a.y + a.height / 2,
-        b.x + b.width / 2,
-        b.y + b.height / 2,
-      ];
-      line.setAttribute('x1', String(x1));
-      line.setAttribute('y1', String(y1));
-      line.setAttribute('x2', String(x2));
-      line.setAttribute('y2', String(y2));
-      line.setAttribute('stroke', ctx.timeline.theme.primary);
-      line.setAttribute('stroke-width', String(ctx.u(4)));
-      line.setAttribute('stroke-linecap', 'round');
-      const length = Math.hypot(x2 - x1, y2 - y1);
-      line.setAttribute('stroke-dasharray', String(length));
-      svgLayer.appendChild(line);
-      return { line, length };
-    });
+  // An edge keeps its index in `v.edges` even after one that names a missing node, so its timing
+  // matches settledAt's (see edgeEntrance).
+  const edges = v.edges.flatMap((e, index) => {
+    const a = positions.get(e.from);
+    const b = positions.get(e.to);
+    if (!a || !b) return [];
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    const [x1, y1, x2, y2] = [
+      a.x + a.width / 2,
+      a.y + a.height / 2,
+      b.x + b.width / 2,
+      b.y + b.height / 2,
+    ];
+    line.setAttribute('x1', String(x1));
+    line.setAttribute('y1', String(y1));
+    line.setAttribute('x2', String(x2));
+    line.setAttribute('y2', String(y2));
+    line.setAttribute('stroke', ctx.timeline.theme.primary);
+    line.setAttribute('stroke-width', String(ctx.u(4)));
+    line.setAttribute('stroke-linecap', 'round');
+    const length = Math.hypot(x2 - x1, y2 - y1);
+    line.setAttribute('stroke-dasharray', String(length));
+    svgLayer.appendChild(line);
+    // The label sits on the line's midpoint, between the two nodes, above them.
+    const label = e.label ? el('div', 'edge-label', ctx.root, e.label) : undefined;
+    if (label) {
+      Object.assign(label.style, {
+        fontSize: `${ctx.u(vertical ? 20 : 18)}px`,
+        maxWidth: `${Math.max(gapX, nodeW * 0.6)}px`,
+        zIndex: '2',
+      });
+      label.style.left = `${(x1 + x2) / 2 - label.offsetWidth / 2}px`;
+      label.style.top = `${(y1 + y2) / 2 - label.offsetHeight / 2}px`;
+    }
+    return [{ line, length, label, index }];
+  });
   svgLayer.style.zIndex = '0';
   for (const n of nodes) n.style.zIndex = '1';
   return {
     update(clock) {
       for (const [i, n] of nodes.entries())
         rise(n, entered(clock, 0.1 + i * 0.1, 0.5 + i * 0.1), ctx.u(18));
-      for (const [i, { line, length }] of edges.entries()) {
+      for (const { line, length, label, index } of edges) {
         line.setAttribute(
           'stroke-dashoffset',
-          String(length * (1 - easeOutCubic(entered(clock, 0.8 + i * 0.12, 1.5 + i * 0.12)))),
+          String(length * (1 - easeOutCubic(entered(clock, ...edgeEntrance(index))))),
         );
+        if (label) fade(label, entered(clock, ...edgeLabelEntrance(index)));
       }
     },
-    report: () =>
-      nodes.map((n) => ({ role: 'text' as const, rect: rectOf(n), overflow: overflows(n) })),
+    report: () => [
+      ...nodes.map((n) => ({ role: 'text' as const, rect: rectOf(n), overflow: overflows(n) })),
+      ...edges.flatMap(({ label }) =>
+        label ? [{ role: 'text' as const, rect: rectOf(label), overflow: overflows(label) }] : [],
+      ),
+    ],
     target: () => {
       const changed = v.nodes.findIndex((n) => n.changed);
       return changed >= 0 ? rectOf(nodes[changed]!) : undefined;

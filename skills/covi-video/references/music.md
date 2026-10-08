@@ -8,6 +8,7 @@ Covi's videos carry quiet music: the Covi theme by default, or a score written f
 - Density matters more than level. Covi brings the music to the voice's loudness and then places it: 20 dB under speech in short-form videos (a quiet bed throughout, swelling in gaps), and effectively off under speech in standard reviews (unless `--music-placement continuous` asks for a bed there too).
 - In a narrated standard review, what the viewer hears is mostly the breaths Covi leaves around the narration: the breath after the hook (about 1.6 s before the second line: the intro, or the first loop), about 1.5–2 s before the hero's line (the hero section's first bar, lifting clear of speech), the breath after the hero's line, the pauses before the verdict and after long stretches of talk, and the outro. Make the intro, the hero's first bar, and the ending say something on their own.
 - If the music is noticeable while someone talks, it is too busy.
+- The hero has effects of its own: a 0.8 s riser into the hero's moment and a soft hit on it. The music's lift lands as the hero scene settles, close to the hit; do not write a swell of your own into the hero.
 
 ## Mood by kind of change
 - **Bug fix:** restrained, then it lifts at the proof (the hero scene shows the fix working).

@@ -1,0 +1,17 @@
+# The hero lands: a low, round thump that settles on the tonic, under a short glass chord on the
+# tonic and the fifth (all written in C, so they move into the music's key), and a small room. Firm
+# and warm, never a crash: the voice is usually speaking over it.
+id: hero
+description: Warm hit for the hero moment - a low thump under a short glass chord.
+license: original
+duration: 1
+layers:
+  - { gen: tone, wave: sine, from: C3, to: C2, glide: 0.1, env: { a: 0.002, d: 0.32 } }
+  - gen: notes
+    notes:
+      - { note: C5, at: 0, dur: 0.18, patch: glass-pluck, velocity: 0.6 }
+      - { note: G5, at: 0, dur: 0.18, patch: glass-pluck, velocity: 0.5 }
+    gain: -6
+  - { gen: noise-sweep, color: pink, filter: lowpass, from: 3000, to: 500, q: 0.7, env: { a: 0.001, d: 0.08 }, gain: -14 }
+fx:
+  reverb: { size: 0.45, damp: 0.55, mix: 0.12, width: 1 }

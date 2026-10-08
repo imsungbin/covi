@@ -1,4 +1,15 @@
-import type { TimelineCue, TimelineScene, TimelineVisual } from './types.ts';
+import {
+  type CodeLine,
+  type FrameMark,
+  HERO_PHASE,
+  type HighlightGroup,
+  type TimelineCue,
+  type TimelineScene,
+  type TimelineVisual,
+  type TransitionKind,
+} from './types.ts';
+
+type CodeVisual = Extract<TimelineVisual, { kind: 'code' }>;
 
 /*
  * When things happen on screen, as pure functions of a scene's length and its phases. The browser
@@ -14,6 +25,15 @@ export type Span = readonly [number, number];
 
 /** Moments in a scene by phase name, in seconds since the scene started. */
 export type Phases = Readonly<Record<string, number>>;
+
+/**
+ * A phase by name. Own properties only: phases are a plain object, so a name such as
+ * "constructor" would otherwise find Object.prototype's when the storyboard pinned no such phase.
+ * A phase redaction removed is simply absent, so whatever it would have pinned keeps its default.
+ */
+export function phaseAt(phases: Phases, name: string): number | undefined {
+  return Object.hasOwn(phases, name) ? phases[name] : undefined;
+}
 
 /**
  * Windows that follow a pinned moment `at`, given as offsets from it. A phrase late in the line
@@ -72,6 +92,97 @@ export function screenshotPointer(duration: number, phases?: Phases): { move: Sp
   return { move, press };
 }
 
+export interface MarkTiming {
+  /** When the camera starts toward this mark. */
+  start: number;
+  /** The camera's move to it: zooming in to the first, panning to each next. */
+  pan: Span;
+}
+
+/**
+ * When each mark takes the camera, between `from` and `to` (a screenshot's scene or an
+ * interaction step's slot): at its pinned moment (a pin outside the window is no pin), else the
+ * k-th of n (from 0) at 22% + 58%·k/n of the time, the first at 22% and every one before 80%;
+ * marks between pinned ones share the time between them. The first mark zooms in over 26% of the
+ * time, as a single focus does; each later one pans over at most 0.6 s. No move runs past the next
+ * mark's start, and marks never run backwards.
+ */
+export function markTiming(
+  from: number,
+  to: number,
+  pinned: ReadonlyArray<number | undefined>,
+): MarkTiming[] {
+  const count = pinned.length;
+  const length = to - from;
+  const own = pinned.map((t) => (t !== undefined && t >= from && t < to ? t : undefined));
+  const starts = own.some((t) => t !== undefined)
+    ? own.map((t, k) => {
+        if (t !== undefined) return t;
+        let i = k - 1;
+        while (i >= 0 && own[i] === undefined) i--;
+        let j = k + 1;
+        while (j < count && own[j] === undefined) j++;
+        const a = i < 0 ? from : own[i]!;
+        const b = j >= count ? to : own[j]!;
+        return a + ((b - a) * (k - i)) / (j - i);
+      })
+    : own.map((_, k) => from + length * (0.22 + (0.58 * k) / count));
+  for (let k = 1; k < count; k++) starts[k] = Math.max(starts[k]!, starts[k - 1]!);
+  return starts.map((start, k) => {
+    const next = starts[k + 1] ?? to;
+    const move =
+      k === 0 ? Math.min(length * 0.26, next - start) : Math.min(0.6, 0.7 * (next - start));
+    return { start, pan: [start, start + move] as Span };
+  });
+}
+
+/**
+ * The pointer's travel to a click after marks: it leaves the last mark only once the camera has
+ * reached it, and a click pinned before then makes it jump rather than run backwards.
+ */
+function travelFrom(last: MarkTiming, press: number, travel: number): Span {
+  return [Math.min(press, Math.max(last.pan[1], press - travel)), press];
+}
+
+export interface MarksTiming {
+  marks: MarkTiming[];
+  /** The focus ring fades in as the camera reaches the first mark, then follows the camera. */
+  spot: Span;
+  /** A click: the pointer travels from the last mark, then presses. */
+  move: Span;
+  press: Span;
+}
+
+/**
+ * A screenshot with marks: each at its own phase (the first also at `zoom`), and a click after the
+ * last one, at its `click` phase or once the camera has rested on the last mark.
+ */
+export function screenshotMarks(
+  duration: number,
+  marks: readonly Pick<FrameMark, 'phase'>[],
+  phases: Phases = {},
+): MarksTiming {
+  const timing = markTiming(
+    0,
+    duration,
+    marks.map((m, k) => phaseAt(phases, m.phase) ?? (k === 0 ? phases.zoom : undefined)),
+  );
+  const first = timing[0]!;
+  const last = timing.at(-1)!;
+  // A last mark pinned late would carry the default click past the scene's end, where it would be
+  // heard over the next scene and never seen.
+  const at = Math.min(
+    duration,
+    phases.click ?? Math.max(duration * 0.62, last.pan[1] + duration * 0.15),
+  );
+  return {
+    marks: timing,
+    spot: [first.start + (first.pan[1] - first.start) * 0.3, first.pan[1]],
+    move: travelFrom(last, at, duration * 0.15),
+    press: fit(at, duration, [[0, duration * 0.18]])[0],
+  };
+}
+
 /** Each interaction step gets an equal share of the scene. */
 export function interactionSlot(duration: number, steps: number): number {
   return duration / Math.max(1, steps);
@@ -92,6 +203,8 @@ export interface StepTiming {
   spot: Span;
   move: Span;
   press: Span;
+  /** The step's marks, when it has them: `zoom` and `spot` then follow its first mark. */
+  marks?: MarkTiming[];
 }
 
 /**
@@ -104,6 +217,7 @@ export function interactionTiming(
   duration: number,
   steps: number,
   phases: Phases = {},
+  marks?: ReadonlyArray<readonly Pick<FrameMark, 'phase'>[] | undefined>,
 ): StepTiming[] {
   const count = Math.max(1, steps);
   const bounds: Array<number | undefined> = Array.from({ length: count + 1 }, (_, i) =>
@@ -124,6 +238,30 @@ export function interactionTiming(
     const inSlot = (t: number | undefined) =>
       t !== undefined && t >= start && t < end ? t : undefined;
     const zoom = inSlot(phases.zoom);
+    const own = marks?.[i];
+    if (own?.length) {
+      // A step with marks tours them; its click comes after the last, the pointer leaving it.
+      const timing = markTiming(
+        start,
+        end,
+        own.map((m, k) => phaseAt(phases, m.phase) ?? (k === 0 ? zoom : undefined)),
+      );
+      const first = timing[0]!;
+      const last = timing.at(-1)!;
+      const press = Math.min(
+        end,
+        inSlot(phases.click) ?? Math.max(start + pointer.press[0], last.pan[1] + slot * 0.1),
+      );
+      return {
+        start,
+        end,
+        zoom: first.pan,
+        spot: [first.start + (first.pan[1] - first.start) * 0.3, first.pan[1]],
+        move: travelFrom(last, press, pointer.move[1] - pointer.move[0]),
+        press: fit(press, end, [[0, pointer.press[1] - pointer.press[0]]])[0],
+        marks: timing,
+      };
+    }
     const [zoomIn, spot]: readonly [Span, Span] =
       zoom === undefined
         ? [
@@ -158,26 +296,121 @@ export function activeStep(steps: readonly StepTiming[], t: number): number {
 export const HIGHLIGHT_SWEEP = 0.4;
 
 /**
- * When each highlighted line (by index into the code's lines) starts to light up: its own
- * `highlight<N>` phase (N counts the entries of `highlight`), else the `highlight` phase with
- * later lines following 0.05 s per line, else a third of the way into the scene.
+ * When each highlighted line (by index into the code's lines) starts to light up: its group's
+ * phase (`highlight<N>` for the N-th entry of `highlight`, or the name the group gave itself),
+ * lines of a group 0.05 s apart; else the `highlight` phase with later lines following 0.05 s per
+ * line; else from `from` (a morph's highlights wait for its typing); else a third of the way in.
+ * Lines that light together wait together: when `ready` says a line is not there yet at its
+ * start (a morph's added line still to type), its whole group, or every line sharing the
+ * fallback, moves later by the longest such wait, keeping its stagger.
  */
 export function highlightStarts(
   duration: number,
   highlight: readonly number[],
   phases: Phases = {},
+  groups?: readonly HighlightGroup[],
+  from?: number,
+  ready?: (line: number) => number | undefined,
 ): Map<number, number> {
   const first = Math.min(...highlight);
   const all = phases.highlight;
+  const fallback = (line: number) =>
+    all !== undefined
+      ? all + (line - first) * 0.05
+      : from !== undefined
+        ? from + (line - first) * 0.05
+        : duration * 0.32 + line * 0.05;
+  const wait = (set: ReadonlyArray<readonly [number, number]>) =>
+    Math.max(0, ...set.map(([line, start]) => (ready?.(line) ?? start) - start));
+  const list =
+    groups ?? highlight.map((line, n) => ({ lines: [line], phase: `highlight${n + 1}` }));
+  const shared = wait(
+    list
+      .filter((group) => phaseAt(phases, group.phase) === undefined)
+      .flatMap((group) => group.lines.map((line) => [line, fallback(line)] as const)),
+  );
   const starts = new Map<number, number>();
-  highlight.forEach((line, n) => {
-    const own = phases[`highlight${n + 1}`];
-    starts.set(
-      line,
-      own ?? (all !== undefined ? all + (line - first) * 0.05 : duration * 0.32 + line * 0.05),
+  for (const group of list) {
+    const own = phaseAt(phases, group.phase);
+    const set = group.lines.map(
+      (line, k) => [line, own === undefined ? fallback(line) : own + k * 0.05] as const,
     );
-  });
+    const delay = own === undefined ? shared : wait(set);
+    for (const [line, start] of set) starts.set(line, start + delay);
+  }
   return starts;
+}
+
+/** Deleted lines are struck through, then fade to ghosts, over this long. */
+export const MORPH_STRIKE = 0.35;
+
+/** A line types at 60 characters a second, in 0.2–0.6 s; characters, not UTF-16 units. */
+export function typeSeconds(text: string): number {
+  return Math.min(0.6, Math.max(0.2, [...text].length / 60));
+}
+
+export interface MorphTiming {
+  strike: Span;
+  /** Each added line, by index into the code's lines: it opens, then types, over this window. */
+  typing: Map<number, Span>;
+  /** When the last of it is done. */
+  end: number;
+}
+
+/**
+ * A morph: at its `morph` phase (else a quarter into the scene) the deleted lines are struck, and
+ * 0.25 s later the added lines type in where they were, 0.12 s apart. A late phrase compresses
+ * all of it, so it ends with the scene.
+ */
+export function morphTiming(
+  duration: number,
+  lines: readonly Pick<CodeLine, 'type' | 'text'>[],
+  phases: Phases = {},
+): MorphTiming {
+  const at = phaseAt(phases, 'morph') ?? duration * 0.25;
+  const added = lines.flatMap((line, i) => (line.type === 'add' ? [i] : []));
+  const offsets: Span[] = [
+    [0, MORPH_STRIKE],
+    ...added.map((i, k): Span => {
+      const start = 0.25 + k * 0.12;
+      return [start, start + typeSeconds(lines[i]!.text)];
+    }),
+  ];
+  const spans = fit(at, duration, offsets);
+  return {
+    strike: spans[0]!,
+    typing: new Map(added.map((i, k): [number, Span] => [i, spans[k + 1]!])),
+    end: Math.max(...spans.map(([, end]) => end)),
+  };
+}
+
+/**
+ * When each highlighted line of a code visual lights up, a morph's after its typing, but early
+ * enough to sweep in before the scene ends (a late morph ends with the scene). An added line
+ * never lights before it has typed in, whatever phase its group names (`morph` itself, say): its
+ * group waits for its typing, or, when that would leave the sweep no time, at least until it
+ * opens (the sweep is then cut short by the scene's end).
+ */
+export function codeHighlights(
+  visual: Pick<CodeVisual, 'lines' | 'highlight' | 'groups' | 'mode'>,
+  duration: number,
+  phases: Phases = {},
+): Map<number, number> {
+  if (visual.mode !== 'morph')
+    return highlightStarts(duration, visual.highlight, phases, visual.groups);
+  const morph = morphTiming(duration, visual.lines, phases);
+  const latest = duration - HIGHLIGHT_SWEEP;
+  return highlightStarts(
+    duration,
+    visual.highlight,
+    phases,
+    visual.groups,
+    Math.min(morph.end + 0.1, latest),
+    (line) => {
+      const typing = morph.typing.get(line);
+      return typing && Math.max(Math.min(typing[1], latest), typing[0]);
+    },
+  );
 }
 
 export interface BeforeAfterTiming {
@@ -289,12 +522,30 @@ export function apiPanels(duration: number, panels: number, phases: Phases = {})
 }
 
 /**
+ * Diagram edge `index` draws itself from node to node. `index` counts every entry of the visual's
+ * `edges`, also one naming a node the diagram lacks (it is not drawn, but keeps its place):
+ * settledAt and the runtime must both count this way, so a label is timed the same in both.
+ */
+export function edgeEntrance(index: number): Span {
+  return [0.8 + index * 0.12, 1.5 + index * 0.12];
+}
+
+/** An edge's label fades in as its line arrives. */
+export function edgeLabelEntrance(index: number): Span {
+  return [1.3 + index * 0.12, 1.7 + index * 0.12];
+}
+
+/**
  * When a visual's choreography is done, in seconds since the scene started: from then on it
  * would hold still, so the camera lingers on it while its line continues.
  */
 export function settledAt(visual: TimelineVisual, duration: number, phases: Phases = {}): number {
   switch (visual.kind) {
     case 'screenshot': {
+      if (visual.marks?.length) {
+        const s = screenshotMarks(duration, visual.marks, phases);
+        return Math.max(0.55, s.marks.at(-1)!.pan[1], s.spot[1], visual.click ? s.press[1] : 0);
+      }
       const s = screenshotTiming(duration, phases);
       return Math.max(
         0.55,
@@ -312,10 +563,16 @@ export function settledAt(visual: TimelineVisual, duration: number, phases: Phas
       );
     }
     case 'interaction': {
-      const last = interactionTiming(duration, visual.steps.length, phases).at(-1)!;
+      const last = interactionTiming(
+        duration,
+        visual.steps.length,
+        phases,
+        visual.steps.map((s) => s.marks),
+      ).at(-1)!;
       const step = visual.steps.at(-1)!;
       return Math.max(
         last.start + 0.45,
+        last.marks ? last.marks.at(-1)!.pan[1] : 0,
         step.focus ? Math.max(last.zoom[1], last.spot[1]) : 0,
         step.click ? last.press[1] : 0,
       );
@@ -323,7 +580,8 @@ export function settledAt(visual: TimelineVisual, duration: number, phases: Phas
     case 'code':
       return Math.max(
         0.5 + visual.lines.length * 0.035,
-        ...[...highlightStarts(duration, visual.highlight, phases).values()].map(
+        visual.mode === 'morph' ? morphTiming(duration, visual.lines, phases).end : 0,
+        ...[...codeHighlights(visual, duration, phases).values()].map(
           (start) => start + HIGHLIGHT_SWEEP,
         ),
       );
@@ -340,7 +598,8 @@ export function settledAt(visual: TimelineVisual, duration: number, phases: Phas
     case 'diagram':
       return Math.max(
         0.5 + (visual.nodes.length - 1) * 0.1,
-        visual.edges.length ? 1.5 + (visual.edges.length - 1) * 0.12 : 0,
+        visual.edges.length ? edgeEntrance(visual.edges.length - 1)[1] : 0,
+        ...visual.edges.flatMap((e, i) => (e.label ? [edgeLabelEntrance(i)[1]] : [])),
       );
     case 'callout':
       return 0.6;
@@ -366,9 +625,19 @@ export function outroSettle(): number {
   return 1;
 }
 
+/** The riser swells for this long into the hero's phase, where the hit lands. */
+export const RISER_LEAD = 0.8;
+
+/** Transitions that move the picture, and so get a whoosh. */
+const WHOOSH: ReadonlySet<TransitionKind> = new Set(['push', 'wipe', 'zoom-through']);
+
 /**
- * Every moment with a sound, in time order. Scene transitions, code, and terminals have none. The
- * outro's moment is where the music's logo lands, or, without music, its own sign-off sound.
+ * Every moment with a sound, in time order. A whoosh plays mid-move for a scene that pushes,
+ * wipes, or zooms through (unless the riser into the hero carries that move); the hero's hit
+ * lands at its phase, the riser swelling into it from 0.8 s before (left out before the video
+ * starts); and a scene's own cues play where they ask (a riser ends there; one past the scene's
+ * end is not played, and one repeating Covi's is merged). Fades, cuts, code, and terminals make no
+ * sound. The outro's moment is where the music's logo lands, or, without music, its own sign-off.
  */
 export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
   const cues: TimelineCue[] = [];
@@ -381,13 +650,23 @@ export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
       case 'screenshot':
         if (v.click)
           cues.push({
-            t: at(screenshotTiming(duration, phases).press[0]),
+            t: at(
+              (v.marks?.length
+                ? screenshotMarks(duration, v.marks, phases)
+                : screenshotTiming(duration, phases)
+              ).press[0],
+            ),
             kind: 'click',
             scene: scene.id,
           });
         break;
       case 'interaction':
-        interactionTiming(duration, v.steps.length, phases).forEach((step, i) => {
+        interactionTiming(
+          duration,
+          v.steps.length,
+          phases,
+          v.steps.map((s) => s.marks),
+        ).forEach((step, i) => {
           if (v.steps[i]!.click)
             cues.push({ t: at(step.press[0]), kind: 'click', scene: scene.id });
         });
@@ -427,6 +706,32 @@ export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
         break;
       default:
         break;
+    }
+    // The hero: a riser swells into its phase, where the hit lands with the accent.
+    const hero = scene.hero ? phaseAt(phases, HERO_PHASE) : undefined;
+    const hit = hero === undefined ? undefined : at(hero);
+    const riser = hit === undefined ? undefined : hit - RISER_LEAD;
+    const rises = riser !== undefined && riser >= 0;
+    if (hit !== undefined) {
+      cues.push({ t: hit, kind: 'hero', scene: scene.id });
+      if (rises) cues.push({ t: riser, kind: 'riser', scene: scene.id });
+    }
+    // A scene that moves in gets a whoosh mid-move, unless the riser already carries the move.
+    const move = scene.transition;
+    if (move && WHOOSH.has(move.kind)) {
+      const t = scene.start + move.seconds / 2;
+      const carried = rises && hit !== undefined && t >= riser && t <= hit;
+      if (!carried) cues.push({ t, kind: 'transition', scene: scene.id, detail: move.kind });
+    }
+    // The storyboard's own cues: a riser ends at its moment.
+    for (const cue of scene.cues ?? []) {
+      if (cue.at > duration + 1e-6) continue;
+      const t = at(cue.at) - (cue.kind === 'riser' ? RISER_LEAD : 0);
+      if (t < 0) continue;
+      const repeats = cues.some(
+        (c) => c.scene === scene.id && c.kind === cue.kind && Math.abs(c.t - t) < 1e-6,
+      );
+      if (!repeats) cues.push({ t, kind: cue.kind, scene: scene.id });
     }
   }
   return cues.sort((a, b) => a.t - b.t);

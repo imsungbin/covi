@@ -25,15 +25,23 @@ describe('the music library (templates/music)', () => {
       'click',
       'finding',
       'finding-high',
+      'hero',
       'outro-looks-good',
       'outro-needs-attention',
       'outro-needs-changes',
       'reveal',
+      'riser',
+      'transition',
       'verdict-looks-good',
       'verdict-needs-attention',
       'verdict-needs-changes',
     ]);
-    expect(library.soundEffects).toMatchObject({ gainDb: -14, minSpacing: 0.15, maxPerSecond: 3 });
+    expect(library.soundEffects).toMatchObject({
+      gainDb: -14,
+      swellCutDb: 4,
+      minSpacing: 0.15,
+      maxPerSecond: 3,
+    });
     expect([...library.scores.keys()]).toEqual(['covi-theme']);
   });
 
@@ -44,6 +52,42 @@ describe('the music library (templates/music)', () => {
       expect(20 * Math.log10(peak), recipe.id).toBeCloseTo(-3, 1);
       expect(Math.abs(out[0]![out[0]!.length - 1]!), recipe.id).toBeLessThan(1e-3);
     }
+  });
+
+  it('renders the hero stack: a riser that swells into its end, a hit that lands at once', () => {
+    const sr = 48_000;
+    const rms = (c: Float32Array, from: number, to: number) => {
+      let sum = 0;
+      for (let i = Math.round(from * sr); i < Math.round(to * sr); i++) sum += c[i]! ** 2;
+      return Math.sqrt(sum / (Math.round(to * sr) - Math.round(from * sr)));
+    };
+    const riser = renderSfx(library.recipes.get('riser')!, library.patches, { sampleRate: sr })[0]!;
+    expect(rms(riser, 0.6, 0.8)).toBeGreaterThan(4 * rms(riser, 0, 0.2));
+    const hit = renderSfx(library.recipes.get('hero')!, library.patches, { sampleRate: sr })[0]!;
+    expect(rms(hit, 0, 0.1)).toBeGreaterThan(4 * rms(hit, 0.5, 0.6));
+    // The riser starts at its cue; the whoosh peaks on its cue, mid-transition.
+    expect(library.recipes.get('riser')!.anchor).toBe(0);
+    expect(library.recipes.get('transition')!.anchor).toBeCloseTo(0.2, 9);
+  });
+
+  it("settles the hero's thump on the music's tonic", () => {
+    const sr = 48_000;
+    const hero = library.recipes.get('hero')!;
+    const thump = { ...hero, layers: [hero.layers[0]!], fx: undefined };
+    // After its glide the thump is a plain sine: time its rising zero crossings.
+    const pitch = (transpose: number) => {
+      const c = renderSfx(thump, library.patches, { sampleRate: sr, transpose })[0]!;
+      const crossings: number[] = [];
+      for (let i = Math.round(0.12 * sr); i < Math.round(0.3 * sr); i++)
+        if (c[i - 1]! < 0 && c[i]! >= 0) crossings.push(i - 1 + c[i - 1]! / (c[i - 1]! - c[i]!));
+      return ((crossings.length - 1) * sr) / (crossings.at(-1)! - crossings[0]!);
+    };
+    expect(pitch(0)).toBeCloseTo(65.41, 0); // C2
+    expect(pitch(3)).toBeCloseTo(77.78, 0); // E♭2, in an E♭ render
+  });
+
+  it('is a new engine: the mix and the effects changed', () => {
+    expect(AUDIO_ENGINE_VERSION).toBe('covi-audio-3');
   });
 
   it('describes the theme the spec asks for', () => {

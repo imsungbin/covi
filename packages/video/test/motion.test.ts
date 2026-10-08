@@ -139,6 +139,26 @@ describe('the camera', () => {
     expect(cameraPlan(scene(terminal, { end: 16 }))!.settled).toBeGreaterThan(0.5);
   });
 
+  it('pushes in on a diagram once its nodes are up, while its edges draw', () => {
+    // Edges drawn centre to centre hide mostly under the nodes: the frame would look still
+    // until the choreography ends.
+    const nodes = [
+      { id: 'a', label: 'A', changed: false },
+      { id: 'b', label: 'B', changed: true },
+    ];
+    const diagram = {
+      kind: 'diagram',
+      nodes,
+      edges: [{ from: 'a', to: 'b', label: 'calls' }],
+    } as const;
+    const plan = cameraPlan(scene(diagram))!;
+    expect(plan.settled).toBeLessThanOrEqual(0.5);
+    for (let t = 0.75; t < 1.75; t += 0.25)
+      expect(cameraPush(t + 0.25, plan)).toBeGreaterThan(cameraPush(t, plan));
+    for (let t = 0; t <= 4; t += 0.1)
+      expect(cameraPush(t, plan)).toBeLessThanOrEqual(motion.punch + 1e-12);
+  });
+
   it('holds still when the storyboard says so, but the hero still punches', () => {
     expect(cameraPush(3, cameraPlan(scene(shot, { camera: 'static' }))!)).toBe(0);
     const hero = cameraPlan(scene(shot, { camera: 'static', hero: true, phases: { hero: 1 } }))!;

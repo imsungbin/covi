@@ -1,4 +1,4 @@
-import type { Timeline } from '../timeline/types.ts';
+import type { Rect, Timeline } from '../timeline/types.ts';
 
 const LABEL_ID = 'covi-sheet-label';
 const MAX_LABEL = 96;
@@ -20,13 +20,33 @@ export function sheetLabel(timeline: Pick<Timeline, 'fps' | 'scenes'>, frame: nu
   return text.length > MAX_LABEL ? `${text.slice(0, MAX_LABEL - 1)}…` : text;
 }
 
+/** The label's type size and band height for a frame `width` wide, sized to survive the sheet's
+ * downscaling. The band is even, so a tile stacked from it stays a valid 4:2:0 picture. */
+function band(width: number): { px: number; pad: number; height: number } {
+  const px = Math.max(12, Math.round(width * 0.028));
+  const pad = Math.round(px / 2);
+  return { px, pad, height: 2 * Math.ceil((Math.round(px * 1.25) + 2 * pad) / 2) };
+}
+
 /**
- * Adds the label strip over the frame's bottom edge, sized to survive the sheet's downscaling.
- * A string, because this package compiles without DOM types; the label goes in as text only.
+ * A contact sheet tile: the frame exactly as the video shows it, and the label in a band below
+ * it, so the label never covers the product or the captions the sheet is read to judge.
+ */
+export function tileLayout(width: number, height: number): { frame: Rect; label: Rect } {
+  return {
+    frame: { x: 0, y: 0, width, height },
+    label: { x: 0, y: height, width, height: band(width).height },
+  };
+}
+
+/**
+ * Draws the label at the top of the page on an opaque band, to be shot on its own (clipped to
+ * the band) and stacked under the frame. A string, because this package compiles without DOM
+ * types; the label goes in as text only.
  */
 export function showLabelScript(label: string, width: number): string {
-  const px = Math.max(12, Math.round(width * 0.028));
-  const style = `position:fixed;left:0;right:0;bottom:0;padding:${Math.round(px / 2)}px ${px}px;font:600 ${px}px/1.25 ui-monospace,Menlo,monospace;color:#fff;background:rgba(15,23,42,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2147483647`;
+  const { px, pad, height } = band(width);
+  const style = `position:fixed;left:0;top:0;width:100%;height:${height}px;box-sizing:border-box;padding:${pad}px ${px}px;font:600 ${px}px/1.25 ui-monospace,Menlo,monospace;color:#fff;background:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2147483647`;
   return `(() => { const el = document.createElement('div'); el.id = ${JSON.stringify(LABEL_ID)}; el.textContent = ${JSON.stringify(label)}; el.setAttribute('style', ${JSON.stringify(style)}); document.body.append(el); })()`;
 }
 

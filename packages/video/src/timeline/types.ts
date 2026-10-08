@@ -37,6 +37,26 @@ export interface SceneTransition {
   seconds: number;
 }
 
+/** Highlighted lines that light together, and the phase that lights them. */
+export interface HighlightGroup {
+  /** Indexes into the code's lines. */
+  lines: number[];
+  /** Its own `sync` name, else `highlight<N>` for the N-th entry of `highlight`. */
+  phase: string;
+}
+
+/** A region of a capture the camera visits, in image pixels, with its gloss and its phase. */
+export interface FrameMark {
+  focus: Rect;
+  /** A short gloss shown under the frame while the camera is on this mark. */
+  label?: string;
+  /** Its own `sync` name, else `mark<N>`, counting the marks of the whole visual. */
+  phase: string;
+}
+
+/** The sound cues a storyboard scene can ask for itself (the verdict and the outro are Covi's). */
+export type SceneCueKind = 'click' | 'reveal' | 'finding' | 'transition' | 'riser' | 'hero';
+
 /** An image placed in the composition, with its natural pixel size (needed for focus math). */
 export interface ImageAsset {
   src: string;
@@ -84,8 +104,13 @@ export type TimelineVisual =
       path: string;
       language?: string;
       lines: CodeLine[];
+      /** Every highlighted line (indexes into `lines`). */
       highlight: number[];
+      /** Lines that light together and their phases, when the storyboard grouped them. */
+      groups?: HighlightGroup[];
       caption?: string;
+      /** The old code first, then the deleted lines struck to ghosts and the added ones typed in. */
+      mode?: 'morph';
     }
   | {
       kind: 'screenshot';
@@ -94,6 +119,8 @@ export type TimelineVisual =
       click?: Point;
       label?: string;
       device: 'desktop' | 'mobile';
+      /** Regions the camera visits in turn; without them, `focus` is the one region. */
+      marks?: FrameMark[];
     }
   | {
       kind: 'before-after';
@@ -105,7 +132,13 @@ export type TimelineVisual =
     }
   | {
       kind: 'interaction';
-      steps: Array<{ image: ImageAsset; click?: Point; focus?: Rect; label?: string }>;
+      steps: Array<{
+        image: ImageAsset;
+        click?: Point;
+        focus?: Rect;
+        label?: string;
+        marks?: FrameMark[];
+      }>;
     }
   | { kind: 'terminal'; title?: string; command: string; output: string; before?: string }
   | {
@@ -163,21 +196,27 @@ export interface TimelineScene {
   camera?: 'static';
   /** The evidence the scene rests on (ids in the run's evidence.json); contact sheets name it. */
   evidenceIds?: string[];
+  /** The storyboard's own sound cues, at seconds since the scene started. */
+  cues?: Array<{ at: number; kind: SceneCueKind }>;
 }
 
 /**
- * A moment with a sound: a click, the before/after reveal, a finding card landing, or the verdict.
- * Timing comes from `timeline/cues.ts`, which the runtime draws with too. Cues exist whether or
- * not sound effects are on, so nothing in the timeline depends on the sound choices.
+ * A moment with a sound: a click, the before/after reveal, a finding card landing, the verdict,
+ * a scene moving in, or the hero (its riser and its hit). Timing comes from `timeline/cues.ts`,
+ * which the runtime draws with too. Cues exist whether or not sound effects are on, so nothing in
+ * the timeline depends on the sound choices.
  */
 export interface TimelineCue {
-  /** Seconds from the start of the video. */
+  /** Seconds from the start of the video (a riser's is where it starts to swell). */
   t: number;
   /** `outro`: the outro card settles, where the music's sonic logo lands. */
-  kind: 'click' | 'reveal' | 'finding' | 'verdict' | 'outro';
+  kind: 'click' | 'reveal' | 'finding' | 'verdict' | 'outro' | 'transition' | 'riser' | 'hero';
   /** The scene id. */
   scene: string;
-  /** `high` for a high-severity finding; the verdict for a verdict or outro cue. */
+  /**
+   * `high` for a high-severity finding; the verdict for a verdict or outro cue; the transition's
+   * kind for a whoosh.
+   */
   detail?: string;
 }
 

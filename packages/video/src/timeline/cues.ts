@@ -376,18 +376,31 @@ export function morphTiming(
 
 /**
  * When each highlighted line of a code visual lights up, a morph's after its typing, but early
- * enough to sweep in before the scene ends (a late morph ends with the scene).
+ * enough to sweep in before the scene ends (a late morph ends with the scene). An added line
+ * never lights before it has typed in, whatever phase its group names (`morph` itself, say): it
+ * waits for its typing, or, when that would leave the sweep no time, at least until it opens.
  */
 export function codeHighlights(
   visual: Pick<CodeVisual, 'lines' | 'highlight' | 'groups' | 'mode'>,
   duration: number,
   phases: Phases = {},
 ): Map<number, number> {
-  const from =
-    visual.mode === 'morph'
-      ? Math.min(morphTiming(duration, visual.lines, phases).end + 0.1, duration - HIGHLIGHT_SWEEP)
-      : undefined;
-  return highlightStarts(duration, visual.highlight, phases, visual.groups, from);
+  if (visual.mode !== 'morph')
+    return highlightStarts(duration, visual.highlight, phases, visual.groups);
+  const morph = morphTiming(duration, visual.lines, phases);
+  const latest = duration - HIGHLIGHT_SWEEP;
+  const starts = highlightStarts(
+    duration,
+    visual.highlight,
+    phases,
+    visual.groups,
+    Math.min(morph.end + 0.1, latest),
+  );
+  for (const [line, start] of starts) {
+    const typing = morph.typing.get(line);
+    if (typing) starts.set(line, Math.max(start, Math.min(typing[1], latest), typing[0]));
+  }
+  return starts;
 }
 
 export interface BeforeAfterTiming {

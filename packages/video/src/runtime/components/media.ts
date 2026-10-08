@@ -2,16 +2,17 @@ import {
   activeStep,
   apiPanels,
   beforeAfterTiming,
+  codeHighlights,
   findingEntrance,
   HIGHLIGHT_SWEEP,
-  highlightStarts,
   interactionTiming,
+  morphTiming,
   screenshotTiming,
   TYPE_TO_OUTPUT,
   terminalStarts,
 } from '../../timeline/cues.ts';
 import type { Point, Rect, TimelineVisual } from '../../timeline/types.ts';
-import { clamp, easeOutCubic, fade, lerp, rise, seg } from '../anim.ts';
+import { clamp, easeOutCubic, fade, lerp, rise, seg, typedPrefix } from '../anim.ts';
 import { el, escapeHtml } from '../dom.ts';
 import { highlightLine } from '../highlight.ts';
 import { union } from '../narrator.ts';
@@ -274,23 +275,69 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
 // Code callout
 // ---------------------------------------------------------------------------------------------
 
+/** A deleted line's ghost after a morph: still readable, clearly gone. */
+const GHOST = 0.4;
+
+/**
+ * The order rows are drawn in. In a morph each added line sits directly under the deleted line
+ * it replaces (the k-th added line of a change under its k-th deleted line), so it types in where
+ * the old code was; lines a change adds or deletes beyond those pairs follow them.
+ */
+function morphOrder(lines: V<'code'>['lines']): number[] {
+  const order: number[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i]!.type === 'context') {
+      order.push(i++);
+      continue;
+    }
+    const deleted: number[] = [];
+    const added: number[] = [];
+    for (; i < lines.length && lines[i]!.type !== 'context'; i++)
+      (lines[i]!.type === 'del' ? deleted : added).push(i);
+    for (let k = 0; k < Math.max(deleted.length, added.length); k++) {
+      if (k < deleted.length) order.push(deleted[k]!);
+      if (k < added.length) order.push(added[k]!);
+    }
+  }
+  return order;
+}
+
 export function code(v: V<'code'>, ctx: ComponentContext): Component {
-  const box = ctx.regions.media;
-  const panel = el('div', 'code mono', ctx.root);
+  const vertical = ctx.timeline.orientation === 'vertical';
+  // The caption sits under the card, inside the media region, so the captions' band stays clear.
+  const band = v.caption ? ctx.u(vertical ? 96 : 72) : 0;
+  const gap = ctx.u(12);
+  const box = { ...ctx.regions.media, height: ctx.regions.media.height - band };
+  const morph = v.mode === 'morph';
+  const panel = el('div', morph ? 'code mono morph' : 'code mono', ctx.root);
   const head = el('div', 'code-head', panel);
   el('span', 'dot', head);
   el('span', 'file', head, v.path);
   if (v.language) el('span', '', head, v.language);
   const body = el('div', 'lines', panel);
+  const lit = new Set(v.highlight);
   const rows = v.lines.map((line, i) => {
     const row = el('div', `ln ${line.type}`, body);
     el('span', 'gutter', row, line.number !== undefined ? String(line.number) : '');
-    el('span', 'mark', row, line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ');
+    const mark = el(
+      'span',
+      'mark',
+      row,
+      line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ',
+    );
     const txt = el('span', 'txt', row);
     txt.innerHTML = highlightLine(line.text, v.language) || ' ';
-    const hl = v.highlight.includes(i) ? el('div', 'hl', row) : undefined;
-    return { row, hl };
+    const strike = morph && line.type === 'del' ? el('div', 'strike', row) : undefined;
+    const hl = lit.has(i) ? el('div', 'hl', row) : undefined;
+    // What the typed text last drew, so a frame redraws a line only when it changed.
+    return { row, mark, txt, strike, hl, drawn: '', place: i };
   });
+  if (morph)
+    morphOrder(v.lines).forEach((i, place) => {
+      body.append(rows[i]!.row);
+      rows[i]!.place = place;
+    });
   // Size code by its typical (90th percentile) line so one long line does not shrink everything;
   // longer lines end in an ellipsis rather than wrapping.
   const lengths = v.lines.map((l) => l.text.length + 7).sort((a, b) => a - b);
@@ -306,23 +353,66 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
     width: `${box.width}px`,
     height: `${height}px`,
   });
+  const caption = v.caption ? el('div', 'code-caption', ctx.root, v.caption) : undefined;
+  if (caption)
+    Object.assign(caption.style, {
+      left: `${box.x}px`,
+      top: `${box.y + (box.height + height) / 2 + gap}px`,
+      width: `${box.width}px`,
+      maxHeight: `${band - gap}px`,
+      fontSize: `${ctx.u(vertical ? 28 : 23)}px`,
+    });
   return {
     update(clock) {
       const { t, duration } = clock;
       rise(panel, entered(clock, 0, 0.5), ctx.u(30));
-      const starts = highlightStarts(duration, v.highlight, ctx.phases);
-      rows.forEach(({ row, hl }, i) => {
-        fade(row, entered(clock, 0.15 + i * 0.035, 0.45 + i * 0.035));
-        if (hl) {
-          // A row has `hl` exactly when its index is in `highlight`, so it has a start.
+      if (caption) rise(caption, entered(clock, 0.2, 0.6), ctx.u(12));
+      const swap = morph ? morphTiming(duration, v.lines, ctx.phases) : undefined;
+      const starts = codeHighlights(v, duration, ctx.phases);
+      rows.forEach((r, i) => {
+        const typing = swap?.typing.get(i);
+        if (typing) {
+          // An added line opens under the deleted one it replaces, then types in behind a caret.
+          const open = easeOutCubic(seg(t, typing[0], typing[0] + 0.15));
+          r.row.style.height = `${(open * 1.55).toFixed(4)}em`;
+          r.row.style.opacity = open.toFixed(3);
+          const k = seg(t, ...typing);
+          const text = typedPrefix(v.lines[i]!.text, k);
+          const caret = k > 0 && k < 1;
+          const key = `${text.length}${caret ? '|' : ''}`;
+          if (key !== r.drawn) {
+            r.drawn = key;
+            r.txt.innerHTML =
+              (highlightLine(text, v.language) || ' ') +
+              (caret ? '<span class="caret"></span>' : '');
+          }
+        } else {
+          fade(r.row, entered(clock, 0.15 + r.place * 0.035, 0.45 + r.place * 0.035));
+          if (swap && r.strike) {
+            // Struck through over the first 60% of the strike, then faded to a ghost. Before it,
+            // the line reads as the old code: no tint and no "−".
+            const k = seg(t, ...swap.strike);
+            r.strike.style.transform = `scaleX(${easeOutCubic(seg(k, 0, 0.6)).toFixed(4)})`;
+            r.txt.style.opacity = lerp(1, GHOST, easeOutCubic(seg(k, 0.6, 1))).toFixed(3);
+            r.row.classList.toggle('struck', k > 0);
+            r.mark.textContent = k > 0 ? '−' : ' ';
+          }
+        }
+        if (r.hl) {
+          // A row has `hl` exactly when its index is highlighted, so it has a start.
           const start = starts.get(i)!;
           const k = easeOutCubic(seg(t, start, start + HIGHLIGHT_SWEEP));
-          hl.style.transform = `scaleX(${k.toFixed(4)})`;
-          hl.style.opacity = String(k.toFixed(3));
+          r.hl.style.transform = `scaleX(${k.toFixed(4)})`;
+          r.hl.style.opacity = String(k.toFixed(3));
         }
       });
     },
-    report: () => [{ role: 'media', rect: rectOf(panel) }],
+    report: () => [
+      { role: 'media', rect: rectOf(panel) },
+      ...(caption
+        ? [{ role: 'text' as const, rect: rectOf(caption), overflow: overflows(caption) }]
+        : []),
+    ],
     target: () => {
       const highlighted = rows.filter((r) => r.hl).map((r) => rectOf(r.row));
       return highlighted.length ? union(highlighted) : undefined;

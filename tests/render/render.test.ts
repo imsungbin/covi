@@ -33,6 +33,8 @@ import { type Browser, chromium } from 'playwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../../packages/cli/src/examples.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
+import { morphTiming } from '../../packages/video/src/timeline/cues.ts';
+import type { TimelineVisual } from '../../packages/video/src/timeline/types.ts';
 import { canRenderVideo, fullRenders } from '../helpers/env.ts';
 
 const available = await canRenderVideo();
@@ -365,6 +367,313 @@ describe.skipIf(!available)('rendering', () => {
       const fits = layoutChecks(timeline, [layout]).find((c) => c.id === 'text-fits')!;
       expect(fits).toMatchObject({ status: 'warn' });
       expect(fits.message).toMatch(/s1/);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  /**
+   * Builds a 360×640 composition from storyboard scenes, with one 640×400 capture at demo/a.png,
+   * and opens it. `look` seeks to a frame and evaluates `body`, a function body over `scene` (that
+   * scene's root element). `redact` rewrites every narration after validation, as the redactor
+   * can, so a phrase it hides pins nothing.
+   */
+  async function compose(
+    browser: Browser,
+    scenes: StoryboardInput['scenes'],
+    redact?: (narration: string) => string,
+  ) {
+    const dir = mkdtempSync(join(tmpdir(), 'covi-parts-'));
+    dirs.push(dir);
+    const capture = await browser.newPage({ viewport: { width: 640, height: 400 } });
+    await capture.setContent(
+      '<body style="margin:0;background:linear-gradient(90deg,#2a6f97,#f4a261)"></body>',
+    );
+    mkdirSync(join(dir, 'demo'));
+    await capture.screenshot({ path: join(dir, 'demo', 'a.png') });
+    await capture.close();
+    const spec = resolveVideoSpec(resolveConfig([]).config, {
+      mode: 'custom',
+      width: 360,
+      height: 640,
+    });
+    const parsed = StoryboardSchema.parse({ ...storyboard, scenes }).scenes.map((s) =>
+      redact ? { ...s, narration: redact(s.narration) } : s,
+    );
+    const layout = layoutScenes(parsed, new Map(), new Map(), 'en', pacingFor(spec));
+    const assets = new AssetCollector(dir);
+    await assets.prepare(['demo/a.png']);
+    const timeline = buildTimeline({
+      title: storyboard.title,
+      scenes: parsed,
+      layout,
+      spec,
+      image: assets.image,
+    });
+    const composition = join(dir, 'composition');
+    await writeComposition(composition, timeline, assets.files);
+    const page = await browser.newPage({ viewport: { width: 360, height: 640 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`file://${join(composition, 'index.html')}`);
+    await page.waitForFunction('window.covi !== undefined');
+    await page.evaluate('window.covi.ready');
+    const frameAt = (id: string, seconds: number) => {
+      const scene = timeline.scenes.find((s) => s.id === id)!;
+      return Math.round((scene.start + seconds) * timeline.fps);
+    };
+    // The tests have no DOM types: the page reads its own elements from a script.
+    const look = <T>(frame: number, id: string, body: string) =>
+      page.evaluate(
+        `(() => { window.covi.seek(${frame}); const scene = document.querySelector('[data-scene="${id}"]'); ${body} })()`,
+      ) as Promise<T>;
+    const report = () => page.evaluate('window.covi.layout()') as Promise<LayoutReport>;
+    return { timeline, frameAt, look, report, errors };
+  }
+
+  const cart = {
+    id: 's1',
+    beat: 'context',
+    narration: 'Here is the cart.',
+    visual: { kind: 'callout', tone: 'info', title: 'Cart' },
+  } satisfies StoryboardInput['scenes'][number];
+
+  /** A morph scene's code visual and how far into the scene its morph is done. */
+  function morphOf(timeline: Timeline, index: number) {
+    const scene = timeline.scenes[index]!;
+    const v = scene.visual as Extract<TimelineVisual, { kind: 'code' }>;
+    const duration = scene.end - scene.start;
+    const m = morphTiming(duration, v.lines, scene.phases);
+    return { v, m, duration, done: Math.min(m.end + 0.1, duration - 0.05) };
+  }
+
+  it('morphs code: the old lines struck to ghosts, the new ones typed where they were', async () => {
+    const browser = await chromium.launch();
+    try {
+      const full = '  return Math.max(0, qty - 1);';
+      const { timeline, frameAt, look, report } = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'fix',
+          narration: 'Minus one becomes a clamp at zero, so the cart stops.',
+          sync: { morph: 'becomes a clamp' },
+          visual: {
+            kind: 'code',
+            path: 'src/cart.js',
+            language: 'javascript',
+            mode: 'morph',
+            lines: [
+              { type: 'context', text: 'function decrement(qty) {' },
+              { type: 'del', text: '  return qty - 1;' },
+              { type: 'add', text: full },
+              { type: 'context', text: '}' },
+            ],
+            highlight: [2],
+            caption: 'Clamped at zero',
+          },
+        },
+        storyboard.scenes[2]!,
+      ]);
+      const s2 = timeline.scenes[1]!;
+      const v = s2.visual as Extract<TimelineVisual, { kind: 'code' }>;
+      const m = morphTiming(s2.end - s2.start, v.lines, s2.phases);
+      const typing = m.typing.get(2)!;
+      const rows = (frame: number) =>
+        look<{ heights: number[]; texts: string[]; struck: boolean[]; ghost: number }>(
+          frame,
+          's2',
+          `const rows = [...scene.querySelectorAll('.ln')];
+           return {
+             heights: rows.map((r) => Number.parseFloat(r.style.height || '1.55')),
+             texts: rows.map((r) => r.querySelector('.txt').textContent),
+             struck: rows.map((r) => r.classList.contains('struck')),
+             ghost: Number.parseFloat(rows[1].querySelector('.txt').style.opacity || '1'),
+           };`,
+        );
+      // Before the morph: the old code, the new line folded away.
+      expect(m.strike[0] - 0.15).toBeGreaterThan(0.6);
+      const before = await rows(frameAt('s2', m.strike[0] - 0.15));
+      expect(before.heights[2]).toBe(0);
+      expect(before.struck).toEqual([false, false, false, false]);
+      expect(before.texts[1]).toBe('  return qty - 1;');
+      // Mid-typing: a strict prefix of the new line.
+      const mid = await rows(frameAt('s2', (typing[0] + typing[1]) / 2));
+      expect(full.startsWith(mid.texts[2]!)).toBe(true);
+      expect(mid.texts[2]!.length).toBeLessThan(full.length);
+      // After: the old line a struck ghost, the new one whole in its place.
+      const done = Math.min(m.end + 0.1, s2.end - s2.start - 0.05);
+      const after = await rows(frameAt('s2', done));
+      expect(after.heights[2]).toBeCloseTo(1.55, 3);
+      expect(after.texts[2]).toBe(full);
+      expect(after.struck[1]).toBe(true);
+      expect(after.ghost).toBeCloseTo(0.4, 2);
+      const caption = await look<string>(
+        frameAt('s2', done),
+        's2',
+        "return scene.querySelector('.code-caption').textContent;",
+      );
+      expect(caption).toBe('Clamped at zero');
+      const text = (await report()).items.filter((i) => i.role === 'text');
+      expect(text).toHaveLength(1);
+      expect(text[0]!.overflow).toBe(false);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('morphs each added line in under the line it replaces, lighting it only once typed', async () => {
+    const browser = await chromium.launch();
+    try {
+      const lines = [
+        { type: 'context', text: 'function total(items) {' },
+        { type: 'del', text: '  let sum = 0;' },
+        { type: 'del', text: '  for (const i of items) sum += i.price;' },
+        { type: 'add', text: '  const sum = items' },
+        { type: 'add', text: '    .reduce((a, i) => a + i.price, 0);' },
+        { type: 'context', text: '  return sum;' },
+        { type: 'context', text: '}' },
+      ] as const;
+      const { timeline, frameAt, look, errors } = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'fix',
+          narration: 'The loop becomes a single reduce, which reads as one sum.',
+          sync: { morph: 'becomes a single reduce' },
+          // Pinned at the morph itself, before either line has typed.
+          visual: {
+            kind: 'code',
+            path: 'src/cart.js',
+            language: 'javascript',
+            mode: 'morph',
+            lines: [...lines],
+            highlight: [{ lines: [3, 4], sync: 'morph' }],
+          },
+        },
+        storyboard.scenes[2]!,
+      ]);
+      const { m, duration, done } = morphOf(timeline, 1);
+      const rows = (frame: number) =>
+        look<{ texts: string[]; tops: number[]; bottoms: number[]; lit: number[] }>(
+          frame,
+          's2',
+          `const rows = [...scene.querySelectorAll('.ln')];
+           const rects = rows.map((r) => r.getBoundingClientRect());
+           return {
+             texts: rows.map((r) => r.querySelector('.txt').textContent),
+             tops: rects.map((r) => r.top),
+             bottoms: rects.map((r) => r.bottom),
+             lit: rows.map((r) => Number.parseFloat(r.querySelector('.hl')?.style.opacity ?? '0')),
+           };`,
+        );
+      // Each new line sits directly under the old line it replaces, in a row of its own.
+      const order = [0, 1, 3, 2, 4, 5, 6];
+      const after = await rows(frameAt('s2', done));
+      expect(after.texts).toEqual(order.map((i) => lines[i]!.text));
+      for (let k = 1; k < order.length; k++)
+        expect(after.tops[k]!).toBeGreaterThanOrEqual(after.bottoms[k - 1]! - 0.5);
+      // Lit once both have typed in.
+      const lit = await rows(frameAt('s2', Math.min(m.end + 0.55, duration - 0.02)));
+      expect(lit.lit[2]).toBeCloseTo(1, 2);
+      expect(lit.lit[4]).toBeCloseTo(1, 2);
+      // While the first new line types, neither new line is lit.
+      const typing = m.typing.get(3)!;
+      const mid = await rows(frameAt('s2', (typing[0] + typing[1]) / 2));
+      expect(mid.lit[2]).toBe(0);
+      expect(mid.lit[4]).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('reports a code caption too long for its two lines', async () => {
+    const browser = await chromium.launch();
+    try {
+      const long = Array.from({ length: 8 }, () => 'the quantity is clamped at zero').join(', ');
+      const { timeline, frameAt, look, report } = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'fix',
+          narration: 'Minus one becomes a clamp at zero, so the cart stops.',
+          visual: {
+            kind: 'code',
+            path: 'src/cart.js',
+            language: 'javascript',
+            lines: [
+              { type: 'del', text: 'qty = qty - 1;' },
+              { type: 'add', text: 'qty = Math.max(0, qty - 1);' },
+            ],
+            highlight: [1],
+            caption: long,
+          },
+        },
+        storyboard.scenes[2]!,
+      ]);
+      await look(frameAt('s2', 1.5), 's2', 'return null;');
+      const layout = await report();
+      expect(layout.items.find((i) => i.role === 'text')?.overflow).toBe(true);
+      const fits = layoutChecks(timeline, [layout]).find((c) => c.id === 'text-fits')!;
+      expect(fits).toMatchObject({ status: 'warn' });
+      expect(fits.message).toMatch(/s2/);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('morphs where it would have when redaction hid its phrase', async () => {
+    const browser = await chromium.launch();
+    try {
+      const full = '  return Math.max(0, qty - 1);';
+      const { timeline, frameAt, look, errors } = await compose(
+        browser,
+        [
+          cart,
+          {
+            id: 's2',
+            beat: 'fix',
+            narration: 'Minus one becomes a clamp at zero, so the cart stops.',
+            sync: { morph: 'becomes a clamp', stop: 'the cart stops' },
+            visual: {
+              kind: 'code',
+              path: 'src/cart.js',
+              language: 'javascript',
+              mode: 'morph',
+              lines: [
+                { type: 'del', text: '  return qty - 1;' },
+                { type: 'add', text: full },
+              ],
+              highlight: [{ lines: 1, sync: 'stop' }],
+              caption: 'Clamped at zero',
+            },
+          },
+          storyboard.scenes[2]!,
+        ],
+        (narration) => narration.replace('becomes a clamp', '[REDACTED]').replace('cart', '[X]'),
+      );
+      const scene = timeline.scenes[1]!;
+      expect(scene.phases?.morph).toBeUndefined();
+      expect(scene.phases?.stop).toBeUndefined();
+      const { m, duration, done } = morphOf(timeline, 1);
+      // A quarter into the scene, as without a phase.
+      expect(m.strike[0]).toBeCloseTo(duration * 0.25, 6);
+      const state = (frame: number) =>
+        look<{ text: string; lit: number }>(
+          frame,
+          's2',
+          `const row = scene.querySelectorAll('.ln')[1];
+           return {
+             text: row.querySelector('.txt').textContent.trim(),
+             lit: Number.parseFloat(row.querySelector('.hl').style.opacity || '0'),
+           };`,
+        );
+      expect(await state(frameAt('s2', m.strike[0] - 0.1))).toEqual({ text: '', lit: 0 });
+      const after = await state(frameAt('s2', Math.min(done + 0.5, duration - 0.02)));
+      expect(after.text).toBe(full.trim());
+      expect(after.lit).toBeCloseTo(1, 2);
+      expect(errors).toEqual([]);
     } finally {
       await browser.close();
     }

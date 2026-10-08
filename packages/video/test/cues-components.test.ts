@@ -92,8 +92,41 @@ describe('a code morph', () => {
 
   it('lights the highlights within the scene after a late morph', () => {
     // The morph ends with the scene, so its highlights sweep in over the scene's last moment.
-    expect(codeHighlights(morph, 4, { morph: 3.6 }).get(1)).toBeCloseTo(4 - HIGHLIGHT_SWEEP, 9);
-    expect(settledAt(morph, 4, { morph: 3.6 })).toBeCloseTo(4, 9);
+    const old: Code = { ...morph, highlight: [0] };
+    expect(codeHighlights(old, 4, { morph: 3.6 }).get(0)).toBeCloseTo(4 - HIGHLIGHT_SWEEP, 9);
+    expect(settledAt(old, 4, { morph: 3.6 })).toBeCloseTo(4, 9);
+  });
+
+  it('never lights an added line before it has typed in', () => {
+    // A group pinned at the morph itself waits for its line, typed over 1.25–1.7 s.
+    const atMorph: Code = { ...morph, groups: [{ lines: [1], phase: 'morph' }] };
+    expect(codeHighlights(atMorph, 4).get(1)).toBeCloseTo(1.8, 9);
+    expect(codeHighlights(atMorph, 4, { morph: 1 }).get(1)).toBeCloseTo(1.7, 9);
+    // So does the `highlight` phase, and a group pinned earlier, line by line.
+    expect(codeHighlights(morph, 4, { highlight: 0.5 }).get(1)).toBeCloseTo(1.7, 9);
+    const both: Code = {
+      ...morph,
+      highlight: [0, 1, 2],
+      groups: [{ lines: [0, 1, 2], phase: 'early' }],
+    };
+    const starts = codeHighlights(both, 4, { early: 0.5 });
+    // The deleted line is there from the start, so it lights at its phase.
+    expect(starts.get(0)).toBeCloseTo(0.5, 9);
+    expect(starts.get(1)).toBeCloseTo(1.7, 9);
+    expect(starts.get(2)).toBeCloseTo(1.37 + 13 / 60, 9);
+    // A diff types nothing: its phases hold.
+    const diff = codeHighlights({ ...both, mode: undefined }, 4, { early: 0.5 });
+    expect(diff.get(1)).toBeCloseTo(0.55, 9);
+  });
+
+  it('lights a late added line once it opens, still within the scene', () => {
+    // The morph is squeezed into the scene's last 0.4 s: waiting for the typing would leave the
+    // sweep no time, so the line lights as soon as it is open.
+    const atMorph: Code = { ...morph, groups: [{ lines: [1], phase: 'morph' }] };
+    const m = morphTiming(4, LINES, { morph: 3.6 });
+    const start = codeHighlights(atMorph, 4, { morph: 3.6 }).get(1)!;
+    expect(start).toBeCloseTo(m.typing.get(1)![0], 9);
+    expect(start).toBeLessThan(4);
   });
 });
 

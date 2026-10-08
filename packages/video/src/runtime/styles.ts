@@ -131,6 +131,13 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
 .code .ln.del .mark { color: ${c.delText}; }
 .code .ln.del .txt { opacity: 0.75; }
 .code .ln .hl { position: absolute; inset: 0; border-left: ${u(5)} solid ${c.primary}; background: rgba(59,91,255,0.22); transform-origin: left center; }
+.code.morph .ln.add { overflow: hidden; }
+.code.morph .ln.del:not(.struck) { background: transparent; }
+.code .ln .strike { position: absolute; left: 4.9em; right: 1em; top: 52%; height: max(2px, 0.08em); background: ${c.delText};
+  transform-origin: left center; transform: scaleX(0); }
+.code .caret { display: inline-block; width: 0.5em; height: 1.05em; margin-left: 0.05em; vertical-align: text-bottom; background: ${c.codeText}; opacity: 0.75; }
+.code-caption { position: absolute; color: ${c.textMuted}; font-weight: 560; line-height: 1.3; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 ${syntaxRules('', c.syntax)}
 ${syntaxRules('.api-panel ', c.surfaceSyntax)}
 

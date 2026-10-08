@@ -70,8 +70,11 @@ export async function writeComposition(
   const fonts = fontFiles();
   await copyFile(fonts.sans, join(dir, 'assets', 'fonts', 'inter.woff2'));
   await copyFile(fonts.mono, join(dir, 'assets', 'fonts', 'jetbrains-mono.woff2'));
+  // Citations are never drawn. Leaving them out keeps the frames key, so a change in the run's
+  // evidence alone does not render frames whose pixels are the same.
+  const composed = { ...timeline, scenes: timeline.scenes.map(({ evidenceIds: _, ...s }) => s) };
   // CJK text draws with bundled Noto slices, never with whatever the machine has installed.
-  const { mouth: _mouth, ...drawn } = timeline;
+  const { mouth: _mouth, ...drawn } = composed;
   const slices = fontSlices(timeline.fonts.cjk ?? [], JSON.stringify(drawn));
   for (const slice of slices) await copyFile(slice.file, join(dir, 'assets', 'fonts', slice.name));
   const cjkFaces = slices
@@ -85,8 +88,8 @@ export async function writeComposition(
     await copyFile(source, join(dir, src));
   }
   await writeFile(join(dir, 'runtime.js'), await runtimeScript());
-  await writeFile(join(dir, 'timeline.json'), `${JSON.stringify(timeline, null, 2)}\n`);
-  const json = JSON.stringify(timeline).replace(/</g, '\\u003c');
+  await writeFile(join(dir, 'timeline.json'), `${JSON.stringify(composed, null, 2)}\n`);
+  const json = JSON.stringify(composed).replace(/</g, '\\u003c');
   const html = `<!doctype html>
 <html lang="${LOCALE[timeline.language ?? 'en']}">
 <head>

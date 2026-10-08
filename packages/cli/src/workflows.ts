@@ -888,6 +888,7 @@ export async function videoWorkflow(
       language: session.language.language,
       languageSettings: session.languageSettings,
       pronunciations: session.config.video.narration.pronunciations,
+      evidence: outcome.evidence,
     }),
   );
   await applyVideoResult(session, result, produced, {
@@ -988,6 +989,7 @@ export async function renderWorkflow(
   const demo = (await run.has(DEMO_PATHS.captures))
     ? await run.readJson<Demonstration>(DEMO_PATHS.captures)
     : undefined;
+  const evidence = await evidenceOf(run);
   const produced = await run.stage('video', () =>
     produceVideo({
       run,
@@ -1015,6 +1017,7 @@ export async function renderWorkflow(
       language: session.language.language,
       languageSettings: session.languageSettings,
       pronunciations: session.config.video.narration.pronunciations,
+      evidence,
     }),
   );
   await applyVideoResult(session, result, produced, { musicDefault: options.musicDefault });

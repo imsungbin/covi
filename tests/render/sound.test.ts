@@ -108,6 +108,21 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
     expect(full.result.video.qc).not.toBe('fail');
     const run = full.result.runDir;
     const qc = read<Qc>(run, 'video/qc.json');
+    // Scenes that show captures cite them, every cited id is in the run, and QC checked grounding.
+    const evidence = new Set(
+      read<{ items: Array<{ id: string }> }>(run, 'evidence.json').items.map((i) => i.id),
+    );
+    const timeline = read<{
+      scenes: Array<{ visual: { kind: string }; evidenceIds?: string[] }>;
+    }>(run, 'video/timeline.json');
+    const shown = timeline.scenes.filter((s) =>
+      ['screenshot', 'before-after', 'interaction'].includes(s.visual.kind),
+    );
+    expect(shown.length).toBeGreaterThan(0);
+    for (const s of shown) expect(s.evidenceIds?.length).toBeGreaterThan(0);
+    for (const id of timeline.scenes.flatMap((s) => s.evidenceIds ?? []))
+      expect(evidence.has(id), id).toBe(true);
+    expect(qc.checks.find((c) => c.id === 'grounding')).toBeDefined();
     expect(Math.abs(qc.measured.loudness! + 16)).toBeLessThanOrEqual(1);
     for (const id of ['audio', 'music-under-speech', 'music-fit', 'music-audible', 'sound-effects'])
       expect(qc.checks.find((c) => c.id === id)?.status, id).toBe('pass');

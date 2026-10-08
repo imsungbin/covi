@@ -383,10 +383,12 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   const timeline: Timeline = buildTimeline({
     title: storyboard.title,
     // Each scene records the evidence it rests on: what it cites and what its visual shows.
+    // Redacted like the storyboard: a finding's ids may come from the raw change, and the
+    // contact sheet draws them into an image.
     scenes: input.evidence
       ? fit.scenes.map((s) => ({
           ...s,
-          evidenceIds: sceneEvidence(s, input.evidence!, input.review.findings),
+          evidenceIds: redact(sceneEvidence(s, input.evidence!, input.review.findings)),
         }))
       : fit.scenes,
     layout: fit.layout,

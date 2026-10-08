@@ -416,3 +416,46 @@ describe('covi evidence', () => {
     expect(schema.stdout).toContain('pixel-diff');
   });
 });
+
+describe('evidence in videos', () => {
+  it('refuses a storyboard that cites evidence the run does not have', () => {
+    const repo = change(
+      { 'src/cart.ts': 'export const dec = (q) => q - 1;\n' },
+      { 'src/cart.ts': 'export const dec = (q) => Math.max(0, q - 1);\n' },
+    );
+    const runDir = covi(['analyze', '--repo', repo.root, '--json']).json().runDir as string;
+    const storyboard = {
+      title: 'Clamp quantities',
+      template: 'bug-fix',
+      scenes: [
+        {
+          id: 'hook',
+          beat: 'context',
+          narration: 'Totals went negative.',
+          visual: { kind: 'callout', title: 'Negative totals' },
+          evidenceIds: ['trace:flow-cart-head#n2'],
+        },
+        {
+          beat: 'fix',
+          narration: 'Now they stop at zero.',
+          visual: { kind: 'callout', title: 'Fixed' },
+        },
+      ],
+    };
+    const file = join(runDir, 'cited.json');
+    writeFileSync(file, JSON.stringify(storyboard));
+    const rendered = covi([
+      'render',
+      '--repo',
+      repo.root,
+      '--run',
+      runDir,
+      '--storyboard',
+      file,
+      '--json',
+    ]);
+    expect(rendered.code).toBe(2);
+    expect(rendered.stdout).toContain('scene hook: trace:flow-cart-head#n2');
+    expect(rendered.stdout).toContain('covi evidence --run');
+  });
+});

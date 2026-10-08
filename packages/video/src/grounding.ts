@@ -61,8 +61,13 @@ export function sceneEvidence(
   } else if (v.kind === 'terminal') ids.push(...labelled('terminal', v.command));
   else if (v.kind === 'api') ids.push(...labelled('http', `${v.method} ${v.path}`));
   else if (v.kind === 'findings')
+    // A finding may cite what the run no longer has; the scene cites only what it does.
     for (const card of v.findings)
-      ids.push(...(findings.find((f) => f.title === card.title)?.evidenceIds ?? []));
+      ids.push(
+        ...(findings.find((f) => f.title === card.title)?.evidenceIds ?? []).filter((id) =>
+          index.find(id),
+        ),
+      );
   const images = new Set(visualImages(v));
   ids.push(...index.items.filter((i) => images.has(i.path)).map((i) => i.id));
   return [...new Set(ids)].slice(0, EVIDENCE_LIMITS.cites);

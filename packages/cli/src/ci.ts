@@ -157,6 +157,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
           language: session.language.language,
           languageSettings: session.languageSettings,
           pronunciations: config.video.narration.pronunciations,
+          evidence: outcome.evidence,
         }),
       );
       await applyVideoResult(session, result, produced);

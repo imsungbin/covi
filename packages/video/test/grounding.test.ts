@@ -1,11 +1,16 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   type EvidenceItem,
   type Explanation,
   indexEvidence,
   parseConfigInput,
+  Redactor,
   resolveConfig,
 } from '@covi/core';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import { writeComposition } from '../src/composition/build.ts';
 import {
   groundingCheck,
   sceneEvidence,
@@ -13,6 +18,7 @@ import {
   visualImages,
 } from '../src/grounding.ts';
 import { withCheck } from '../src/qc.ts';
+import { framesKey } from '../src/render/renderer.ts';
 import { resolveVideoSpec } from '../src/spec.ts';
 import { type Scene, SceneSchema, VisualSchema } from '../src/storyboard/schema.ts';
 import { buildTimeline, layoutScenes } from '../src/timeline/build.ts';
@@ -50,6 +56,10 @@ const index = indexEvidence({
   ],
 });
 const visual = (v: unknown) => VisualSchema.parse(v);
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
 
 describe('scene evidence', () => {
   it('cites what a scene shows from the run', () => {
@@ -124,6 +134,32 @@ describe('scene evidence', () => {
         index,
       ),
     ).toEqual(['http:1', 'screenshot:cart-desktop-after']);
+  });
+
+  it('cites only the ids a findings card has in the run, looked up after its redaction', () => {
+    // Rule findings compute hunk ids from the raw change; the registry holds them redacted.
+    const secret = 'hunter2-secret-path';
+    const redactor = new Redactor({ literals: [secret] });
+    const raw = `diff-hunk:src/${secret}.ts:1`;
+    const registry = {
+      items: [item(redactor.redact(raw), 'diff-hunk', 'diff.patch', { revision: 'both' })],
+    };
+    const card = {
+      visual: visual({
+        kind: 'findings',
+        findings: [{ title: 'Leak', certainty: 'likely', severity: 'high' }],
+      }),
+    };
+    const findings = [{ title: 'Leak', evidenceIds: [raw, 'trace:gone-head'] }];
+    expect(
+      sceneEvidence(
+        card,
+        indexEvidence(registry, (t) => redactor.redact(t)),
+        findings,
+      ),
+    ).toEqual([raw]);
+    // Without the run's redaction the raw id names nothing, so the card would cite nothing.
+    expect(sceneEvidence(card, indexEvidence(registry), findings)).toEqual([]);
   });
 
   it('finds images wherever a visual keeps them, and never a code path', () => {
@@ -257,5 +293,37 @@ describe('timeline evidence', () => {
       undefined,
       ['diff-hunk:src/cart.ts:10'],
     ]);
+  });
+
+  it('leaves the frames key alone: new citations alone do not render the video again', async () => {
+    const spec = resolveVideoSpec(
+      resolveConfig([{ name: 'repository', values: parseConfigInput({}, 't') }]).config,
+      { mode: 'short' },
+    );
+    const keyFor = async (evidenceIds?: string[]) => {
+      const scenes = [
+        {
+          id: 's1',
+          beat: 's1',
+          narration: 'Fix.',
+          visual: { kind: 'callout', tone: 'info', title: 'C' },
+          evidenceIds,
+        },
+      ] as Scene[];
+      const timeline = buildTimeline({
+        title: 'x',
+        scenes,
+        layout: layoutScenes(scenes, new Map()),
+        spec,
+        image: () => ({ src: '', width: 1, height: 1 }),
+      });
+      const dir = mkdtempSync(join(tmpdir(), 'covi-grounding-'));
+      dirs.push(dir);
+      await writeComposition(dir, timeline, new Map());
+      return framesKey(dir);
+    };
+    const key = await keyFor(['diff-hunk:src/cart.ts:10']);
+    expect(await keyFor(['http:1', 'screenshot:cart-desktop-after'])).toBe(key);
+    expect(await keyFor()).toBe(key);
   });
 });

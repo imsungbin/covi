@@ -11,6 +11,7 @@ import {
   type Timeline,
 } from '../timeline/types.ts';
 import type { Media } from './ffmpeg.ts';
+import { HIDE_LABEL_SCRIPT, sheetLabel, showLabelScript } from './sheet.ts';
 
 export interface RenderOptions {
   /** Directory holding the composition's index.html. */
@@ -228,7 +229,20 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
             layouts.push(
               await page.evaluate(() => (globalThis as CompositionWindow).covi!.layout()),
             );
-          if (sheetFrames.has(frame)) sheet.set(frame, jpeg);
+          if (sheetFrames.has(frame)) {
+            // The tile names its scene and the evidence it cites; the video's frame stays clean.
+            await page.evaluate(showLabelScript(sheetLabel(timeline, frame), timeline.width));
+            sheet.set(
+              frame,
+              await page.screenshot({
+                type: 'jpeg',
+                quality: 94,
+                animations: 'disabled',
+                caret: 'hide',
+              }),
+            );
+            await page.evaluate(HIDE_LABEL_SCRIPT);
+          }
           if (frame === posterFrame) poster = await page.screenshot({ type: 'png' });
           done++;
           if (done % 15 === 0 || done === total) options.onProgress?.(done, total);

@@ -71,7 +71,7 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
                        qc.json
 ```
 
-The runs directory ignores itself (it contains a `.gitignore` with `*`); Covi never edits the user's `.gitignore`. The subject model, `.covi/subject/subject.json` (`subject.store`), is the one file Covi keeps outside the runs and the cache: what demonstrations saw of the software, small and meant to be committed. `covi subject` prints it.
+The runs directory ignores itself (it contains a `.gitignore` with `*`); Covi never edits the user's `.gitignore`. The subject model, `.covi/subject/subject.json` (`subject.store`), is the one file Covi keeps outside its ignored directories: what demonstrations saw of the software, small and meant to be committed. `covi subject` prints it.
 
 Collected outcomes live next to the runs, in `.covi/outcomes/<run-id>.json` (one file per change; the directory ignores itself).
 

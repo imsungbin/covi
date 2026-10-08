@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { RUN_ID_PATTERN } from '../run/paths.ts';
 import { CERTAINTIES } from './finding.ts';
 
 /** Where a change stood when its outcome was collected. */
@@ -26,6 +25,12 @@ export const OUTCOME_LIMITS = {
   /** Bytes of one outcome file. */
   fileBytes: 256 * 1024,
 } as const;
+
+/**
+ * A run id: `<YYYYMMDD>-<HHMMSS>-<workflow>[-<head7>][-<n>]`. Pruning trusts it to pick run
+ * directories, and outcome files are named after one, so nothing else may pass for it.
+ */
+export const RUN_ID_PATTERN = /^\d{8}-\d{6}-[a-z-]+(-[0-9a-f]{7})?(-\d+)?$/;
 
 const hex = (length: number) => z.string().regex(new RegExp(`^[0-9a-f]{${length}}$`));
 const Head = hex(7);

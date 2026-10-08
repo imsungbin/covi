@@ -102,8 +102,8 @@ export * from './model/demo.ts';
 export * from './model/evidence.ts';
 export * from './model/explanation.ts';
 export * from './model/finding.ts';
-export * from './model/subject.ts';
 export * from './model/outcome.ts';
+export * from './model/subject.ts';
 export { type BuiltOutcome, buildOutcome } from './outcomes/build.ts';
 // The ledger's `areaKey` stays out: `understand/areas.ts` exports one by that name.
 export {

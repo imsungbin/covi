@@ -58,7 +58,7 @@ Details:
 - **Empty side of a range:** an empty side means `HEAD`, so `main..` is `main..HEAD`.
 - **Base branch:** with no arguments, the base branch is the configured `base`, tried as `origin/<base>` and then `<base>`. Otherwise Covi uses the first of these that exists: `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`, `origin/trunk`, `trunk`, `origin/develop`, `develop`.
 - **No commits beyond the base:** Covi reviews uncommitted work against `HEAD`. If there is none either, it prints `No changes: …` and exits 0 without creating a run.
-- **Uncommitted work:** included only when the head is implicit and the working tree is dirty. Untracked files count unless git ignores them. Covi's own `.covi/runs/`, `.covi/cache/`, and `.covi/subject/` never count.
+- **Uncommitted work:** included only when the head is implicit and the working tree is dirty. Untracked files count unless git ignores them. Covi's own `.covi/runs/`, `.covi/cache/`, `.covi/subject/`, and `.covi/outcomes/` never count.
 - **Usage errors (exit 2):**
   - A range together with `--base` or `--head`.
   - `--staged` or `--uncommitted` together with a range or `--base`.

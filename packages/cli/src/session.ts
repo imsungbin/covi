@@ -100,6 +100,7 @@ export interface Session {
    * `subject.store` is off.
    */
   subject?: SubjectHandle;
+  /**
    * How past findings held up in this repository, for the brief and the model's material. Read
    * when the session starts, before any project command could write to `.covi/outcomes/`. A hint
    * only: nothing changes a finding's certainty because of it.

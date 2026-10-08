@@ -32,6 +32,12 @@ export const demoPath = {
   stepDiff: (scenario: string, step: string) => `${DEMO_PATHS.diffs}/${scenario}-${step}.png`,
   recording: (scenario: string, revision: DemoRevision, format: 'mp4' | 'webm') =>
     `${DEMO_PATHS.recordings}/${scenario}-${revision}.${format}`,
+  /**
+   * Where Playwright writes one flow's raw WebM, under a name it picks; removed once the recording
+   * is saved. Hidden, so a run killed mid-flow leaves nothing that looks like a recording.
+   */
+  rawRecordingDir: (scenario: string, revision: DemoRevision) =>
+    `${DEMO_PATHS.recordings}/.${scenario}-${revision}`,
   trace: (scenario: string, revision: DemoRevision) =>
     `${DEMO_PATHS.traces}/${scenario}-${revision}.json`,
 } as const;

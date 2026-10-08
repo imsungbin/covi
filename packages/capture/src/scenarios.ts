@@ -86,7 +86,7 @@ async function saveRecording(
   } catch (error) {
     // Paths in the message are made run-relative, like every other path in captures.json.
     const detail = (error as Error).message.split('\n')[0]!.split(`${run.dir}/`).join('');
-    return { note: { status: 'unavailable', cause: 'no-recorder', detail } };
+    return { note: { status: 'unavailable', cause: 'save-failed', detail } };
   }
 }
 
@@ -104,7 +104,9 @@ export async function observeFlow(input: ObserveFlowInput): Promise<ObservedFlow
     },
   );
   // Playwright names its video file itself; a directory of the flow's own keeps runs apart.
-  const recordDir = input.record ? run.path(`${DEMO_PATHS.recordings}/.${id}`) : undefined;
+  const recordDir = input.record
+    ? run.path(demoPath.rawRecordingDir(scenario, revision))
+    : undefined;
   if (recordDir) await mkdir(recordDir, { recursive: true });
   let outcome: FlowRun;
   let saved: FinalRecording | undefined;

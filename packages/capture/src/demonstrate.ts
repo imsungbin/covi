@@ -110,7 +110,8 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
   const recording = input.recording ?? { enabled: config.demo.record, required: false };
   let ffmpeg: Promise<string | undefined> | undefined;
   const locateFfmpeg = () => {
-    ffmpeg ??= input.locateFfmpeg?.() ?? Promise.resolve(undefined);
+    // A locator that fails counts as no ffmpeg: recordings stay WebM rather than go missing.
+    ffmpeg ??= (input.locateFfmpeg?.() ?? Promise.resolve(undefined)).catch(() => undefined);
     return ffmpeg;
   };
   const result: Demonstration = {

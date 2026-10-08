@@ -70,10 +70,13 @@ export interface DemoRecording {
   seconds: number;
 }
 
-/** How recording went: MP4s, WebMs kept (no ffmpeg, or converting failed), off, or impossible. */
+/**
+ * How recording went: MP4s, WebMs kept (no ffmpeg, or converting failed), off, or impossible (the
+ * recorder did not start, or its video could not be saved).
+ */
 export interface DemoRecordingStatus {
   status: 'mp4' | 'webm' | 'off' | 'unavailable';
-  cause?: 'no-ffmpeg' | 'convert-failed' | 'no-recorder';
+  cause?: 'no-ffmpeg' | 'convert-failed' | 'no-recorder' | 'save-failed';
   detail?: string;
 }
 

@@ -66,6 +66,20 @@ async function setup(
   return { config, change, context, run };
 }
 
+/** Every JSON and Markdown file in the run, run.json included, is free of the app's secrets. */
+async function expectNoSecrets(run: Run) {
+  await run.save();
+  const files = readdirSync(run.dir, { recursive: true, encoding: 'utf8' }).filter((f) =>
+    /\.(json|md)$/.test(f),
+  );
+  expect(files).toContain('run.json');
+  for (const file of files) {
+    const text = readFileSync(join(run.dir, file), 'utf8');
+    expect(text, file).not.toContain(BEHAVIOR_SECRETS.session);
+    expect(text, file).not.toContain(BEHAVIOR_SECRETS.token);
+  }
+}
+
 const json = <T>(run: Run, rel: string) => JSON.parse(readFileSync(run.path(rel), 'utf8')) as T;
 
 describe('scenario ids', () => {
@@ -111,15 +125,13 @@ describe.skipIf(!browser)('behavior diff capture', () => {
       logger: silentLogger,
       locateFfmpeg: async () => ffmpeg,
     });
-    // The changed index.html makes `/` a page to capture too; only its Retry label differs there,
-    // under the pixel threshold, so the flow is the one scenario that changed.
-    expect(demo.behavior).toEqual({ path: 'demo/behavior-diff.json', scenarios: 2, changed: 1 });
+    // The changed index.html makes `/` a page to capture too. Whether its added Retry button
+    // crosses the pixel threshold depends on font rendering, so only the flow's result is pinned.
+    expect(demo.behavior).toMatchObject({ path: 'demo/behavior-diff.json', scenarios: 2 });
+    expect(demo.behavior!.changed).toBeGreaterThanOrEqual(1);
     const diff = json<BehaviorDiff>(run, 'demo/behavior-diff.json');
-    expect(diff.scenarios.map((s) => [s.id, s.status])).toEqual([
-      ['home-desktop', 'unchanged'],
-      ['flow-load-items', 'changed'],
-    ]);
-    const flow = diff.scenarios[1]!;
+    expect(diff.scenarios.map((s) => s.id).sort()).toEqual(['flow-load-items', 'home-desktop']);
+    const flow = diff.scenarios.find((s) => s.id === 'flow-load-items')!;
     expect(flow).toMatchObject({
       id: 'flow-load-items',
       kind: 'flow',
@@ -172,6 +184,7 @@ describe.skipIf(!browser)('behavior diff capture', () => {
     expect(steps.length).toBeGreaterThan(0);
     expect(steps.every((s) => s.before?.path.endsWith('-base.png'))).toBe(true);
     expect(demo.findings).toEqual([]);
+    await expectNoSecrets(run);
   });
 
   it('keeps secrets out of every file, does not record when off, and tolerates a flow that fails at base', async () => {
@@ -189,16 +202,7 @@ describe.skipIf(!browser)('behavior diff capture', () => {
     });
     expect(demo.recording).toEqual({ status: 'off' });
     expect(demo.recordings).toBeUndefined();
-    const files = [
-      'demo/captures.json',
-      'demo/behavior-diff.json',
-      ...readdirSync(run.path('demo/traces')).map((f) => `demo/traces/${f}`),
-    ];
-    for (const file of files) {
-      const text = readFileSync(run.path(file), 'utf8');
-      expect(text, file).not.toContain(BEHAVIOR_SECRETS.session);
-      expect(text, file).not.toContain(BEHAVIOR_SECRETS.token);
-    }
+    await expectNoSecrets(run);
     const head = json<Trace>(run, 'demo/traces/flow-load-items-head.json');
     expect(head.requests).toContainEqual(
       expect.objectContaining({ url: '/items.json?session=[REDACTED]', status: 404 }),
@@ -239,7 +243,7 @@ describe.skipIf(!browser)('behavior diff capture', () => {
       expect(observed.recording).toBeUndefined();
       expect(observed.note).toEqual({
         status: 'unavailable',
-        cause: 'no-recorder',
+        cause: 'save-failed',
         detail: expect.stringContaining('ENOENT'),
       });
       expect(observed.note?.detail).not.toContain(run.dir);
@@ -257,7 +261,17 @@ describe.skipIf(!browser)('behavior diff capture', () => {
       server = await serveStatic(repoRoot);
       return { app: { url: server.url }, demo: { viewports: ['desktop'], flows: BEHAVIOR_FLOWS } };
     });
-    const demo = await demonstrate({ run, change, context, config, logger: silentLogger });
+    const demo = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      // A locator that fails counts as no ffmpeg: the recording is kept as WebM.
+      locateFfmpeg: () => Promise.reject(new Error('which failed')),
+    });
+    expect(demo.recording).toEqual({ status: 'webm', cause: 'no-ffmpeg' });
+    expect(demo.recordings?.map((r) => r.format)).toEqual(['webm']);
     expect(demo.app?.mode).toBe('url');
     expect(demo.behavior).toBeUndefined();
     expect(existsSync(run.path('demo/behavior-diff.json'))).toBe(false);

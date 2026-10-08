@@ -117,6 +117,9 @@ describe('demo paths', () => {
     expect(demoPath.flowFrame('flow-load-items', 3, 'base')).toBe(
       'demo/screenshots/flow-load-items-03-base.png',
     );
+    expect(demoPath.rawRecordingDir('flow-load-items', 'head')).toBe(
+      'demo/recordings/.flow-load-items-head',
+    );
     expect(demoPath.stepDiff('flow-load-items', 'end')).toBe('demo/diffs/flow-load-items-end.png');
     expect(demoPath.pageFull('home-desktop', 'base')).toBe(
       'demo/screenshots/home-desktop-base.full.png',

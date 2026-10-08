@@ -104,8 +104,13 @@ export type TimelineVisual =
       path: string;
       language?: string;
       lines: CodeLine[];
+      /** Every highlighted line (indexes into `lines`). */
       highlight: number[];
+      /** Lines that light together and their phases, when the storyboard grouped them. */
+      groups?: HighlightGroup[];
       caption?: string;
+      /** The old code first, then the deleted lines struck to ghosts and the added ones typed in. */
+      mode?: 'morph';
     }
   | {
       kind: 'screenshot';
@@ -114,6 +119,8 @@ export type TimelineVisual =
       click?: Point;
       label?: string;
       device: 'desktop' | 'mobile';
+      /** Regions the camera visits in turn; without them, `focus` is the one region. */
+      marks?: FrameMark[];
     }
   | {
       kind: 'before-after';
@@ -125,7 +132,13 @@ export type TimelineVisual =
     }
   | {
       kind: 'interaction';
-      steps: Array<{ image: ImageAsset; click?: Point; focus?: Rect; label?: string }>;
+      steps: Array<{
+        image: ImageAsset;
+        click?: Point;
+        focus?: Rect;
+        label?: string;
+        marks?: FrameMark[];
+      }>;
     }
   | { kind: 'terminal'; title?: string; command: string; output: string; before?: string }
   | {
@@ -183,6 +196,8 @@ export interface TimelineScene {
   camera?: 'static';
   /** The evidence the scene rests on (ids in the run's evidence.json); contact sheets name it. */
   evidenceIds?: string[];
+  /** The storyboard's own sound cues, at seconds since the scene started. */
+  cues?: Array<{ at: number; kind: SceneCueKind }>;
 }
 
 /**

@@ -110,6 +110,16 @@ describe('component fields', () => {
     expect(code([])).toEqual([]);
   });
 
+  it('hold at most 40 highlight entries', () => {
+    const sb = storyboard();
+    visualOf(sb, 0).highlight = Array.from({ length: 40 }, (_, i) => i % 3) as never;
+    sb.scenes[0]!.sync = { morph: 'becomes a clamp' };
+    sb.scenes[0]!.cues = [];
+    expect(issues(sb)).toEqual([]);
+    visualOf(sb, 0).highlight = Array.from({ length: 41 }, (_, i) => i % 3) as never;
+    expect(issues(sb)[0]).toMatch(/^scenes\.0\.visual\.highlight: /);
+  });
+
   it('read highlight entries as groups, and number marks through the visual', () => {
     expect(highlightGroups([3, { lines: 5 }, { lines: [6, 7], sync: 'fix' }])).toEqual([
       { lines: [3], phase: 'highlight1' },
@@ -185,6 +195,24 @@ describe('marks', () => {
 });
 
 describe('named phases', () => {
+  it('are at most 32 characters, wherever they are written', () => {
+    const named = (name: string) => {
+      const sb = storyboard();
+      sb.scenes[0]!.sync = { morph: 'becomes a clamp', [name]: 'the cart stops' };
+      sb.scenes[0]!.cues = [{ at: name, kind: 'click' }];
+      visualOf(sb, 0).highlight![0]!.sync = name;
+      return sb;
+    };
+    expect(issues(named('a'.repeat(32)))).toEqual([]);
+    const long = issues(named('a'.repeat(33)));
+    expect(long.some((i) => i.startsWith('scenes.0.sync'))).toBe(true);
+    expect(long.some((i) => i.startsWith('scenes.0.cues.0.at: '))).toBe(true);
+    expect(long.some((i) => i.startsWith('scenes.0.visual.highlight.0.sync: '))).toBe(true);
+    const mark = storyboard();
+    visualOf(mark, 1).marks![0]!.sync = 'a'.repeat(33);
+    expect(issues(mark).some((i) => i.startsWith('scenes.1.visual.marks.0.sync: '))).toBe(true);
+  });
+
   it('reject a phase an entry names that sync does not define', () => {
     const sb = storyboard();
     visualOf(sb, 0).highlight![0]!.sync = 'stopp';

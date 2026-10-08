@@ -6,9 +6,11 @@ import { orientationOf, timingPreset, type VideoSpec } from '../spec.ts';
 import {
   emphasisSpan,
   findPhrase,
+  highlightGroups,
   type PhraseSpan,
   parseEmphasis,
   stripEmphasis,
+  visualMarks,
 } from '../storyboard/grammar.ts';
 import type { Scene, Storyboard, Visual } from '../storyboard/schema.ts';
 import { heroScene } from '../templates.ts';
@@ -100,6 +102,25 @@ export function scenePhases(
     phases[HERO_PHASE] = round(Math.max(timing.speechStart - timing.start, settled));
   return Object.keys(phases).length ? phases : undefined;
 }
+
+/**
+ * A scene's own cues at seconds since it started: at the phase each names (skipped when redaction
+ * removed its phrase; own properties only, so "constructor" is never a phase by accident), or at
+ * the seconds it gives. A cue past the end of the scene (`length` seconds long) is not played.
+ */
+export function sceneCues(
+  scene: Pick<Scene, 'cues'>,
+  phases: Readonly<Record<string, number>> | undefined,
+  length: number,
+): TimelineScene['cues'] {
+  const cues = (scene.cues ?? []).flatMap(({ at, kind }) => {
+    const seconds =
+      typeof at === 'number' ? at : phases && Object.hasOwn(phases, at) ? phases[at] : undefined;
+    return seconds === undefined || seconds > length ? [] : [{ at: seconds, kind }];
+  });
+  return cues.length ? cues : undefined;
+}
+
 /** The pause between one line and the next at an ordinary scene change. */
 export const LINE_GAP = 0.35;
 /** At most this share of a transition plays over the end of the line before it… */
@@ -195,11 +216,16 @@ export function minSecondsFor(visual: Visual): number {
     case 'summary':
       return 3.4;
     case 'code':
-      return 2;
+      return visual.mode === 'morph' ? 2.5 : 2;
+    case 'screenshot':
+      return Math.max(3, 1.5 + 0.7 * (visual.marks?.length ?? 0));
     case 'before-after':
       return 2.5;
     case 'interaction':
-      return 1.2 * visual.steps.length;
+      return (
+        1.2 * visual.steps.length +
+        0.4 * visual.steps.reduce((n, s) => n + (s.marks?.length ?? 0), 0)
+      );
     case 'terminal':
       return visual.before ? 4.4 : 3.4;
     case 'api':
@@ -419,6 +445,7 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
     if (span) emphasis.set(timing.id, span);
     const transition = i > 0 ? sceneTransition(scene) : undefined;
     const phases = scenePhases(scene, text, timing, captionOptions, transition?.seconds);
+    const cues = sceneCues(scene, phases, timing.end - timing.start);
     // A title over a capture is a cold open: the capture fills the media region and the title
     // goes in the header, where a content scene's heading goes.
     const over = visual.kind === 'title' && visual.background ? visual : undefined;
@@ -438,6 +465,7 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
       ...(scene.hero ? { hero: true } : {}),
       ...(scene.camera === 'static' ? { camera: 'static' as const } : {}),
       ...(scene.evidenceIds?.length ? { evidenceIds: [...scene.evidenceIds] } : {}),
+      ...(cues ? { cues } : {}),
     };
   });
   if (layout.outro) {
@@ -496,7 +524,8 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
 
 function toTimelineVisual(visual: Visual, image: (path: string) => ImageAsset): TimelineVisual {
   switch (visual.kind) {
-    case 'screenshot':
+    case 'screenshot': {
+      const marks = visualMarks(visual);
       return {
         kind: 'screenshot',
         image: { ...image(visual.image.path), label: visual.image.label },
@@ -504,7 +533,9 @@ function toTimelineVisual(visual: Visual, image: (path: string) => ImageAsset): 
         click: visual.click,
         label: visual.label,
         device: visual.device,
+        ...(marks.length ? { marks } : {}),
       };
+    }
     case 'before-after':
       return {
         kind: 'before-after',
@@ -514,21 +545,39 @@ function toTimelineVisual(visual: Visual, image: (path: string) => ImageAsset): 
         focus: visual.focus,
         labels: visual.labels,
       };
-    case 'interaction':
+    case 'interaction': {
+      const marks = visualMarks(visual);
       return {
         kind: 'interaction',
-        steps: visual.steps.map((s) => ({
-          image: image(s.image.path),
-          click: s.click,
-          focus: s.focus,
-          label: s.label,
-        })),
+        steps: visual.steps.map((s, i) => {
+          const own = marks.filter((m) => m.step === i).map(({ step: _step, ...m }) => m);
+          return {
+            image: image(s.image.path),
+            click: s.click,
+            focus: s.focus,
+            label: s.label,
+            ...(own.length ? { marks: own } : {}),
+          };
+        }),
       };
+    }
     case 'title': {
       const { background, ...rest } = visual;
       return background
         ? { ...rest, background: { ...image(background.path), label: background.label } }
         : rest;
+    }
+    case 'code': {
+      const { highlight, mode, ...rest } = visual;
+      const grouped = highlight.some((entry) => typeof entry !== 'number');
+      const groups = highlightGroups(highlight);
+      return {
+        ...rest,
+        // A plain list stays as written, so a storyboard without groups draws as before.
+        highlight: grouped ? [...new Set(groups.flatMap((g) => g.lines))] : (highlight as number[]),
+        ...(grouped ? { groups } : {}),
+        ...(mode === 'morph' ? { mode: 'morph' as const } : {}),
+      };
     }
     default:
       return visual as TimelineVisual;

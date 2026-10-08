@@ -19,8 +19,11 @@ const PointSchema = z.strictObject({ x: z.number(), y: z.number() });
 /** Images are paths relative to the run directory (e.g. `demo/screenshots/home-after.png`). */
 const ImageRefSchema = z.strictObject({ path: z.string().min(1), label: z.string().optional() });
 
-/** A phase name, as `sync` keys are written. */
-const PhaseNameSchema = z.string().regex(/^[a-z]+\d*$/);
+/** A phase name, as `sync` keys are written (bounded: names are untrusted input). */
+const PhaseNameSchema = z
+  .string()
+  .max(32)
+  .regex(/^[a-z]+\d*$/);
 
 /** A region the camera visits; 1–3 of them make a screenshot (or a step) a short tour. */
 const MarksSchema = z
@@ -124,6 +127,7 @@ export const VisualSchema = z.discriminatedUnion('kind', [
           }),
         ]),
       )
+      .max(40)
       .default([])
       .describe('Indexes into lines to emphasize, or groups of them that light together.'),
     caption: z.string().optional().describe('A short line shown under the code.'),
@@ -273,7 +277,7 @@ export const SceneSchema = z.strictObject({
   minSeconds: z.number().min(1).max(30).optional(),
   optional: z.boolean().optional().describe('May be dropped to fit the target duration.'),
   sync: z
-    .record(z.string().regex(/^[a-z]+\d*$/), z.string().min(1).max(200))
+    .record(PhaseNameSchema, z.string().min(1).max(200))
     .optional()
     .describe(
       'Pins a moment of the visual to when a phrase of `narration` is spoken: phase name → a phrase that appears exactly once in the narration. Screenshot: zoom, click, mark1…. Interaction: step2…stepN, zoom or click for the step showing then, and mark1… counting the marks of all steps. Code: highlight, highlight1… for each `highlight` entry, and morph. Before-after: reveal. Findings: finding1…. Terminal: output. API: after. The hero scene: hero. A highlight group or a mark can name its own phase with `sync`.',

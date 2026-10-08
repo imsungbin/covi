@@ -91,7 +91,8 @@ describe('phases', () => {
     expect(cut.hero).toBe(true);
     expect(cut.phases).toEqual({ hero: Number((cut.speech!.start - cut.start).toFixed(3)) });
     const synced = hero({ hero: true, sync: { hero: 'turns amber' } });
-    expect(synced.phases!.hero).toBeGreaterThan(0.6);
+    // A sync phrase puts the hero phase where the phrase is spoken in its caption window.
+    expect(synced.phases).toEqual({ hero: 1.241 });
   });
 
   it('never put the default hero phase before the hero has zoomed through', () => {

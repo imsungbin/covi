@@ -25,6 +25,8 @@ import { outro } from './components/outro.ts';
 import {
   type Component,
   type ComponentContext,
+  type LayoutItem,
+  overflows,
   rectOf,
   type SceneClock,
 } from './components/types.ts';
@@ -56,6 +58,8 @@ interface MountedScene {
   clock?: SceneClock;
   /** The header's text as laid out (stage pixels): the narrator's tail stays off it. */
   headerText: Rect[];
+  /** The header's heading as laid out, and whether it is clipped even at its smallest size. */
+  heading?: LayoutItem;
   /** When the next scene takes over this scene's large fox (it is hidden from then on). */
   foxTaken?: number;
 }
@@ -225,6 +229,7 @@ export class Stage {
       const component = mountComponent(scene, ctx);
       let header: HTMLDivElement | undefined;
       const headerText: Rect[] = [];
+      let heading: LayoutItem | undefined;
       if (component.header !== false) {
         header = el('div', 'scene-header', root);
         place(header, r.header);
@@ -237,7 +242,10 @@ export class Stage {
             maxHeight: r.header.height - u(50),
             maxWidth: r.header.width,
           });
-          headerText.push(...textBoxes(h));
+          const lines = textBoxes(h);
+          headerText.push(...lines);
+          // A heading that still does not fit is clipped at two lines: QC's text-fit check sees it.
+          if (lines.length) heading = { role: 'text', rect: union(lines), overflow: overflows(h) };
         }
         headerText.push(...textBoxes(eyebrow, true));
       }
@@ -249,6 +257,7 @@ export class Stage {
         header,
         component,
         headerText,
+        ...(heading ? { heading } : {}),
         camera: cameraPlan(scene),
       });
     }
@@ -494,8 +503,9 @@ export class Stage {
             ),
           ),
         );
-      // The narrator springs in when it appears, not between scenes it narrates in a row.
-      const appears = !this.scenes[current.index - 1]?.scene.narrator;
+      // The narrator springs in when it appears, not between scenes it narrates in a row, and is
+      // already in place when the video opens on it.
+      const appears = current.index > 0 && !this.scenes[current.index - 1]?.scene.narrator;
       const enter = appears ? clamp(spring(time - current.scene.start, 2.4, 7), 0, 1.06) : 1;
       const placement: NarratorPlacement = {
         ...this.regions.narrator,
@@ -581,7 +591,9 @@ export class Stage {
         ? [...this.captionBox.children].some((line) => line.scrollWidth > line.clientWidth + 2) ||
           this.captionBox.scrollWidth > this.captionBox.clientWidth + 2
         : undefined,
-      items: active ? active.component.report() : [],
+      items: active
+        ? [...active.component.report(), ...(active.heading ? [active.heading] : [])]
+        : [],
       narrator: parts ? union(parts) : undefined,
       narratorParts: parts,
       headerText: active?.headerText.length ? active.headerText : undefined,

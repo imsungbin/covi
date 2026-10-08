@@ -702,6 +702,13 @@ video:
 
 narration:
   meta: '{files} · +{additions} −{deletions}'
+  opening:
+    imperative: 'これで{clause}'
+    titled: '{kind}です。タイトルは「{summary}」です。'
+    kind: '{kind}です: {summary}'
+  page:
+    home: ホームページ
+    homeHeading: ホームページ
   changeMap:
     text: '変更は{areas}にまたがり、主に{names}です。'
     heading: '{files}を変更'

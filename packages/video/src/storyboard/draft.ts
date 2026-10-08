@@ -20,6 +20,7 @@ import {
   type ReviewContext,
   sentenceCase,
   t,
+  toThirdPersonClause,
   truncate,
 } from '@covi/core';
 import type { VideoSpec } from '../spec.ts';
@@ -559,13 +560,46 @@ interface Narration {
   heading?: string;
 }
 
+/**
+ * The opening line: what the change does, said as a statement. It is the video's hook, so it never
+ * starts like the explanation's "This change …" sentence (`intentSentence`), which it otherwise
+ * follows.
+ */
+function openingLine(context: ReviewContext, language: Language): string {
+  const { intent } = context;
+  const say = (key: string, params?: Params) => t(language, `narration.opening.${key}`, params);
+  let summary = intent.summary.trim().replace(/[.!。！]$/, '');
+  if (intent.scope && !summary.toLowerCase().includes(intent.scope.toLowerCase()))
+    summary = t(language, 'explain.sentence.scopeIn', { summary, scope: intent.scope });
+  const kind = t(language, `explain.kindPhrase.${intent.kind}`);
+  if (language !== 'en') return endSentence(language, say('kind', { kind, summary }));
+  if (isImperativeVerb(summary.split(/\s+/)[0] ?? ''))
+    return ensurePeriod(say('imperative', { clause: toThirdPersonClause(lowerFirst(summary)) }));
+  if (summary.includes(': ')) return sentenceCase(say('titled', { kind, summary }));
+  return ensurePeriod(sentenceCase(say('kind', { kind, summary: lowerFirst(summary) })));
+}
+
+/**
+ * How narration and headings name a captured page: by its path, except the root, which reads as
+ * the home page. The browser chrome keeps the path.
+ */
+function pageLabel(
+  name: string | undefined,
+  language: Language,
+  form: 'narration' | 'heading' = 'narration',
+): string | undefined {
+  if (name === undefined) return undefined;
+  if (name.trim() !== '' && name.trim() !== '/') return name;
+  return t(language, form === 'heading' ? 'narration.page.homeHeading' : 'narration.page.home');
+}
+
 function narrate(beat: Beat, visual: Visual, ctx: BeatContext, budget: number): Narration {
   const { context, review, say, language } = ctx;
   const en = language === 'en';
   const list = (items: string[]) => listOf(language, items);
   switch (visual.kind) {
     case 'title':
-      return { text: stripMarkdown(intentSentence(context, language)) };
+      return { text: stripMarkdown(openingLine(context, language)) };
     case 'change-map':
       return {
         text: say('changeMap.text', {
@@ -609,26 +643,22 @@ function narrate(beat: Beat, visual: Visual, ctx: BeatContext, budget: number): 
       };
     }
     case 'screenshot': {
-      const thePage = say('screenshot.thePage');
+      const label = pageLabel(visual.label, language) ?? say('screenshot.thePage');
+      const heading = pageLabel(visual.label, language, 'heading');
       return visual.image.path.includes('before')
-        ? {
-            text: say('screenshot.before', { label: visual.label ?? thePage }),
-            heading: visual.label,
-          }
+        ? { text: say('screenshot.before', { label }), heading }
         : {
             text: say('screenshot.after', {
-              label: visual.label === '/' ? thePage : (visual.label ?? thePage),
+              label,
               highlighted: visual.focus ? say('screenshot.highlighted') : '',
             }),
-            heading: visual.label,
+            heading,
           };
     }
     case 'before-after': {
       const order = say(visual.layout === 'stack' ? 'beforeAfter.stack' : 'beforeAfter.split');
-      const page =
-        visual.after.label && visual.after.label !== '/'
-          ? say('beforeAfter.pageOf', { page: visual.after.label })
-          : '';
+      const label = pageLabel(visual.after.label, language);
+      const page = label ? say('beforeAfter.pageOf', { page: label }) : '';
       return {
         text: joinSentences(language, [
           ctx.context.intent.kind === 'bug-fix'
@@ -636,7 +666,7 @@ function narrate(beat: Beat, visual: Visual, ctx: BeatContext, budget: number): 
             : say('beforeAfter.page', { page }),
           order,
         ]),
-        heading: visual.after.label,
+        heading: pageLabel(visual.after.label, language, 'heading'),
       };
     }
     case 'interaction': {
@@ -833,8 +863,10 @@ function sameCode(a: Visual, b: Visual): boolean {
  */
 function dropRepeatedLead(scenes: Scene[], ctx: BeatContext): void {
   const { language } = ctx;
+  const opening = stripMarkdown(openingLine(ctx.context, language)).trim();
+  if (!opening || !scenes[0]?.narration.includes(opening)) return;
+  // Later scenes say it the explanation's way (a callout of the summary's first sentence).
   const lead = stripMarkdown(intentSentence(ctx.context, language)).trim();
-  if (!lead || !scenes[0]?.narration.includes(lead)) return;
   const heard = spoken(lead, language);
   const sentences = (text: string) =>
     segments(text, language, 'sentence')

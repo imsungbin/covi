@@ -256,8 +256,55 @@ describe('the drafted opening and hero', () => {
       visual: { kind: 'code', path: 'app.js' },
     });
     expect(storyboard.scenes[0]!.narration).toMatch(
-      /^This change paginates GET \/api\/users\. The key change is in app\.js/,
+      /^Now it paginates GET \/api\/users\. The key change is in app\.js/,
     );
+  });
+
+  it('opens on the change itself, never "This change …", and calls the root page the home page', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('ui-comment-composer');
+    const image = (path: string) => ({ path, width: 1280, height: 800 });
+    const demo: Demonstration = {
+      schemaVersion: 1,
+      shots: [
+        {
+          id: 'home',
+          kind: 'page',
+          name: '/',
+          viewport: 'desktop',
+          before: image('demo/screenshots/home-before.png'),
+          after: image('demo/screenshots/home-after.png'),
+          diff: { changedRatio: 0.2, bounds: { x: 0, y: 0, width: 100, height: 100 } },
+        },
+      ],
+      commands: [],
+      requests: [],
+      skipped: [],
+      findings: [],
+    };
+    for (const mode of ['short', 'standard'] as const) {
+      const storyboard = draftStoryboard({
+        change,
+        context,
+        explanation,
+        review,
+        demo,
+        spec: resolveVideoSpec(config, { mode }),
+        templates: await loadTemplates(),
+      });
+      const [opening, ...rest] = storyboard.scenes;
+      expect(opening!.narration).not.toMatch(/^This change/);
+      expect(opening!.narration).toBe(
+        'Now it shows remaining characters and blocks overlong comments.',
+      );
+      // The browser chrome keeps the URL; what is read and heard names the page.
+      expect(opening!.visual).toMatchObject({ background: { label: '/' } });
+      for (const scene of rest) {
+        expect(scene.heading, scene.beat).not.toBe('/');
+        expect(scene.narration, scene.beat).not.toMatch(/(^|\s)\/(?=[\s.,]|$)/);
+      }
+      expect(rest.map((s) => s.narration).join(' ')).toContain('the home page');
+    }
   });
 
   it('shortens a long title to whole characters, never half of one', async () => {
@@ -290,7 +337,9 @@ describe('the drafted opening and hero', () => {
     expect(opening.visual.kind).toBe('title');
     expect((opening.visual as { background?: unknown }).background).toBeUndefined();
     // The opening line is the intent alone: no list of areas, no table of contents.
-    expect(opening.narration).toBe(intentSentence(context));
+    expect(opening.narration).toBe(
+      'Now it extracts backoff calculation from the retry loop in http.',
+    );
   });
 
   it('never lets text from the change write [[…]] markup into a line', async () => {
@@ -394,7 +443,7 @@ describe('standard-length narration', () => {
     expect(opening.eyebrow).toBe('Paginate GET /api/users');
     expect(opening.heading).toBeUndefined();
     expect(opening.narration).toMatch(
-      /^This change paginates GET \/api\/users\. The key change is in app\.js/,
+      /^Now it paginates GET \/api\/users\. The key change is in app\.js/,
     );
     expect(standard.scenes.find((s) => s.hero)?.beat).toBe('exchange');
     expect(standard.scenes.some((s) => /We'll look at/.test(s.narration))).toBe(false);

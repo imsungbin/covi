@@ -702,6 +702,13 @@ video:
 
 narration:
   meta: '{files} · +{additions} −{deletions}'
+  opening:
+    imperative: '现在{clause}'
+    titled: '{kind}，标题为“{summary}”。'
+    kind: '{kind}：{summary}'
+  page:
+    home: 首页
+    homeHeading: 首页
   changeMap:
     text: '这个变更涉及{areas}，主要是{names}。'
     heading: '改动了{files}'

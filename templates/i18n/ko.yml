@@ -703,6 +703,13 @@ video:
 
 narration:
   meta: '{files} · +{additions} −{deletions}'
+  opening:
+    imperative: '이제 {clause}'
+    titled: '{kind}입니다. 제목은 “{summary}”입니다.'
+    kind: '{kind}입니다: {summary}'
+  page:
+    home: 홈 페이지
+    homeHeading: 홈 페이지
   changeMap:
     text: '변경은 {areas}에 걸쳐 있고, 주로 {names}입니다.'
     heading: '{files} 변경'

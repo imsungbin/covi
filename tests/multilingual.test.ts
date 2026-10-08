@@ -12,6 +12,7 @@ import {
   resolveChange,
   resolveConfig,
   runRules,
+  t,
   understandChange,
 } from '@covi/core';
 import {
@@ -150,6 +151,9 @@ describe('heuristic output in every language', () => {
           language,
         });
         expect(StoryboardSchema.safeParse(storyboard).success).toBe(true);
+        // The opening is a hook, not the explanation's "This change …" sentence.
+        const thisChange = t(language, 'explain.sentence.imperative', { clause: '' }).trim();
+        expect(storyboard.scenes[0]!.narration.startsWith(thisChange)).toBe(false);
         // Short labels can be all kanji in Japanese (互換性); sentences always carry kana.
         const label =
           language === 'ja' ? /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u : script;

@@ -714,6 +714,13 @@ video:
 # Narration and on-screen text Covi drafts for videos (packages/video/src/storyboard/draft.ts).
 narration:
   meta: '{files} · +{additions} −{deletions}'
+  opening:
+    imperative: Now it {clause}
+    titled: '{kind}, titled “{summary}”.'
+    kind: '{kind}: {summary}'
+  page:
+    home: the home page
+    homeHeading: Home page
   changeMap:
     text: The change spans {areas}, mostly {names}.
     heading: '{files} changed'

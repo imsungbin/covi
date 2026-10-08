@@ -25,6 +25,12 @@ export interface Point {
   y: number;
 }
 
+/** How a scene enters: the transition into it (see `motion.transitions` for their lengths). */
+export type TransitionKind = 'fade' | 'cut' | 'push' | 'wipe' | 'zoom-through';
+
+/** The phase every hero scene has: its `sync.hero` phrase, else the start of its line. */
+export const HERO_PHASE = 'hero';
+
 /** An image placed in the composition, with its natural pixel size (needed for focus math). */
 export interface ImageAsset {
   src: string;

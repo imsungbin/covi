@@ -8,6 +8,7 @@ import { Run } from '@covi/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { covi, coviAsync } from './helpers/cli.ts';
+import { canUseBrowser } from './helpers/env.ts';
 import { GIT_ENV } from './helpers/repo.ts';
 
 interface Recorded {
@@ -100,6 +101,7 @@ afterAll(() => {
 });
 
 const examples = await listExamples();
+const browser = await canUseBrowser();
 async function prRepo(name: string) {
   const dir = await materializeExample(examples.find((e) => e.name === name)!);
   dirs.push(dir);
@@ -461,6 +463,25 @@ describe('GitHub Actions', () => {
       /^repository \(\.covi\/config\.yml@\w{7} \(base\)\)$/,
     );
   });
+  it.skipIf(!browser)(
+    'demonstrates with the subject model, and keeps what it saw in the run, never in the checkout',
+    async () => {
+      const repo = await prRepo('visual-pricing-cards');
+      const gh = githubEnv(repo);
+      covi(['ci', '--repo', repo.dir, '--out', gh.out, '--video', 'never', '--no-comment'], {
+        env: gh.env,
+      });
+      const snapshot = JSON.parse(readFileSync(join(gh.out, 'demo/subject.json'), 'utf8')) as {
+        store: string;
+        model: { screens: Array<{ key: string }> };
+      };
+      expect(snapshot.store).toBe('repo');
+      expect(snapshot.model.screens.map((s) => s.key)).toContain('home');
+      // In CI the repository's model is read from base and never written: the checkout is thrown away.
+      expect(existsSync(join(repo.dir, '.covi/subject/subject.json'))).toBe(false);
+    },
+  );
+
   it('reads an explicit --config inside the repository from the base revision too', async () => {
     const repo = await prRepo('visual-pricing-cards');
     repo.git('checkout', '-q', 'main');

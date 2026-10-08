@@ -5617,6 +5617,177 @@ hello-world
 "
 `;
 
+exports[`English output (baseline) > renders what the subject model gave the demonstration and kept > kept 1`] = `
+"# Demonstration
+
+## Page / (desktop)
+
+Before: ![before](../demo/screenshots/home-desktop-before.png)
+
+After: ![after](../demo/screenshots/home-desktop-after.png)
+
+Changed pixels: 4.00%
+
+## compose · step 1: Type a comment (desktop)
+
+After: ![after](../demo/screenshots/flow-0.png)
+
+## compose · step 2: Counter updates as you type (desktop)
+
+After: ![after](../demo/screenshots/flow-1.png)
+
+## compose · step 3: Post the comment (desktop)
+
+After: ![after](../demo/screenshots/flow-2.png)
+
+## GET /api/users
+
+Before: HTTP 200 · After: HTTP 200 · changed
+
+Shape change: the response changed from a JSON array to a JSON object with keys items, nextCursor.
+
+## \`node cli.js "Hello World"\`
+
+Before:
+
+\`\`\`
+Error: bad input
+
+\`\`\`
+
+After:
+
+\`\`\`
+hello-world
+
+\`\`\`
+
+## Subject model
+
+- Replayed from the subject model, because the plan named no flows: Load items.
+- Focus from elements that are new since Covi last saw the screen: \`home-desktop\`.
+- What Covi saw is in \`demo/subject.json\` only; the subject model was not updated.
+
+## Not demonstrated
+
+- tablet viewport: not configured
+"
+`;
+
+exports[`English output (baseline) > renders what the subject model gave the demonstration and kept > runs 1`] = `
+"# Demonstration
+
+## Page / (desktop)
+
+Before: ![before](../demo/screenshots/home-desktop-before.png)
+
+After: ![after](../demo/screenshots/home-desktop-after.png)
+
+Changed pixels: 4.00%
+
+## compose · step 1: Type a comment (desktop)
+
+After: ![after](../demo/screenshots/flow-0.png)
+
+## compose · step 2: Counter updates as you type (desktop)
+
+After: ![after](../demo/screenshots/flow-1.png)
+
+## compose · step 3: Post the comment (desktop)
+
+After: ![after](../demo/screenshots/flow-2.png)
+
+## GET /api/users
+
+Before: HTTP 200 · After: HTTP 200 · changed
+
+Shape change: the response changed from a JSON array to a JSON object with keys items, nextCursor.
+
+## \`node cli.js "Hello World"\`
+
+Before:
+
+\`\`\`
+Error: bad input
+
+\`\`\`
+
+After:
+
+\`\`\`
+hello-world
+
+\`\`\`
+
+## Subject model
+
+- Replayed from the subject model, because the plan named no flows: Load items.
+- Focus from elements that are new since Covi last saw the screen: \`home-desktop\`.
+- What Covi saw is saved in \`subject.json\` in the runs directory.
+
+## Not demonstrated
+
+- tablet viewport: not configured
+"
+`;
+
+exports[`English output (baseline) > renders what the subject model gave the demonstration and kept > saved 1`] = `
+"# Demonstration
+
+## Page / (desktop)
+
+Before: ![before](../demo/screenshots/home-desktop-before.png)
+
+After: ![after](../demo/screenshots/home-desktop-after.png)
+
+Changed pixels: 4.00%
+
+## compose · step 1: Type a comment (desktop)
+
+After: ![after](../demo/screenshots/flow-0.png)
+
+## compose · step 2: Counter updates as you type (desktop)
+
+After: ![after](../demo/screenshots/flow-1.png)
+
+## compose · step 3: Post the comment (desktop)
+
+After: ![after](../demo/screenshots/flow-2.png)
+
+## GET /api/users
+
+Before: HTTP 200 · After: HTTP 200 · changed
+
+Shape change: the response changed from a JSON array to a JSON object with keys items, nextCursor.
+
+## \`node cli.js "Hello World"\`
+
+Before:
+
+\`\`\`
+Error: bad input
+
+\`\`\`
+
+After:
+
+\`\`\`
+hello-world
+
+\`\`\`
+
+## Subject model
+
+- Replayed from the subject model, because the plan named no flows: Load items.
+- Focus from elements that are new since Covi last saw the screen: \`home-desktop\`.
+- What Covi saw is saved in \`.covi/subject/subject.json\`; commit it to share it.
+
+## Not demonstrated
+
+- tablet viewport: not configured
+"
+`;
+
 exports[`English output (baseline) > speaks identifiers, constants, and paths as words 1`] = `
 [
   [

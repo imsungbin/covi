@@ -1,3 +1,4 @@
+import { posix } from 'node:path';
 import { DEMO_PATHS, parseSubjectRef, type Rect, type SubjectSnapshot } from '@covi/core';
 import type { Scene, Storyboard } from './schema.ts';
 
@@ -39,7 +40,13 @@ export function resolveFocusRefs(
   );
 }
 
-const listed = (keys: readonly string[]) => (keys.length ? keys.join(', ') : 'none');
+const LISTED = 20;
+
+/** What exists, for a message: the first few, and how many more. */
+const listed = (keys: readonly string[]) =>
+  keys.length
+    ? `${keys.slice(0, LISTED).join(', ')}${keys.length > LISTED ? `, and ${keys.length - LISTED} more` : ''}`
+    : 'none';
 
 /**
  * Where a reference points in one image: the element's box there, from the run's snapshot, or why
@@ -66,17 +73,19 @@ export function placeSubjectRef(
     return {
       problem: `no element "${parsed.element}" on screen "${screen.key}" (elements: ${listed(screen.elements.map((e) => e.key))})`,
     };
-  const shown = snapshot.images.find((i) => i.path === image);
+  // `./demo/…` names the same capture as `demo/…`.
+  const path = image === undefined ? undefined : posix.normalize(image);
+  const shown = snapshot.images.find((i) => i.path === path);
   if (!shown)
     return {
-      problem: `${image ?? 'this visual'} is not a head capture this run indexed; references are placed in head captures (a page's after image or a flow frame)`,
+      problem: `${image ?? 'this visual'} is not a head capture this run indexed; references are placed in a page's after image or a flow frame (indexed: ${listed(snapshot.images.map((i) => i.path))})`,
     };
   if (shown.screen !== screen.key)
     return { problem: `${shown.path} shows screen "${shown.screen}", not "${screen.key}"` };
   const at = shown.elements.find((e) => e.key === parsed.element);
   if (!at)
     return {
-      problem: `"${parsed.element}" is not in ${shown.path} (outside the capture, or not visible there)`,
+      problem: `"${parsed.element}" is not in ${shown.path}: outside the capture, or not visible there (it shows: ${listed(shown.elements.map((e) => e.key))})`,
     };
   return { rect: { x: at.x, y: at.y, width: at.width, height: at.height } };
 }

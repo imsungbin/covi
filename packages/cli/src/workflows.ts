@@ -13,6 +13,7 @@ import {
   code,
   DEMO_PATHS,
   type Demonstration,
+  type DemoSubject,
   EvidenceFileSchema,
   type EvidenceIndex,
   ExitCode,
@@ -24,6 +25,7 @@ import {
   type Finding,
   type FindingsFile,
   FindingsFileSchema,
+  type FlowOutcome,
   gateFailures,
   groundFinding,
   groundingNote,
@@ -34,6 +36,7 @@ import {
   LANGUAGE_NAME,
   type Language,
   loadEvidence,
+  loadSubjectSnapshot,
   normalizeFinding,
   type ParsedConfigInput,
   ProviderError,
@@ -50,6 +53,7 @@ import {
   renderSummary,
   reportLanguage,
   runRules,
+  SUBJECT_PATHS,
   type SummaryFormat,
   type TestRunResult,
   TRUST_HINT,
@@ -563,6 +567,7 @@ export async function reviewWorkflow(
     artifact(session, result, 'captures', DEMO_PATHS.captures);
     artifact(session, result, 'demo', DEMO_PATHS.notes);
     if (demo.behavior) artifact(session, result, 'behaviorDiff', DEMO_PATHS.behaviorDiff);
+    if (demo.subject?.path) artifact(session, result, 'subject', DEMO_PATHS.subject);
   }
   result.data = { review: outcome.review };
   return result;
@@ -591,8 +596,10 @@ async function demoStage(
         language: session.language.language,
         recording: recordingOf(session),
         locateFfmpeg,
+        subject: session.subject,
       }),
     );
+    for (const warning of subjectFlowWarnings(demo.subject)) session.run.warn(warning);
     const behavior = demo.behavior
       ? await session.run.readJson<BehaviorDiff>(demo.behavior.path)
       : undefined;
@@ -627,12 +634,31 @@ export async function demoWorkflow(
   artifact(session, result, 'captures', DEMO_PATHS.captures);
   artifact(session, result, 'demo', DEMO_PATHS.notes);
   if (demo.behavior) artifact(session, result, 'behaviorDiff', DEMO_PATHS.behaviorDiff);
+  if (demo.subject?.path) artifact(session, result, 'subject', DEMO_PATHS.subject);
   result.data = { demo };
   if (demo.shots.length + demo.commands.length + demo.requests.length === 0) {
     result.message =
       demo.skipped.map((s) => `${s.what}: ${s.reason}`).join('\n') || 'Nothing to demonstrate.';
   }
   return result;
+}
+
+const FLOW_NOT_KEPT: Record<Exclude<FlowOutcome, 'kept'>, string> = {
+  secret: 'it types into a secret field',
+  failed: 'it did not pass at head',
+  invalid:
+    'it has a step Covi would not replay (too many steps, a long or multi-line value, or a goto off the app)',
+};
+
+/** Why the subject model did not keep a flow this run observed: its name and the reason, never its values. */
+export function subjectFlowWarnings(subject: DemoSubject | undefined): string[] {
+  return (subject?.flows ?? []).flatMap((flow) =>
+    flow.outcome === 'kept'
+      ? []
+      : [
+          `The subject model did not keep ${flow.name ? `the flow "${flow.name}"` : 'a flow without a name'}: ${FLOW_NOT_KEPT[flow.outcome]}.`,
+        ],
+  );
 }
 
 export function renderDemo(
@@ -678,6 +704,7 @@ export function renderDemo(
     out.push(say('after'), '', '```', c.after.output, '```', '');
   }
   out.push(...renderRecordings(demo, say));
+  out.push(...renderSubject(demo, say));
   if (behavior) out.push(...renderBehavior(behavior, say));
   if (demo.skipped.length) {
     out.push(`## ${say('notDemonstrated')}`, '');
@@ -720,6 +747,27 @@ function renderRecordings(demo: Demonstration, say: Say): string[] {
     );
   if (recordings.length) out.push('');
   if (note) out.push(note, '');
+  return out;
+}
+
+/** What the subject model gave this demonstration, and whether it kept what the run saw. */
+function renderSubject(demo: Demonstration, say: Say): string[] {
+  const s = demo.subject;
+  if (!s || (!s.proposed.length && !s.focused.length && !s.path)) return [];
+  const out = [`## ${say('subject.title')}`, ''];
+  if (s.proposed.length)
+    out.push(`- ${say('subject.proposed', { flows: s.proposed.map(escapeMarkdown).join(', ') })}`);
+  if (s.focused.length)
+    out.push(`- ${say('subject.focused', { shots: s.focused.map((id) => code(id)).join(', ') })}`);
+  if (s.path)
+    out.push(
+      `- ${
+        s.saved
+          ? say(`subject.saved.${s.store}`, { path: code(SUBJECT_PATHS[s.store]) })
+          : say('subject.kept', { path: code(s.path) })
+      }`,
+    );
+  out.push('');
   return out;
 }
 
@@ -870,7 +918,7 @@ export async function videoWorkflow(
     await session.run.skip('video', decision.reason);
     return result;
   }
-  const produced = await session.run.stage('video', () =>
+  const produced = await session.run.stage('video', async () =>
     produceVideo({
       run: session.run,
       change,
@@ -890,6 +938,7 @@ export async function videoWorkflow(
       languageSettings: session.languageSettings,
       pronunciations: session.config.video.narration.pronunciations,
       evidence: outcome.evidence,
+      subject: await loadSubjectSnapshot(session.run),
     }),
   );
   await applyVideoResult(session, result, produced, {
@@ -991,7 +1040,7 @@ export async function renderWorkflow(
   const demo = (await run.has(DEMO_PATHS.captures))
     ? await run.readJson<Demonstration>(DEMO_PATHS.captures)
     : undefined;
-  const produced = await run.stage('video', () =>
+  const produced = await run.stage('video', async () =>
     produceVideo({
       run,
       change,
@@ -1019,6 +1068,7 @@ export async function renderWorkflow(
       languageSettings: session.languageSettings,
       pronunciations: session.config.video.narration.pronunciations,
       evidence,
+      subject: await loadSubjectSnapshot(run),
     }),
   );
   await applyVideoResult(session, result, produced, { musicDefault: options.musicDefault });

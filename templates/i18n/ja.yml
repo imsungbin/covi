@@ -649,6 +649,14 @@ demo:
       save-failed: 'フローは録画しましたが、録画を保存できませんでした'
     withDetail: '{cause}: {detail}'
     plain: '{cause}。'
+  subject:
+    title: サブジェクトモデル
+    proposed: 'プランにフローがなかったため、サブジェクトモデルから再生しました: {flows}。'
+    focused: 'Covi が前回この画面を見てから増えた要素にフォーカスしました: {shots}。'
+    saved:
+      repo: 'Covi が見たものを {path} に保存しました。共有するにはコミットしてください。'
+      runs: 'Covi が見たものを実行ディレクトリの {path} に保存しました。'
+    kept: 'Covi が見たものは {path} にだけあります。サブジェクトモデルは更新していません。'
   behavior:
     title: base と head の動作
     scenario: '{name}（{viewport}）'

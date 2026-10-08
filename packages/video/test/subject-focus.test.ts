@@ -191,6 +191,32 @@ describe('subject references in focus', () => {
     expect(at(AFTER, 'subject:home#footer')[0]).toMatch(
       /"footer" is not in demo\/screenshots\/home-desktop-after\.png/,
     );
+    // An image path written another way still names the same capture.
+    expect(at(`./${AFTER}`, 'subject:home#load')).toEqual([]);
+    expect(
+      at('demo/screenshots/../screenshots/home-desktop-after.png', 'subject:home#load'),
+    ).toEqual([]);
+    // What exists is listed: the images indexed, and the elements an image shows.
+    expect(at(BEFORE, 'subject:home#load')[0]).toMatch(
+      /\(indexed: demo\/screenshots\/home-desktop-after\.png, demo\/screenshots\/flow-load-items-01\.png\)$/,
+    );
+    expect(at(AFTER, 'subject:home#footer')[0]).toMatch(/\(it shows: load\)$/);
+    const crowded: SubjectSnapshot = {
+      ...SNAPSHOT,
+      model: {
+        ...SNAPSHOT.model,
+        screens: Array.from({ length: 30 }, (_, i) => ({
+          ...SNAPSHOT.model.screens[0]!,
+          key: `screen-${i}`,
+        })),
+      },
+    };
+    const many = resolveSubjectFocus(
+      board({ kind: 'screenshot', image: { path: AFTER }, focus: 'subject:checkout#pay' }),
+      crowded,
+    ).problems[0]!;
+    expect(many).toMatch(/screen-0, .*screen-19, and 10 more\)$/);
+    expect(many).not.toMatch(/screen-20/);
     const none = resolveSubjectFocus(
       board({ kind: 'screenshot', image: { path: AFTER }, focus: 'subject:home#load' }),
       undefined,

@@ -9,6 +9,7 @@ import {
   gateFailures,
   type Language,
   type Logger,
+  loadSubjectSnapshot,
   type ParsedConfigInput,
   type Review,
   type ReviewContext,
@@ -41,6 +42,7 @@ import {
   locateFfmpeg,
   recordingOf,
   reviewSession,
+  subjectFlowWarnings,
   WORKFLOW_DEFAULTS,
   type WorkflowResult,
 } from './workflows.ts';
@@ -110,6 +112,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
             language: session.language.language,
             recording: recordingOf(session),
             locateFfmpeg,
+            subject: session.subject,
           }),
         )
         .catch((error: Error) => {
@@ -119,6 +122,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
           return undefined;
         })
     : undefined;
+  for (const warning of subjectFlowWarnings(demo?.subject)) run.warn(warning);
   const outcome = await reviewSession(session, resolvedChange, { demo });
   const failures = gateFailures(outcome.review.findings, config.review.failOn);
   result.verdict = outcome.review.verdict;
@@ -142,7 +146,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
 
   if (decision.render) {
     try {
-      const produced = await run.stage('video', () =>
+      const produced = await run.stage('video', async () =>
         produceVideo({
           run,
           change: resolvedChange,
@@ -158,6 +162,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
           languageSettings: session.languageSettings,
           pronunciations: config.video.narration.pronunciations,
           evidence: outcome.evidence,
+          subject: await loadSubjectSnapshot(run),
         }),
       );
       await applyVideoResult(session, result, produced);

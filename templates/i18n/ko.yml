@@ -650,6 +650,14 @@ demo:
       save-failed: '흐름은 녹화했지만 녹화 파일을 저장하지 못했습니다'
     withDetail: '{cause}: {detail}'
     plain: '{cause}.'
+  subject:
+    title: 서브젝트 모델
+    proposed: '계획에 흐름이 없어 서브젝트 모델에서 다시 실행했습니다: {flows}.'
+    focused: 'Covi가 이 화면을 마지막으로 본 뒤 새로 생긴 요소에 초점을 맞췄습니다: {shots}.'
+    saved:
+      repo: 'Covi가 본 내용을 {path}에 저장했습니다. 공유하려면 커밋하세요.'
+      runs: 'Covi가 본 내용을 실행 디렉터리의 {path}에 저장했습니다.'
+    kept: 'Covi가 본 내용은 {path}에만 있습니다. 서브젝트 모델은 갱신하지 않았습니다.'
   behavior:
     title: 베이스와 헤드의 동작
     scenario: '{name}({viewport})'

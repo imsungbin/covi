@@ -1,16 +1,27 @@
-import { lstat, mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { lstat, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 export async function ensureDir(path: string): Promise<void> {
   await mkdir(path, { recursive: true });
 }
 
-/** Writes via a temp file + rename so readers never observe partial artifacts. */
+/**
+ * Writes via a temp file + rename so readers never observe partial artifacts. The temp file is
+ * created exclusively under a random name, so a link planted where it goes is never written
+ * through.
+ */
 export async function writeFileAtomic(path: string, data: string | Uint8Array): Promise<void> {
   await ensureDir(dirname(path));
-  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(tmp, data);
-  await rename(tmp, path);
+  const tmp = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tmp, data, { flag: 'wx' });
+    await rename(tmp, path);
+  } catch (error) {
+    // Whatever already sat at the temp name is not Covi's to remove.
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') await rm(tmp, { force: true });
+    throw error;
+  }
 }
 
 export async function writeJson(path: string, value: unknown): Promise<void> {

@@ -7,6 +7,7 @@ import {
   highlightStarts,
   interactionTiming,
   screenshotTiming,
+  TYPE_TO_OUTPUT,
   terminalStarts,
 } from '../../timeline/cues.ts';
 import type { Point, Rect, TimelineVisual } from '../../timeline/types.ts';
@@ -367,7 +368,10 @@ function terminalWindow(
       const typed = Math.floor(command.length * seg(t, start, start + 0.6));
       cmd.textContent = command.slice(0, typed);
       for (const [i, line] of outLines.entries())
-        fade(line, seg(t, start + 0.7 + i * 0.06, start + 0.85 + i * 0.06));
+        fade(
+          line,
+          seg(t, start + TYPE_TO_OUTPUT + i * 0.06, start + TYPE_TO_OUTPUT + 0.15 + i * 0.06),
+        );
     },
   };
 }

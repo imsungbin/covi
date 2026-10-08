@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { Span } from '../src/timeline/cues.ts';
 import {
   activeStep,
   apiPanels,
@@ -222,6 +223,43 @@ describe('phases move events to the words', () => {
     close(apiPanels(4, 2)[1]!, [1.25, 1.75]);
     close(apiPanels(4, 2, { after: 3 })[1]!, [3, 3.5]);
     close(apiPanels(4, 1, { after: 3 })[0]!, [3, 3.5]);
+  });
+
+  it('finish a late pinned event, and what follows it, before the scene ends', () => {
+    const within = (span: Span, end: number) => {
+      expect(span[0]).toBeLessThanOrEqual(span[1]);
+      expect(span[1]).toBeLessThanOrEqual(end + 1e-9);
+    };
+    for (const layout of ['wipe', 'split'] as const) {
+      const late = beforeAfterTiming(layout, 5, { reveal: 4 });
+      expect(late.reveal[0]).toBe(4);
+      for (const span of Object.values(late)) within(span, 5);
+      // Compressed, not dropped: the spotlight still plays after the reveal starts.
+      expect(late.spot[1]).toBeGreaterThan(late.spot[0]);
+      expect(late.spot[0]).toBeGreaterThan(4);
+    }
+    const shot = screenshotTiming(4, { zoom: 3.6, click: 3.8 });
+    expect(shot.zoom[0]).toBe(3.6);
+    expect(shot.press[0]).toBe(3.8);
+    for (const span of Object.values(shot)) within(span, 4);
+    expect(shot.spot[1]).toBeGreaterThan(shot.spot[0]);
+    // A late zoom or click in an interaction step ends with its step.
+    const steps = interactionTiming(6, 2, { zoom: 2.8, click: 5.9 });
+    within(steps[0]!.zoom, 3);
+    within(steps[0]!.spot, 3);
+    expect(steps[0]!.zoom[0]).toBe(2.8);
+    within(steps[1]!.press, 6);
+    expect(steps[1]!.press[0]).toBe(5.9);
+    within(apiPanels(4, 2, { after: 3.8 })[1]!, 4);
+    const ba = {
+      kind: 'before-after',
+      before: image,
+      after: image,
+      layout: 'wipe',
+      labels: { before: 'Before', after: 'After' },
+      focus: { x: 0, y: 0, width: 5, height: 5 },
+    } as const;
+    expect(settledAt(ba, 5, { reveal: 4 })).toBeLessThanOrEqual(5);
   });
 
   it('know when each visual has settled', () => {

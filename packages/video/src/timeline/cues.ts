@@ -15,6 +15,22 @@ export type Span = readonly [number, number];
 /** Moments in a scene by phase name, in seconds since the scene started. */
 export type Phases = Readonly<Record<string, number>>;
 
+/**
+ * Windows that follow a pinned moment `at`, given as offsets from it. A phrase late in the line
+ * would carry them past `end` (the scene, or the step, is cut there), so they are compressed
+ * together until the last one ends by `end`: the event still starts on its word, and nothing
+ * that follows it is dropped.
+ */
+function fit<const T extends readonly Span[]>(
+  at: number,
+  end: number,
+  offsets: T,
+): { [K in keyof T]: Span } {
+  const length = Math.max(...offsets.map(([, to]) => to));
+  const k = length > 0 ? Math.min(1, Math.max(0, end - at) / length) : 1;
+  return offsets.map(([from, to]) => [at + from * k, at + to * k]) as { [K in keyof T]: Span };
+}
+
 export interface ScreenshotTiming {
   zoom: Span;
   spot: Span;
@@ -26,18 +42,27 @@ export interface ScreenshotTiming {
 export function screenshotTiming(duration: number, phases: Phases = {}): ScreenshotTiming {
   const zoom = phases.zoom;
   const click = phases.click;
+  const [zoomIn, spot]: readonly [Span, Span] =
+    zoom === undefined
+      ? [
+          [duration * 0.22, duration * 0.48],
+          [duration * 0.3, duration * 0.5],
+        ]
+      : fit(zoom, duration, [
+          [0, duration * 0.26],
+          [duration * 0.08, duration * 0.28],
+        ]);
   return {
-    zoom: zoom === undefined ? [duration * 0.22, duration * 0.48] : [zoom, zoom + duration * 0.26],
-    spot:
-      zoom === undefined
-        ? [duration * 0.3, duration * 0.5]
-        : [zoom + duration * 0.08, zoom + duration * 0.28],
+    zoom: zoomIn,
+    spot,
     move:
       click === undefined
         ? [duration * 0.42, duration * 0.62]
         : [Math.max(0, click - duration * 0.2), click],
     press:
-      click === undefined ? [duration * 0.62, duration * 0.8] : [click, click + duration * 0.18],
+      click === undefined
+        ? [duration * 0.62, duration * 0.8]
+        : fit(click, duration, [[0, duration * 0.18]])[0],
   };
 }
 
@@ -99,19 +124,25 @@ export function interactionTiming(
     const inSlot = (t: number | undefined) =>
       t !== undefined && t >= start && t < end ? t : undefined;
     const zoom = inSlot(phases.zoom);
+    const [zoomIn, spot]: readonly [Span, Span] =
+      zoom === undefined
+        ? [
+            [start + slot * 0.15, start + slot * 0.45],
+            [start + slot * 0.2, start + slot * 0.45],
+          ]
+        : fit(zoom, end, [
+            [0, slot * 0.3],
+            [slot * 0.05, slot * 0.3],
+          ]);
     // The press lands at the click phase or at the pointer's own moment; the travel ends there.
     const press = inSlot(phases.click) ?? start + pointer.press[0];
     return {
       start,
       end,
-      zoom:
-        zoom === undefined ? [start + slot * 0.15, start + slot * 0.45] : [zoom, zoom + slot * 0.3],
-      spot:
-        zoom === undefined
-          ? [start + slot * 0.2, start + slot * 0.45]
-          : [zoom + slot * 0.05, zoom + slot * 0.3],
+      zoom: zoomIn,
+      spot,
       move: [Math.max(start, press - (pointer.move[1] - pointer.move[0])), press],
-      press: [press, press + (pointer.press[1] - pointer.press[0])],
+      press: fit(press, end, [[0, pointer.press[1] - pointer.press[0]]])[0],
     };
   });
 }
@@ -172,34 +203,38 @@ export function beforeAfterTiming(
 ): BeforeAfterTiming {
   const at = phases.reveal;
   if (layout === 'wipe') {
-    const reveal: Span =
-      at === undefined ? [duration * 0.25, duration * 0.7] : [at, at + duration * 0.45];
+    if (at === undefined) {
+      const reveal: Span = [duration * 0.25, duration * 0.7];
+      return {
+        reveal,
+        label: [duration * 0.3, duration * 0.5],
+        focus: reveal,
+        spot: [duration * 0.7, duration * 0.85],
+      };
+    }
+    const [reveal, label, spot] = fit(at, duration, [
+      [0, duration * 0.45],
+      [duration * 0.05, duration * 0.25],
+      [duration * 0.45, duration * 0.6],
+    ]);
+    return { reveal, label, focus: reveal, spot };
+  }
+  if (at === undefined) {
+    const reveal: Span = [0.35, 0.85];
     return {
       reveal,
-      label:
-        at === undefined
-          ? [duration * 0.3, duration * 0.5]
-          : [at + duration * 0.05, at + duration * 0.25],
-      focus: reveal,
-      spot:
-        at === undefined
-          ? [duration * 0.7, duration * 0.85]
-          : [reveal[1], reveal[1] + duration * 0.15],
+      label: [reveal[0] + 0.05, reveal[1]],
+      focus: [duration * 0.4, duration * 0.62],
+      spot: [duration * 0.45, duration * 0.62],
     };
   }
-  const reveal: Span = at === undefined ? [0.35, 0.85] : [at, at + 0.5];
-  return {
-    reveal,
-    label: [reveal[0] + 0.05, reveal[1]],
-    focus:
-      at === undefined
-        ? [duration * 0.4, duration * 0.62]
-        : [reveal[1], reveal[1] + duration * 0.22],
-    spot:
-      at === undefined
-        ? [duration * 0.45, duration * 0.62]
-        : [reveal[1] + duration * 0.05, reveal[1] + duration * 0.22],
-  };
+  const [reveal, label, focus, spot] = fit(at, duration, [
+    [0, 0.5],
+    [0.05, 0.5],
+    [0.5, 0.5 + duration * 0.22],
+    [0.5 + duration * 0.05, 0.5 + duration * 0.22],
+  ]);
+  return { reveal, label, focus, spot };
 }
 
 /** When the after state appears next to the before state. */
@@ -248,7 +283,8 @@ export function apiPanels(duration: number, panels: number, phases: Phases = {})
     0.75 + i * step,
   ]);
   const after = phases.after;
-  if (after !== undefined && spans.length) spans[spans.length - 1] = [after, after + 0.5];
+  if (after !== undefined && spans.length)
+    spans[spans.length - 1] = fit(after, duration, [[0, 0.5]])[0];
   return spans;
 }
 

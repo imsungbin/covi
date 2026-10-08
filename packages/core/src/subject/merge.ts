@@ -1,6 +1,8 @@
 import { type FlowStep, SUBJECT_EXPIRE_AFTER, VIEWPORTS } from '../config/schema.ts';
 import type { Rect } from '../model/demo.ts';
 import {
+  type FlowMerge,
+  type FlowOutcome,
   type ObservedCommand,
   type ObservedScreen,
   SUBJECT_CONTROL,
@@ -135,9 +137,6 @@ export function actsOnSecret(
     ('note' in step && step.note !== undefined && namesSecret(step.note, false))
   );
 }
-
-/** Why a flow is or is not remembered; a warning names the flow and this, never its values. */
-export type FlowOutcome = 'kept' | 'failed' | 'secret' | 'invalid';
 
 const FlowEntrySchema = SubjectFlowSchema.omit({ key: true, passed: true });
 
@@ -384,13 +383,6 @@ function bound(model: Subject): Subject {
     flows: [...out.flows].sort(byKey),
     commands: [...out.commands].sort(byKey),
   };
-}
-
-/** One observed flow and whether the model now remembers it. */
-export interface FlowMerge {
-  /** The flow's name as one line; absent when it had none. */
-  name?: string;
-  outcome: FlowOutcome;
 }
 
 /**

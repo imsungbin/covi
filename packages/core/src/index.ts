@@ -143,8 +143,6 @@ export { type StaticServer, serveStatic } from './serve/static-server.ts';
 export {
   actsOnSecret,
   emptySubject,
-  type FlowMerge,
-  type FlowOutcome,
   flowKept,
   hasObservations,
   mergeSubject,

@@ -1,6 +1,6 @@
-import type { FlowMerge } from '../subject/merge.ts';
 import type { DemoRevision, DemoViewport } from './behavior.ts';
 import type { FindingInput } from './finding.ts';
+import type { FlowMerge } from './subject.ts';
 
 /**
  * What the Demonstrate phase captured. Paths are relative to the run directory; image coordinates

@@ -47,6 +47,7 @@ import { canUseBrowser } from '../../../tests/helpers/env.ts';
 import { createChangeRepo, type FileMap, type TempRepo } from '../../../tests/helpers/repo.ts';
 import { demonstrate } from '../src/demonstrate.ts';
 import { flowScenario, uniqueIds } from '../src/ids.ts';
+import { RecordingUnavailableError } from '../src/recording.ts';
 import { observeFlow, recordingStatus } from '../src/scenarios.ts';
 
 const browser = await canUseBrowser();
@@ -607,6 +608,94 @@ describe.skipIf(!browser)('the subject model', () => {
     expect(existsSync(run.path('demo/captures.json'))).toBe(true);
     expect(existsSync(run.path('evidence.json'))).toBe(true);
     expect(result.shots.length).toBeGreaterThan(0);
+  });
+
+  /** A model that saw "Load items" pass at head, in the repository's store. */
+  const remember = (revision: string) => {
+    const model = mergeSubject(
+      emptySubject(),
+      {
+        revision,
+        screens: [],
+        flows: [
+          {
+            name: 'Load items',
+            path: '/',
+            viewport: 'desktop',
+            steps: BEHAVIOR_FLOWS[0]!.steps.map((action) => ({ action })),
+            passed: true,
+          },
+        ],
+        commands: [],
+      },
+      { expireAfter: 20 },
+    );
+    mkdirSync(join(repo!.root, '.covi/subject'), { recursive: true });
+    writeFileSync(join(repo!.root, SUBJECT_PATHS.repo), JSON.stringify(model));
+  };
+
+  it('lists as replayed only the flows that ran', async () => {
+    const { config, change, context, run } = await setup(() => ({
+      app: { start: 'node server.js' },
+      demo: { viewports: ['desktop'], pages: ['/'] },
+    }));
+    remember(change.head.sha.slice(0, 12));
+    // The app may not start here, so the flow the model proposes never runs.
+    const result = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      execution: { allowed: false, reason: 'not here', withheld: [] },
+      subject: await open(config),
+      recording: off,
+    });
+    expect(result.app).toBeUndefined();
+    expect(result.traces).toBeUndefined();
+    expect(result.subject?.proposed).toEqual([]);
+  });
+
+  it('never fails a run over the recording of a flow nobody asked for', async () => {
+    const { config, change, context, run } = await setup(() => ({
+      app: { static: '.' },
+      demo: { viewports: ['desktop'], pages: ['/'] },
+    }));
+    remember(change.head.sha.slice(0, 12));
+    // Asked for while saving: the WebM Playwright wrote disappears first, so no recording is kept.
+    const losesRecordings = (of: Run) => async () => {
+      const recordings = of.path('demo/recordings');
+      for (const entry of await readdir(recordings, { recursive: true }))
+        if (entry.endsWith('.webm')) await rm(join(recordings, entry));
+      return undefined;
+    };
+    const required = { enabled: true, required: true };
+    const replayed = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      subject: await open(config),
+      recording: required,
+      locateFfmpeg: losesRecordings(run),
+    });
+    expect(replayed.subject?.proposed).toEqual(['Load items']);
+    expect(replayed.recording?.status).toBe('unavailable');
+    // The same flow, asked for, still requires its recording.
+    const again = await nextRun();
+    await expect(
+      demonstrate({
+        run: again,
+        change,
+        context,
+        config,
+        logger: silentLogger,
+        plan: { flows: BEHAVIOR_FLOWS },
+        recording: required,
+        locateFfmpeg: losesRecordings(again),
+      }),
+    ).rejects.toBeInstanceOf(RecordingUnavailableError);
   });
 
   it('demonstrates as before without a subject model', async () => {

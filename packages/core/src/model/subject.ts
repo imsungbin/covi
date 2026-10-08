@@ -304,6 +304,16 @@ export interface ObservedScreen {
   elements: ObservedElement[];
 }
 
+/** Why a flow is or is not remembered; a warning names the flow and this, never its values. */
+export type FlowOutcome = 'kept' | 'failed' | 'secret' | 'invalid';
+
+/** One observed flow and whether the model now remembers it. */
+export interface FlowMerge {
+  /** The flow's name as one line; absent when it had none. */
+  name?: string;
+  outcome: FlowOutcome;
+}
+
 /** A flow as the model learns it; capture's `ObservedFlow` is one run's outcome, trace, and video. */
 export interface SubjectFlowObservation {
   name: string;

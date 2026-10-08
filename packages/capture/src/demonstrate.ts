@@ -16,6 +16,7 @@ import {
   evidenceId,
   execShell,
   type FindingInput,
+  type Flow,
   findingId,
   hasObservations,
   type Language,
@@ -217,12 +218,13 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
   const flows = new Map<number, Partial<Record<Revision, ObservedFlow>>>();
   const notes: RecordingNote[] = [];
   const windows = new Map<string, Rect>();
+  // A flow replayed from the subject model was not asked for: its recording is never required.
+  const asked = (flow: Flow) => !plan.proposed.includes(flow.name);
+  const recordingRequired = recording.enabled && recording.required;
 
   try {
     if (wantsBrowser && mode)
-      browser = await launchBrowser(
-        recording.enabled && recording.required && plan.flows.length > 0,
-      );
+      browser = await launchBrowser(recordingRequired && plan.flows.some(asked));
     for (const revision of revisions) {
       const needsCheckout = mode === 'static' || mode === 'command' || commandsToRun.length > 0;
       const checkout = needsCheckout
@@ -324,7 +326,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
             });
             flows.set(index, { ...flows.get(index), [revision]: observed });
             if (observed.note) {
-              if (observed.note.status === 'unavailable' && recording.required)
+              if (observed.note.status === 'unavailable' && recordingRequired && asked(flow))
                 throw new RecordingUnavailableError(
                   observed.note.detail ?? 'the recorder did not start',
                 );
@@ -342,7 +344,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
                 }),
                 // A flow replayed from the subject model was not asked for in this change: what
                 // broke is worth a look, not a gate.
-                certainty: plan.proposed.includes(flow.name) ? 'risk' : 'likely',
+                certainty: asked(flow) ? 'likely' : 'risk',
                 severity: 'medium',
                 category: 'regression',
                 evidence: observed.outcome.error,
@@ -515,7 +517,8 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
           result,
           prefer: input.prefer,
         }),
-      plan.proposed,
+      // Only the replayed flows that ran: none when the app or the browser never came up.
+      plan.flows.filter((f, i) => !asked(f) && flows.has(i)).map((f) => f.name),
       result.shots,
     );
   await run.writeJson(DEMO_PATHS.captures, result, 'capture');

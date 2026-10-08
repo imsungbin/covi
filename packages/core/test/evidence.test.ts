@@ -276,6 +276,40 @@ describe('buildEvidence', () => {
     expect(EvidenceFileSchema.safeParse(evidence).success).toBe(true);
   });
 
+  it('redacts ids, paths, and parts before checking and deduping them', () => {
+    const secret = 'qq7788';
+    const redact = (text: string) => text.split(secret).join('[REDACTED]');
+    // Redaction lengthens this id past the limit, so the id Covi would write is not citable.
+    const long = `${secret}${'r'.repeat(EVIDENCE_LIMITS.id - 'recording:'.length - secret.length)}`;
+    const evidence = buildEvidence({
+      demo: {
+        ...DEMO,
+        recordings: [
+          { ...DEMO.recordings[1]!, id: `${secret}-head` },
+          // The same id once redacted: the first wins.
+          { ...DEMO.recordings[1]!, id: '[REDACTED]-head', path: 'demo/recordings/same.mp4' },
+          { ...DEMO.recordings[1]!, id: 'masked-head', path: 'demo/recordings/masked.mp4' },
+          { ...DEMO.recordings[1]!, id: long },
+        ],
+        traces: [{ ...DEMO.traces[0]!, path: `demo/traces/${secret}.json` }],
+      },
+      traces: [{ ...TRACE, steps: [{ ...TRACE.steps[0]!, id: secret }] }],
+      // A digest that happens to contain the secret would be masked into an invalid one.
+      fileSha: (path) =>
+        path.endsWith('masked.mp4') ? `${secret}${'a'.repeat(58)}` : 'a'.repeat(64),
+      redact,
+    });
+    expect(EvidenceFileSchema.safeParse(evidence).success).toBe(true);
+    expect(JSON.stringify(evidence)).not.toContain(secret);
+    const recordings = evidence.items.filter((i) => i.kind === 'recording');
+    expect(recordings.map((i) => [i.id, i.path])).toEqual([
+      ['recording:[REDACTED]-head', 'demo/recordings/flow-post-head.mp4'],
+    ]);
+    const trace = evidence.items.find((i) => i.kind === 'trace')!;
+    expect(trace.path).toBe('demo/traces/[REDACTED].json');
+    expect(trace.refs).toContain('trace:flow-post-head#[REDACTED]');
+  });
+
   it('leaves out items and parts whose ids or paths are too long to cite', () => {
     const long = 'x'.repeat(EVIDENCE_LIMITS.id);
     const evidence = buildEvidence({

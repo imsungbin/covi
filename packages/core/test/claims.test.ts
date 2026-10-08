@@ -143,6 +143,25 @@ describe('citations', () => {
     expect(unknownCitations(index, undefined)).toEqual([]);
   });
 
+  it('compares ids after the redaction the registry went through', () => {
+    const redact = (text: string) => text.split('qq7788').join('[REDACTED]');
+    const redacted = indexEvidence({ items: [hunkItem('src/[REDACTED].ts', 1, 2)] }, redact);
+    // A rule computes its hunk id from the raw diff; the registry holds the redacted one.
+    expect(
+      unknownCitations(redacted, ['diff-hunk:src/qq7788.ts:1', 'diff-hunk:src/x.ts:1']),
+    ).toEqual(['diff-hunk:src/x.ts:1']);
+    expect(redacted.find('diff-hunk:src/qq7788.ts:1')?.label).toBe('src/[REDACTED].ts:1-2');
+    expect(
+      groundFinding(
+        { certainty: 'confirmed', evidenceIds: ['diff-hunk:src/qq7788.ts:1'] },
+        redacted,
+      ),
+    ).toEqual({
+      finding: { certainty: 'confirmed', evidenceIds: ['diff-hunk:src/qq7788.ts:1'] },
+      dropped: [],
+    });
+  });
+
   it('names the claim behind every unknown id', () => {
     expect(
       citationProblems(index, {

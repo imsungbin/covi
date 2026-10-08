@@ -7,22 +7,31 @@ import { truncate } from '../util/text.ts';
 export interface EvidenceIndex {
   readonly items: readonly EvidenceItem[];
   readonly byId: ReadonlyMap<string, EvidenceItem>;
+  /** The item a cited id names, looked up as `byId` holds it: after the registry's redaction. */
+  find(id: string): EvidenceItem | undefined;
 }
 
-export function indexEvidence(file: Pick<EvidenceFile, 'items'>): EvidenceIndex {
+/**
+ * `redact` is the redaction the registry's ids went through. A claim may cite an id computed from
+ * the raw change (a rule's hunk), so it is redacted the same way before it is looked up.
+ */
+export function indexEvidence(
+  file: Pick<EvidenceFile, 'items'>,
+  redact: (text: string) => string = (text) => text,
+): EvidenceIndex {
   const byId = new Map<string, EvidenceItem>();
   for (const item of file.items) {
     if (!byId.has(item.id)) byId.set(item.id, item);
     for (const part of item.refs ?? []) if (!byId.has(part)) byId.set(part, item);
   }
-  return { items: file.items, byId };
+  return { items: file.items, byId, find: (id) => byId.get(redact(id)) };
 }
 
 export function unknownCitations(
   index: EvidenceIndex,
   ids: readonly string[] | undefined,
 ): string[] {
-  return (ids ?? []).filter((id) => !index.byId.has(id));
+  return (ids ?? []).filter((id) => !index.find(id));
 }
 
 interface Cites {
@@ -115,8 +124,8 @@ export function groundFinding<T extends GroundableFinding>(
   index: EvidenceIndex,
 ): Grounded<T> {
   const cited = finding.evidenceIds ?? [];
-  const kept = cited.filter((id) => index.byId.has(id));
-  const dropped = cited.filter((id) => !index.byId.has(id));
+  const kept = cited.filter((id) => index.find(id));
+  const dropped = cited.filter((id) => !index.find(id));
   const evidenceIds = kept.length ? kept : hunksAt(index, finding.location);
   const { evidenceIds: _cited, ...rest } = finding;
   const grounded = (evidenceIds.length ? { ...rest, evidenceIds } : rest) as T;

@@ -6,6 +6,7 @@ import {
   EVIDENCE_LIMITS,
   type EvidenceFile,
   type EvidenceItem,
+  EvidenceItemSchema,
 } from '../model/evidence.ts';
 import { renderHunk } from '../report/digest.ts';
 import { DEMO_PATHS, demoPath, RUN_PATHS } from '../run/paths.ts';
@@ -24,7 +25,10 @@ export interface EvidenceSources {
   tests?: { command: string };
   /** A run file's sha256; undefined when the file is missing, which leaves its item out. */
   fileSha?: (path: string) => string | undefined;
-  /** Applied to every label before it is cut to the label limit, since a mask can be longer. */
+  /**
+   * The run's redaction, applied to every string of every item (ids and paths too) before it is
+   * checked, as writing the file would apply it: the id Covi writes is then the one it checks.
+   */
   redact?: (text: string) => string;
 }
 
@@ -80,6 +84,32 @@ export function evidenceFiles(sources: Pick<EvidenceSources, 'demo' | 'behavior'
     demoPath.appLog('head'),
     RUN_PATHS.testsLog,
   ];
+}
+
+function redactStrings<T>(value: T, redact: (text: string) => string): T {
+  if (typeof value === 'string') return redact(value) as T;
+  if (Array.isArray(value)) return value.map((v) => redactStrings(v, redact)) as T;
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, redactStrings(v, redact)]),
+    ) as T;
+  return value;
+}
+
+/**
+ * An item as it will be written: redacted throughout, its label cut after redaction (a mask can be
+ * longer than what it hides), and its parts that are no longer citable dropped one by one. Nothing
+ * when the item itself no longer fits the schema, such as an id that redaction pushed past the
+ * limit or a digest that a secret happened to match.
+ */
+function finished(item: EvidenceItem, redact: (text: string) => string): EvidenceItem | undefined {
+  const r = redactStrings(item, redact);
+  const parsed = EvidenceItemSchema.safeParse({
+    ...r,
+    label: label(r.label),
+    ...(r.refs ? { refs: r.refs.filter(citable).slice(0, EVIDENCE_LIMITS.refs) } : {}),
+  });
+  return parsed.success ? parsed.data : undefined;
 }
 
 function traceParts(trace: Trace): string[] {
@@ -186,14 +216,11 @@ export function buildEvidence(sources: EvidenceSources): EvidenceFile {
     });
   const seen = new Set<string>();
   const unique: EvidenceItem[] = [];
-  for (const item of items) {
-    if (seen.has(item.id) || !citable(item.id) || item.path.length > EVIDENCE_LIMITS.id) continue;
+  for (const raw of items) {
+    const item = finished(raw, redact);
+    if (!item || seen.has(item.id)) continue;
     seen.add(item.id);
-    unique.push({
-      ...item,
-      label: label(redact(item.label)),
-      ...(item.refs ? { refs: item.refs.filter(citable).slice(0, EVIDENCE_LIMITS.refs) } : {}),
-    });
+    unique.push(item);
   }
   return { schemaVersion: 1, items: unique.slice(0, EVIDENCE_LIMITS.items) };
 }

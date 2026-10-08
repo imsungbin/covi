@@ -34,6 +34,7 @@ export {
   ungroundedStatements,
   unknownCitations,
 } from './evidence/cite.ts';
+export { collectEvidence, loadEvidence, writeEvidence } from './evidence/collect.ts';
 export { evidenceId, evidencePart } from './evidence/ids.ts';
 export {
   type ExecResult,

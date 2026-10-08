@@ -67,4 +67,4 @@ Only for large restructurings with nothing to click.
 ## Pacing
 - Short-form (9:16, 20–35 s): six to nine scenes, one idea each, the review note always included.
 - Standard (16:9, 60–120 s): ten to fourteen scenes, with room for before states, implementation detail, and a second finding. A storyboard holds at most 14 scenes, so a long standard review lets its scenes run a little past five seconds.
-- Covi holds each visual long enough to read it, whatever the line, so a long code excerpt or an interaction with more than two steps runs past five seconds. Show fewer lines, or split the steps across scenes.
+- Covi holds each visual long enough to read it, whatever the line, so an interaction of three or more steps, or a findings card with four or more findings, runs past five seconds. That is fine: it is the time the visual needs.

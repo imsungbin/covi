@@ -135,6 +135,23 @@ describe('GitHub', () => {
     ).toBeUndefined();
   });
 
+  it('trusts the checkout of scheduled, dispatched, and default-branch runs, never a change', async () => {
+    const repository = { default_branch: 'main' };
+    const trusted = async (payload: object, name: string) =>
+      (await githubContext(event(payload, name))).trustedCheckout === true;
+    expect(await trusted({ repository }, 'schedule')).toBe(true);
+    expect(await trusted({ repository, ref: 'refs/heads/topic' }, 'workflow_dispatch')).toBe(true);
+    expect(await trusted({ repository, ref: 'refs/heads/main', after: 'ddd' }, 'push')).toBe(true);
+    expect(await trusted({ repository, ref: 'refs/heads/topic', after: 'ddd' }, 'push')).toBe(
+      false,
+    );
+    expect(await trusted({ ref: 'refs/heads/main', after: 'ddd' }, 'push')).toBe(false);
+    expect(await trusted(pr(false), 'pull_request')).toBe(false);
+    expect(await trusted(pr(false), 'pull_request_target')).toBe(false);
+    const run = { head_sha: 'eee', head_branch: 'main', pull_requests: [{ number: 7 }] };
+    expect(await trusted({ workflow_run: run }, 'workflow_run')).toBe(false);
+  });
+
   it('creates the comment once, then updates it in place', async () => {
     let stored: Array<{ id: number; body: string; html_url: string; user: object }> = [];
     const api = fakeApi({
@@ -548,6 +565,23 @@ describe('GitLab', () => {
       source: { kind: 'merge-request', number: 12 },
     });
     expect(ctx.metadata.url).toBe('https://gitlab.example/acme/shop/-/merge_requests/12');
+  });
+
+  it('trusts the checkout of scheduled, web, API, and default-branch pipelines, never a change', () => {
+    const branch = { GITLAB_CI: 'true', CI_DEFAULT_BRANCH: 'main', CI_COMMIT_SHA: 'c1' };
+    const trusted = (env: NodeJS.ProcessEnv) => gitlabContext(env).trustedCheckout === true;
+    for (const source of ['schedule', 'web', 'api'])
+      expect(trusted({ ...branch, CI_PIPELINE_SOURCE: source, CI_COMMIT_BRANCH: 'topic' })).toBe(
+        true,
+      );
+    expect(trusted({ ...branch, CI_PIPELINE_SOURCE: 'push', CI_COMMIT_BRANCH: 'main' })).toBe(true);
+    expect(trusted({ ...branch, CI_PIPELINE_SOURCE: 'push', CI_COMMIT_BRANCH: 'topic' })).toBe(
+      false,
+    );
+    expect(trusted({ ...branch, CI_PIPELINE_SOURCE: 'trigger', CI_COMMIT_BRANCH: 'main' })).toBe(
+      false,
+    );
+    expect(trusted(mrEnv)).toBe(false);
   });
 
   it('detects fork merge requests', () => {

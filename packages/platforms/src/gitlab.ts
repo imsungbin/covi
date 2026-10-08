@@ -2,12 +2,13 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { COMMENT_MARKER, type Finding, isBlockingCandidate, shortHash } from '@covi/core';
 import { PlatformHttpError, readJson } from './http.ts';
-import type {
-  ExistingComment,
-  FetchLike,
-  PlatformContext,
-  Publisher,
-  PublishOutcome,
+import {
+  type ExistingComment,
+  type FetchLike,
+  namesChange,
+  type PlatformContext,
+  type Publisher,
+  type PublishOutcome,
 } from './types.ts';
 
 const ZERO_SHA = /^0+$/;
@@ -62,6 +63,19 @@ export function gitlabContext(env: NodeJS.ProcessEnv): PlatformContext {
     if (env.CI_COMMIT_BEFORE_SHA && !ZERO_SHA.test(env.CI_COMMIT_BEFORE_SHA))
       ctx.base = env.CI_COMMIT_BEFORE_SHA;
     ctx.head = env.CI_COMMIT_SHA;
+    // Pipelines a maintainer starts (scheduled, from the web, through the API) or a push to the
+    // default branch: the checkout is not a change under review.
+    const source = env.CI_PIPELINE_SOURCE;
+    const onDefault =
+      Boolean(env.CI_COMMIT_BRANCH) && env.CI_COMMIT_BRANCH === env.CI_DEFAULT_BRANCH;
+    if (
+      (source === 'schedule' ||
+        source === 'web' ||
+        source === 'api' ||
+        (source === 'push' && onDefault)) &&
+      !namesChange(ctx)
+    )
+      ctx.trustedCheckout = true;
   }
   return ctx;
 }

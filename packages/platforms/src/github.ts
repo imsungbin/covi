@@ -10,13 +10,14 @@ import {
   t,
 } from '@covi/core';
 import { PlatformHttpError, readJson } from './http.ts';
-import type {
-  AnchorsOutcome,
-  ExistingComment,
-  FetchLike,
-  PlatformContext,
-  Publisher,
-  PublishOutcome,
+import {
+  type AnchorsOutcome,
+  type ExistingComment,
+  type FetchLike,
+  namesChange,
+  type PlatformContext,
+  type Publisher,
+  type PublishOutcome,
 } from './types.ts';
 
 const ZERO_SHA = /^0+$/;
@@ -123,6 +124,16 @@ export async function githubContext(env: NodeJS.ProcessEnv): Promise<PlatformCon
     // Link to the run that reviewed the change, where its artifacts live.
     if (run?.html_url) ctx.links = { run: run.html_url, artifacts: `${run.html_url}#artifacts` };
   }
+  // Scheduled runs use the default branch; dispatching needs write access to the repository.
+  const defaultBranch = (payload.repository as { default_branch?: unknown } | undefined)
+    ?.default_branch;
+  const onDefault =
+    typeof defaultBranch === 'string' && payload.ref === `refs/heads/${defaultBranch}`;
+  if (
+    (event === 'schedule' || event === 'workflow_dispatch' || (event === 'push' && onDefault)) &&
+    !namesChange(ctx)
+  )
+    ctx.trustedCheckout = true;
   return ctx;
 }
 

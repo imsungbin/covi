@@ -1286,7 +1286,14 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
           // Warnings on stderr, like other progress: stdout carries only the outcome.
           for (const warning of result.warnings)
             process.stderr.write(`${pc.yellow('!')} ${warning}\n`);
-          if (!u.quiet) process.stdout.write(`${result.message}\n`);
+          const data = result.data as {
+            platform: string;
+            skipped: Array<{ number: number; reason: string }>;
+          };
+          const sign = data.platform === 'gitlab' ? '!' : '#';
+          for (const s of data.skipped)
+            process.stderr.write(`${pc.dim('skipped')} ${sign}${s.number}: ${s.reason}\n`);
+          if (!u.quiet || result.exitCode !== 0) process.stdout.write(`${result.message}\n`);
         }
         process.exitCode = result.exitCode;
       },

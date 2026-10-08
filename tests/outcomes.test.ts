@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { collectorIdentity } from '../packages/cli/src/outcomes.ts';
 import { OutcomeFileSchema } from '../packages/core/src/model/outcome.ts';
@@ -206,10 +206,29 @@ describe('covi outcomes', () => {
       closed_at: '2026-10-02T09:00:00Z',
       merge_commit_sha: '1'.repeat(40),
     });
+    api.pulls.push({
+      number: 8,
+      owner: 'acme',
+      branch: 'other',
+      sha: repo.head,
+      state: 'closed',
+      closed_at: '2026-10-03T09:00:00Z',
+    });
     // The report is about the repository it runs in: the one its remote names.
     repo.git('remote', 'add', 'origin', 'https://github.com/acme/shop.git');
   });
   afterAll(() => api.server.close());
+  // Each case starts from the published comment alone: no outcomes, votes, reverts, or failures.
+  beforeEach(() => {
+    rmSync(join(repo.dir, '.covi/outcomes'), { recursive: true, force: true });
+    api.comments[0]!.reactions = { '+1': 0, '-1': 0 };
+    api.comments[0]!.user = BOT;
+    api.reviewComments.splice(0);
+    api.commits.splice(0);
+    api.limited.clear();
+    api.endless.clear();
+    api.failOnce.clear();
+  });
 
   it('collects what became of a published review and reports how its findings held up', async () => {
     api.comments[0]!.reactions['+1'] = 2;
@@ -259,6 +278,8 @@ describe('covi outcomes', () => {
   });
 
   it('counts the votes on anchors of the pull request it collects, not of another', async () => {
+    const args = ['outcomes', 'collect', '--repo', repo.dir, '--number', '7', '--json'];
+    expect((await coviAsync(args, { env: gh.env })).code).toBe(0);
     const key = outcomeOf().findings.find((f) => f.certainty === 'likely')!.key;
     const anchor = (id: number, pull: number, reactions: { '+1': number; '-1': number }) => ({
       id,
@@ -275,52 +296,36 @@ describe('covi outcomes', () => {
       anchor(900, 8, { '+1': 0, '-1': 4 }),
       anchor(901, 7, { '+1': 3, '-1': 0 }),
     );
-    try {
-      const result = await coviAsync(
-        ['outcomes', 'collect', '--repo', repo.dir, '--number', '7', '--json'],
-        { env: gh.env },
-      );
-      expect(result.code).toBe(0);
-      expect(outcomeOf().findings.find((f) => f.key === key)).toMatchObject({
-        thumbs: { up: 3, down: 0 },
-      });
-    } finally {
-      api.reviewComments.splice(0);
-    }
+    expect((await coviAsync(args, { env: gh.env })).code).toBe(0);
+    expect(outcomeOf().findings.find((f) => f.key === key)).toMatchObject({
+      thumbs: { up: 3, down: 0 },
+    });
   });
 
   it('passes on what the collector could not read, on stderr and in --json warnings', async () => {
     api.endless.add('/repos/acme/shop/pulls/7/comments');
-    try {
-      const args = ['outcomes', 'collect', '--repo', repo.dir, '--number', '7'];
-      const json = await coviAsync([...args, '--json'], { env: gh.env });
-      expect(json.code).toBe(0);
-      expect((json.json() as Collected).warnings.join('\n')).toMatch(
-        /#7: review comments: only the first 10 pages were read/,
-      );
-      const human = await coviAsync(args, { env: gh.env });
-      expect(human.stderr).toMatch(/#7: review comments: only the first 10 pages were read/);
-      expect(human.stdout).not.toMatch(/only the first/);
-    } finally {
-      api.endless.clear();
-    }
+    const args = ['outcomes', 'collect', '--repo', repo.dir, '--number', '7'];
+    const json = await coviAsync([...args, '--json'], { env: gh.env });
+    expect(json.code).toBe(0);
+    expect((json.json() as Collected).warnings.join('\n')).toMatch(
+      /#7: review comments: only the first 10 pages were read/,
+    );
+    const human = await coviAsync(args, { env: gh.env });
+    expect(human.stderr).toMatch(/#7: review comments: only the first 10 pages were read/);
+    expect(human.stdout).not.toMatch(/only the first/);
   });
 
   it('stops at a rate limit, keeps what it collected, and says when it resets', async () => {
-    api.pulls.push({
-      number: 8,
-      owner: 'acme',
-      branch: 'other',
-      sha: repo.head,
-      state: 'closed',
-      closed_at: '2026-10-03T09:00:00Z',
-    });
     api.limited.add('/repos/acme/shop/pulls/8');
-    rmSync(join(repo.dir, '.covi/outcomes'), { recursive: true, force: true });
-    const result = await coviAsync(
-      ['outcomes', 'collect', '--repo', repo.dir, '--recent', '5', '--json'],
-      { env: gh.env },
-    );
+    let result: Awaited<ReturnType<typeof coviAsync>>;
+    try {
+      result = await coviAsync(
+        ['outcomes', 'collect', '--repo', repo.dir, '--recent', '5', '--json'],
+        { env: gh.env },
+      );
+    } finally {
+      api.limited.clear();
+    }
     expect(result.code).toBe(0);
     const json = result.json() as {
       data: {
@@ -334,7 +339,74 @@ describe('covi outcomes', () => {
     expect(json.data.incomplete.reason).toMatch(/rate limit/);
     expect(json.warnings.join('\n')).toMatch(/Stopped early/);
     expect(existsSync(join(repo.dir, '.covi/outcomes', `${runId}.json`))).toBe(true);
-    api.limited.clear();
+  });
+
+  it('says why it could not reach the platform, and fails when every change failed', async () => {
+    // Nothing listens on port 9: listing --recent fails before any change is asked about.
+    const dead = { ...gh.env, GITHUB_API_URL: 'http://127.0.0.1:9' };
+    const listing = await coviAsync(
+      ['outcomes', 'collect', '--repo', repo.dir, '--recent', '1', '--json'],
+      { env: dead },
+    );
+    expect(listing.code).toBe(3);
+    expect((listing.json() as { error: string }).error).toMatch(/Could not read from GitHub/);
+    const missing = await coviAsync(
+      ['outcomes', 'collect', '--repo', repo.dir, '--number', '404', '--json'],
+      { env: gh.env },
+    );
+    expect(missing.code).toBe(3);
+    expect((missing.json() as Collected).data.skipped).toMatchObject([
+      { number: 404, reason: expect.stringMatching(/HTTP 404/) },
+    ]);
+    // In people's terms: each change and why, on stderr.
+    const human = await coviAsync(['outcomes', 'collect', '--repo', repo.dir, '--number', '404'], {
+      env: gh.env,
+    });
+    expect(human.code).toBe(3);
+    expect(human.stderr).toMatch(/skipped #404: GitHub answered HTTP 404/);
+    // A change Covi never commented on is skipped, which is no failure.
+    api.comments[0]!.user = { login: 'someone', id: 5, type: 'User' };
+    const quiet = await coviAsync(
+      ['outcomes', 'collect', '--repo', repo.dir, '--number', '7', '--json'],
+      { env: gh.env },
+    );
+    expect(quiet.code).toBe(0);
+    expect((quiet.json() as Collected).data.skipped).toMatchObject([
+      { number: 7, reason: expect.stringMatching(/not commented/) },
+    ]);
+  });
+
+  it('takes the event only from the platform it collects from', async () => {
+    // A GitLab merge request pipeline asked about GitHub: !12 is not GitHub's #12.
+    const gitlab = {
+      GITHUB_ACTIONS: '',
+      GITLAB_CI: 'true',
+      CI_PIPELINE_SOURCE: 'merge_request_event',
+      CI_MERGE_REQUEST_IID: '12',
+      CI_MERGE_REQUEST_DIFF_BASE_SHA: repo.base,
+      GITHUB_TOKEN: 't',
+    };
+    const result = await coviAsync(
+      [
+        'outcomes',
+        'collect',
+        '--repo',
+        repo.dir,
+        '--platform',
+        'github',
+        '--repository',
+        'acme/shop',
+        '--api-url',
+        api.url,
+        '--json',
+      ],
+      { env: gitlab },
+    );
+    expect(result.code).toBe(0);
+    const json = result.json() as Collected;
+    expect(json.data).toMatchObject({ collected: [], skipped: [] });
+    expect(json.warnings.join('\n')).toMatch(/Nothing to collect/);
+    expect(api.calls.some((c) => c.url.includes('/pulls/12'))).toBe(false);
   });
 
   it('needs a token, and outside CI a repository to ask about', async () => {
@@ -377,12 +449,18 @@ describe('covi outcomes', () => {
       const trusted = githubEnv(api.url, { base, head: repo.head }, { GITHUB_TOKEN: 't' }, dirs);
       const result = (await coviAsync(args, { env: trusted.env })).json() as Collected;
       expect(result.data.collected).toMatchObject([{ number: 7 }]);
+
+      // A scheduled run checks out the default branch: its configuration is read as it is.
+      writeFileSync(join(repo.dir, '.covi/config.yml'), 'publish:\n  botLogin: covi-app[bot]\n');
+      const scheduled = { ...gh.env, GITHUB_EVENT_NAME: 'schedule' };
+      const nightly = (await coviAsync(args, { env: scheduled })).json() as Collected;
+      expect(nightly.data.collected).toMatchObject([{ number: 7 }]);
     } finally {
-      api.comments[0]!.user = BOT;
+      rmSync(join(repo.dir, '.covi/config.yml'), { force: true });
     }
   });
 
-  it('reads the bot names from the base revision in CI, and from the worktree locally', async () => {
+  it('reads the bot names from the base revision in CI, else from a trusted worktree', async () => {
     const dir = await example('refactor-retry-helper');
     mkdirSync(join(dir, '.covi'), { recursive: true });
     writeFileSync(join(dir, '.covi/config.yml'), 'publish:\n  gitlabBotUser: covi_bot\n');
@@ -391,8 +469,12 @@ describe('covi outcomes', () => {
     const base = git(dir, 'rev-parse', 'HEAD').trim();
     writeFileSync(join(dir, '.covi/config.yml'), 'publish:\n  gitlabBotUser: someone_else\n');
     expect(await collectorIdentity(dir, { ci: true, base })).toEqual({ gitlabBotUser: 'covi_bot' });
-    // Without a base revision, CI reads nothing from the checkout.
-    expect(await collectorIdentity(dir, { ci: true })).toEqual({});
+    // A checkout the platform calls trusted (a scheduled pipeline) is read as it is.
+    expect(await collectorIdentity(dir, { ci: true, trustedCheckout: true })).toEqual({
+      gitlabBotUser: 'someone_else',
+    });
+    // An untrusted checkout without a base revision: nothing from it.
+    expect(await collectorIdentity(dir, { ci: true, trustedCheckout: false })).toEqual({});
     expect(await collectorIdentity(dir, { ci: false })).toEqual({ gitlabBotUser: 'someone_else' });
     const own = outside('covi.yml', 'publish:\n  botLogin: covi-app[bot]\n');
     expect(await collectorIdentity(dir, { ci: true, base, configPath: own })).toEqual({
@@ -436,15 +518,16 @@ describe('covi outcomes', () => {
       ],
       { env: { GITHUB_ACTIONS: '', GITLAB_CI: '', COVI_GITLAB_TOKEN: 't' } },
     );
-    expect(result.code).toBe(0);
+    // !3 cannot be placed; !5 was asked about, and failed: the mock knows no merge requests, so
+    // every change asked about failed.
+    expect(result.code).toBe(3);
     const json = result.json() as Collected;
     expect(json.data.repository).toBe('acme/shop');
-    // !3 cannot be placed; !5 was asked about (the mock knows no merge requests).
     expect(json.data.skipped).toMatchObject([
       { number: 3, reason: expect.stringMatching(/project id 4242/) },
       { number: 5, reason: expect.stringMatching(/404/) },
     ]);
-    expect(json.warnings.join('\n')).toMatch(/!3/);
+    expect(json.warnings.join('\n')).toMatch(/!3: .*--repository group\/project --number 3/);
   });
 
   it('reports only on this repository, and never from outcomes it cannot trust', async () => {

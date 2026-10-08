@@ -26,6 +26,12 @@ export interface PlatformContext {
   expectedHead?: string;
   /** Finds the pull request when the event does not name it (fork pull requests in workflow_run). */
   pullRequestHead?: { owner: string; branch: string; sha: string };
+  /**
+   * The checkout is a branch only maintainers move (a scheduled, dispatched, or default-branch
+   * run), not a change under review, so its configuration can be read as it is. Never set when
+   * the event names a change (`metadata.number`, `pullRequestHead`, `expectedHead`).
+   */
+  trustedCheckout?: boolean;
 }
 
 export interface PublishOutcome {
@@ -84,3 +90,8 @@ export interface FindingLocation {
 }
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+
+/** Whether the context names a change under review: then the checkout may be that change. */
+export function namesChange(ctx: PlatformContext): boolean {
+  return Boolean(ctx.metadata.number || ctx.pullRequestHead || ctx.expectedHead);
+}

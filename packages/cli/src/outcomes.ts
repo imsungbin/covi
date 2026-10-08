@@ -65,12 +65,19 @@ const stops = (error: unknown): error is RateLimitedError | BudgetExhaustedError
 /**
  * Whose comments count as Covi's besides the token's own user: `publish.botLogin` and
  * `publish.gitlabBotUser` from trusted configuration. In CI the checkout may be the change under
- * review, so that is the base revision's (or a `--config` outside the repository); locally, the
- * worktree's or `--config`'s.
+ * review, so that is the base revision's (or a `--config` outside the repository), unless the
+ * platform says the checkout is a branch only maintainers move (`trustedCheckout`). Locally, and
+ * there, the worktree's or `--config`'s.
  */
 export async function collectorIdentity(
   root: string,
-  o: { ci: boolean; base?: string; configPath?: string; warn?: (message: string) => void },
+  o: {
+    ci: boolean;
+    base?: string;
+    trustedCheckout?: boolean;
+    configPath?: string;
+    warn?: (message: string) => void;
+  },
 ): Promise<{ botLogin?: string; gitlabBotUser?: string }> {
   const git = new Git(root);
   const top = await git.tryOut(['rev-parse', '--show-toplevel']);
@@ -80,8 +87,10 @@ export async function collectorIdentity(
     : undefined;
   const inside = path && top && isInside(top, path) ? relative(top, path) : undefined;
   let loaded: Awaited<ReturnType<typeof loadRepositoryConfig>> = {};
-  if (path && !(o.ci && inside)) loaded = await loadRepositoryConfig(root, { kind: 'file', path });
-  else if (!o.ci) loaded = await loadRepositoryConfig(root, { kind: 'worktree' });
+  const fromWorktree = !o.ci || o.trustedCheckout;
+  if (path && (fromWorktree || !inside))
+    loaded = await loadRepositoryConfig(root, { kind: 'file', path });
+  else if (fromWorktree) loaded = await loadRepositoryConfig(root, { kind: 'worktree' });
   else if (top && o.base && /^[0-9a-f]{7,64}$/i.test(o.base) && (await git.hasObject(o.base)))
     loaded = await loadRepositoryConfig(
       root,
@@ -106,7 +115,11 @@ export async function collectOutcomes(o: CollectOptions): Promise<WorkflowResult
   const redactor = Redactor.fromProcess();
   const warn = (message: string) => result.warnings.push(redactor.redact(message));
   const detected = detectPlatform(o.env);
-  const context = detected !== 'local' ? await platformContext(detected, o.env) : undefined;
+  // The CI event says which change and revision to trust only for the platform it comes from.
+  const context =
+    detected !== 'local' && (o.platform === 'auto' || o.platform === detected)
+      ? await platformContext(detected, o.env)
+      : undefined;
   const published = (await listRuns(o.root, o.runsDir)).flatMap((r) =>
     r.publish ? [r.publish] : [],
   );
@@ -130,6 +143,7 @@ export async function collectOutcomes(o: CollectOptions): Promise<WorkflowResult
     ...(await collectorIdentity(o.root, {
       ci: detected !== 'local',
       base: context?.base,
+      trustedCheckout: context?.trustedCheckout,
       configPath: o.configPath,
       warn,
     })),
@@ -165,12 +179,17 @@ export async function collectOutcomes(o: CollectOptions): Promise<WorkflowResult
   const skip = (number: number, reason: string) =>
     skipped.push({ number, reason: redactor.redact(reason) });
   let incomplete: { reason: string; resetAt?: string } | undefined;
+  let attempted = 0;
+  let failed = 0;
   const now = o.now ?? (() => new Date());
   try {
     const targets = await targetsOf(o, collector, records, context, (number, reason) => {
       skip(number, reason);
-      warn(`${label(number)}: skipped: ${reason}. Pass --number ${number} to collect it.`);
+      warn(
+        `${label(number)}: skipped: ${reason}. Pass --repository group/project --number ${number} to collect it.`,
+      );
     });
+    attempted = targets.length;
     if (!targets.length && !skipped.length)
       warn('Nothing to collect: no run here published a comment. Pass --number or --recent.');
     for (const target of targets) {
@@ -193,6 +212,7 @@ export async function collectOutcomes(o: CollectOptions): Promise<WorkflowResult
       } catch (error) {
         if (stops(error) || (error instanceof PlatformHttpError && error.status === 401))
           throw error;
+        failed++;
         skip(target.number, errorMessage(error));
       }
     }
@@ -202,7 +222,15 @@ export async function collectOutcomes(o: CollectOptions): Promise<WorkflowResult
         `${name} refused the token (HTTP 401).`,
         'Check that the token is valid and can read pull or merge requests.',
       );
-    if (!stops(error)) throw error;
+    if (error instanceof CoviError) throw error;
+    // Before any change was asked about (listing --recent), or the network: nothing to keep.
+    if (!stops(error))
+      throw new EnvironmentError(
+        `Could not read from ${name}: ${redactor.redact(errorMessage(error))}.`,
+        error instanceof PlatformHttpError && (error.status === 403 || error.status === 404)
+          ? `Check the repository (${collector.repository}) and that the token can read it.`
+          : 'Check the API URL and the network, then try again.',
+      );
     if (!collected.length)
       throw new EnvironmentError(
         `No outcomes collected: ${error.message}.`,
@@ -219,6 +247,12 @@ export async function collectOutcomes(o: CollectOptions): Promise<WorkflowResult
   result.artifacts.outcomes = outcomesDir(o.root);
   result.data = { platform, repository: collector.repository, collected, skipped, incomplete };
   result.message = `Collected ${collected.length} outcome(s)${skipped.length ? `, skipped ${skipped.length}` : ''}.`;
+  // Every change asked about failed (not merely uncommented): the platform, not the changes.
+  if (attempted && failed === attempted) {
+    result.ok = false;
+    result.exitCode = ExitCode.environment;
+    result.message = `Could not collect any of the ${attempted} change(s) asked about.`;
+  }
   return result;
 }
 

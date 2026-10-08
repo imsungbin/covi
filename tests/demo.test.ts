@@ -61,6 +61,8 @@ describe('demonstrations', () => {
           certainty: 'confirmed',
           severity: 'high',
           category: 'api-compatibility',
+          // The first captured request: positional, as the registry counts requests.
+          evidenceIds: ['http:1'],
         }),
       ]);
       // Written in Korean, the finding keeps its id: SARIF and GitLab track findings by id.

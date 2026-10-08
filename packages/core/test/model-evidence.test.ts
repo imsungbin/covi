@@ -108,6 +108,7 @@ describe('model findings and evidence', () => {
     expect(notes).toEqual([
       'Model finding "Quantity can no longer go negative" cited evidence the run does not have (trace:made-up); those ids were dropped.',
       'Model finding "Somewhere else" cited no evidence, so it is reported as a risk rather than likely.',
+      'Model finding "At the change" cited no evidence the run has, so it cites the diff at its location (diff-hunk:src/cart.ts:1).',
     ]);
   });
 });

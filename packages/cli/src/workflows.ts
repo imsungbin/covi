@@ -8,9 +8,13 @@ import {
   buildReview,
   type CodeChange,
   childEnv,
+  citationProblems,
+  citeChanges,
   code,
   DEMO_PATHS,
   type Demonstration,
+  EvidenceFileSchema,
+  type EvidenceIndex,
   ExitCode,
   type Explanation,
   ExplanationSchema,
@@ -21,8 +25,12 @@ import {
   type FindingsFile,
   FindingsFileSchema,
   gateFailures,
+  groundModelFindings,
+  indexEvidence,
+  isBlockingCandidate,
   LANGUAGE_NAME,
   type Language,
+  loadEvidence,
   normalizeFinding,
   type ParsedConfigInput,
   ProviderError,
@@ -31,6 +39,7 @@ import {
   type Review,
   type ReviewContext,
   ReviewFileSchema,
+  RUN_PATHS,
   renderBrief,
   renderComment,
   renderExplanation,
@@ -44,6 +53,8 @@ import {
   t,
   truncate,
   UsageError,
+  ungroundedStatements,
+  writeEvidence,
 } from '@covi/core';
 import type { PlatformContext } from '@covi/platforms';
 import {
@@ -171,8 +182,21 @@ function artifact(
   result.artifacts[name] = session.run.path(rel);
 }
 
+/**
+ * The run's evidence as it stands: the registry Covi wrote, or one rebuilt for an older run. Ids a
+ * claim computed from the raw change are redacted as the registry's were before they are looked up.
+ */
+async function evidenceOf(run: Session['run']): Promise<EvidenceIndex> {
+  return indexEvidence((await loadEvidence(run)).evidence, (text) => run.redactor.redact(text));
+}
+
 /** Model analysis when a provider is configured; heuristics otherwise (or when the model fails). */
-async function analysis(session: Session, ruleFindings: readonly Finding[], change: CodeChange) {
+async function analysis(
+  session: Session,
+  ruleFindings: readonly Finding[],
+  change: CodeChange,
+  evidence: EvidenceIndex,
+) {
   if (!session.provider) return undefined;
   session.logger.step(
     `Analyzing with ${session.provider.id}${session.provider.model ? ` (${session.provider.model})` : ''}`,
@@ -187,6 +211,7 @@ async function analysis(session: Session, ruleFindings: readonly Finding[], chan
         maxDiffChars: session.config.intelligence.maxDiffChars,
         runId: session.run.id,
         language: session.language.language,
+        evidence: evidence.items,
       }),
     );
   } catch (error) {
@@ -246,6 +271,7 @@ export interface ReviewOutcome {
   explanation: Explanation;
   built: BuiltReview;
   findingsFile: FindingsFile;
+  evidence: EvidenceIndex;
 }
 
 /** Understand → explain → (demonstrate) → inspect risks, writing every artifact. */
@@ -270,7 +296,9 @@ export async function reviewSession(
     'findings',
   );
 
-  const model = await analysis(session, ruleFindings, change);
+  // What the model may cite: the diff's hunks and what the demonstration captured.
+  const known = await evidenceOf(run);
+  const model = await analysis(session, ruleFindings, change, known);
   const { execution } = session;
   const testWithheld = execution.withheld.some((c) => c.key === 'test.command');
   const wantTests = options.runTests || config.review.runTests;
@@ -282,17 +310,30 @@ export async function reviewSession(
   if (wantTests && testsNote) run.warn(testsNote);
   const tests =
     wantTests && !testsNote ? await run.stage('tests', () => runTests(session)) : undefined;
-  const explanation = model?.explanation ?? explainHeuristically(context, language);
-  const findingsFile: FindingsFile = model?.findings ?? {
+  // The output behind `test-run:tests`.
+  if (tests)
+    await run.writeText(RUN_PATHS.testsLog, `$ ${tests.command}\n${tests.outputTail}\n`, 'log');
+  const explanation = citeChanges(
+    model?.explanation ?? explainHeuristically(context, language),
+    known,
+  );
+  // A model's findings are grounded like Covi's own; what grounding changed is a run warning, and
+  // findings.json gets the grounded file, so `covi report` accepts the run again.
+  let findingsFile: FindingsFile = {
     schemaVersion: 2,
     findings: [],
     dismissed: [],
     checked: [],
     notVerified: [],
   };
+  if (model) {
+    const grounded = groundModelFindings(model.findings, known);
+    for (const note of grounded.notes) run.warn(note);
+    findingsFile = grounded.findings;
+  }
   const built = buildReview({
     ruleFindings,
-    authored: model?.findings,
+    authored: model ? findingsFile : undefined,
     authoredSource: 'model',
     checked: rules.checked,
     config,
@@ -308,13 +349,13 @@ export async function reviewSession(
       : { provider: 'heuristic' },
     language,
   });
-  await writeReviewArtifacts(
+  const evidence = await writeReviewArtifacts(
     session,
     built,
     explanation,
     model ? findingsFile : { ...findingsFile, findings: ruleFindings },
   );
-  return { review: built.review, explanation, built, findingsFile };
+  return { review: built.review, explanation, built, findingsFile, evidence };
 }
 
 export async function writeReviewArtifacts(
@@ -322,8 +363,10 @@ export async function writeReviewArtifacts(
   built: BuiltReview,
   explanation: Explanation,
   findingsFile: FindingsFile,
-): Promise<void> {
+): Promise<EvidenceIndex> {
   const { run, context } = session;
+  // Rebuilt last, so it lists the test output too; the reports show what each finding cites.
+  const evidence = indexEvidence(await writeEvidence(run), (text) => run.redactor.redact(text));
   // Headings follow what the authored files say they are written in, else the run's language.
   const language = reportLanguage(session.language.language, explanation, findingsFile);
   await run.writeJson('explanation.json', explanation, 'explanation');
@@ -336,7 +379,7 @@ export async function writeReviewArtifacts(
   await run.writeJson('review.json', { ...built.review, omitted: built.omitted }, 'review');
   await run.writeText(
     'review.md',
-    renderReview(built.review, explanation, context, language),
+    renderReview(built.review, explanation, context, language, evidence),
     'review',
   );
   await run.writeText(
@@ -346,9 +389,10 @@ export async function writeReviewArtifacts(
   );
   await run.writeText(
     'comment.md',
-    renderComment(built.review, explanation, context, {}, language),
+    renderComment(built.review, explanation, context, {}, language, evidence),
     'comment',
   );
+  return evidence;
 }
 
 function finishReview(
@@ -373,6 +417,7 @@ function finishReview(
     reviewJson: 'review.json',
     summary: 'summary.md',
     context: 'context.json',
+    evidence: RUN_PATHS.evidence,
     manifest: 'run.json',
   }))
     artifact(session, result, name, rel);
@@ -397,9 +442,10 @@ export async function analyzeWorkflow(
     { schemaVersion: 1, findings: rules.findings, checked: rules.checked, errors: rules.errors },
     'findings',
   );
+  // A draft that cites the hunks of each change, so an agent copying it starts grounded.
   await run.writeJson(
     'explanation.draft.json',
-    explainHeuristically(context, language),
+    citeChanges(explainHeuristically(context, language), await evidenceOf(run)),
     'explanation',
   );
   const brief = renderBrief(change, context, rules.findings, {
@@ -433,7 +479,8 @@ export async function analyzeWorkflow(
     context: 'context.json',
     ruleFindings: 'rule-findings.json',
     explanationDraft: 'explanation.draft.json',
-    diff: 'diff.patch',
+    diff: RUN_PATHS.diff,
+    evidence: RUN_PATHS.evidence,
     manifest: 'run.json',
   }))
     artifact(session, result, name, rel);
@@ -454,8 +501,12 @@ export async function explainWorkflow(
       language,
     }),
   );
-  const model = await analysis(session, rules.findings, change);
-  const explanation = model?.explanation ?? explainHeuristically(session.context, language);
+  const known = await evidenceOf(session.run);
+  const model = await analysis(session, rules.findings, change, known);
+  const explanation = citeChanges(
+    model?.explanation ?? explainHeuristically(session.context, language),
+    known,
+  );
   await session.run.writeJson('explanation.json', explanation, 'explanation');
   await session.run.writeText(
     'explanation.md',
@@ -947,7 +998,8 @@ export async function reportWorkflow(session: Session): Promise<WorkflowResult> 
   const result = baseResult('report', session);
   // --language rewrites the reports in another language; the run records it.
   if (session.languageSettings.flag) run.setLanguage(session.language);
-  const explanation = (await run.has('explanation.json'))
+  const known = await evidenceOf(run);
+  const agentExplanation = (await run.has('explanation.json'))
     ? ({
         ...parseOrThrow(
           ExplanationSchema,
@@ -957,10 +1009,11 @@ export async function reportWorkflow(session: Session): Promise<WorkflowResult> 
         ),
         generatedBy: { provider: 'agent' },
       } as Explanation)
-    : (() => {
-        run.warn('No explanation.json found; using the structural explanation.');
-        return explainHeuristically(context, session.language.language);
-      })();
+    : undefined;
+  if (!agentExplanation) run.warn('No explanation.json found; using the structural explanation.');
+  const explanation =
+    agentExplanation ??
+    citeChanges(explainHeuristically(context, session.language.language), known);
   const authored = (await run.has('findings.json'))
     ? parseOrThrow(
         FindingsFileSchema,
@@ -970,6 +1023,29 @@ export async function reportWorkflow(session: Session): Promise<WorkflowResult> 
       )
     : undefined;
   if (!authored) run.warn('No findings.json found; the review contains rule findings only.');
+  const problems = citationProblems(known, {
+    explanation: agentExplanation,
+    findings: authored?.findings,
+  });
+  if (problems.length)
+    throw new UsageError(
+      `Cited evidence is not in this run:\n  ${problems.join('\n  ')}`,
+      `List the run's evidence with \`covi evidence --run ${run.id}\`. Evidence ids look like \`diff-hunk:src/app.ts:40\` (the + start of a hunk's @@ header), \`trace:flow-post-head#n2\`, or \`screenshot:home-desktop-after\`.`,
+    );
+  if (authored?.schemaVersion === 1) {
+    const uncited = authored.findings.filter(
+      (f) => isBlockingCandidate(f) && !f.evidenceIds?.length,
+    ).length;
+    if (uncited)
+      run.warn(
+        `findings.json is schemaVersion 1, so ${uncited} confirmed or likely finding(s) were accepted without evidence ids; version 2 requires them.`,
+      );
+  }
+  const ungrounded = agentExplanation ? ungroundedStatements(agentExplanation) : [];
+  if (ungrounded.length)
+    run.warn(
+      `explanation.json: ${ungrounded.length} statement(s) cite no evidence: ${ungrounded.join(', ')}.`,
+    );
   const rules = (await run.has('rule-findings.json'))
     ? ((await run.readJson<{ findings: Finding[]; checked?: string[] }>('rule-findings.json')) ?? {
         findings: [],
@@ -1040,6 +1116,7 @@ export async function summarizeWorkflow(
   result.data = { summary: text };
   result.verdict = outcome.review.verdict;
   artifact(session, result, 'summary', 'summary.md');
+  artifact(session, result, 'evidence', RUN_PATHS.evidence);
   return result;
 }
 
@@ -1060,7 +1137,19 @@ export async function commentFromRun(
   ) as Explanation;
   const context = await run.readJson<ReviewContext>('context.json');
   const language = reportLanguage(run.manifest.language?.value ?? 'en', explanation, review);
-  return { body: renderComment(review, explanation, context, links, language), review, context };
+  // In the workflow_run pattern this file comes from an untrusted artifact: validated, then only
+  // ever rendered as escaped text or a checked link.
+  const evidence = (await run.has(RUN_PATHS.evidence))
+    ? indexEvidence(
+        parseOrThrow(EvidenceFileSchema, await run.readJson(RUN_PATHS.evidence), 'evidence.json'),
+        (text) => run.redactor.redact(text),
+      )
+    : undefined;
+  return {
+    body: renderComment(review, explanation, context, links, language, evidence),
+    review,
+    context,
+  };
 }
 
 export function platformSummaryTitle(platform: PlatformContext | undefined): string {

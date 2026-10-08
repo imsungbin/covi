@@ -179,6 +179,13 @@ export function groundModelFindings(
       notes.push(
         `Model finding "${title}" cited no evidence, so it is reported as a risk rather than ${grounded.demoted}.`,
       );
+    // Nothing the model cited survived, so the hunk at its location stands in: say which.
+    const kept = (f.evidenceIds?.length ?? 0) - grounded.dropped.length;
+    const fallback = grounded.finding.evidenceIds;
+    if (!kept && fallback?.length)
+      notes.push(
+        `Model finding "${title}" cited no evidence the run has, so it cites the diff at its location (${fallback.join(', ')}).`,
+      );
     return grounded.finding;
   });
   return { findings: { ...file, schemaVersion: 2, findings }, notes };

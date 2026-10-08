@@ -4,6 +4,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Run } from '@covi/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { covi, coviAsync } from './helpers/cli.ts';
@@ -566,6 +567,53 @@ describe('GitLab CI', () => {
     expect(note.url).toBe('/api/v4/projects/5/merge_requests/12/notes');
     expect(note.headers['private-token']).toBe(`glpat-test-token-${'0'.repeat(10)}`);
     expect(readFileSync(join(out, 'run.json'), 'utf8')).not.toContain('glpat-test-token');
+  });
+  it('links the video and cited captures to the job artifacts of a run inside the project', async () => {
+    const repo = await prRepo('visual-pricing-cards');
+    const reviewed = covi(['review', '--repo', repo.dir, '--json']);
+    expect(reviewed.code).toBe(0);
+    const runDir = reviewed.json().runDir as string;
+    // A rendered video and a captured screenshot, as a CI run with a demonstration leaves them.
+    const run = await Run.open(runDir, { root: repo.dir });
+    await run.writeText('video/covi-review.mp4', 'mp4', 'video');
+    await run.writeText('demo/screenshots/pricing-desktop-after.png', 'png', 'capture');
+    await run.save();
+    const evidence = JSON.parse(readFileSync(join(runDir, 'evidence.json'), 'utf8')) as {
+      items: unknown[];
+    };
+    evidence.items.push({
+      id: 'screenshot:pricing-desktop-after',
+      kind: 'screenshot',
+      path: 'demo/screenshots/pricing-desktop-after.png',
+      revision: 'head',
+      sha256: '0'.repeat(64),
+      label: 'pricing (desktop) · head',
+    });
+    writeFileSync(join(runDir, 'evidence.json'), JSON.stringify(evidence));
+    const review = JSON.parse(readFileSync(join(runDir, 'review.json'), 'utf8')) as {
+      findings: Array<{ evidenceIds?: string[] }>;
+    };
+    review.findings[0]!.evidenceIds = [
+      ...(review.findings[0]!.evidenceIds ?? []),
+      'screenshot:pricing-desktop-after',
+    ];
+    writeFileSync(join(runDir, 'review.json'), JSON.stringify(review));
+
+    api.comments.length = 0;
+    const published = await coviAsync(
+      ['publish', '--repo', repo.dir, '--run', runDir, '--platform', 'gitlab', '--json'],
+      // The project directory as the run sees it (temporary directories may be symlinked).
+      { env: { ...gitlabEnv(repo), CI_PROJECT_DIR: join(runDir, '..', '..', '..') } },
+    );
+    expect(published.code).toBe(0);
+    const files = `https://gitlab.example/acme/shop/-/jobs/9/artifacts/file/.covi/runs/${run.id}/`;
+    const body = api.comments.at(-1)!.body;
+    expect(body).toContain(`(${files}video/covi-review.mp4)`);
+    expect(body).toContain(
+      `[\`pricing-desktop-after.png\`](${files}demo/screenshots/pricing-desktop-after.png)`,
+    );
+    // Hunks are named, not linked: the comment sits next to the diff.
+    expect(body).toMatch(/Cited evidence: `pricing\.css:\d+(-\d+)?`/);
   });
   it('leaves the Code Quality report empty with --no-annotations', async () => {
     const repo = await prRepo('visual-pricing-cards');

@@ -3,6 +3,7 @@ import { demonstrate, RecordingUnavailableError } from '@covi/capture';
 import {
   type CommentLinks,
   type CoviConfig,
+  type EvidenceIndex,
   ExitCode,
   type Explanation,
   gateFailures,
@@ -17,6 +18,7 @@ import {
 } from '@covi/core';
 import {
   annotations,
+  artifactFileBase,
   codeQualityReport,
   createPublisher,
   dotenvReport,
@@ -174,6 +176,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
     ...options,
     annotations: config.publish.annotations,
     language: reportLanguage(session.language.language, outcome.explanation),
+    evidence: outcome.evidence,
   });
 
   if (options.publish ?? config.publish.comment) {
@@ -216,7 +219,11 @@ async function writeCiOutputs(
   platform: PlatformContext,
   review: Review,
   result: WorkflowResult,
-  options: Pick<CiOptions, 'log' | 'env'> & { annotations: boolean; language: Language },
+  options: Pick<CiOptions, 'log' | 'env'> & {
+    annotations: boolean;
+    language: Language;
+    evidence: EvidenceIndex;
+  },
 ): Promise<void> {
   const { language } = options;
   const version = await coviVersion();
@@ -236,7 +243,7 @@ async function writeCiOutputs(
       const explanation = await run.readJson<Explanation>('explanation.json');
       await writeJobSummary(
         options.env.GITHUB_STEP_SUMMARY,
-        renderReview(review, explanation, context, language),
+        renderReview(review, explanation, context, language, options.evidence),
       );
     }
     if (options.env.GITHUB_OUTPUT) {
@@ -306,6 +313,8 @@ export async function publishRun(
   const links: CommentLinks = {
     run: platform.links.run ?? platform.links.job,
     artifacts: options.artifactUrl ?? platform.links.artifacts,
+    // Where the platform serves the run's files one by one: cited captures and the video link there.
+    files: artifactFileBase(platform, env, run.dir),
   };
   const video = run.manifest.artifacts.find((a) => a.kind === 'video');
   if (video && options.videoMode !== 'none') {
@@ -315,18 +324,9 @@ export async function publishRun(
       const uploaded = await publisher.uploadFile(run.path(video.path)).catch(() => undefined);
       if (uploaded) links.video = { url: uploaded.url, seconds, markdown: uploaded.markdown };
     }
-    if (
-      !links.video &&
-      platform.platform === 'gitlab' &&
-      platform.links.job &&
-      env.CI_PROJECT_DIR &&
-      run.dir.startsWith(env.CI_PROJECT_DIR)
-    ) {
-      links.video = {
-        url: `${platform.links.job}/artifacts/file/${relative(env.CI_PROJECT_DIR, run.path(video.path))}`,
-        seconds,
-      };
-    }
+    // run.path refuses a recorded path that leaves the run (run.json may come from an artifact).
+    if (!links.video && links.files)
+      links.video = { url: `${links.files}${relative(run.dir, run.path(video.path))}`, seconds };
     if (!links.video && links.artifacts) links.video = { url: links.artifacts, seconds };
   }
   const { body } = await commentFromRun(run, links);

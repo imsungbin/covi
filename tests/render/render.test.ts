@@ -546,7 +546,7 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
           },
         },
         {
-          id: 'warn',
+          id: 'pixels',
           beat: 'review',
           eyebrow: 'Worth a look',
           narration: 'It warns twenty characters early, so nobody is surprised.',
@@ -587,7 +587,7 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
     expect(rendered.video.qc).not.toBe('fail');
 
     const timeline = read<Timeline>(run, 'video/timeline.json');
-    const [open, type, code, compare, warn] = timeline.scenes;
+    const [open, type, code, compare, pixels] = timeline.scenes;
     expect(timeline.scenes.map((s) => s.transition?.kind)).toEqual([
       undefined,
       'push',
@@ -609,7 +609,7 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
     expect(compare!.phases!.reveal).toBeLessThan(compare!.phases!.hero!);
     // A cut lands on the first word of its line.
     expect(code!.start).toBeCloseTo(code!.speech!.start, 2);
-    expect(warn).toMatchObject({ camera: 'static' });
+    expect(pixels).toMatchObject({ camera: 'static' });
     expect(type).not.toHaveProperty('camera');
 
     // The marked phrases are swept in the captions and never reach the voice or the files.
@@ -638,8 +638,9 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
     // line goes on, and the captures that drift never do.
     const still = qc.checks.find((c) => c.id === 'still')!;
     expect(still.status).toBe('warn');
-    expect(still.message).toMatch(/\bwarn \(/);
-    expect(still.message).not.toMatch(/\b(open|type|compare) \(/);
+    expect(still.message).toMatch(/\bpixels \(/);
+    // The code scene pushes in from its entrance through the gap before its pinned highlights.
+    expect(still.message).not.toMatch(/\b(open|type|code|compare) \(/);
     expect(qc.checks.filter((c) => c.id !== 'still' && c.status !== 'pass')).toEqual([]);
     expect(existsSync(join(run, 'video', 'contact-sheet.jpg'))).toBe(true);
   }, 900_000);

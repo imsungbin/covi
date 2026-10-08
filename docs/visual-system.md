@@ -174,6 +174,7 @@ Videos render in a light theme (the default) or a dark theme. Set `video.theme` 
 | Success / danger | `#16A06A` / `#E5484D` | `#2CC489` / `#FF6B70` |
 | Code background / text / muted | `#161A23` / `#E6E9F2` / `#7D8599` | `#0D1016` / `#E6E9F2` / `#6E7689` |
 | Captions | paper text on charcoal at 92% opacity | `#F8F9FB` on near-black at 90% opacity |
+| Caption marker (`captionMark`) | `#3B5BFF` | `#3B5BFF` |
 
 Code, diff, and terminal panels are dark in both themes, with translucent green and red line backgrounds (`addBackground`, `delBackground`). In the dark theme, cobalt is lifted to `#6B84FF` (`cobaltLight`) so it keeps contrast against the dark background, and the fox follows: lifted fur and cobalt paws. Frames have a faint dot grid on the background.
 
@@ -221,16 +222,16 @@ Text styles:
 | `transition` | 0.45 s | The default scene transition (a fade), and the outro's fade |
 | `transitions` | fade 0.45 s, cut 0, push 0.5 s, wipe 0.55 s, zoom-through 0.6 s | Each scene transition's length. All stay under 0.625 s, so an ordinary scene ends at most 0.6 s after its line |
 | `drift` | 0.02 | A capture's camera drift through its scene |
-| `linger` | 0.02 | The push-in on a visual that has settled while its line continues |
+| `linger` | 0.02 | The push-in on a visual that has settled (or entered, when a moment is pinned) while its line continues |
 | `punch` | 0.06 | The hero's camera punch, and the most the camera ever pushes in |
 | `flash` | 0.18 s at 35% | The hero's white flash |
 
 How they move (`packages/video/src/runtime/transitions.ts` and `camera.ts`, pure functions of the frame time):
 
 - **Transitions.** A storyboard scene chooses how it enters. `fade`: the incoming scene fades in while rising, and the outgoing one fades out while drifting up. `cut`: no transition at all. `push`: the new scene slides in from the right as the old one leaves to the left. `wipe`: the new scene is uncovered from left to right over the old one. `zoom-through`: the old scene grows away as it fades, and the new one settles in from 92%; it is the hero's default. The narrator eases from one scene's pose to the next over the transition. The video's first scene has no entrance: it is in place at frame 0.
-- **The camera.** Each scene's media layer (not its header) scales about the center of the media region. Captures (screenshots, before/after, interactions, and a title set over a capture) drift in by 2% through the whole scene on a sine ease. Any other visual pushes in by 2% from the moment its own choreography settles to the end of the scene, when its line is still going, so no picture holds still under narration. Title and summary cards push their text panel instead, so the fox the outro takes over never moves. `camera: "static"` stops both.
+- **The camera.** Each scene's media layer (not its header) scales about the center of the media region. Captures (screenshots, before/after, interactions, and a title set over a capture) drift in by 2% through the whole scene on a sine ease. Any other visual pushes in by 2% from the moment its own choreography settles to the end of the scene, when its line is still going; when `sync` pins one of its moments, the push-in starts as soon as it has entered (0.5 s), so it carries the wait for that moment too. No picture holds still under narration. Title and summary cards push their text panel instead, so the fox the outro takes over never moves. `camera: "static"` stops both.
 - **The hero accent.** At the hero's `hero` phase the camera punches in 6% (in over 0.1 s, out by 0.6 s), a white flash peaks at 35% and is gone within 0.18 s, and one ring in the primary color expands over 0.7 s around what the scene highlights. The flash and the ring are clipped to the media region, so they never cover the header or the captions. The camera never pushes past 6%, which keeps the media region's content clear of the caption band.
-- **Caption emphasis.** The phrase marked `[[…]]` in a line is swept with a primary-color marker as it is spoken.
+- **Caption emphasis.** The phrase marked `[[…]]` in a line is swept with a cobalt marker (`captionMark`, cobalt in both themes so the caption text keeps at least 4.5:1 on it) as it is spoken.
 - Elements enter with opacity plus a short upward drift on an ease-out cubic curve, staggered in reading order. Screenshot scenes zoom to the changed region, spotlight it, then move the cursor and click, at the moments the storyboard's `sync` pins to the narration, or at fixed fractions of the scene without it.
 - The fox moves on damped springs and eased curves. The summary fox uses an overshoot ease.
 

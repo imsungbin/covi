@@ -38,14 +38,14 @@ Overrides:
 
 | Mode | Flag | Size | Duration when `auto` | Narration style |
 |---|---|---|---|---|
-| Short-form (default) | `--short` (or `--mode short`) | 1080×1920, 9:16 | target 28 s, accepted 20–35 s | concise |
-| Standard review | `--standard` (or `--mode standard`) | 1920×1080, 16:9 | target 80 s, accepted 60–120 s | explanatory |
+| Short-form (default) | `--short` (or `--mode short`) | 1080×1920, 9:16 | target 28 s, up to 35 s (window 20–35 s) | concise |
+| Standard review | `--standard` (or `--mode standard`) | 1920×1080, 16:9 | target 80 s, up to 120 s (window 60–120 s) | explanatory |
 | Custom | `--custom --width W --height H` (or `--mode custom`) | any size from 240 to 3840 px | the short-form window when vertical or square, the standard window when landscape | concise up to a 45 s target, explanatory above |
 
 Durations:
 
 - `--duration` accepts seconds (`90`), unit forms (`30s`, `1m30s`, `2 minutes`), or `auto`.
-- A specific duration becomes a window: the target is clamped to 5–600 s, and the accepted range is the target ± max(2 s, 15%), never below 4 s. For example, `30s` becomes 25.5–34.5 s.
+- A specific duration becomes a window: the target is clamped to 5–600 s, and the window is the target ± max(2 s, 15%), never below 4 s. For example, `30s` becomes 25.5–34.5 s. The window's maximum is a ceiling; Covi never pads, so a video may end below the window (QC warns only when you asked for the duration).
 - In short-form mode, or with a target of 45 s or less, Covi tells the story with the template's short beat list.
 
 Sizes for custom videos:
@@ -263,7 +263,7 @@ How beats become scenes:
 | `optional` | May be dropped to fit the duration (never the hero) |
 | `sync` | Pins moments of the visual to phrases of `narration`: a phase name → a phrase that appears exactly once (see [Timing](#timing)) |
 | `transition` | How the scene enters: `fade` (default), `cut`, `push`, `wipe`, or `zoom-through` (the hero's default) |
-| `hero` | The one scene where the change clicks: it holds 0.4 s after its line, enters with `zoom-through`, plays the hero accent, and carries the music's lift |
+| `hero` | The one scene where the change clicks: it holds 0.4 s after its line, enters with `zoom-through` unless it sets `transition`, plays the hero accent, and carries the music's lift |
 | `camera` | `drift` (default) or `static`: a static scene neither drifts nor pushes in |
 
 | Visual `kind` | Shows |
@@ -431,14 +431,14 @@ Timing starts from the narration. Covi measures each scene's take (or, when ther
 - The first line starts 0.2 s in (0.3 s in narrated standard reviews), so the hook is heard by 0.5 s.
 - A scene stays up for at least its visual's minimum (below), and the next line waits for it. The hero holds 0.4 s after its line. The last scene lingers 0.8 s after its last word before the outro.
 - The video ends with [the outro](#the-outro), which enters like a scene. With `video.outro: false` (`--no-outro`), the last scene lingers 0.5 s and the video holds it for 1 s more: room for the sonic logo after the last line.
-- **Phases.** A scene's `sync` phrases become `phases` in `video/timeline.json`: seconds since the scene started, placed within the line's speech by the text-weighted split the captions use. Components start those moments there (a zoom, a click, a step, a highlight, the after state, a finding card, terminal output, the after response) and keep their default fractions of the scene otherwise. The hero's `hero` phase is its `sync.hero` phrase, else the start of its line, and never before its transition has finished. A phrase that redaction later removed from the line pins nothing.
+- **Phases.** A scene's `sync` phrases become `phases` in `video/timeline.json`: seconds since the scene started, placed within the line's speech by the text-weighted split the captions use. Components start those moments there (a zoom, a click, a step, a highlight, the after state, a finding card, terminal output, the after response) and keep their default fractions of the scene otherwise. The hero's `hero` phase is its `sync.hero` phrase, else the start of its line but never before its transition has finished. A phrase that redaction later removed from the line pins nothing.
 
 **Breathing room.** A narrated standard review (the standard preset, including landscape custom sizes) leaves the narration room to breathe, so music placed around the narration has somewhere to play:
 
 | Breath | Where | How long |
 |---|---|---|
 | After the hook | The music opens in a breath before the second line | 1.25 s more lead-in: a pause of about 1.6 s |
-| The hero | The hero scene (`hero: true`, else the story's payoff, see [Fitting the music](#fitting-the-music-to-the-picture)) settles as its transition ends; its line waits 1.4 s more, so the music's lift lands clear of speech | a pause of about 1.9 s between lines |
+| The hero | The hero scene (`hero: true`, else the story's payoff, see [Fitting the music](#fitting-the-music-to-the-picture)) settles as its transition ends; its line waits 1.4 s more, so the music's lift lands clear of speech | a pause of about 2 s between lines (1.9 s with a fade, 2.0 s with `zoom-through`) |
 | After the hero | The line after the hero's breathes again | 1.25 s more lead-in |
 | The verdict | The summary's verdict lands before its line | 1.25 s more lead-in: a pause of about 1.6 s |
 | Long talk | A line that would start more than 24 s after the last breath (or a pause as long as one, 1.5 s) waits for a breath at that scene change | 1.25 s more lead-in |

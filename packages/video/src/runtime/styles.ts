@@ -36,6 +36,7 @@ export function stylesheet(t: Timeline, r: Regions): string {
   const eyebrow = vertical ? 26 : 21;
   const heading = vertical ? 50 : 42;
   const dot = c.name === 'dark' ? 'rgba(255,255,255,0.045)' : 'rgba(31,36,48,0.055)';
+  const mark = c.captionMark ?? c.primary;
   return `
 * { box-sizing: border-box; margin: 0; padding: 0; transition: none !important; animation: none !important; }
 html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; background: ${c.background}; }
@@ -66,7 +67,7 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
   font-size: ${r.captionFont.toFixed(2)}px; line-height: 1.26; text-align: center; letter-spacing: -0.005em;
   box-shadow: 0 ${u(8)} ${u(28)} rgba(0,0,0,0.18); }
 .caption-box .line { display: block; white-space: nowrap; }
-.caption-box .em { background-image: linear-gradient(${c.primary}, ${c.primary}); background-repeat: no-repeat;
+.caption-box .em { background-image: linear-gradient(${mark}, ${mark}); background-repeat: no-repeat;
   background-position: 0 50%; background-size: 0% 100%; border-radius: ${u(6)};
   -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 

@@ -78,6 +78,8 @@ export interface Theme {
   delText: string;
   captionBackground: string;
   captionText: string;
+  /** Behind a caption's marked phrase: the caption text reads on it at 4.5:1 or more. */
+  captionMark: string;
   shadow: string;
   /** Code on the code panel. */
   syntax: SyntaxColors;
@@ -111,6 +113,7 @@ export const themes: Record<ThemeName, Theme> = {
     delText: '#FF9EA1',
     captionBackground: 'rgba(31, 36, 48, 0.92)',
     captionText: palette.paper,
+    captionMark: palette.cobalt,
     shadow: '0 18px 48px rgba(31, 36, 48, 0.16), 0 2px 6px rgba(31, 36, 48, 0.08)',
     syntax: darkSurfaceSyntax,
     surfaceSyntax: lightSurfaceSyntax,
@@ -139,6 +142,7 @@ export const themes: Record<ThemeName, Theme> = {
     delText: '#FF9EA1',
     captionBackground: 'rgba(8, 10, 14, 0.9)',
     captionText: '#F8F9FB',
+    captionMark: palette.cobalt,
     shadow: '0 18px 48px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3)',
     syntax: darkSurfaceSyntax,
     surfaceSyntax: darkSurfaceSyntax,

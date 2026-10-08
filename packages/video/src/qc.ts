@@ -233,6 +233,36 @@ export function stillCheck(
   };
 }
 
+/**
+ * Runs `freezedetect` on the media region of the rendered video and checks it. The filter needs
+ * ffmpeg 4.2 or newer; when it cannot run, the gate is skipped with a warning, so a diagnostic
+ * never fails the render.
+ */
+export async function measureStill(
+  media: Pick<Media, 'analyze'>,
+  video: string,
+  timeline: Pick<Timeline, 'scenes' | 'width' | 'height' | 'orientation'>,
+  duration: number,
+): Promise<QcCheck> {
+  let frozen: string;
+  try {
+    frozen = await media.analyze([
+      ...['-i', video, '-an'],
+      ...['-vf', `crop=${mediaCrop(timeline)},freezedetect=n=${STILL_NOISE}:d=${STILL_SECONDS}`],
+      ...['-f', 'null', '-'],
+    ]);
+  } catch (error) {
+    return {
+      id: 'still',
+      status: 'warn',
+      message: `Could not measure still pictures (ffmpeg 4.2 or newer has freezedetect): ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+  return stillCheck(timeline, parseFreezes(frozen, duration));
+}
+
 /** The first line is heard within half a second: the hook comes first. */
 export const HOOK_SECONDS = 0.5;
 
@@ -783,15 +813,7 @@ export async function runQc(input: QcInput): Promise<QcReport> {
         }
       : { id: 'black-frames', status: 'pass', message: 'No black frames.' },
   );
-  const frozen = await media.analyze([
-    ...['-i', video, '-an'],
-    ...[
-      '-vf',
-      `crop=${mediaCrop(input.timeline)},freezedetect=n=${STILL_NOISE}:d=${STILL_SECONDS}`,
-    ],
-    ...['-f', 'null', '-'],
-  ]);
-  checks.push(stillCheck(input.timeline, parseFreezes(frozen, probe.duration)));
+  checks.push(await measureStill(media, video, input.timeline, probe.duration));
 
   checks.push(
     ...layoutChecks(input.timeline, input.layouts),

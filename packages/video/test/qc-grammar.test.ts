@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   durationCheck,
   hookCheck,
+  measureStill,
   mediaCrop,
   parseFreezes,
   speechShareCheck,
@@ -61,6 +62,39 @@ describe('the still gate', () => {
     expect(stillCheck(story, [{ start: 9, end: 12 }]).status).toBe('pass');
     expect(stillCheck(story, [{ start: 3.5, end: 5.2 }]).status).toBe('pass');
     expect(stillCheck(story, []).status).toBe('pass');
+  });
+
+  it('measures on the media region, and skips with a warning when ffmpeg cannot', async () => {
+    const frame = { ...story, width: 1080, height: 1920, orientation: 'vertical' } as const;
+    const seen: string[][] = [];
+    const measured = await measureStill(
+      {
+        analyze: async (args) => {
+          seen.push([...args]);
+          return 'lavfi.freezedetect.freeze_start: 5\nlavfi.freezedetect.freeze_end: 7.5';
+        },
+      },
+      'v.mp4',
+      frame,
+      12,
+    );
+    expect(seen[0]!.join(' ')).toContain('crop=936:1042:72:372,freezedetect=n=0.001:d=1.5');
+    expect(measured.message).toContain('s2 (2.5 s from 5.0 s)');
+
+    // freezedetect needs ffmpeg 4.2; an older one must not fail the whole render.
+    const skipped = await measureStill(
+      {
+        analyze: async () => {
+          throw new Error("ffmpeg analysis failed: No such filter: 'freezedetect'");
+        },
+      },
+      'v.mp4',
+      frame,
+      12,
+    );
+    expect(skipped).toMatchObject({ id: 'still', status: 'warn' });
+    expect(skipped.message).toMatch(/could not measure/i);
+    expect(skipped.message).toContain('freezedetect');
   });
 
   it('crops the media region on even pixels', () => {

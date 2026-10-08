@@ -5,15 +5,17 @@ import { easeInOutCubic, easeInOutSine, easeOutCubic, seg } from './anim.ts';
 
 /*
  * The camera: a scene never holds still while its line is spoken. A capture drifts through its
- * whole scene; any other visual pushes in once its own choreography is done; the hero punches in
- * at its phase. Pure functions of the scene clock.
+ * whole scene; any other visual pushes in once its own choreography is done, or once it has
+ * entered when an event is pinned to the line (the visual would otherwise wait still for it); the
+ * hero punches in at its phase. Pure functions of the scene clock.
  */
 
 export interface CameraPlan {
   duration: number;
   /** A capture: the camera drifts through the whole scene. */
   drift: boolean;
-  /** When the visual's choreography is done (seconds since the scene started). */
+  /** When the push-in may start (seconds since the scene started): the choreography is done, or
+   * the visual has entered when an event is pinned to its line. */
   settled: number;
   /** When its line ends; a visual that settles before it pushes in. */
   speechEnd?: number;
@@ -30,16 +32,21 @@ const CAPTURES = new Set<TimelineScene['visual']['kind']>([
   'interaction',
 ]);
 
+/** When a visual's entrance has risen into place (the first `rise` of every component). */
+const ENTERED = 0.5;
+
 /** How the camera moves in a scene; the outro moves on its own. */
 export function cameraPlan(scene: TimelineScene): CameraPlan | undefined {
   const v = scene.visual;
   if (v.kind === 'outro') return undefined;
   const duration = scene.end - scene.start;
   const hero = scene.hero ? scene.phases?.[HERO_PHASE] : undefined;
+  const settled = settledAt(v, duration, scene.phases);
+  const pinned = Object.keys(scene.phases ?? {}).some((name) => name !== HERO_PHASE);
   return {
     duration,
     drift: CAPTURES.has(v.kind) || (v.kind === 'title' && v.background !== undefined),
-    settled: settledAt(v, duration, scene.phases),
+    settled: pinned ? Math.min(settled, ENTERED) : settled,
     ...(scene.speech ? { speechEnd: scene.speech.end - scene.start } : {}),
     still: scene.camera === 'static',
     ...(hero === undefined ? {} : { hero }),

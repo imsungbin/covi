@@ -119,6 +119,26 @@ describe('the camera', () => {
     expect(cameraPush(3.9, late)).toBe(0);
   });
 
+  it('pushes in from the entrance on a visual whose events are pinned apart', () => {
+    // Output pinned late in the line: the window is up by 0.5 s and nothing else moves until
+    // typing starts, so the camera carries the gap.
+    const terminal = { kind: 'terminal', command: 'npm test', output: 'ok' } as const;
+    const plan = cameraPlan(
+      scene(terminal, {
+        end: 16,
+        phases: { output: 4 },
+        speech: { start: 10.3, end: 15.6, text: 'x' },
+      }),
+    )!;
+    expect(plan.settled).toBeLessThanOrEqual(0.5);
+    for (let t = 1; t < 3; t += 0.25)
+      expect(cameraPush(t + 0.25, plan)).toBeGreaterThan(cameraPush(t, plan));
+    for (let t = 0; t <= 6; t += 0.1)
+      expect(cameraPush(t, plan)).toBeLessThanOrEqual(motion.punch + 1e-12);
+    // Without a pinned event the push still waits for the choreography to finish.
+    expect(cameraPlan(scene(terminal, { end: 16 }))!.settled).toBeGreaterThan(0.5);
+  });
+
   it('holds still when the storyboard says so, but the hero still punches', () => {
     expect(cameraPush(3, cameraPlan(scene(shot, { camera: 'static' }))!)).toBe(0);
     const hero = cameraPlan(scene(shot, { camera: 'static', hero: true, phases: { hero: 1 } }))!;

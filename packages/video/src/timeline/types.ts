@@ -199,8 +199,11 @@ export interface CaptionCue {
   emphasis?: CaptionEmphasis[];
 }
 
-/** The brand theme, carried into the composition so the runtime draws with the same tokens. */
-export type TimelineTheme = Theme;
+/**
+ * The brand theme, carried into the composition so the runtime draws with the same tokens.
+ * Timelines written before `captionMark` existed lack it.
+ */
+export type TimelineTheme = Omit<Theme, 'captionMark'> & { captionMark?: string };
 
 /** The video's language (`en`, `ko`, `ja`, or `zh` for Simplified Chinese). */
 export type TimelineLanguage = 'en' | 'ko' | 'ja' | 'zh';

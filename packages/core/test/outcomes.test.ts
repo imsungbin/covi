@@ -107,15 +107,41 @@ describe('outcome ledger', () => {
       Array.from({ length: n }, (_, i) =>
         finding('Unchecked input', { location: { path: `src/${prefix}${i}.ts`, line: 1 } }),
       );
-    expect(
-      mergeLedger(undefined, { runId: run(1), head: A, findings: at('many', 70) })!.findings,
-    ).toHaveLength(OUTCOME_LIMITS.findings);
+    const many = at('many', 70);
+    const capped = mergeLedger(undefined, { runId: run(1), head: A, findings: many })!.findings;
+    expect(capped).toHaveLength(OUTCOME_LIMITS.findings);
+    // A review lists its most blocking findings first: those are the ones kept.
+    expect(capped[0]!.k).toBe(outcomeKey(many[0]!));
+    expect(capped.map((e) => e.k)).not.toContain(outcomeKey(many[69]!));
     const first = mergeLedger(undefined, { runId: run(1), head: A, findings: at('old', 50) })!;
     const second = mergeLedger(first, { runId: run(2), head: B, findings: at('new', 30) })!;
     expect(second.findings).toHaveLength(OUTCOME_LIMITS.findings);
     expect(second.findings.filter((e) => e.x === undefined)).toHaveLength(30);
     expect(second.findings.filter((e) => e.x === 'a')).toHaveLength(30);
     expect(renderLedger(second).length).toBeLessThan(OUTCOME_LIMITS.ledgerChars);
+  });
+
+  it('caps a huge review in one pass', () => {
+    const base = finding('Unchecked input');
+    const huge = Array.from({ length: 60_000 }, (_, i) => ({
+      ...base,
+      location: { path: `src/f${i}.ts`, line: 1 },
+    }));
+    const started = performance.now();
+    const ledger = mergeLedger(undefined, { runId: run(1), head: A, findings: huge })!;
+    // Dropping one entry at a time from the front takes seconds here.
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(ledger.findings).toHaveLength(OUTCOME_LIMITS.findings);
+  });
+
+  it('resolves an entry an edited ledger left behind its head', () => {
+    const discount = finding('Total ignores discounts');
+    const first = mergeLedger(undefined, { runId: run(1), head: A, findings: [discount] })!;
+    const edited = { ...first, findings: [{ ...first.findings[0]!, l: '0000000' }] };
+    for (const head of [A, B]) {
+      const next = mergeLedger(edited, { runId: run(2), head, findings: [] })!;
+      expect(next.findings).toEqual([{ ...edited.findings[0], x: 's' }]);
+    }
   });
 
   it('round-trips a ledger, and rejects garbled, oversized, forged, and path-like ledgers', () => {
@@ -166,6 +192,7 @@ describe('outcome ledger', () => {
     expect(anchorKeyOf(`${anchorMarker(key)}\n**Covi**`)).toBe(key);
     expect(anchorKeyOf('<!-- covi:finding ../x -->')).toBeUndefined();
     expect(anchorKeyOf(`covi:finding ${key}`)).toBeUndefined();
+    expect(anchorKeyOf(`\n  ${anchorMarker(key)}\n**Covi**`)).toBe(key);
     // A reply that quotes an anchor is not one.
     expect(anchorKeyOf(`> ${anchorMarker(key)}\nagreed`)).toBeUndefined();
   });

@@ -4,7 +4,7 @@ import { shortHash } from '../util/hash.ts';
 
 const LEDGER_OPEN = '<!-- covi:ledger v1 ';
 const LEDGER = new RegExp(`^${LEDGER_OPEN}([A-Za-z0-9_-]{1,${OUTCOME_LIMITS.ledgerChars}}) -->$`);
-const ANCHOR = /^<!-- covi:finding ([0-9a-f]{12}) -->/;
+const ANCHOR = /^\s*<!-- covi:finding ([0-9a-f]{12}) -->/;
 
 /**
  * A finding's identity across pushes. A finding id includes its line, which moves whenever code
@@ -43,12 +43,12 @@ export function mergeLedger(
     const sameHead = previous.head === head;
     const newAreas = new Set([...now].filter(([k]) => !entries.has(k)).map(([, f]) => areaKey(f)));
     for (const [k, e] of entries) {
-      if (e.x || e.l !== previous.head || now.has(k)) continue;
-      // Only new code fixes a finding: the same commit reviewed again proves nothing.
-      if (sameHead) {
-        if (e.f === head) entries.delete(k);
-        else e.x = 's';
-      } else e.x = newAreas.has(e.a) ? 's' : 'a';
+      if (e.x || now.has(k)) continue;
+      // Only new code fixes a finding: the same commit reviewed again proves nothing. Neither does
+      // an entry left unresolved behind the head, which only an edited ledger holds.
+      if (e.l !== previous.head || (sameHead && e.f !== head)) e.x = 's';
+      else if (sameHead) entries.delete(k);
+      else e.x = newAreas.has(e.a) ? 's' : 'a';
     }
   }
   for (const [k, f] of now) {
@@ -59,13 +59,17 @@ export function mergeLedger(
       delete e.x;
     } else entries.set(k, { k, c: f.certainty, a: areaKey(f), f: head, l: head });
   }
-  const list = [...entries.values()];
-  // Over the cap, resolved findings go first, oldest first; present ones only if nothing else is left.
-  while (list.length > OUTCOME_LIMITS.findings) {
-    const i = list.findIndex((e) => e.x !== undefined || e.l !== head);
-    list.splice(i === -1 ? 0 : i, 1);
-  }
-  const parsed = LedgerSchema.safeParse({ v: 1, run: current.runId, head, findings: list });
+  // Over the cap, resolved findings go first, oldest first. Present ones go only if nothing else is
+  // left, from the end: a review lists its most blocking findings first.
+  let drop = Math.max(0, entries.size - OUTCOME_LIMITS.findings);
+  const findings = [...entries.values()]
+    .filter((e) => {
+      if (drop === 0 || e.x === undefined) return true;
+      drop--;
+      return false;
+    })
+    .slice(0, OUTCOME_LIMITS.findings);
+  const parsed = LedgerSchema.safeParse({ v: 1, run: current.runId, head, findings });
   return parsed.success ? parsed.data : undefined;
 }
 

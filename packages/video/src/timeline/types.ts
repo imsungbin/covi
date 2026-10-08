@@ -201,18 +201,22 @@ export interface TimelineScene {
 }
 
 /**
- * A moment with a sound: a click, the before/after reveal, a finding card landing, or the verdict.
- * Timing comes from `timeline/cues.ts`, which the runtime draws with too. Cues exist whether or
- * not sound effects are on, so nothing in the timeline depends on the sound choices.
+ * A moment with a sound: a click, the before/after reveal, a finding card landing, the verdict,
+ * a scene moving in, or the hero (its riser and its hit). Timing comes from `timeline/cues.ts`,
+ * which the runtime draws with too. Cues exist whether or not sound effects are on, so nothing in
+ * the timeline depends on the sound choices.
  */
 export interface TimelineCue {
-  /** Seconds from the start of the video. */
+  /** Seconds from the start of the video (a riser's is where it starts to swell). */
   t: number;
   /** `outro`: the outro card settles, where the music's sonic logo lands. */
-  kind: 'click' | 'reveal' | 'finding' | 'verdict' | 'outro';
+  kind: 'click' | 'reveal' | 'finding' | 'verdict' | 'outro' | 'transition' | 'riser' | 'hero';
   /** The scene id. */
   scene: string;
-  /** `high` for a high-severity finding; the verdict for a verdict or outro cue. */
+  /**
+   * `high` for a high-severity finding; the verdict for a verdict or outro cue; the transition's
+   * kind for a whoosh.
+   */
   detail?: string;
 }
 

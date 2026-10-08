@@ -168,14 +168,33 @@ describe('the hero stack and the swells', () => {
     expect(dropped.map((d) => d.kind)).toEqual(['click']);
   });
 
-  it('gives up a swell first when a second is full', () => {
+  it('gives up a swell first when a second is full, even one that comes first', () => {
+    // In time order the whoosh would be placed and the reveal dropped; the whoosh yields.
     const { placed, dropped } = placeEffects(
-      [cue(1, 'click'), cue(1.3, 'finding'), cue(1.6, 'reveal'), cue(1.9, 'transition')],
+      [cue(1, 'transition'), cue(1.3, 'click'), cue(1.6, 'finding'), cue(1.9, 'reveal')],
       config,
     );
     expect(placed.map((p) => p.kind)).toEqual(['click', 'finding', 'reveal']);
     expect(dropped.map((d) => [d.kind, d.reason])).toEqual([
       ['transition', expect.stringMatching(/3 per second/)],
     ]);
+  });
+
+  it("keeps the hero's hit over a high-severity finding landing with it", () => {
+    const { placed, dropped } = placeEffects(
+      [cue(3, 'finding', 'high'), cue(3.05, 'hero')],
+      config,
+    );
+    expect(placed.map((p) => p.kind)).toEqual(['hero']);
+    expect(dropped.map((d) => [d.kind, d.recipe])).toEqual([['finding', 'finding-high']]);
+  });
+
+  it('keeps the earlier of a verdict and a hero hit, which rank the same', () => {
+    const heroFirst = placeEffects([cue(3.05, 'verdict', 'looks-good'), cue(3, 'hero')], config);
+    expect(heroFirst.placed.map((p) => p.kind)).toEqual(['hero']);
+    expect(heroFirst.dropped.map((d) => d.kind)).toEqual(['verdict']);
+    const verdictFirst = placeEffects([cue(3.05, 'hero'), cue(3, 'verdict', 'looks-good')], config);
+    expect(verdictFirst.placed.map((p) => p.kind)).toEqual(['verdict']);
+    expect(verdictFirst.dropped.map((d) => d.kind)).toEqual(['hero']);
   });
 });

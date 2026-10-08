@@ -1,10 +1,12 @@
-import type {
-  CodeLine,
-  FrameMark,
-  HighlightGroup,
-  TimelineCue,
-  TimelineScene,
-  TimelineVisual,
+import {
+  type CodeLine,
+  type FrameMark,
+  HERO_PHASE,
+  type HighlightGroup,
+  type TimelineCue,
+  type TimelineScene,
+  type TimelineVisual,
+  type TransitionKind,
 } from './types.ts';
 
 type CodeVisual = Extract<TimelineVisual, { kind: 'code' }>;
@@ -600,9 +602,19 @@ export function outroSettle(): number {
   return 1;
 }
 
+/** The riser swells for this long into the hero's phase, where the hit lands. */
+export const RISER_LEAD = 0.8;
+
+/** Transitions that move the picture, and so get a whoosh. */
+const WHOOSH: ReadonlySet<TransitionKind> = new Set(['push', 'wipe', 'zoom-through']);
+
 /**
- * Every moment with a sound, in time order. Scene transitions, code, and terminals have none. The
- * outro's moment is where the music's logo lands, or, without music, its own sign-off sound.
+ * Every moment with a sound, in time order. A whoosh plays mid-move for a scene that pushes,
+ * wipes, or zooms through (unless the riser into the hero carries that move); the hero's hit
+ * lands at its phase, the riser swelling into it from 0.8 s before (left out before the video
+ * starts); and a scene's own cues play where they ask (a riser ends there; one past the scene's
+ * end is not played, and one repeating Covi's is merged). Fades, cuts, code, and terminals make no
+ * sound. The outro's moment is where the music's logo lands, or, without music, its own sign-off.
  */
 export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
   const cues: TimelineCue[] = [];
@@ -671,6 +683,30 @@ export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
         break;
       default:
         break;
+    }
+    // The hero: a riser swells into its phase, where the hit lands with the accent.
+    const hero = scene.hero ? phaseAt(phases, HERO_PHASE) : undefined;
+    const riser = hero === undefined ? undefined : at(hero) - RISER_LEAD;
+    if (hero !== undefined) {
+      cues.push({ t: at(hero), kind: 'hero', scene: scene.id });
+      if (riser! >= 0) cues.push({ t: riser!, kind: 'riser', scene: scene.id });
+    }
+    // A scene that moves in gets a whoosh mid-move, unless the riser already carries the move.
+    const move = scene.transition;
+    if (move && WHOOSH.has(move.kind)) {
+      const t = scene.start + move.seconds / 2;
+      const carried = hero !== undefined && riser! >= 0 && t >= riser! && t <= at(hero);
+      if (!carried) cues.push({ t, kind: 'transition', scene: scene.id, detail: move.kind });
+    }
+    // The storyboard's own cues: a riser ends at its moment.
+    for (const cue of scene.cues ?? []) {
+      if (cue.at > duration + 1e-6) continue;
+      const t = at(cue.at) - (cue.kind === 'riser' ? RISER_LEAD : 0);
+      if (t < 0) continue;
+      const repeats = cues.some(
+        (c) => c.scene === scene.id && c.kind === cue.kind && Math.abs(c.t - t) < 1e-6,
+      );
+      if (!repeats) cues.push({ t, kind: cue.kind, scene: scene.id });
     }
   }
   return cues.sort((a, b) => a.t - b.t);

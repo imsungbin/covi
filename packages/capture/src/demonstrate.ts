@@ -12,6 +12,7 @@ import {
   type DemoTraceRef,
   demoPath,
   type ExecutionPolicy,
+  evidenceId,
   execShell,
   type FindingInput,
   findingId,
@@ -22,6 +23,7 @@ import {
   type Run,
   type Trace,
   t,
+  writeEvidence,
 } from '@covi/core';
 import { type Browser, chromium } from 'playwright';
 import { type RunningApp, startApp } from './app.ts';
@@ -216,6 +218,8 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
           });
         } catch (error) {
           const message = (error as Error).message;
+          // Kept as evidence: the app-start finding cites it, and a reviewer can read why.
+          await run.writeText(demoPath.appLog(revision), `${message}\n`, 'log');
           result.skipped.push({
             what: say('skip.appAt', { revision }),
             reason: message.split('\n')[0]!,
@@ -232,6 +236,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
               evidence: message.slice(0, 600),
               explanation: say('finding.appStart.explanation'),
               source: { kind: 'demo', id: 'app-start' },
+              evidenceIds: [evidenceId.appStart('head')],
             });
           }
         }
@@ -319,6 +324,10 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
                 evidence: observed.outcome.error,
                 explanation: say('finding.flow.explanation'),
                 source: { kind: 'demo', id: 'flow-failure' },
+                evidenceIds: [
+                  evidenceId.trace(observed.trace.id),
+                  ...(observed.recording ? [evidenceId.recording(observed.recording.id)] : []),
+                ],
               });
             }
           }
@@ -466,6 +475,8 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
       if (image) await run.record(image.path, 'screenshot');
     if (shot.diff?.path) await run.record(shot.diff.path, 'screenshot');
   }
+  // What this run captured is now evidence: claims cite it by id.
+  await writeEvidence(run);
   return result;
 }
 
@@ -536,6 +547,7 @@ async function assemblePageShots(
           evidence: newErrors.slice(0, 3).join('\n'),
           explanation: t(language, 'capture.finding.pageError.explanation', { path, viewport }),
           source: { kind: 'demo', id: 'page-error' },
+          evidenceIds: [evidenceId.trace(`${id}-head`)],
         });
       }
       if ((captures.base.status ?? 200) < 400 && (captures.head.status ?? 200) >= 400) {
@@ -553,6 +565,10 @@ async function assemblePageShots(
           }),
           explanation: t(language, 'capture.finding.pageStatus.explanation'),
           source: { kind: 'demo', id: 'page-status' },
+          evidenceIds: [
+            evidenceId.trace(`${id}-head`),
+            evidenceId.screenshot(demoPath.pageCrop(id, 'after')),
+          ],
         });
       }
     }
@@ -617,6 +633,7 @@ function compareRequests(
         explanation: say('apiShape.explanation'),
         suggestion: say('apiShape.suggestion'),
         source: { kind: 'demo', id: 'api-shape' },
+        evidenceIds: [evidenceId.http(out.length)],
       });
     }
     if (before && before.status < 400 && after.status >= 500) {
@@ -636,6 +653,7 @@ function compareRequests(
         }),
         explanation: say('apiStatus.explanation'),
         source: { kind: 'demo', id: 'api-status' },
+        evidenceIds: [evidenceId.http(out.length)],
       });
     }
   }
@@ -672,6 +690,7 @@ function compareCommands(
         }),
         explanation: say('explanation'),
         source: { kind: 'demo', id: 'command-failure' },
+        evidenceIds: [evidenceId.terminal(out.length)],
       });
     }
   }

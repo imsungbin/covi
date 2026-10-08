@@ -16,7 +16,7 @@ outroBoostDb: 2
 swellCutDb: 4
 # Seconds between two effects at least, and effects in any one second at most. When cues compete,
 # the outro wins, then the verdict and the hero's hit, then a high-severity finding, then the rest,
-# and the swells last.
+# and the swells last. The riser is exempt from the spacing (its onset is quiet), not the density.
 minSpacing: 0.15
 maxPerSecond: 3
 

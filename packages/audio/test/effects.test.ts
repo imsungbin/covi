@@ -154,11 +154,29 @@ describe('the hero stack and the swells', () => {
     ]);
   });
 
-  it('drops a riser crowded by a click, never the click', () => {
-    const { placed, dropped } = placeEffects([cue(2, 'riser'), cue(2.1, 'click')], config);
-    expect(placed.map((p) => p.kind)).toEqual(['click']);
+  it("keeps a riser and a click on its start: the riser's onset is quiet", () => {
+    const { placed, dropped } = placeEffects(
+      [cue(2, 'riser'), cue(2.04, 'click'), cue(2.1, 'transition')],
+      config,
+    );
+    expect(placed.map((p) => [p.kind, p.t])).toEqual([
+      ['riser', 2],
+      ['click', 2.04],
+    ]);
+    // The whoosh is a transient: the click still crowds it out, the riser does not.
     expect(dropped.map((d) => [d.kind, d.reason])).toEqual([
-      ['riser', expect.stringMatching(/0\.15 s/)],
+      ['transition', expect.stringMatching(/0\.15 s/)],
+    ]);
+  });
+
+  it('drops a riser from a full second, even one that starts it', () => {
+    const { placed, dropped } = placeEffects(
+      [cue(2, 'riser'), cue(2.3, 'click'), cue(2.6, 'finding'), cue(2.9, 'reveal')],
+      config,
+    );
+    expect(placed.map((p) => p.kind)).toEqual(['click', 'finding', 'reveal']);
+    expect(dropped.map((d) => [d.kind, d.reason])).toEqual([
+      ['riser', expect.stringMatching(/3 per second/)],
     ]);
   });
 

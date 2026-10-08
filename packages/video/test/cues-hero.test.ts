@@ -110,7 +110,6 @@ describe("a scene's own cues", () => {
   it('play at their moments, and none past the end of the scene', () => {
     const cues = buildCues([
       scene('s', 2, 6, {
-        phases: { stop: 1 },
         cues: [
           { at: 1, kind: 'click' },
           { at: 3.5, kind: 'reveal' },

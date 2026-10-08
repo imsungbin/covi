@@ -100,7 +100,7 @@ export function effectRecipe(
  * Chooses which cues sound. The outro first, then the verdict and the hero's hit, then
  * high-severity findings, then the rest, and the swells last, each in time order; a cue is dropped
  * when it would come within `minSpacing` of a placed one or make any second hold more than
- * `maxPerSecond`.
+ * `maxPerSecond`. A riser is exempt from the spacing (its onset is quiet), not from the density.
  */
 export function placeEffects(
   cues: readonly EffectCue[],
@@ -113,7 +113,11 @@ export function placeEffects(
   const placed: PlacedEffect[] = [];
   const dropped: DroppedEffect[] = [];
   for (const { cue, recipe } of ranked) {
-    const crowded = kept.some((t) => Math.abs(t - cue.t) < config.minSpacing - 1e-9);
+    // A riser's onset is quiet (it swells over most of a second), so it neither crowds nor is
+    // crowded by a transient; it still counts toward a full second.
+    const crowded =
+      cue.kind !== 'riser' &&
+      placed.some((p) => p.kind !== 'riser' && Math.abs(p.t - cue.t) < config.minSpacing - 1e-9);
     const times = [...kept, cue.t].sort((a, b) => a - b);
     const max = config.maxPerSecond;
     const dense = times.some((t, i) => i >= max && t - times[i - max]! < 1 - 1e-9);

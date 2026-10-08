@@ -282,6 +282,34 @@ describe('sound checks', () => {
     expect(effects([1, 2], 4)).toBe('warn');
     expect(effects([1, 2], 2)).toBe('fail');
     expect(effects([1, 2], undefined)).toBe('pass');
+    // A riser's onset is quiet: a click on it is not crowding, though a full second still is.
+    const withRiser = (placed: Array<[number, 'click' | 'riser']>) =>
+      byId(
+        soundChecks(
+          record({
+            effects: {
+              enabled: true,
+              placed: placed.map(([t, kind]) => ({ t, kind, recipe: kind, gainDb: -14 })),
+              dropped: [],
+            },
+          }),
+          LIMITS,
+        ),
+      )['sound-effects']!.status;
+    expect(
+      withRiser([
+        [1, 'riser'],
+        [1.04, 'click'],
+      ]),
+    ).toBe('pass');
+    expect(
+      withRiser([
+        [1, 'riser'],
+        [1.3, 'click'],
+        [1.6, 'click'],
+        [1.9, 'click'],
+      ]),
+    ).toBe('fail');
     expect(
       byId(soundChecks(record({ effects: { enabled: false, placed: [], dropped: [] } }), LIMITS))[
         'sound-effects'

@@ -686,16 +686,18 @@ export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
     }
     // The hero: a riser swells into its phase, where the hit lands with the accent.
     const hero = scene.hero ? phaseAt(phases, HERO_PHASE) : undefined;
-    const riser = hero === undefined ? undefined : at(hero) - RISER_LEAD;
-    if (hero !== undefined) {
-      cues.push({ t: at(hero), kind: 'hero', scene: scene.id });
-      if (riser! >= 0) cues.push({ t: riser!, kind: 'riser', scene: scene.id });
+    const hit = hero === undefined ? undefined : at(hero);
+    const riser = hit === undefined ? undefined : hit - RISER_LEAD;
+    const rises = riser !== undefined && riser >= 0;
+    if (hit !== undefined) {
+      cues.push({ t: hit, kind: 'hero', scene: scene.id });
+      if (rises) cues.push({ t: riser, kind: 'riser', scene: scene.id });
     }
     // A scene that moves in gets a whoosh mid-move, unless the riser already carries the move.
     const move = scene.transition;
     if (move && WHOOSH.has(move.kind)) {
       const t = scene.start + move.seconds / 2;
-      const carried = hero !== undefined && riser! >= 0 && t >= riser! && t <= at(hero);
+      const carried = rises && hit !== undefined && t >= riser && t <= hit;
       if (!carried) cues.push({ t, kind: 'transition', scene: scene.id, detail: move.kind });
     }
     // The storyboard's own cues: a riser ends at its moment.

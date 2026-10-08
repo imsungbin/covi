@@ -14,7 +14,7 @@ import {
 import type { Browser } from 'playwright';
 import {
   diffBehavior,
-  PIXEL_THRESHOLD,
+  PIXEL_FLOOR,
   type ScenarioObservation,
   type StepPixels,
 } from './behavior.ts';
@@ -153,9 +153,12 @@ export async function observeFlow(input: ObserveFlowInput): Promise<ObservedFlow
 export async function compareSteps(
   run: Run,
   scenario: string,
+  viewport: ViewportName,
   base: Trace,
   head: Trace,
 ): Promise<Record<string, StepPixels>> {
+  const scale = VIEWPORT_PRESETS[viewport].deviceScaleFactor;
+  const minPixels = PIXEL_FLOOR * scale * scale;
   const before = new Map(
     base.steps.flatMap((s) => (s.screenshot ? [[s.id, s.screenshot] as const] : [])),
   );
@@ -166,11 +169,12 @@ export async function compareSteps(
     if (!from || !step.screenshot) continue;
     const rel = demoPath.stepDiff(scenario, step.id);
     const diff = await comparePngs(run.path(from), run.path(step.screenshot), run.path(rel), {
-      minRatio: PIXEL_THRESHOLD,
+      minPixels,
     });
-    const written = diff.changedRatio >= PIXEL_THRESHOLD;
+    const written = diff.changedPixels >= minPixels;
     if (written) await run.record(rel, 'screenshot');
     out[step.id] = {
+      changedPixels: diff.changedPixels,
       changedRatio: diff.changedRatio,
       regions: diff.regions,
       ...(diff.bounds ? { bounds: diff.bounds } : {}),

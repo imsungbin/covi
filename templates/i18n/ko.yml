@@ -634,13 +634,19 @@ demo:
   changed: ' · 바뀜'
   shapeChange: '형태 변경: {shape}.'
   notDemonstrated: 시연하지 못한 것
+  revision:
+    base: 베이스
+    head: 헤드
   recordings: 녹화
   recording:
     item: '{name}({revision}): [{file}]({path})'
-    webm: '녹화는 WebM 형식으로 남겼습니다(ffmpeg 없음). MP4로 받으려면 ffmpeg 설치 또는 COVI_FFMPEG 설정이 필요합니다.'
-    convertFailed: 'MP4 변환에 실패해 녹화는 WebM 형식으로 남겼습니다: {detail}'
-    unavailable: '흐름을 녹화하지 못했습니다: {detail}'
-    saveFailed: '흐름은 녹화했지만 녹화 파일을 저장하지 못했습니다: {detail}'
+    cause:
+      no-ffmpeg: '녹화는 WebM 형식으로 남겼습니다(ffmpeg 없음). MP4로 받으려면 ffmpeg 설치 또는 COVI_FFMPEG 설정이 필요합니다'
+      convert-failed: 'MP4 변환에 실패해 녹화는 WebM 형식으로 남겼습니다'
+      no-recorder: '브라우저가 녹화하지 않아 흐름을 녹화하지 못했습니다'
+      save-failed: '흐름은 녹화했지만 녹화 파일을 저장하지 못했습니다'
+    withDetail: '{cause}: {detail}'
+    plain: '{cause}.'
   behavior:
     title: 베이스와 헤드의 동작
     scenario: '{name}({viewport})'

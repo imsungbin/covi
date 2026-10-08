@@ -642,13 +642,19 @@ demo:
   changed: ' · changed'
   shapeChange: 'Shape change: {shape}.'
   notDemonstrated: Not demonstrated
+  revision:
+    base: base
+    head: head
   recordings: Recordings
   recording:
     item: '{name} at {revision}: [{file}]({path})'
-    webm: Recordings are WebM because ffmpeg was not found. Install ffmpeg, or set COVI_FFMPEG, to get MP4.
-    convertFailed: 'Recordings are WebM because converting them to MP4 failed: {detail}'
-    unavailable: 'Flows were not recorded: {detail}'
-    saveFailed: 'Flows were recorded, but a recording could not be saved: {detail}'
+    cause:
+      no-ffmpeg: 'Recordings are WebM because ffmpeg was not found. Install ffmpeg, or set COVI_FFMPEG, to get MP4'
+      convert-failed: 'Recordings are WebM because converting them to MP4 failed'
+      no-recorder: 'Flows were not recorded because the browser did not record them'
+      save-failed: 'Flows were recorded, but a recording could not be saved'
+    withDetail: '{cause}: {detail}'
+    plain: '{cause}.'
   behavior:
     title: Behavior at base and head
     scenario: '{name} ({viewport})'

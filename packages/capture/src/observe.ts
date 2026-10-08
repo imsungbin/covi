@@ -3,6 +3,9 @@ import type { Page, Request } from 'playwright';
 import { mergeRegions } from './regions.ts';
 import type { TraceCollector } from './trace.ts';
 
+/** The init script remembers at most this many changed elements. */
+const MAX_TARGETS = 200;
+
 /**
  * Counts DOM changes once the page has loaded and remembers which elements changed (at most 200).
  * Changes inside <head>, Covi's own style tag among them, are not the app's behavior. Written as a
@@ -18,18 +21,24 @@ export const MUTATION_SCRIPT = `(() => {
       const el = record.target.nodeType === 1 ? record.target : record.target.parentElement;
       if (!el || el === document.documentElement || (document.head && document.head.contains(el))) continue;
       state.count++;
-      if (state.targets.size < 200) state.targets.add(el);
+      if (state.targets.size < ${MAX_TARGETS}) state.targets.add(el);
     }
   }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
   addEventListener('load', () => { state.on = true; });
 })();`;
 
-/** Reads and resets the changes since the last call; boxes in CSS pixels, relative to the viewport. */
-const TAKE_MUTATIONS = `(() => {
+/**
+ * Reads and resets the changes since the last call; boxes in CSS pixels, relative to the viewport.
+ * The page can replace `state.targets`, so the loop stops after as many entries as the init script
+ * keeps: whatever else is there never gets serialized into Node.
+ */
+export const TAKE_MUTATIONS = `(() => {
   const state = window.__coviMutations;
   if (!state) return { count: 0, rects: [] };
   const rects = [];
+  let seen = 0;
   for (const el of state.targets) {
+    if (++seen > ${MAX_TARGETS}) break;
     if (!el.isConnected) continue;
     const r = el.getBoundingClientRect();
     rects.push({ x: r.x, y: r.y, width: r.width, height: r.height });
@@ -40,8 +49,6 @@ const TAKE_MUTATIONS = `(() => {
   return out;
 })()`;
 
-/** The init script remembers at most this many changed elements. */
-const MAX_TARGETS = 200;
 /** A trace sums its steps' counts; past this a page is only trying to overflow the sum. */
 const MAX_COUNT = 1e9;
 

@@ -633,13 +633,19 @@ demo:
   changed: ' · 変更あり'
   shapeChange: '形の変更: {shape}。'
   notDemonstrated: デモで見せられなかったもの
+  revision:
+    base: base
+    head: head
   recordings: 録画
   recording:
     item: '{name}（{revision}）: [{file}]({path})'
-    webm: 'ffmpeg が見つからないため、録画は WebM のままです。MP4 にするには ffmpeg をインストールするか COVI_FFMPEG を設定してください。'
-    convertFailed: 'MP4 への変換に失敗したため、録画は WebM のままです: {detail}'
-    unavailable: 'フローを録画できませんでした: {detail}'
-    saveFailed: 'フローは録画しましたが、録画を保存できませんでした: {detail}'
+    cause:
+      no-ffmpeg: 'ffmpeg が見つからないため、録画は WebM のままです。MP4 にするには ffmpeg をインストールするか COVI_FFMPEG を設定してください'
+      convert-failed: 'MP4 への変換に失敗したため、録画は WebM のままです'
+      no-recorder: 'ブラウザが録画しなかったため、フローを録画できませんでした'
+      save-failed: 'フローは録画しましたが、録画を保存できませんでした'
+    withDetail: '{cause}: {detail}'
+    plain: '{cause}。'
   behavior:
     title: base と head の動作
     scenario: '{name}（{viewport}）'

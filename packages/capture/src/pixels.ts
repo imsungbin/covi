@@ -18,14 +18,14 @@ export async function readPng(path: string): Promise<PNG> {
 }
 
 /**
- * Compares two screenshots; writes a diff image (only when at least `minRatio` of the pixels
- * changed, if given) and returns where pixels changed.
+ * Compares two screenshots; writes a diff image (only when at least `minPixels` changed, if given)
+ * and returns where pixels changed.
  */
 export async function comparePngs(
   beforePath: string,
   afterPath: string,
   diffPath?: string,
-  options: { minRatio?: number } = {},
+  options: { minPixels?: number } = {},
 ): Promise<PixelDiff> {
   const a = await readPng(beforePath);
   const b = await readPng(afterPath);
@@ -47,7 +47,7 @@ export async function comparePngs(
     alpha: 0.25,
   });
   const changedRatio = changedPixels / (width * height);
-  if (diffPath && changedRatio >= (options.minRatio ?? 0))
+  if (diffPath && changedPixels >= (options.minPixels ?? 0))
     await writeFile(diffPath, PNG.sync.write(diff));
   let minX = width;
   let minY = height;

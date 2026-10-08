@@ -1,5 +1,6 @@
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { parseMutations } from '../src/observe.ts';
+import { parseMutations, TAKE_MUTATIONS } from '../src/observe.ts';
 
 const FRAME = { width: 390, height: 844 };
 
@@ -67,5 +68,30 @@ describe('parseMutations', () => {
     for (const raw of [undefined, null, 42, 'changes', [], { count: 2, rects: 'all' }])
       expect(parseMutations(raw, FRAME).rects).toEqual([]);
     expect(parseMutations(null, FRAME)).toEqual({ count: 0, rects: [] });
+  });
+});
+
+describe('TAKE_MUTATIONS', () => {
+  it('reads at most 200 changed elements inside the page, whatever the page put there', () => {
+    let pulled = 0;
+    const el = {
+      isConnected: true,
+      getBoundingClientRect: () => ({ x: 0, y: 0, width: 10, height: 10 }),
+    };
+    // A page can replace the remembered set with anything iterable, as long as it likes.
+    const targets = {
+      *[Symbol.iterator]() {
+        for (let i = 0; i < 10_000; i++) {
+          pulled++;
+          yield el;
+        }
+      },
+      clear() {},
+    };
+    const taken = runInNewContext(TAKE_MUTATIONS, {
+      window: { __coviMutations: { count: 1, targets } },
+    }) as { rects: unknown[] };
+    expect(taken.rects).toHaveLength(200);
+    expect(pulled).toBeLessThanOrEqual(201);
   });
 });

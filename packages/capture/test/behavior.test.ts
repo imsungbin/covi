@@ -7,7 +7,7 @@ import {
   diffScenario,
   diffSteps,
   diffTiming,
-  PIXEL_THRESHOLD,
+  PIXEL_FLOOR,
   type ScenarioObservation,
 } from '../src/behavior.ts';
 
@@ -184,11 +184,12 @@ describe('console', () => {
 });
 
 describe('steps', () => {
-  it('lists steps whose screenshots differ beyond the threshold, with region ids', () => {
+  it('lists steps whose screenshots differ by at least the pixel floor, with region ids', () => {
     expect(
       diffSteps(trace('base'), trace('head'), {
-        s1: { changedRatio: PIXEL_THRESHOLD / 2, regions: [] },
+        s1: { changedPixels: PIXEL_FLOOR - 1, changedRatio: 0.00006, regions: [] },
         end: {
+          changedPixels: 12_600,
           changedRatio: 0.0123,
           diff: 'demo/diffs/flow-x-end.png',
           regions: [
@@ -212,6 +213,36 @@ describe('steps', () => {
     ]);
   });
 
+  it('lists a small text change that is a tiny share of the frame', () => {
+    // A character counter appearing on a 1280×800 frame: 323 pixels, a ratio of 0.0003.
+    const steps = diffSteps(trace('base'), trace('head'), {
+      s1: {
+        changedPixels: 323,
+        changedRatio: 323 / (1280 * 800),
+        diff: 'demo/diffs/flow-x-s1.png',
+        regions: [{ x: 768, y: 565, width: 113, height: 10 }],
+      },
+    });
+    expect(steps).toEqual([
+      {
+        id: 's1',
+        base: 'ok',
+        head: 'ok',
+        changedRatio: 0.00032,
+        diff: 'demo/diffs/flow-x-s1.png',
+        regions: [{ id: 'r1', x: 768, y: 565, width: 113, height: 10 }],
+      },
+    ]);
+  });
+
+  it('stays quiet when no pixels changed', () => {
+    expect(
+      diffSteps(trace('base'), trace('head'), {
+        s1: { changedPixels: 0, changedRatio: 0, regions: [] },
+      }),
+    ).toEqual([]);
+  });
+
   it('lists steps that failed or were never reached at one revision', () => {
     const base = trace('base', {
       steps: [step('open'), step('s1', { status: 'failed', label: 'Open the menu' })],
@@ -223,11 +254,34 @@ describe('steps', () => {
     ]);
   });
 
-  it('counts a step at exactly the threshold as different', () => {
+  it('counts a step at exactly the floor as different', () => {
+    const region = { x: 0, y: 0, width: 8, height: 8 };
     const steps = diffSteps(trace('base'), trace('head'), {
-      s1: { changedRatio: PIXEL_THRESHOLD, regions: [] },
+      s1: { changedPixels: PIXEL_FLOOR, changedRatio: 0.00006, regions: [region] },
     });
     expect(steps.map((s) => s.id)).toEqual(['s1']);
+  });
+
+  it('scales the floor with the device scale factor', () => {
+    const region = { x: 0, y: 0, width: 16, height: 16 };
+    const at = (changedPixels: number) =>
+      diffSteps(
+        trace('base'),
+        trace('head'),
+        { s1: { changedPixels, changedRatio: 0.0001, regions: [region] } },
+        2,
+      ).map((s) => s.id);
+    expect(at(PIXEL_FLOOR * 4 - 1)).toEqual([]);
+    expect(at(PIXEL_FLOOR * 4)).toEqual(['s1']);
+    const mobile = (changedPixels: number) =>
+      diffScenario({
+        ...observe(trace('base'), trace('head'), {
+          s1: { changedPixels, changedRatio: 0.0001, regions: [region] },
+        }),
+        viewport: 'mobile',
+      }).steps.map((s) => s.id);
+    expect(mobile(PIXEL_FLOOR * 2)).toEqual([]);
+    expect(mobile(PIXEL_FLOOR * 4)).toEqual(['s1']);
   });
 });
 
@@ -291,7 +345,12 @@ describe('scenarios', () => {
       diffScenario(observe(trace('base'), head, pixels)).status;
     expect(changed(trace('head', { requests: [req('n1', '/new', 200)] }))).toBe('changed');
     expect(changed(trace('head', { console: [msg('c1', 'boom')] }))).toBe('changed');
-    expect(changed(trace('head'), { end: { changedRatio: 0.2, regions: [] } })).toBe('changed');
+    const region = { x: 0, y: 0, width: 100, height: 100 };
+    expect(
+      changed(trace('head'), {
+        end: { changedPixels: 20_000, changedRatio: 0.2, regions: [region] },
+      }),
+    ).toBe('changed');
     const failed = diffScenario(observe(trace('base'), trace('head', { error: 'Timeout' })));
     expect(failed).toMatchObject({ status: 'changed', failure: { head: 'Timeout' } });
   });

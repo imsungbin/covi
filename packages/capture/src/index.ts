@@ -6,7 +6,7 @@ export {
   diffScenario,
   diffSteps,
   diffTiming,
-  PIXEL_THRESHOLD,
+  PIXEL_FLOOR,
   type ScenarioObservation,
   type StepPixels,
   TIMING_THRESHOLD,

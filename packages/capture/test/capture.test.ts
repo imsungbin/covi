@@ -86,7 +86,7 @@ describe('pixel diffs', () => {
     expect((await comparePngs(join(dir, 'a.png'), join(dir, 'a.png'))).bounds).toBeUndefined();
   });
 
-  it('lists separate regions and writes the diff image only above minRatio', async () => {
+  it('lists separate regions and writes the diff image only from minPixels', async () => {
     dir = mkdtempSync(join(tmpdir(), 'covi-px-'));
     writeFileSync(join(dir, 'a.png'), png(100, 80));
     writeFileSync(
@@ -94,13 +94,13 @@ describe('pixel diffs', () => {
       png(100, 80, (x, y) => (x < 2 && y < 2 ? [0, 0, 255] : undefined)),
     );
     const diff = await comparePngs(join(dir, 'a.png'), join(dir, 'b.png'), join(dir, 'd.png'), {
-      minRatio: 0.01,
+      minPixels: 64,
     });
     expect(diff.regions).toEqual([{ x: 0, y: 0, width: 2, height: 2 }]);
     expect(existsSync(join(dir, 'd.png'))).toBe(false);
   });
 
-  it('writes the diff image when exactly minRatio of the pixels changed', async () => {
+  it('writes the diff image when exactly minPixels changed', async () => {
     dir = mkdtempSync(join(tmpdir(), 'covi-px-'));
     writeFileSync(join(dir, 'a.png'), png(100, 80));
     writeFileSync(
@@ -108,7 +108,7 @@ describe('pixel diffs', () => {
       png(100, 80, (x, y) => (x >= 40 && x < 60 && y >= 10 && y < 30 ? [0, 0, 255] : undefined)),
     );
     const diff = await comparePngs(join(dir, 'a.png'), join(dir, 'b.png'), join(dir, 'd.png'), {
-      minRatio: 0.05,
+      minPixels: 400,
     });
     expect(diff.changedPixels).toBe(400);
     expect(existsSync(join(dir, 'd.png'))).toBe(true);

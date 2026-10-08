@@ -125,12 +125,14 @@ describe.skipIf(!browser)('behavior diff capture', () => {
       logger: silentLogger,
       locateFfmpeg: async () => ffmpeg,
     });
-    // The changed index.html makes `/` a page to capture too. Whether its added Retry button
-    // crosses the pixel threshold depends on font rendering, so only the flow's result is pinned.
-    expect(demo.behavior).toMatchObject({ path: 'demo/behavior-diff.json', scenarios: 2 });
-    expect(demo.behavior!.changed).toBeGreaterThanOrEqual(1);
+    // The changed index.html makes `/` a page to capture too; its added Retry button is a change.
+    expect(demo.behavior).toEqual({ path: 'demo/behavior-diff.json', scenarios: 2, changed: 2 });
     const diff = json<BehaviorDiff>(run, 'demo/behavior-diff.json');
     expect(diff.scenarios.map((s) => s.id).sort()).toEqual(['flow-load-items', 'home-desktop']);
+    const home = diff.scenarios.find((s) => s.id === 'home-desktop')!;
+    expect(home.status).toBe('changed');
+    expect(home.steps.map((s) => s.id)).toEqual(['load']);
+    expect(home.steps[0]!.regions.length).toBeGreaterThan(0);
     const flow = diff.scenarios.find((s) => s.id === 'flow-load-items')!;
     expect(flow).toMatchObject({
       id: 'flow-load-items',
@@ -254,6 +256,17 @@ describe.skipIf(!browser)('behavior diff capture', () => {
     } finally {
       await browserInstance.close();
     }
+  });
+
+  it('says nothing about recording when no flow ran because the app never started', async () => {
+    const { config, change, context, run } = await setup(() => ({
+      app: { start: 'exit 1', timeout: 5 },
+      demo: { viewports: ['desktop'], flows: BEHAVIOR_FLOWS },
+    }));
+    const demo = await demonstrate({ run, change, context, config, logger: silentLogger });
+    expect(demo.skipped.length).toBeGreaterThan(0);
+    expect(demo.recordings).toBeUndefined();
+    expect(demo.recording).toBeUndefined();
   });
 
   it('records and traces only the head for an app given by URL, and writes no behavior diff', async () => {

@@ -15,6 +15,7 @@ import type {
   TraceRequest,
   TraceStep,
 } from '@covi/core';
+import { VIEWPORT_PRESETS } from './browser.ts';
 
 /**
  * The comparison of one scenario (a page load or a flow) at base and head, from the two traces
@@ -22,8 +23,13 @@ import type {
  * nothing here touches a browser or the disk.
  */
 
-/** A step looks different from this share of changed pixels (the threshold drafts use for before/after). */
-export const PIXEL_THRESHOLD = 0.0005;
+/**
+ * A step looks different from this many changed pixels at a device scale factor of 1 (times the
+ * scale squared above it): about a short word of text. An absolute count, not a share of the frame,
+ * so a small change on a large or full-page screenshot still counts. Identical renders compare
+ * with no changed pixels at all, so the floor only has to rule out a few stray ones.
+ */
+export const PIXEL_FLOOR = 64;
 
 /**
  * A step's timing is reported when it moved by at least 500 ms and by half its base duration;
@@ -35,6 +41,7 @@ export const TIMING_THRESHOLD = { ms: 500, ratio: 0.5 } as const;
 const RESOURCE_ERROR = /^Failed to load resource:/;
 
 export interface StepPixels {
+  changedPixels: number;
   changedRatio: number;
   /** The run-relative diff image, when one was written. */
   diff?: string;
@@ -103,7 +110,12 @@ export function diffScenario(observation: ScenarioObservation): ScenarioDiff {
     if (present) out.timing.totalMs[present.revision] = present.durationMs;
     return out;
   }
-  out.steps = diffSteps(base, head, observation.pixels);
+  out.steps = diffSteps(
+    base,
+    head,
+    observation.pixels,
+    VIEWPORT_PRESETS[observation.viewport].deviceScaleFactor,
+  );
   out.network = diffNetwork(base.requests, head.requests);
   out.console = diffConsole(base.console, head.console);
   out.timing = diffTiming(base, head);
@@ -118,11 +130,21 @@ export function diffScenario(observation: ScenarioObservation): ScenarioDiff {
 
 const stateOf = (step?: TraceStep): StepState => (step ? step.status : 'missing');
 
-/** Steps whose outcome differs, or whose screenshots differ beyond PIXEL_THRESHOLD. Head order first. */
+/** Whether two screenshots taken at this device scale factor look different. */
+function looksDifferent(pixels: StepPixels | undefined, scale = 1): pixels is StepPixels {
+  return (
+    pixels !== undefined &&
+    pixels.regions.length > 0 &&
+    pixels.changedPixels >= PIXEL_FLOOR * scale * scale
+  );
+}
+
+/** Steps whose outcome differs, or whose screenshots look different. Head order first. */
 export function diffSteps(
   base: Trace,
   head: Trace,
   pixels: Record<string, StepPixels>,
+  scale = 1,
 ): StepDiff[] {
   const before = new Map(base.steps.map((s) => [s.id, s]));
   const after = new Map(head.steps.map((s) => [s.id, s]));
@@ -132,7 +154,7 @@ export function diffSteps(
     const b = before.get(id);
     const h = after.get(id);
     const p = pixels[id];
-    const looks = p !== undefined && p.changedRatio >= PIXEL_THRESHOLD;
+    const looks = looksDifferent(p, scale);
     if (stateOf(b) === stateOf(h) && !looks) continue;
     const label = h?.label ?? b?.label;
     out.push({

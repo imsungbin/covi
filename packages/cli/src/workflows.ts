@@ -615,12 +615,12 @@ function inline(text: string): string {
 
 function recordingNote(status: Demonstration['recording'], say: Say): string | undefined {
   if (status?.status !== 'webm' && status?.status !== 'unavailable') return undefined;
-  if (status.cause === 'no-ffmpeg') return say('recording.webm');
-  const detail = inline(status.detail ?? status.cause ?? '');
-  if (status.status === 'webm') return say('recording.convertFailed', { detail });
-  return say(status.cause === 'save-failed' ? 'recording.saveFailed' : 'recording.unavailable', {
-    detail,
-  });
+  const cause = say(
+    `recording.cause.${status.cause ?? (status.status === 'webm' ? 'convert-failed' : 'no-recorder')}`,
+  );
+  return status.detail
+    ? say('recording.withDetail', { cause, detail: inline(status.detail) })
+    : say('recording.plain', { cause });
 }
 
 function renderRecordings(demo: Demonstration, say: Say): string[] {
@@ -632,7 +632,7 @@ function renderRecordings(demo: Demonstration, say: Say): string[] {
     out.push(
       `- ${say('recording.item', {
         name: escapeMarkdown(r.flow),
-        revision: r.revision,
+        revision: say(`revision.${r.revision}`),
         file: escapeMarkdown(r.path.split('/').at(-1)!),
         path: `../${r.path}`,
       })}`,
@@ -640,6 +640,12 @@ function renderRecordings(demo: Demonstration, say: Say): string[] {
   if (recordings.length) out.push('');
   if (note) out.push(note, '');
   return out;
+}
+
+/** A step counts from a few dozen pixels, so a share too small for two decimals is still not 0. */
+function percentOf(ratio: number): string {
+  const percent = (ratio * 100).toFixed(2);
+  return ratio > 0 && percent === '0.00' ? '<0.01' : percent;
 }
 
 function whereOf(step: string, say: Say): string {
@@ -664,10 +670,17 @@ function renderBehavior(behavior: BehaviorDiff, say: Say): string[] {
     );
     const lines: string[] = [];
     if (s.missing)
-      lines.push(say('behavior.incomplete', { revision: s.missing === 'base' ? 'head' : 'base' }));
+      lines.push(
+        say('behavior.incomplete', {
+          revision: say(`revision.${s.missing === 'base' ? 'head' : 'base'}`),
+        }),
+      );
     for (const revision of ['base', 'head'] as const) {
       const error = s.failure?.[revision];
-      if (error) lines.push(say('behavior.failed', { revision, error: inline(error) }));
+      if (error)
+        lines.push(
+          say('behavior.failed', { revision: say(`revision.${revision}`), error: inline(error) }),
+        );
     }
     for (const step of s.steps) {
       const where = whereOf(step.id, say);
@@ -686,7 +699,7 @@ function renderBehavior(behavior: BehaviorDiff, say: Say): string[] {
           say('behavior.step', {
             where,
             label,
-            percent: (step.changedRatio * 100).toFixed(2),
+            percent: percentOf(step.changedRatio),
             diff: step.diff ? say('diffLink', { path: `../${step.diff}` }) : '',
           }),
         );

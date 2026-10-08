@@ -400,7 +400,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
       const viewport = flowViewport(flow, plan.viewports, input.prefer);
       const { base, head } = observed;
       const stepPixels =
-        base && head ? await compareSteps(run, scenario, base.trace, head.trace) : {};
+        base && head ? await compareSteps(run, scenario, viewport, base.trace, head.trace) : {};
       if (head)
         flowShotList.push(
           ...(await flowShots(run, {
@@ -443,7 +443,8 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
     );
     if (traces.length) result.traces = traces;
     if (recordings.length) result.recordings = recordings;
-    if (browser && plan.flows.length)
+    // Say how recording went only when a flow ran: otherwise there was nothing to record.
+    if (browser && flows.size)
       result.recording = recordingStatus(recording.enabled, notes, recordings.length);
     // Without base there is nothing to compare (an app given by URL runs at head only).
     if (revisions.includes('base') && observations.length) {
@@ -492,6 +493,7 @@ async function assemblePageShots(
       await mkdir(run.path(DEMO_PATHS.diffs), { recursive: true });
       const diff = await comparePngs(captures.base.file, captures.head.file, run.path(diffPath));
       pixels.set(id, {
+        changedPixels: diff.changedPixels,
         changedRatio: diff.changedRatio,
         diff: diffPath,
         regions: diff.regions,

@@ -2,8 +2,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  type BehaviorDiff,
   type ConfigLayer,
   type Demonstration,
+  type DemoRecordingStatus,
   normalizeFinding,
   parseConfigInput,
   resolveConfig,
@@ -137,6 +139,134 @@ describe('recording', () => {
     };
     expect(renderDemo(demo)).toContain(
       'Flows were recorded, but a recording could not be saved: `EACCES demo/recordings`',
+    );
+  });
+
+  const EMPTY: Demonstration = {
+    schemaVersion: 1,
+    shots: [],
+    commands: [],
+    requests: [],
+    skipped: [],
+    findings: [],
+  };
+
+  it.each<[DemoRecordingStatus, string]>([
+    [
+      { status: 'webm', cause: 'no-ffmpeg' },
+      'Recordings are WebM because ffmpeg was not found. Install ffmpeg, or set COVI_FFMPEG, to get MP4.',
+    ],
+    [
+      { status: 'webm', cause: 'convert-failed', detail: 'Unknown encoder' },
+      'Recordings are WebM because converting them to MP4 failed: `Unknown encoder`',
+    ],
+    [
+      { status: 'webm', cause: 'convert-failed' },
+      'Recordings are WebM because converting them to MP4 failed.',
+    ],
+    [
+      { status: 'unavailable', cause: 'no-recorder', detail: 'ENOSPC' },
+      'Flows were not recorded because the browser did not record them: `ENOSPC`',
+    ],
+    [
+      { status: 'unavailable', cause: 'no-recorder' },
+      'Flows were not recorded because the browser did not record them.',
+    ],
+    [
+      { status: 'unavailable', cause: 'save-failed', detail: 'EACCES' },
+      'Flows were recorded, but a recording could not be saved: `EACCES`',
+    ],
+    [
+      { status: 'unavailable', cause: 'save-failed' },
+      'Flows were recorded, but a recording could not be saved.',
+    ],
+  ])('explains %o in a sentence', (recording, sentence) => {
+    const notes = renderDemo({ ...EMPTY, recording });
+    expect(notes.split('\n')).toContain(sentence);
+    expect(notes).not.toContain(recording.cause!);
+    expect(notes).not.toContain('``');
+  });
+
+  it('names the revision in the language of the notes', () => {
+    const scenario = (id: string, extra: Partial<BehaviorDiff['scenarios'][number]>) => ({
+      id,
+      kind: 'flow' as const,
+      name: id,
+      viewport: 'desktop' as const,
+      status: 'incomplete' as const,
+      traces: {},
+      steps: [],
+      network: { added: [], removed: [], changed: [] },
+      console: { added: [], removed: [] },
+      timing: { totalMs: {}, steps: [] },
+      ...extra,
+    });
+    const behavior: BehaviorDiff = {
+      schemaVersion: 1,
+      scenarios: [
+        scenario('only-base', { missing: 'head', failure: { base: 'Timeout' } }),
+        scenario('only-head', { missing: 'base' }),
+      ],
+      summary: { scenarios: 2, changed: 0, unchanged: 0, incomplete: 2 },
+    };
+    const demo: Demonstration = {
+      ...EMPTY,
+      recordings: (['base', 'head'] as const).map((revision) => ({
+        id: `flow-x-${revision}`,
+        scenario: 'flow-x',
+        flow: 'X',
+        revision,
+        viewport: 'desktop',
+        path: `demo/recordings/flow-x-${revision}.mp4`,
+        format: 'mp4',
+        width: 1280,
+        height: 800,
+        seconds: 1,
+      })),
+      recording: { status: 'mp4' },
+    };
+    const ko = renderDemo(demo, 'ko', behavior);
+    expect(ko).toContain('- X(베이스): [');
+    expect(ko).toContain('- X(헤드): [');
+    expect(ko).toContain('비교하지 못했습니다: 베이스에서만 실행했습니다.');
+    expect(ko).toContain('비교하지 못했습니다: 헤드에서만 실행했습니다.');
+    expect(ko).toContain('베이스에서 실패했습니다: `Timeout`');
+    const en = renderDemo(demo, 'en', behavior);
+    expect(en).toContain('- X at base: [');
+    expect(en).toContain('Not compared: it ran only at base.');
+    expect(en).toContain('Failed at base: `Timeout`');
+  });
+
+  it('never calls a step that looks different 0.00% changed', () => {
+    const behavior: BehaviorDiff = {
+      schemaVersion: 1,
+      scenarios: [
+        {
+          id: 'home-desktop',
+          kind: 'page',
+          name: '/',
+          viewport: 'desktop',
+          status: 'changed',
+          traces: { base: 'home-desktop-base', head: 'home-desktop-head' },
+          // 64 pixels of a full-page capture three viewports tall.
+          steps: [
+            {
+              id: 'load',
+              base: 'ok',
+              head: 'ok',
+              changedRatio: 0.00002,
+              regions: [{ id: 'r1', x: 0, y: 0, width: 8, height: 8 }],
+            },
+          ],
+          network: { added: [], removed: [], changed: [] },
+          console: { added: [], removed: [] },
+          timing: { totalMs: {}, steps: [] },
+        },
+      ],
+      summary: { scenarios: 1, changed: 1, unchanged: 0, incomplete: 0 },
+    };
+    expect(renderDemo(EMPTY, 'en', behavior)).toContain(
+      'The page looks different: <0.01% of pixels changed.',
     );
   });
 

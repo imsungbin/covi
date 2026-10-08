@@ -633,13 +633,19 @@ demo:
   changed: ' · 有变化'
   shapeChange: '结构变化：{shape}。'
   notDemonstrated: 未能演示的内容
+  revision:
+    base: base
+    head: head
   recordings: 录像
   recording:
     item: '{name}（{revision}）：[{file}]({path})'
-    webm: '未找到 ffmpeg，录像保留为 WebM。安装 ffmpeg 或设置 COVI_FFMPEG 即可得到 MP4。'
-    convertFailed: '转换为 MP4 失败，录像保留为 WebM：{detail}'
-    unavailable: '未能录制流程：{detail}'
-    saveFailed: '流程已录制，但未能保存录像：{detail}'
+    cause:
+      no-ffmpeg: '未找到 ffmpeg，录像保留为 WebM。安装 ffmpeg 或设置 COVI_FFMPEG 即可得到 MP4'
+      convert-failed: '转换为 MP4 失败，录像保留为 WebM'
+      no-recorder: '浏览器没有录制，未能录制流程'
+      save-failed: '流程已录制，但未能保存录像'
+    withDetail: '{cause}：{detail}'
+    plain: '{cause}。'
   behavior:
     title: base 与 head 的行为
     scenario: '{name}（{viewport}）'

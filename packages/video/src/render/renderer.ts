@@ -4,21 +4,29 @@ import { availableParallelism } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
 import { serveStatic, sha256 } from '@covi/core';
 import { type Browser, chromium, type Page } from 'playwright';
-import type { CompositionApi, LayoutReport, Timeline } from '../timeline/types.ts';
+import {
+  type CompositionApi,
+  HERO_PHASE,
+  type LayoutReport,
+  type Timeline,
+} from '../timeline/types.ts';
 import type { Media } from './ffmpeg.ts';
 
 export interface RenderOptions {
   /** Directory holding the composition's index.html. */
   compositionDir: string;
   output: string;
-  timeline: Pick<Timeline, 'fps' | 'frames' | 'width' | 'height' | 'duration' | 'scenes'>;
+  timeline: Pick<
+    Timeline,
+    'fps' | 'frames' | 'width' | 'height' | 'duration' | 'scenes' | 'transition'
+  >;
   media: Media;
   /** The mixed sound to mux (a stereo WAV), when anything plays. */
   audio?: string;
   workers?: number;
   /** Frames to sample for layout QC (defaults to a few per scene). */
   layoutFrames?: number[];
-  /** Frames for the contact sheet (defaults to each scene's midpoint). */
+  /** Frames for the contact sheet (defaults to `contactSheetFrames`). */
   sheetFrames?: number[];
   posterFrame?: number;
   onProgress?: (done: number, total: number) => void;
@@ -116,6 +124,37 @@ function encodeSegment(media: Media, fps: number, out: string, encoderArgs: stri
   return { write, end: () => child.stdin.end(), done, kill: () => child.kill('SIGKILL') };
 }
 
+/** The opening tile: 0.3 s in, where a cold open is already on screen. */
+const OPENING = 0.3;
+/** The hero's tile, a beat after its phase, while its accent plays. */
+const HERO_TILE = 0.1;
+
+/**
+ * Frames for the contact sheet, in time order: the opening, every scene's middle, the middle of
+ * every transition (a cut has none; timelines without kinds faded over `transition`), and the
+ * hero's accent.
+ */
+export function contactSheetFrames(
+  timeline: Pick<Timeline, 'fps' | 'frames' | 'scenes' | 'transition'>,
+): number[] {
+  const last = Math.max(0, timeline.frames - 1);
+  const frame = (t: number) => Math.min(last, Math.max(0, Math.round(t * timeline.fps)));
+  const frames = new Set([frame(OPENING)]);
+  timeline.scenes.forEach((s, i) => {
+    frames.add(frame((s.start + s.end) / 2));
+    const seconds = i === 0 ? 0 : (s.transition?.seconds ?? timeline.transition);
+    if (seconds > 0) frames.add(frame(s.start + seconds / 2));
+    const hero = s.phases?.[HERO_PHASE];
+    if (s.hero && hero !== undefined) frames.add(frame(s.start + hero + HERO_TILE));
+  });
+  return [...frames].sort((a, b) => a - b);
+}
+
+/** Contact sheet columns: six narrow tiles for vertical video; three wide ones, four past twelve. */
+export function sheetColumns(tiles: number, vertical: boolean): number {
+  return Math.max(1, Math.min(tiles, vertical ? 6 : tiles > 12 ? 4 : 3));
+}
+
 /** Renders a composition to H.264 MP4 by seeking every frame in headless Chromium. */
 export async function renderComposition(options: RenderOptions): Promise<RenderResult> {
   const started = Date.now();
@@ -136,9 +175,6 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
     const from = Math.floor((total * i) / workers);
     return { from, to: Math.floor((total * (i + 1)) / workers) };
   });
-  const midpoints = timeline.scenes.map((s) =>
-    Math.min(total - 1, Math.round(((s.start + s.end) / 2) * timeline.fps)),
-  );
   const layoutFrames = new Set(
     options.layoutFrames ??
       timeline.scenes.flatMap((s) =>
@@ -147,7 +183,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
         ),
       ),
   );
-  const sheetFrames = new Set(options.sheetFrames ?? midpoints);
+  const sheetFrames = new Set(options.sheetFrames ?? contactSheetFrames(timeline));
   const posterFrame =
     options.posterFrame ??
     Math.min(total - 1, Math.round(Math.min(1.6, timeline.duration / 3) * timeline.fps));
@@ -343,7 +379,7 @@ export function canReuseFrames(
   return Boolean(previous && videoExists && previous.key === key);
 }
 
-/** Tiles scene midpoints into one image so a person or agent can review the whole video at a glance. */
+/** Tiles the sampled frames into one image so a person or agent can review the whole video at a glance. */
 async function contactSheet(
   media: Media,
   frames: Buffer[],
@@ -357,7 +393,7 @@ async function contactSheet(
   await Promise.all(
     frames.map((b, i) => writeFile(join(dir, `f-${String(i).padStart(3, '0')}.jpg`), b)),
   );
-  const cols = Math.min(frames.length, height > width ? 6 : 3);
+  const cols = sheetColumns(frames.length, height > width);
   const rows = Math.ceil(frames.length / cols);
   const tileWidth = height > width ? 320 : 560;
   await media.ffmpeg([

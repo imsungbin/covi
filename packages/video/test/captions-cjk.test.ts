@@ -124,7 +124,13 @@ describe('per-language QC', () => {
 
   it('measures narration pace in syllables for Korean, using the spoken text when known', () => {
     const scene = (text: string, seconds: number) =>
-      ({ id: 's1', speech: { start: 0, end: seconds, text } }) as Timeline['scenes'][number];
+      ({
+        id: 's1',
+        start: 0,
+        end: seconds,
+        visual: { kind: 'callout' },
+        speech: { start: 0, end: seconds, text },
+      }) as Timeline['scenes'][number];
     const ko = { ...timelineOf('ko', []), scenes: [scene('씨엘아이를 추가합니다.', 2)] };
     expect(timingChecks(ko)[1]).toMatchObject({ id: 'narration-pace', status: 'pass' });
     const rushed = { ...timelineOf('ko', []), scenes: [scene('씨엘아이를 추가합니다.', 1)] };

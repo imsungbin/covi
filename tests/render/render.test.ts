@@ -1,8 +1,16 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseConfigInput, resolveConfig } from '@covi/core';
+import { type Demonstration, parseConfigInput, resolveConfig } from '@covi/core';
 import {
   AssetCollector,
   buildTimeline,
@@ -15,8 +23,10 @@ import {
   renderComposition,
   resolveVideoSpec,
   runQc,
+  type StoryboardInput,
   StoryboardSchema,
   syntheticMouth,
+  type Timeline,
   writeComposition,
 } from '@covi/video';
 import { type Browser, chromium } from 'playwright';
@@ -430,4 +440,207 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
       expect(result.video.qc).not.toBe('fail');
     }, 600_000);
   }
+});
+
+describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)', () => {
+  const root = join(import.meta.dirname, '..', '..');
+  const covi = (args: string[]) =>
+    JSON.parse(
+      execFileSync('node', ['bin/covi.mjs', ...args, '--json'], {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 600_000,
+      }),
+    ) as { runId: string; runDir: string; video: { rendered: boolean; qc: string } };
+  const read = <T>(run: string, rel: string) =>
+    JSON.parse(readFileSync(join(run, rel), 'utf8')) as T;
+
+  it('renders a storyboard that uses every timing field', async () => {
+    const repo = await materializeExample(
+      (await listExamples()).find((e) => e.name === 'ui-comment-composer')!,
+    );
+    dirs.push(repo);
+    // No --duration: an automatic window is a ceiling, so the duration check passes however
+    // short the story is.
+    const draft = covi(['video', '--repo', repo, '--short', '--draft']);
+    const run = draft.runDir;
+    // Real captures from the run: the composer page before and after, and the flow's steps.
+    const demo = read<Demonstration>(run, 'demo/captures.json');
+    const page = demo.shots.find(
+      (s) => s.kind === 'page' && s.viewport === 'mobile' && s.before && s.after,
+    );
+    const steps = demo.shots
+      .filter((s) => s.kind === 'flow-step' && s.viewport === 'mobile' && s.after)
+      .sort((a, b) => (a.step ?? 0) - (b.step ?? 0))
+      .slice(0, 2)
+      .map((s) => ({
+        image: { path: s.after!.path },
+        click: s.click,
+        focus: s.focus,
+        label: s.label,
+      }));
+    expect(page).toBeDefined();
+    expect(steps).toHaveLength(2);
+    const shot = page!;
+
+    // Every new field: a title over a capture, sync on four kinds of visual, all five
+    // transitions (zoom-through as the hero's default), the hero, both camera modes, and [[…]].
+    const storyboard: StoryboardInput = {
+      title: 'Count the characters left in a comment',
+      template: 'feature-demo',
+      draft: false,
+      scenes: [
+        {
+          id: 'open',
+          beat: 'context',
+          narration: 'What stops a comment that is [[too long]] to post?',
+          visual: {
+            kind: 'title',
+            title: 'Count the characters left',
+            eyebrow: 'Comments',
+            background: { path: shot.after!.path, label: shot.name },
+          },
+        },
+        {
+          id: 'type',
+          beat: 'interaction',
+          eyebrow: 'Type',
+          narration: 'Type a comment, and the counter counts down as you go.',
+          transition: 'push',
+          camera: 'drift',
+          sync: { step2: 'the counter counts down', zoom: 'as you go' },
+          visual: { kind: 'interaction', steps },
+        },
+        {
+          id: 'code',
+          beat: 'implementation',
+          eyebrow: 'The check',
+          narration: 'Past the limit, the counter flags it, and the form refuses to post.',
+          transition: 'cut',
+          sync: { highlight1: 'the counter flags it', highlight2: 'refuses to post' },
+          visual: {
+            kind: 'code',
+            path: 'app.js',
+            language: 'javascript',
+            lines: [
+              { type: 'add', text: 'const LIMIT = 280;' },
+              { type: 'add', text: "counter.classList.toggle('over', left < 0);" },
+              { type: 'add', text: 'if (!text || remaining() < 0) return;' },
+            ],
+            highlight: [1, 2],
+          },
+        },
+        {
+          id: 'compare',
+          beat: 'review',
+          eyebrow: 'Before and after',
+          hero: true,
+          narration: 'Before, nothing warned you. Now [[the limit]] is right there.',
+          sync: { reveal: 'Now the limit', hero: 'is right there' },
+          visual: {
+            kind: 'before-after',
+            before: { path: shot.before!.path },
+            after: { path: shot.after!.path },
+            ...(shot.diff?.bounds ? { focus: shot.diff.bounds } : {}),
+          },
+        },
+        {
+          id: 'warn',
+          beat: 'review',
+          eyebrow: 'Worth a look',
+          narration: 'It warns twenty characters early, so nobody is surprised.',
+          transition: 'wipe',
+          camera: 'static',
+          sync: { zoom: 'twenty characters early' },
+          visual: {
+            kind: 'screenshot',
+            image: { path: shot.after!.path, label: shot.name },
+            ...(shot.diff?.bounds ? { focus: shot.diff.bounds } : {}),
+            device: 'mobile',
+          },
+        },
+        {
+          id: 'wrap',
+          beat: 'summary',
+          eyebrow: 'Verdict',
+          narration: 'Ready to merge.',
+          transition: 'fade',
+          minSeconds: 1.5,
+          expression: 'success',
+          visual: {
+            kind: 'summary',
+            verdict: 'looks-good',
+            headline: 'A counter that blocks overlong comments',
+            points: [],
+          },
+        },
+      ],
+    };
+    writeFileSync(
+      join(run, 'video', 'storyboard.json'),
+      `${JSON.stringify(StoryboardSchema.parse(storyboard), null, 2)}\n`,
+    );
+
+    const rendered = covi(['render', '--repo', repo, '--run', draft.runId]);
+    expect(rendered.video.rendered).toBe(true);
+    expect(rendered.video.qc).not.toBe('fail');
+
+    const timeline = read<Timeline>(run, 'video/timeline.json');
+    const [open, type, code, compare, warn] = timeline.scenes;
+    expect(timeline.scenes.map((s) => s.transition?.kind)).toEqual([
+      undefined,
+      'push',
+      'cut',
+      'zoom-through',
+      'wipe',
+      'fade',
+      'fade',
+    ]);
+    expect(timeline.scenes.at(-1)!.id).toBe(OUTRO_ID);
+    // The cold open: the title over the capture, and the hook heard by 0.5 s.
+    expect(open!.visual).toMatchObject({ kind: 'title', background: { label: shot.name } });
+    expect(open).toMatchObject({ eyebrow: 'Comments', heading: 'Count the characters left' });
+    expect(open!.speech!.start).toBeLessThanOrEqual(0.5);
+    // Phases land in the order their phrases are spoken.
+    expect(type!.phases!.step2).toBeLessThan(type!.phases!.zoom!);
+    expect(code!.phases!.highlight1).toBeLessThan(code!.phases!.highlight2!);
+    expect(compare).toMatchObject({ hero: true });
+    expect(compare!.phases!.reveal).toBeLessThan(compare!.phases!.hero!);
+    // A cut lands on the first word of its line.
+    expect(code!.start).toBeCloseTo(code!.speech!.start, 2);
+    expect(warn).toMatchObject({ camera: 'static' });
+    expect(type).not.toHaveProperty('camera');
+
+    // The marked phrases are swept in the captions and never reach the voice or the files.
+    const marks = timeline.captions.flatMap((c) =>
+      (c.emphasis ?? []).map((e) => c.lines[e.line]!.slice(e.from, e.to)),
+    );
+    expect(marks.join(' ')).toContain('too long');
+    expect(marks.join(' ')).toContain('the limit');
+    for (const file of ['video/captions.vtt', 'video/speech.json', 'video/narration.md'])
+      if (existsSync(join(run, file)))
+        expect(readFileSync(join(run, file), 'utf8'), file).not.toMatch(/\[\[|\]\]/);
+
+    // The music lifts on the marked hero once its zoom-through has settled.
+    const audio = read<{ music: { hero?: { moment: number } } }>(run, 'video/audio.json');
+    expect(audio.music.hero?.moment).toBeCloseTo(compare!.start + 0.6, 2);
+
+    const qc = read<{ checks: Array<{ id: string; status: string; message?: string }> }>(
+      run,
+      'video/qc.json',
+    );
+    const status = Object.fromEntries(qc.checks.map((c) => [c.id, c.status]));
+    expect(status.hook).toBe('pass');
+    expect(status.duration).toBe('pass');
+    expect(Object.keys(status)).toEqual(expect.arrayContaining(['still', 'speech-share']));
+    // freezedetect on the rendered MP4: the static scene holds still after its zoom while its
+    // line goes on, and the captures that drift never do.
+    const still = qc.checks.find((c) => c.id === 'still')!;
+    expect(still.status).toBe('warn');
+    expect(still.message).toMatch(/\bwarn \(/);
+    expect(still.message).not.toMatch(/\b(open|type|compare) \(/);
+    expect(qc.checks.filter((c) => c.id !== 'still' && c.status !== 'pass')).toEqual([]);
+    expect(existsSync(join(run, 'video', 'contact-sheet.jpg'))).toBe(true);
+  }, 900_000);
 });

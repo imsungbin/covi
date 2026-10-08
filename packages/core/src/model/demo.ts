@@ -1,5 +1,6 @@
 import type { DemoRevision, DemoViewport } from './behavior.ts';
 import type { FindingInput } from './finding.ts';
+import type { FlowMerge } from './subject.ts';
 
 /**
  * What the Demonstrate phase captured. Paths are relative to the run directory; image coordinates
@@ -88,6 +89,21 @@ export interface DemoTraceRef {
   path: string;
 }
 
+/** What the subject model gave a demonstration, and what the demonstration gave it. */
+export interface DemoSubject {
+  store: 'repo' | 'runs';
+  /** Flows replayed from the model because the plan named none. */
+  proposed: string[];
+  /** Page captures taken at head only whose focus came from the model. */
+  focused: string[];
+  /** What became of each flow this run observed: kept, or why the model did not take it. */
+  flows: FlowMerge[];
+  /** `demo/subject.json`, when the run saw anything at head. */
+  path?: string;
+  /** Whether the store took this run's observations (never in CI for `repo`). */
+  saved: boolean;
+}
+
 export interface Demonstration {
   schemaVersion: 1;
   app?: { mode: 'static' | 'command' | 'url'; revisions: Array<'base' | 'head'> };
@@ -106,4 +122,6 @@ export interface Demonstration {
   traces?: DemoTraceRef[];
   /** Where the base/head comparison is (`demo/behavior-diff.json`), and how many scenarios changed. */
   behavior?: { path: string; scenarios: number; changed: number };
+  /** The subject model's part in this run (absent when `subject.store` is off or nothing ran). */
+  subject?: DemoSubject;
 }

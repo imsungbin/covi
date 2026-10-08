@@ -8,6 +8,7 @@ import {
   Run,
   resolveChange,
   resolveConfig,
+  SubjectSchema,
   understandChange,
 } from '@covi/core';
 import { PNG } from 'pngjs';
@@ -16,7 +17,7 @@ import { createChangeRepo, type TempRepo } from '../../../tests/helpers/repo.ts'
 import { startApp, waitForReady } from '../src/app.ts';
 import { checkoutRevision, tempWorkspace } from '../src/checkout.ts';
 import { comparePngs, cropPng } from '../src/pixels.ts';
-import { flowViewport, planDemo } from '../src/plan.ts';
+import { flowViewport, planDemo, proposeFlows } from '../src/plan.ts';
 import { describeShapeChange } from '../src/requests.ts';
 
 let repo: TempRepo | undefined;
@@ -249,5 +250,54 @@ describe('app runner', () => {
 
   it('times out with the app output when it never becomes ready', async () => {
     await expect(waitForReady('http://127.0.0.1:9/', 600)).rejects.toThrow(/was not ready within/);
+  });
+});
+
+describe('flows from the subject model', () => {
+  const REV = '000000000001';
+  const subject = SubjectSchema.parse({
+    revisions: [REV, '000000000002'],
+    flows: [
+      ['Old', '/', '000000000002'],
+      ['Post', '/', REV],
+      ['Admin', '/admin', REV],
+      ['Gone', '/', '000000000009'],
+      ['Third', '/?tab=2', REV],
+    ].map(([name, path, passed], i) => ({
+      key: `f${i}`,
+      name,
+      path,
+      viewport: 'mobile',
+      steps: [{ action: { click: '#go' } }],
+      passed,
+    })),
+  });
+
+  it('replays flows that passed on the pages it captures, only when the plan names none', async () => {
+    repo = createChangeRepo(
+      { 'public/index.html': '<h1>a</h1>\n' },
+      { 'public/index.html': '<h1>b</h1>\n' },
+    );
+    const configured = (values: unknown) =>
+      resolveConfig([{ name: 'repository', values: parseConfigInput(values, 't') }]).config;
+    const config = configured({ demo: { pages: ['/'], viewports: ['desktop', 'mobile'] } });
+    const change = await resolveChange({ repo: repo.root });
+    const context = await understandChange(change, { git: new Git(repo.root), config });
+    const plan = planDemo(context, config, undefined, subject);
+    // Most recently passed first, at most two; another page's flow and a forgotten one never.
+    expect(plan.proposed).toEqual(['Post', 'Third']);
+    expect(plan.flows.map((f) => [f.name, f.path, f.viewports, f.steps])).toEqual([
+      ['Post', '/', ['mobile'], [{ click: '#go' }]],
+      ['Third', '/?tab=2', ['mobile'], [{ click: '#go' }]],
+    ]);
+    // A plan or configuration that names flows, even none, is followed as written.
+    expect(planDemo(context, config, { flows: [] }, subject).proposed).toEqual([]);
+    const own = configured({ demo: { pages: ['/'], flows: [{ name: 'Mine', steps: [] }] } });
+    expect(planDemo(context, own, undefined, subject).flows.map((f) => f.name)).toEqual(['Mine']);
+    // At a viewport the plan does not capture, the flow runs where the plan's own flows would.
+    const desktop = configured({ demo: { pages: ['/'], viewports: ['desktop'] } });
+    expect(planDemo(context, desktop, undefined, subject).flows[0]!.viewports).toBeUndefined();
+    expect(planDemo(context, config).proposed).toEqual([]);
+    expect(proposeFlows(subject, ['/admin/'], ['mobile']).map((f) => f.name)).toEqual(['Admin']);
   });
 });

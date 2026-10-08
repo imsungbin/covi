@@ -58,7 +58,7 @@ Details:
 - **Empty side of a range:** an empty side means `HEAD`, so `main..` is `main..HEAD`.
 - **Base branch:** with no arguments, the base branch is the configured `base`, tried as `origin/<base>` and then `<base>`. Otherwise Covi uses the first of these that exists: `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`, `origin/trunk`, `trunk`, `origin/develop`, `develop`.
 - **No commits beyond the base:** Covi reviews uncommitted work against `HEAD`. If there is none either, it prints `No changes: …` and exits 0 without creating a run.
-- **Uncommitted work:** included only when the head is implicit and the working tree is dirty. Untracked files count unless git ignores them. Covi's own `.covi/runs/` and `.covi/cache/` never count.
+- **Uncommitted work:** included only when the head is implicit and the working tree is dirty. Untracked files count unless git ignores them. Covi's own `.covi/runs/`, `.covi/cache/`, and `.covi/subject/` never count.
 - **Usage errors (exit 2):**
   - A range together with `--base` or `--head`.
   - `--staged` or `--uncommitted` together with a range or `--base`.
@@ -171,6 +171,7 @@ Plus change selection options.
   - pages rendered by changed files: static HTML, and file-based routes such as Next.js `app/` and `pages/` or SvelteKit `routes/`;
   - parameter-free `GET` routes.
 - **Viewports:** `covi demo` captures desktop and mobile unless the plan or `demo.viewports` says otherwise.
+- **Replayed flows:** when neither the plan nor `demo.flows` names a flow, Covi replays up to two flows the subject model saw pass on the pages it captures, on an app it starts or serves; `demo/demo.md` names them, a plan with `"flows": []` turns this off, and one that fails at head is a `risk` finding (see [Configuration](configuration.md#subject)).
 - **How it runs the app:** `app.start`, `app.url`, or `app.static` (see [Configuration](configuration.md#app)). Commands from the repository's configuration run only once trusted on this machine (see [`covi trust`](#covi-trust)); untrusted ones are skipped, and `captures.json` says so.
 - **Writes:**
   - `demo/plan.json`, when you passed `--plan`.
@@ -180,6 +181,7 @@ Plus change selection options.
   - `demo/recordings/`, each flow at base and head (MP4, or WebM without ffmpeg).
   - `demo/traces/`, one trace per page and flow per revision.
   - `demo/behavior-diff.json`.
+  - `demo/subject.json`, this run's view of the [subject model](artifacts.md#the-subject-model), and the model itself (`subject.store`).
   - `demo/demo.md`.
 - **Findings:** a difference Covi observes becomes a finding when you run `covi review --demo`, `covi video`, or `covi ci`. Examples are a changed response shape, a new server error, a page error, or a failing command.
 - **Result `data`:** `demo`.
@@ -392,9 +394,19 @@ Lists a run's evidence: every id a finding, explanation statement, or storyboard
 
 Without `--json`, one line per item: id, kind, revision, label. With `--json`, the result object with `data.items` (the registry's items), `data.schemaVersion`, and `data.source`: `file` when the run has `evidence.json`, `rebuilt` when it was made before Covi kept one (rebuilt in memory, nothing written; `artifacts.evidence` is then absent).
 
+### `covi subject`
+
+Shows what Covi has seen of the software: the [subject model](artifacts.md#the-subject-model). Read-only: it never writes the model or a run.
+
+| Option | Meaning |
+|---|---|
+| `--run <id>` | Show that run's own snapshot (`demo/subject.json`) instead of the store: run id, run directory, or `latest`. |
+
+Without `--run`, it reads the store `subject.store` names, from the working tree (never from a base revision). Without `--json`, one line per screen (key, path, viewports, title), one per element under it with its reference (`subject:<screen>#<element>`), role, and label, then one per flow and scenario; with `--run`, also one per head capture with the elements it shows, the ones a storyboard `focus` can name there. With `--json`, the result object's `data` is `{ source, path, status, model }` for the store (`source` is `repo` or `runs`; `status` is `loaded`, `empty`, or `invalid`, with the reason in `warnings`), `{ source: "off" }` when `subject.store` is `off`, and `{ source: "run", schemaVersion, store, revision, model, images }` with `--run`. Everything printed is redacted. A run without `demo/subject.json` exits 2.
+
 ### `covi schema <name>`
 
-Prints the JSON Schema of a file agents author or read: `explanation`, `findings`, `storyboard`, `score`, `demo-plan`, `config`, or `evidence` (what `covi evidence` prints).
+Prints the JSON Schema of a file agents author or read: `explanation`, `findings`, `storyboard`, `score`, `demo-plan`, `config`, `evidence` (what `covi evidence` prints), or `subject` (what `covi subject` prints).
 
 ### `covi templates`
 

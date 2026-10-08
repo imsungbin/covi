@@ -51,6 +51,8 @@ export interface ObserveFlowInput {
   viewport: ViewportName;
   revision: DemoRevision;
   record: boolean;
+  /** Scan each frame for the subject model. */
+  scan?: boolean;
   ffmpeg: () => Promise<string | undefined>;
 }
 
@@ -118,7 +120,7 @@ export async function observeFlow(input: ObserveFlowInput): Promise<ObservedFlow
       flow,
       viewport,
       (i) => run.path(demoPath.flowFrame(scenario, i + 1, revision)),
-      { recordDir, trace: collector },
+      { recordDir, trace: collector, scan: input.scan },
     );
     if (input.record) ({ saved, note } = await saveRecording(input, outcome));
   } finally {

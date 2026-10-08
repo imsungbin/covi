@@ -339,6 +339,33 @@ describe('English output (baseline)', () => {
     expect(renderDemo(DEMO)).toMatchSnapshot();
   });
 
+  it('renders what the subject model gave the demonstration and kept', () => {
+    const subject = {
+      store: 'repo' as const,
+      proposed: ['Load items'],
+      focused: ['home-desktop'],
+      flows: [],
+      path: 'demo/subject.json',
+    };
+    const saved = renderDemo({ ...DEMO, subject: { ...subject, saved: true } });
+    expect(saved).toContain('## Subject model');
+    expect(saved).toContain(
+      '- Replayed from the subject model, because the plan named no flows: Load items.',
+    );
+    expect(saved).toMatchSnapshot('saved');
+    expect(
+      renderDemo({ ...DEMO, subject: { ...subject, store: 'runs', saved: true } }),
+    ).toMatchSnapshot('runs');
+    expect(renderDemo({ ...DEMO, subject: { ...subject, saved: false } })).toMatchSnapshot('kept');
+    // Nothing from the model and nothing seen: no section at all.
+    expect(
+      renderDemo({
+        ...DEMO,
+        subject: { store: 'repo', proposed: [], focused: [], flows: [], saved: false },
+      }),
+    ).toBe(renderDemo(DEMO));
+  });
+
   it('renders behavior differences and recordings in the demonstration notes', () => {
     const demo: Demonstration = {
       ...DEMO,

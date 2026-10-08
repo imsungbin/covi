@@ -1,5 +1,6 @@
 import type { Flow, FlowStep, Rect } from '@covi/core';
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from 'playwright';
+import { isFocusSecret, isSecretField, type PageScan, scanPage } from './elements.ts';
 import { collectMutations, observe } from './observe.ts';
 import type { TraceCollector } from './trace.ts';
 
@@ -85,15 +86,21 @@ export interface PageCapture {
   status?: number;
   errors: string[];
   title?: string;
+  /** The page's elements, for the subject model. */
+  scan?: PageScan;
 }
 
-/** Screenshots a page (full height, capped) and collects console and page errors. */
+/**
+ * Screenshots a page (full height, capped) and collects console and page errors. With `scan`, it
+ * also scans the page's elements for the subject model, which only head captures feed.
+ */
 export async function capturePage(
   browser: Browser,
   url: string,
   viewport: ViewportName,
   file: string,
   trace?: TraceCollector,
+  options: { scan?: boolean } = {},
 ): Promise<PageCapture> {
   const { context, page } = await openContext(browser, viewport);
   const v = VIEWPORT_PRESETS[viewport];
@@ -122,6 +129,7 @@ export async function capturePage(
       clip: { x: 0, y: 0, width: v.width, height },
     });
     trace?.frame(file);
+    const scan = options.scan ? await scanPage(page) : undefined;
     // The capture is the page's full height (capped), not only the viewport.
     trace?.endStep({
       mutations: await collectMutations(page, v.deviceScaleFactor, { width: v.width, height }),
@@ -134,6 +142,7 @@ export async function capturePage(
       status: response?.status(),
       errors,
       title: await page.title().catch(() => undefined),
+      ...(scan ? { scan } : {}),
     };
   } catch (error) {
     trace?.endStep({ status: 'failed', error: (error as Error).message.split('\n')[0] });
@@ -151,6 +160,8 @@ export interface FlowFrame {
   step: string;
   click?: { x: number; y: number };
   focus?: { x: number; y: number; width: number; height: number };
+  /** The page's elements when the frame was taken, and how far it was scrolled. */
+  scan?: PageScan;
 }
 
 function describe(step: FlowStep): string | undefined {
@@ -217,6 +228,8 @@ export interface FlowOptions {
   /** Record the flow as WebM into this directory (Playwright picks the file name). */
   recordDir?: string;
   trace?: TraceCollector;
+  /** Scan each frame's elements for the subject model. */
+  scan?: boolean;
 }
 
 export interface FlowRun {
@@ -228,6 +241,8 @@ export interface FlowRun {
   video?: string;
   /** Why recording was asked for and could not start; the flow still ran, unrecorded. */
   recordError?: string;
+  /** It typed into, pressed keys in, or chose from a password, one-time code, or card field. */
+  secret?: true;
 }
 
 /**
@@ -273,6 +288,17 @@ export async function runFlow(
   page.on('pageerror', (e) => errors.push(e.message));
   const frames: FlowFrame[] = [];
   let current = 'open';
+  let secret = false;
+  /**
+   * The step's field, noting whether it holds a secret before the flow acts on it. It waits as the
+   * action would, so a field that renders late is checked too.
+   */
+  const field = async (selector: string) => {
+    const locator = page.locator(selector).first();
+    await locator.waitFor({ state: 'attached', timeout: 8000 });
+    if (await isSecretField(locator)) secret = true;
+    return locator;
+  };
   const shoot = async (label: string, target?: string) => {
     let click: FlowFrame['click'];
     let focus: FlowFrame['focus'];
@@ -305,7 +331,8 @@ export async function runFlow(
     }
     const file = fileFor(frames.length);
     await page.screenshot({ path: file });
-    frames.push({ file, label, step: current, click, focus });
+    const scan = options.scan ? await scanPage(page) : undefined;
+    frames.push({ file, label, step: current, click, focus, ...(scan ? { scan } : {}) });
     trace?.frame(file, box);
   };
   // Read after each step, so the DOM changes describe what that step's action caused.
@@ -336,15 +363,17 @@ export async function runFlow(
       if (label && target) await shoot(label, target);
       if ('goto' in step) await page.goto(`${baseUrl}${step.goto}`, { waitUntil: 'load' });
       else if ('click' in step) await page.locator(step.click).first().click({ timeout: 8000 });
-      else if ('fill' in step)
-        await page.locator(step.fill).first().fill(step.text, { timeout: 8000 });
-      else if ('press' in step)
-        await (step.selector
-          ? page.locator(step.selector).first().press(step.press)
-          : page.keyboard.press(step.press));
-      else if ('hover' in step) await page.locator(step.hover).first().hover({ timeout: 8000 });
+      else if ('fill' in step) await (await field(step.fill)).fill(step.text, { timeout: 8000 });
+      else if ('press' in step) {
+        if (step.selector) await (await field(step.selector)).press(step.press);
+        else {
+          // The key goes to whatever has focus, such as a password field a click focused.
+          if (await isFocusSecret(page)) secret = true;
+          await page.keyboard.press(step.press);
+        }
+      } else if ('hover' in step) await page.locator(step.hover).first().hover({ timeout: 8000 });
       else if ('select' in step)
-        await page.locator(step.select).first().selectOption(step.value, { timeout: 8000 });
+        await (await field(step.select)).selectOption(step.value, { timeout: 8000 });
       else if ('check' in step) await page.locator(step.check).first().check({ timeout: 8000 });
       else if ('scroll' in step) {
         if (typeof step.scroll === 'number') await page.mouse.wheel(0, step.scroll);
@@ -379,6 +408,7 @@ export async function runFlow(
     await context.close();
   }
   if (recordError) result.recordError = recordError;
+  if (secret) result.secret = true;
   // Playwright finishes writing the video when the context closes.
   const recorded = await video?.path().catch(() => undefined);
   if (recorded) result.video = recorded;

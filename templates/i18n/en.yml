@@ -658,6 +658,14 @@ demo:
       save-failed: 'Flows were recorded, but a recording could not be saved'
     withDetail: '{cause}: {detail}'
     plain: '{cause}.'
+  subject:
+    title: Subject model
+    proposed: 'Replayed from the subject model, because the plan named no flows: {flows}.'
+    focused: 'Focus from elements that are new since Covi last saw the screen: {shots}.'
+    saved:
+      repo: 'What Covi saw is saved in {path}; commit it to share it.'
+      runs: 'What Covi saw is saved in {path} in the runs directory.'
+    kept: 'What Covi saw is in {path} only; the subject model was not updated.'
   behavior:
     title: Behavior at base and head
     scenario: '{name} ({viewport})'

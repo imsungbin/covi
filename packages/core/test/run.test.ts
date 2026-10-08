@@ -1,4 +1,13 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -30,6 +39,66 @@ describe('Run', () => {
     expect(readFileSync(join(root, '.covi/runs/.gitignore'), 'utf8')).toContain('*');
     const reopened = await Run.open('latest', { root });
     expect(reopened.dir).toBe(run.dir);
+  });
+
+  it('in CI, refuses a runs directory a link leads to, and writes nothing there', async () => {
+    root = mkdtempSync(join(tmpdir(), 'covi-run-'));
+    const outside = mkdtempSync(join(tmpdir(), 'covi-run-outside-'));
+    try {
+      mkdirSync(join(root, '.covi'));
+      symlinkSync(outside, join(root, '.covi/runs'));
+      const refused = Run.create(options({ confined: true }));
+      await expect(refused).rejects.toMatchObject({
+        name: 'EnvironmentError',
+        exitCode: 3,
+        message: expect.stringContaining(
+          `${join(root, '.covi/runs')} is reached through a symbolic link`,
+        ),
+      });
+      expect(readdirSync(outside)).toEqual([]);
+      // A place the user chose is theirs: --out, or a runs directory outside the repository.
+      await Run.create(options({ confined: true, dir: join(root, 'out') }));
+      await Run.create(options({ confined: true, runsDir: join(outside, 'runs') }));
+      // Locally the link is followed, as before.
+      await Run.create(options());
+      rmSync(join(root, '.covi/runs'));
+      await Run.create(options({ confined: true }));
+      expect(readFileSync(join(root, '.covi/runs/.gitignore'), 'utf8')).toContain('*');
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('replaces links planted in the runs directory instead of writing through them', async () => {
+    root = mkdtempSync(join(tmpdir(), 'covi-run-'));
+    const outside = mkdtempSync(join(tmpdir(), 'covi-run-outside-'));
+    try {
+      const runs = join(root, '.covi/runs');
+      mkdirSync(runs, { recursive: true });
+      writeFileSync(join(outside, 'precious'), 'keep me\n');
+      symlinkSync(join(outside, 'precious'), join(runs, 'LATEST'));
+      symlinkSync(join(outside, 'created'), join(runs, '.gitignore'));
+      const run = await Run.create(options());
+      expect(readFileSync(join(outside, 'precious'), 'utf8')).toBe('keep me\n');
+      expect(readdirSync(outside)).toEqual(['precious']);
+      expect(lstatSync(join(runs, 'LATEST')).isFile()).toBe(true);
+      expect(readFileSync(join(runs, 'LATEST'), 'utf8').trim()).toBe(run.id);
+      expect(lstatSync(join(runs, '.gitignore')).isFile()).toBe(true);
+      expect(readFileSync(join(runs, '.gitignore'), 'utf8')).toContain('*');
+      // A link to nowhere at the run's own path is refused, not followed.
+      const at = new Date('2026-10-04T12:00:00Z');
+      symlinkSync(join(outside, 'run'), join(runs, '20261004-120000-review-abcdef1'));
+      await expect(Run.create(options({ headSha: 'abcdef1234', now: at }))).rejects.toMatchObject({
+        name: 'EnvironmentError',
+        exitCode: 3,
+        message: expect.stringContaining(
+          `${join(runs, '20261004-120000-review-abcdef1')} is a symbolic link`,
+        ),
+      });
+      expect(readdirSync(outside)).toEqual(['precious']);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it('discards a stale artifact and its record', async () => {

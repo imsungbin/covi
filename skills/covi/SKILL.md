@@ -40,6 +40,7 @@ Use the `covi` command. With the Claude Code plugin it is already on your PATH; 
 | `covi analyze [range] --json` | Deterministic understanding: `context.json`, `brief.md`, `rule-findings.json`, `explanation.draft.json`, `diff.patch` |
 | `covi report --run <id>` | Validates your `explanation.json` and `findings.json`, then renders `review.md`, `explanation.md`, `summary.md` |
 | `covi evidence --run <id> --json` | Every piece of evidence in a run (diff hunks, screenshots, recordings, traces, pixel diffs, requests, commands, test output) with the ids findings, explanations, and scenes cite |
+| `covi subject [--run <id>] --json` | What Covi has seen of the software (screens, elements with their `subject:<screen>#<element>` references, flows that passed); with `--run`, which elements each capture of that run shows |
 | `covi demo [range] [--plan file]` | Runs the software at base and head; screenshots, flows, command output, API responses |
 | `covi video ...` | Plans, drafts, and renders review videos (see `covi-video`) |
 | `covi render --run <id>` | Renders a storyboard (or a music score) you edited |
@@ -79,7 +80,7 @@ explanation.json/.md  the explanation (you write the JSON; Covi renders the Mark
 findings.json         your findings; review.json/.md is the merged, rendered review
 evidence.json         every piece of evidence in the run, with the ids claims cite
 summary.md            compact summary for PR/MR descriptions
-demo/                 captures.json, screenshots, diffs, recordings, traces, behavior-diff.json
+demo/                 captures.json, screenshots, diffs, recordings, traces, behavior-diff.json, subject.json
 video/                storyboard.json, timeline.json, captions, audio.json, music.wav, covi-review.mp4, qc.json
 ```
 

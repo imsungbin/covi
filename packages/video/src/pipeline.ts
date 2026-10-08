@@ -15,6 +15,7 @@ import {
   type Review,
   type ReviewContext,
   type Run,
+  type SubjectSnapshot,
   UsageError,
 } from '@covi/core';
 import { toSrt, toVtt } from './captions.ts';
@@ -58,6 +59,7 @@ import { draftStoryboard } from './storyboard/draft.ts';
 import { stripEmphasis } from './storyboard/grammar.ts';
 import { refineNarration } from './storyboard/model.ts';
 import { type Scene, type Storyboard, StoryboardSchema } from './storyboard/schema.ts';
+import { hasSubjectRefs, resolveSubjectFocus } from './storyboard/subject.ts';
 import { loadTemplates } from './templates.ts';
 import { buildTimeline, fitToDuration, pacingFor, storyScenes } from './timeline/build.ts';
 import type { Timeline } from './timeline/types.ts';
@@ -122,6 +124,12 @@ export interface ProduceVideoInput {
    * show.
    */
   evidence?: EvidenceIndex;
+  /**
+   * The run's subject model snapshot (`demo/subject.json`): `focus` references are placed with it.
+   * A function is called only when the storyboard has a reference, so a damaged snapshot never
+   * stops a storyboard that does not use it.
+   */
+  subject?: SubjectSnapshot | (() => Promise<SubjectSnapshot | undefined>);
 }
 
 export interface ProduceVideoResult {
@@ -228,6 +236,19 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
       }
     }
   }
+  // A `focus` may name an element of the subject model. It is placed before anything is written,
+  // and the storyboard is kept as written, so rendering again places it the same way.
+  const snapshot = !hasSubjectRefs(storyboard)
+    ? undefined
+    : typeof input.subject === 'function'
+      ? await input.subject()
+      : input.subject;
+  const placed = resolveSubjectFocus(storyboard, snapshot);
+  if (placed.problems.length)
+    throw new UsageError(
+      `storyboard.json focuses on elements Covi cannot place:\n  ${placed.problems.join('\n  ')}`,
+      `List the screens and elements in each capture with \`covi subject --run ${run.id}\`, or give the region as a rect.`,
+    );
   await run.writeJson('video/storyboard.json', storyboard, 'storyboard');
   if (input.draftOnly) {
     // Composed music starts from the theme, for the agent to rewrite before `covi render`.
@@ -235,6 +256,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
       await run.writeJson(AUDIO_PATHS.score, draftScore(), 'audio');
     return { storyboard, drafted, narration: { enabled: false, reason: 'draft only' }, notes };
   }
+  storyboard = placed.storyboard;
 
   const missing: string[] = [];
   const imagePaths = new Set<string>();

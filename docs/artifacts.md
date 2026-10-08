@@ -18,6 +18,8 @@ Runs are written to `.covi/runs/<run-id>/` inside the reviewed repository. Set `
     .gitignore                    "*"
     tts/                          synthesized narration, reused across runs
     music/                        rendered music, keyed by everything it depends on
+  subject/
+    subject.json                  the subject model (subject.store: repo), meant to be committed
 ```
 
 **Run ids** are `<YYYYMMDD>-<HHMMSS>-<workflow>-<head7>`: the UTC start time, the workflow (`analyze`, `explain`, `review`, `demo`, `video`, `summarize`, `ci`), and the first seven characters of the head commit. If two runs start in the same second, the second gets a `-2` suffix.
@@ -26,7 +28,7 @@ Runs are written to `.covi/runs/<run-id>/` inside the reviewed repository. Set `
 
 **Pruning.** When it creates a run, Covi deletes the oldest runs so that at most `output.keep` remain, counting the new one (default 20, allowed 1–1000). It only deletes directories whose names are run ids and that contain a `run.json`. A run written with `--out` does not prune anything and does not update `LATEST`.
 
-**Nothing to commit.** The runs and cache directories each contain a `.gitignore` with `*`, so nothing Covi generates shows up in `git status`. Covi never edits your own `.gitignore`, and its own directories never make the working tree count as changed. A directory given with `--out` gets no `.gitignore`.
+**Nothing to commit.** The runs and cache directories each contain a `.gitignore` with `*`, so nothing Covi generates shows up in `git status`, except the [subject model](#the-subject-model), which is meant to be committed. Covi never edits your own `.gitignore`, and its own directories never make the working tree count as changed. A directory given with `--out` gets no `.gitignore`.
 
 ## run.json
 
@@ -97,6 +99,7 @@ Written when a demonstration runs: `covi demo` and `covi review --demo` on reque
 | `demo/recordings/flow-<flow>-base.mp4`, `-head.mp4` | `recording` | Each flow at base and head, at the flow's viewport in CSS pixels (1280×800 on desktop). WebM (`.webm`) when ffmpeg is missing or converting fails; `captures.json` → `recording` says why. Not written with `--no-record` or `demo.record: false`. |
 | `demo/traces/<scenario>-base.json`, `-head.json` | `trace` | What happened while a page loaded or a flow ran: steps (id, action, target, label, seconds from the start of the recording, duration, status, screenshot, target box, DOM changes), network requests (method, URL relative to the app, resource type, status or failure, timing), console messages (level, text, location), and DOM change counts and regions. No headers or bodies. |
 | `demo/behavior-diff.json` | `behavior-diff` | Per scenario (page or flow) observed at both revisions: `status` (`changed`, `unchanged`, `incomplete`), steps that look different (at least 64 changed pixels, or 64 × scale² on a high-density viewport, however small a share of the frame; with region ids) or ended differently, requests added, removed, or answered with another status, console errors added or removed, and timing deltas of at least 500 ms and half the base time (timing alone never makes a scenario `changed`). Not written when only head ran (`app.url`). |
+| `demo/subject.json` | `subject` | Demonstrations that saw anything at head (not with `subject.store: off`): the subject model as this run left it, and where each element is in each head capture |
 | `demo/diffs/<page>-<viewport>.png` | `screenshot` | The pixel difference between base and head |
 | `demo/app-base.log`, `demo/app-head.log` | `log` | Why the app did not start at that revision (`terminal:app-start-<revision>`); an `app-start` finding cites the head log |
 
@@ -137,6 +140,33 @@ Written by `covi ci`. See [GitHub Action](github-action.md) and [GitLab CI](gitl
 
 On GitHub, annotations go to the job log, and step outputs and the job summary go to the files GitHub provides; none of them are written into the run.
 
+## The subject model
+
+The subject model is what Covi has seen of the software across runs. It lives in `.covi/subject/subject.json` (`subject.store: repo`, the default), small and meant to be committed so everyone's runs share it, or in `subject.json` in the runs directory (`subject.store: runs`), never committed. See [Configuration](configuration.md#subject). It holds:
+
+- `revisions`: the distinct head commits (12 characters) at which a demonstration updated the model, newest first.
+- `screens`: one per app path (without query, fragment, or trailing slash), with the page title, the viewports it was seen at and their sizes, and its elements. Each element has a selector Covi built from the attributes the page reported, a role, a label, and a box per viewport in image pixels from the top of the page. Each viewport and box records `since`, the revision it was first seen at.
+- `flows`: browser flows that passed, with their path, viewport, steps, and step labels.
+- `commands`: CLI and HTTP scenarios that ran, by name and outcome (an exit code; a method, a path without its query, and a status), never their command lines.
+
+**Keys and references.** Every screen, element, flow, and scenario has a key of lowercase letters, digits, and dashes. A screen's key comes from its path (`/` is `home`), an element's from its test id, else its id, else its accessible name, and a flow's or scenario's from its name; a key that is taken gets `-2`, `-3`, and so on. A storyboard names an element as `subject:<screen>#<element>`, for example `subject:home#start-trial`. `covi subject` lists them.
+
+**Updating.** A demonstration that saw anything at head merges what it saw into the model. Entries are matched by identity (a screen by its path, an element by its selector within its screen, a flow by its name, a scenario by its kind and name), and an entry keeps the key it was first given, so references survive a changed label. A box is updated only for the viewport that saw the element. The run's revision moves to the front of `revisions`, which keeps `subject.expireAfter` of them (20 by default); an entry, or a per-viewport box, last seen at a revision no longer kept is forgotten. An entry seen again gets the run's revision as its `seen` only once its old one is at least half that window old, so something still on screen is never forgotten, and something gone is forgotten between half and all of `expireAfter` revisions after it was last seen. A run that changes nothing records nothing, not even its revision, and leaves the file byte for byte as it was; a run that sees an element gone from a screen it scanned, or a kept flow fail, records its revision, so what is gone ages out. Running again at the same commit ages nothing, and a run that saw nothing at head changes nothing. Lists are written sorted by key, so the committed file changes only where the software did.
+
+**Focus.** A page captured at head only (the app ran at head only, or base could not be captured) has no pixel diff to locate the change, so the model gives it a focus: the one to three elements new at this run's revision on a screen the model saw at that viewport before it. New means first seen at this revision, so a second run at the same commit (`covi demo`, then `covi video`) focuses the same way.
+
+**Merge conflicts.** Two branches that each changed the committed model can conflict over it. Take either side (`git checkout --ours` or `--theirs` on the file), or delete it: the next run rebuilds what it sees. Covi recognizes a file left with conflict markers, plans without it, warns how to resolve it, and does not overwrite it. To keep the model out of the repository instead, use `subject.store: runs`.
+
+**Bounds.** At most 100 screens, 60 elements per screen, 50 flows of at most 30 steps, 50 scenarios, and 100 revisions; every string is one line without control characters, and the file is at most 512 KB. Past a cap, what was seen longest ago goes first. A file over 512 KB is never parsed.
+
+**Saving.** A run saves under a lock, `.subject.lock` in the runs directory. Under it, the run reads the store again, merges its observations into what it finds, and replaces the file atomically, so two runs racing both land. A run that waits 5 seconds for the lock gives up with a warning; what it saw is still in its `demo/subject.json`. A lock older than 30 seconds belongs to a run that died and is removed.
+
+**A file Covi cannot read.** A store that is not JSON, does not match the schema (`covi schema subject`), is newer than this Covi reads, is larger than 512 KB, or is reached through a symbolic link is ignored with a warning: the run plans without it and never overwrites it. Fix or delete the file.
+
+**The run's snapshot.** `demo/subject.json` is the model as the run left it, plus `images`: for every head capture (a page's `-after.png` crop and each head flow frame), the elements at least half visible in it and their boxes in that image's pixels. `covi render` places `subject:` references with the snapshot, never with a store that may have moved on. Base images are not indexed.
+
+**Not evidence.** The model is memory accumulated over revisions, so an entry may describe a screen this run never saw. Nothing cites it: [evidence](#evidence) is what this run produced, including the screenshots and traces the model was built from.
+
 ## Evidence
 
 `evidence.json` lists every piece of evidence in a run. Claims cite it: findings (`findings.json`), explanation statements (`intent`, `behavior`, and each entry of `changes` in `explanation.json`), and storyboard scenes, each in `evidenceIds`. `covi evidence --run <id> --json` prints it.
@@ -171,6 +201,7 @@ An agent can write these files and hand them to Covi, which validates them again
 | `video/score.json` in the run | `covi schema score` | `covi render` with `--music compose` (or `video.music.use: compose`). At most 64 KB, and only the bundled patches and kits; see `skills/covi-video/references/music.md`. |
 | `.covi/config.yml` (or `.covi/config.yaml`) | `covi schema config` | every command |
 | — | `covi schema evidence` | `evidence.json` is Covi's; the schema documents what `covi evidence` prints |
+| — | `covi schema subject` | `.covi/subject/subject.json` is Covi's; the schema documents what `covi subject` prints |
 
 The objects are strict: unknown keys are rejected rather than ignored. A minimal `explanation.json`:
 
@@ -218,7 +249,7 @@ Dismissing an id that is not in `rule-findings.json` is an error (exit code 2). 
 
 `explanation.json`, `findings.json`, and `video/storyboard.json` accept an optional `language` (`en`, `ko`, `ja`, or `zh`; `zh-CN` and `zh-Hans` are read as `zh`). It says what language the prose is in: reports rendered from the file use its headings, and a storyboard's language sets the narration language. Covi writes it on what it generates in Korean, Japanese, and Chinese, and on every drafted storyboard; English explanations and reviews leave it out, as before. Text Covi writes into `context.json` (signals, notes, reading order, ambiguities, demonstration reasons) and `rule-findings.json` is in the run's language too.
 
-JSON files that agents write or that later stages read back carry a `schemaVersion`: `findings.json` is at 2 (confirmed and likely findings cite evidence; version 1 files are still read, without that rule, and `covi report` warns about what it let through), and `run.json`, `context.json`, `rule-findings.json`, `explanation.json`, `explanation.draft.json`, `review.json`, `evidence.json`, `demo/captures.json`, `demo/traces/*.json`, `demo/behavior-diff.json`, `video/storyboard.json`, `video/score.json`, `video/audio.json`, and `video/frames.json` are at 1. Agent-authored files may omit it; it defaults to the current version. A demo plan has no version field. `video/timeline.json` carries its own `version: 1`, read by the browser runtime; `video/speech.json` carries `schemaVersion: 1`; `video/decision.json` and `video/qc.json` are diagnostic records.
+JSON files that agents write or that later stages read back carry a `schemaVersion`: `findings.json` is at 2 (confirmed and likely findings cite evidence; version 1 files are still read, without that rule, and `covi report` warns about what it let through), and `run.json`, `context.json`, `rule-findings.json`, `explanation.json`, `explanation.draft.json`, `review.json`, `evidence.json`, `demo/captures.json`, `demo/traces/*.json`, `demo/behavior-diff.json`, `demo/subject.json`, `.covi/subject/subject.json`, `video/storyboard.json`, `video/score.json`, `video/audio.json`, and `video/frames.json` are at 1. Agent-authored files may omit it; it defaults to the current version. A demo plan has no version field. `video/timeline.json` carries its own `version: 1`, read by the browser runtime; `video/speech.json` carries `schemaVersion: 1`; `video/decision.json` and `video/qc.json` are diagnostic records.
 
 Additive changes, such as a new optional field, keep the version. A breaking change to a versioned file bumps `schemaVersion`. The configuration and the demo plan have no version, so they only grow: keys are added, never repurposed. Either way, the skills that describe the file are updated with it.
 

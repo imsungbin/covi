@@ -209,6 +209,7 @@ export const BUILTIN_IGNORES: ReadonlyArray<{ pattern: string; reason: 'generate
     { pattern: '.nuxt/**', reason: 'generated' },
     { pattern: '.covi/runs/**', reason: 'generated' },
     { pattern: '.covi/cache/**', reason: 'generated' },
+    { pattern: '.covi/subject/**', reason: 'generated' },
   ];
 
 function ext(path: string): string {

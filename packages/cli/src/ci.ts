@@ -3,12 +3,14 @@ import { demonstrate, RecordingUnavailableError } from '@covi/capture';
 import {
   type CommentLinks,
   type CoviConfig,
+  DEMO_PATHS,
   type EvidenceIndex,
   ExitCode,
   type Explanation,
   gateFailures,
   type Language,
   type Logger,
+  loadSubjectSnapshot,
   type ParsedConfigInput,
   type Review,
   type ReviewContext,
@@ -41,6 +43,7 @@ import {
   locateFfmpeg,
   recordingOf,
   reviewSession,
+  subjectFlowWarnings,
   WORKFLOW_DEFAULTS,
   type WorkflowResult,
 } from './workflows.ts';
@@ -110,6 +113,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
             language: session.language.language,
             recording: recordingOf(session),
             locateFfmpeg,
+            subject: session.subject,
           }),
         )
         .catch((error: Error) => {
@@ -119,6 +123,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
           return undefined;
         })
     : undefined;
+  for (const warning of subjectFlowWarnings(demo?.subject)) run.warn(warning);
   const outcome = await reviewSession(session, resolvedChange, { demo });
   const failures = gateFailures(outcome.review.findings, config.review.failOn);
   result.verdict = outcome.review.verdict;
@@ -139,6 +144,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
     manifest: 'run.json',
   }))
     result.artifacts[name] = run.path(rel);
+  if (demo?.subject?.path) result.artifacts.subject = run.path(DEMO_PATHS.subject);
 
   if (decision.render) {
     try {
@@ -158,6 +164,7 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
           languageSettings: session.languageSettings,
           pronunciations: config.video.narration.pronunciations,
           evidence: outcome.evidence,
+          subject: () => loadSubjectSnapshot(run),
         }),
       );
       await applyVideoResult(session, result, produced);

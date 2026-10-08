@@ -649,6 +649,14 @@ demo:
       save-failed: '流程已录制，但未能保存录像'
     withDetail: '{cause}：{detail}'
     plain: '{cause}。'
+  subject:
+    title: 主体模型
+    proposed: '计划中没有流程，因此从主体模型重放了：{flows}。'
+    focused: '焦点取自 Covi 上次看到此页面后新出现的元素：{shots}。'
+    saved:
+      repo: 'Covi 看到的内容已保存到 {path}；提交它即可共享。'
+      runs: 'Covi 看到的内容已保存到运行目录中的 {path}。'
+    kept: 'Covi 看到的内容只在 {path} 中；主体模型未更新。'
   behavior:
     title: base 与 head 的行为
     scenario: '{name}（{viewport}）'

@@ -13,6 +13,8 @@ export const DEMO_PATHS = {
   recordings: 'demo/recordings',
   traces: 'demo/traces',
   behaviorDiff: 'demo/behavior-diff.json',
+  /** This run's view of the subject model, and where elements are in each head capture. */
+  subject: 'demo/subject.json',
 } as const;
 
 /** Files at the top of a run that more than one stage writes or reads. */
@@ -22,6 +24,17 @@ export const RUN_PATHS = {
   evidence: 'evidence.json',
   /** The test command and the tail of its output, when tests ran. */
   testsLog: 'tests.log',
+} as const;
+
+/**
+ * Where the subject model lives: in the repository (meant to be committed), or next to the runs
+ * (`subject.json` in the runs directory, which ignores itself). The lock sits in the runs directory
+ * for every store, so it never shows up in `git status`.
+ */
+export const SUBJECT_PATHS = {
+  repo: '.covi/subject/subject.json',
+  runs: 'subject.json',
+  lock: '.subject.lock',
 } as const;
 
 const frameNumber = (n: number) => String(n).padStart(2, '0');

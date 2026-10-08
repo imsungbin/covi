@@ -1,19 +1,33 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   type BehaviorDiff,
   type Demonstration,
   type EvidenceFile,
+  emptySubject,
   Git,
   indexEvidence,
+  loadSubjectSnapshot,
+  mergeSubject,
+  openSubject,
   parseConfigInput,
   Redactor,
   Run,
   resolveChange,
   resolveConfig,
   type StaticServer,
+  SUBJECT_PATHS,
+  SubjectSchema,
   serveStatic,
   silentLogger,
   type Trace,
@@ -21,7 +35,7 @@ import {
   which,
 } from '@covi/core';
 import { chromium } from 'playwright';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BEHAVIOR_APP,
   BEHAVIOR_CONFIG,
@@ -33,7 +47,21 @@ import { canUseBrowser } from '../../../tests/helpers/env.ts';
 import { createChangeRepo, type FileMap, type TempRepo } from '../../../tests/helpers/repo.ts';
 import { demonstrate } from '../src/demonstrate.ts';
 import { flowScenario, uniqueIds } from '../src/ids.ts';
+import { RecordingUnavailableError } from '../src/recording.ts';
 import { observeFlow, recordingStatus } from '../src/scenarios.ts';
+
+// Counts element scans, which only head captures that feed a subject model should pay for.
+const scans = vi.hoisted(() => ({ count: 0 }));
+vi.mock('../src/elements.ts', async (original) => {
+  const actual = await original<typeof import('../src/elements.ts')>();
+  return {
+    ...actual,
+    scanPage: (...args: Parameters<typeof actual.scanPage>) => {
+      scans.count++;
+      return actual.scanPage(...args);
+    },
+  };
+});
 
 const browser = await canUseBrowser();
 let repo: TempRepo | undefined;
@@ -389,5 +417,361 @@ describe.skipIf(!browser)('behavior diff capture', () => {
       'demo/traces/home-desktop-head.json',
       'demo/traces/flow-load-items-head.json',
     ]);
+  });
+});
+
+describe.skipIf(!browser)('the subject model', () => {
+  const off = { enabled: false, required: false };
+  const open = (config: Parameters<typeof openSubject>[0]['config'], runsRoot = root!) =>
+    openSubject({ root: repo!.root, runsRoot, config, warn: () => {} });
+  const nextRun = () =>
+    Run.create({
+      root: root!,
+      workflow: 'demo',
+      entryPoint: 'cli',
+      interactive: false,
+      coviVersion: 'test',
+      redactor: new Redactor(),
+    });
+
+  it('replays a flow the subject model saw when the plan names none, and keeps secrets out of it', async () => {
+    const { config, change, context, run } = await setup(() => ({
+      app: { static: '.' },
+      demo: { viewports: ['desktop'], pages: ['/'] },
+    }));
+    const first = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      plan: { flows: BEHAVIOR_FLOWS },
+      subject: await open(config),
+      recording: off,
+    });
+    // Compared with base, the page keeps its pixel diff's focus (or none): the model adds nothing.
+    expect(first.subject).toEqual({
+      store: 'repo',
+      proposed: [],
+      focused: [],
+      flows: [{ name: 'Load items', outcome: 'kept' }],
+      path: 'demo/subject.json',
+      saved: true,
+    });
+    const file = join(repo!.root, SUBJECT_PATHS.repo);
+    const stored = SubjectSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
+    expect(stored.revisions).toEqual([change.head.sha.slice(0, 12)]);
+    expect(stored.flows.map((f) => [f.key, f.name, f.steps.map((s) => s.action)])).toEqual([
+      ['load-items', 'Load items', BEHAVIOR_FLOWS[0]!.steps],
+    ]);
+    expect(stored.screens.find((s) => s.key === 'home')!.elements.map((e) => e.key)).toContain(
+      'load',
+    );
+    for (const secret of Object.values(BEHAVIOR_SECRETS))
+      expect(readFileSync(file, 'utf8')).not.toContain(secret);
+
+    const again = await nextRun();
+    const second = await demonstrate({
+      run: again,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      subject: await open(config),
+      recording: off,
+    });
+    expect(second.subject).toMatchObject({ proposed: ['Load items'], saved: true });
+    expect(second.traces?.map((t) => t.id)).toContain('flow-load-items-head');
+    const snapshot = await loadSubjectSnapshot(again);
+    const home = snapshot!.images.find((i) => i.path === 'demo/screenshots/home-desktop-after.png');
+    expect(home!.elements.map((e) => e.key)).toContain('load');
+    // The replayed flow's head frames are indexed too, never its base ones.
+    expect(snapshot!.images.some((i) => i.path.includes('flow-load-items'))).toBe(true);
+    expect(snapshot!.images.every((i) => !i.path.includes('-base'))).toBe(true);
+    await expectNoSecrets(again);
+  });
+
+  it('reports a replayed flow that fails at head as a risk, not a likely regression', async () => {
+    const { config, change, context, run } = await setup(() => ({
+      app: { static: '.' },
+      demo: { viewports: ['desktop'], pages: ['/'] },
+    }));
+    const revision = change.head.sha.slice(0, 12);
+    const stale = mergeSubject(
+      emptySubject(),
+      {
+        revision,
+        screens: [],
+        flows: [
+          {
+            name: 'Missing',
+            path: '/',
+            viewport: 'desktop',
+            steps: [{ action: { click: '#missing' } }],
+            passed: true,
+          },
+        ],
+        commands: [],
+      },
+      { expireAfter: 20 },
+    );
+    mkdirSync(join(repo!.root, '.covi/subject'), { recursive: true });
+    writeFileSync(join(repo!.root, SUBJECT_PATHS.repo), JSON.stringify(stale));
+    const result = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      subject: await open(config),
+      recording: off,
+    });
+    expect(result.subject?.proposed).toEqual(['Missing']);
+    expect(result.subject?.flows).toEqual([{ name: 'Missing', outcome: 'failed' }]);
+    expect(result.findings.find((f) => f.source.id === 'flow-failure')).toMatchObject({
+      certainty: 'risk',
+    });
+  });
+
+  it('focuses a head-only capture on what the model had not seen, and replays nothing on an app it did not start', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'covi-demo-base-'));
+    for (const [name, text] of Object.entries(BEHAVIOR_APP.base)) {
+      if (text === null) continue;
+      mkdirSync(dirname(join(base, name)), { recursive: true });
+      writeFileSync(join(base, name), text);
+    }
+    const baseServer = await serveStatic(base);
+    try {
+      const { config, change, context, run } = await setup(async (repoRoot) => {
+        server = await serveStatic(repoRoot);
+        return { app: { url: server.url }, demo: { viewports: ['desktop'], pages: ['/'] } };
+      });
+      // The model first sees the page as it was, without the Retry button, and a flow on it.
+      const before = resolveConfig([
+        {
+          name: 'repository',
+          values: parseConfigInput(
+            {
+              app: { url: baseServer.url },
+              demo: { viewports: ['desktop'], pages: ['/'], flows: BEHAVIOR_FLOWS },
+            },
+            't',
+          ),
+        },
+      ]).config;
+      // ...at the base commit: what is new is judged against what the model knew before head.
+      const first = await demonstrate({
+        run,
+        change: { ...change, head: { ...change.head, sha: change.base.sha } },
+        context,
+        config: before,
+        logger: silentLogger,
+        subject: await open(before),
+        recording: off,
+      });
+      expect(first.subject).toMatchObject({ focused: [], saved: true });
+
+      const again = await nextRun();
+      const second = await demonstrate({
+        run: again,
+        change,
+        context,
+        config,
+        logger: silentLogger,
+        subject: await open(config),
+        recording: off,
+      });
+      expect(second.app?.mode).toBe('url');
+      // The model has a flow on this page, but Covi does not drive a site it did not start unasked.
+      expect(second.subject?.proposed).toEqual([]);
+      expect(second.traces?.map((t) => t.kind)).toEqual(['page']);
+      expect(second.subject?.focused).toEqual(['home-desktop']);
+      const shot = second.shots.find((s) => s.id === 'home-desktop')!;
+      expect(shot.before).toBeUndefined();
+      expect(shot.focus).toBeDefined();
+      expect(shot.focus!.width * shot.focus!.height).toBeLessThan(
+        (shot.after!.width * shot.after!.height) / 2,
+      );
+      const captures = json<Demonstration>(again, 'demo/captures.json');
+      expect(captures.shots.find((s) => s.id === 'home-desktop')!.focus).toEqual(shot.focus);
+      // The second run saved the Retry button; a third at the same commit (`covi video` after
+      // `covi demo`) still sees it as new at head, and focuses the same way.
+      const third = await demonstrate({
+        run: await nextRun(),
+        change,
+        context,
+        config,
+        logger: silentLogger,
+        subject: await open(config),
+        recording: off,
+      });
+      expect(third.subject?.focused).toEqual(['home-desktop']);
+      expect(third.shots.find((s) => s.id === 'home-desktop')!.focus).toEqual(shot.focus);
+    } finally {
+      await baseServer.close();
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it('finishes the demonstration with a warning when the model cannot be kept', async () => {
+    const { config, change, context, run } = await setup(() => ({
+      app: { static: '.' },
+      demo: { viewports: ['desktop'], pages: ['/'], flows: BEHAVIOR_FLOWS },
+    }));
+    // The lock cannot be made: its directory is a file.
+    const blocked = join(root!, 'blocked');
+    writeFileSync(blocked, '');
+    const result = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      subject: await open(config, blocked),
+      recording: off,
+    });
+    expect(result.subject).toMatchObject({ store: 'repo', saved: false });
+    expect(run.manifest.warnings.some((w) => w.includes('subject model'))).toBe(true);
+    expect(existsSync(run.path('demo/captures.json'))).toBe(true);
+    expect(existsSync(run.path('evidence.json'))).toBe(true);
+    expect(result.shots.length).toBeGreaterThan(0);
+  });
+
+  /** A model that saw "Load items" pass at head, in the repository's store. */
+  const remember = (revision: string) => {
+    const model = mergeSubject(
+      emptySubject(),
+      {
+        revision,
+        screens: [],
+        flows: [
+          {
+            name: 'Load items',
+            path: '/',
+            viewport: 'desktop',
+            steps: BEHAVIOR_FLOWS[0]!.steps.map((action) => ({ action })),
+            passed: true,
+          },
+        ],
+        commands: [],
+      },
+      { expireAfter: 20 },
+    );
+    mkdirSync(join(repo!.root, '.covi/subject'), { recursive: true });
+    writeFileSync(join(repo!.root, SUBJECT_PATHS.repo), JSON.stringify(model));
+  };
+
+  it('lists as replayed only the flows that ran', async () => {
+    const { config, change, context, run } = await setup(() => ({
+      app: { start: 'node server.js' },
+      demo: { viewports: ['desktop'], pages: ['/'] },
+    }));
+    remember(change.head.sha.slice(0, 12));
+    // The app may not start here, so the flow the model proposes never runs.
+    const result = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      execution: { allowed: false, reason: 'not here', withheld: [] },
+      subject: await open(config),
+      recording: off,
+    });
+    expect(result.app).toBeUndefined();
+    expect(result.traces).toBeUndefined();
+    expect(result.subject?.proposed).toEqual([]);
+  });
+
+  it('never fails a run over the recording of a flow nobody asked for', async () => {
+    const { config, change, context, run } = await setup(() => ({
+      app: { static: '.' },
+      demo: { viewports: ['desktop'], pages: ['/'] },
+    }));
+    remember(change.head.sha.slice(0, 12));
+    // Asked for while saving: the WebM Playwright wrote disappears first, so no recording is kept.
+    const losesRecordings = (of: Run) => async () => {
+      const recordings = of.path('demo/recordings');
+      for (const entry of await readdir(recordings, { recursive: true }))
+        if (entry.endsWith('.webm')) await rm(join(recordings, entry));
+      return undefined;
+    };
+    const required = { enabled: true, required: true };
+    const replayed = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      subject: await open(config),
+      recording: required,
+      locateFfmpeg: losesRecordings(run),
+    });
+    expect(replayed.subject?.proposed).toEqual(['Load items']);
+    expect(replayed.recording?.status).toBe('unavailable');
+    // The same flow, asked for, still requires its recording.
+    const again = await nextRun();
+    await expect(
+      demonstrate({
+        run: again,
+        change,
+        context,
+        config,
+        logger: silentLogger,
+        plan: { flows: BEHAVIOR_FLOWS },
+        recording: required,
+        locateFfmpeg: losesRecordings(again),
+      }),
+    ).rejects.toBeInstanceOf(RecordingUnavailableError);
+  });
+
+  it('scans only what head shows, and only for a model', async () => {
+    const { config, change, context, run } = await setup(() => ({
+      app: { static: '.' },
+      demo: { viewports: ['desktop'], pages: ['/'] },
+    }));
+    scans.count = 0;
+    const result = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      plan: { flows: BEHAVIOR_FLOWS },
+      subject: await open(config),
+      recording: off,
+    });
+    expect(result.traces?.map((t) => t.id).sort()).toEqual([
+      'flow-load-items-base',
+      'flow-load-items-head',
+      'home-desktop-base',
+      'home-desktop-head',
+    ]);
+    const frames = await readdir(run.path('demo/screenshots'));
+    const headFrames = frames.filter((f) => /^flow-load-items-\d+\.png$/.test(f)).length;
+    expect(headFrames).toBeGreaterThan(0);
+    expect(frames.some((f) => /^flow-load-items-\d+-base\.png$/.test(f))).toBe(true);
+    // The head page and each head frame; nothing at base.
+    expect(scans.count).toBe(1 + headFrames);
+  });
+
+  it('demonstrates as before without a subject model', async () => {
+    const { config, change, context, run } = await setup(() => ({
+      app: { static: '.' },
+      demo: { viewports: ['desktop'], pages: ['/'] },
+    }));
+    scans.count = 0;
+    const result = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      recording: off,
+    });
+    expect(result.subject).toBeUndefined();
+    expect(scans.count).toBe(0);
+    expect(existsSync(run.path('demo/subject.json'))).toBe(false);
+    expect(existsSync(join(repo!.root, SUBJECT_PATHS.repo))).toBe(false);
   });
 });

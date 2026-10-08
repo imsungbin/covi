@@ -102,6 +102,7 @@ export * from './model/demo.ts';
 export * from './model/evidence.ts';
 export * from './model/explanation.ts';
 export * from './model/finding.ts';
+export * from './model/subject.ts';
 export { renderBrief } from './report/brief.ts';
 export { COMMENT_MARKER, type CommentLinks, renderComment, safeUrl } from './report/comment.ts';
 export { renderDiffDigest, renderFileDiff, renderHunk } from './report/digest.ts';
@@ -139,6 +140,26 @@ export {
   withoutRepositoryCommands,
 } from './security/trust.ts';
 export { type StaticServer, serveStatic } from './serve/static-server.ts';
+export {
+  actsOnSecret,
+  emptySubject,
+  flowKept,
+  hasObservations,
+  mergeSubject,
+  mergeSubjectWithOutcomes,
+  secretSelectors,
+} from './subject/merge.ts';
+export {
+  loadSubject,
+  loadSubjectSnapshot,
+  openSubject,
+  type SubjectHandle,
+  type SubjectSource,
+  saveSubject,
+  subjectSource,
+  withLock,
+  writeSubjectSnapshot,
+} from './subject/store.ts';
 export { areaKey, groupAreas } from './understand/areas.ts';
 export { type Classification, classifyFile, ignoreReason } from './understand/classify.ts';
 export { assessDemonstration, pagePathFor, type RepoShape } from './understand/demonstration.ts';

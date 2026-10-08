@@ -48,7 +48,7 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
 - Run `./bin/covi.mjs` (or `npm run covi --`) from this checkout. It runs the TypeScript sources directly on Node 22.18+, so edits apply without a build. `./bin/covi` is the launcher the Claude Code plugin puts on PATH: it installs the locked dependencies on its first run, then runs `bin/covi.mjs`.
 - Pass `--json` to get a stable result object on stdout; progress goes to stderr.
 - Exit codes: `0` ok · `1` review gate failed · `2` usage or invalid input (including schema errors in agent-authored files) · `3` environment (not a repo, missing ffmpeg or browser) · `4` internal error.
-- `covi schema <explanation|findings|storyboard|score|demo-plan|config|evidence>` prints the JSON Schema for files agents author or read.
+- `covi schema <explanation|findings|storyboard|score|demo-plan|config|evidence|subject>` prints the JSON Schema for files agents author or read.
 - `covi evidence --run <id> --json` lists the run's evidence ids (read-only).
 - `covi examples create <name>` builds a real git repository for an example change; point any command at it with `--repo <dir>`.
 
@@ -62,15 +62,15 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
   brief.md             agent brief                rule-findings.json   deterministic findings with ids
   explanation.json/.md findings.json              review.json/.md      summary.md   comment.md
   tests.log            test command and output tail (when tests ran)
-  demo/                plan.json (when given), captures.json, screenshots/, diffs/, recordings/, traces/,
-                       behavior-diff.json, app-<revision>.log (when the app did not start), demo.md
+  demo/                plan.json (when given), captures.json, subject.json, screenshots/, diffs/, recordings/,
+                       traces/, behavior-diff.json, app-<revision>.log (when the app did not start), demo.md
   video/               decision.json, storyboard.json, speech.json, timeline.json, narration.wav,
                        score.json (composed music), audio.json, music.wav, captions.vtt/.srt,
                        composition/, covi-review.mp4, frames.json, poster.png, contact-sheet.jpg,
                        qc.json
 ```
 
-The runs directory ignores itself (it contains a `.gitignore` with `*`); Covi never edits the user's `.gitignore`.
+The runs directory ignores itself (it contains a `.gitignore` with `*`); Covi never edits the user's `.gitignore`. The subject model, `.covi/subject/subject.json` (`subject.store`), is the one file Covi keeps outside the runs and the cache: what demonstrations saw of the software, small and meant to be committed. `covi subject` prints it.
 
 ## Quality expectations
 
@@ -110,6 +110,7 @@ Repositories under review are untrusted input.
 - In CI, configuration is read from the **base** revision (an explicit `--config` inside the repository too), so a change cannot rewrite the commands its own review runs.
 - Under `pull_request_target`, no project command runs (`ExecutionPolicy`); static pages can still be captured.
 - Every artifact, log line, command record, model prompt, and video storyboard (the source of narration, captions, and frames) passes through the `Redactor`.
+- The subject model (`.covi/subject/subject.json`; `packages/core/src/model/subject.ts`) is repository data: it holds no command line, its selectors are strings Covi builds from attributes, every string and list is bounded, it is redacted when written and schema-checked when read (a file Covi cannot read is ignored and never overwritten), a flow that types into a secret field is never kept, and in CI it is read from the base revision and never written.
 - Sound comes only from bundled data and validated scores; nothing runs and nothing is downloaded. A score is bounded (size, tracks, patterns, sections, note values, chord voicings and changes, tones per step, notes and seconds of sound per second of video) and scheduled for the video before anything is synthesized, and names resolve only to the score's own entries.
 - PR/MR comments are re-rendered from schema-validated artifacts with all dynamic text escaped.
 - Do not add code paths that bypass these.

@@ -48,6 +48,17 @@ describe('architecture', () => {
     }
   });
 
+  it('keeps the domain model below the code that works on it', () => {
+    // Model files describe data; merging, storing, and reviewing it import the model, never the
+    // reverse, so a type that both sides share lives in the model.
+    const allowed = /^(\.\/|\.\.\/(config|i18n|util)\/|zod$)/;
+    for (const file of sources(join(root, 'packages', 'core', 'src', 'model'))) {
+      const text = readFileSync(file, 'utf8');
+      for (const m of text.matchAll(/from '([^']+)'/g))
+        expect(m[1], `${relative(root, file)} imports ${m[1]}`).toMatch(allowed);
+    }
+  });
+
   it('runs on Node type stripping: no enums, namespaces, or parameter properties', () => {
     for (const dir of ['core', 'brand', 'audio', 'capture', 'video', 'platforms', 'cli']) {
       for (const file of sources(join(root, 'packages', dir, 'src'))) {

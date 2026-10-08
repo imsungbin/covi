@@ -115,9 +115,12 @@ export function highlightGroups(highlight: CodeVisual['highlight']): HighlightGr
 
 /**
  * A visual's marks in order (an interaction's through all its steps, with the step), each with
- * its phase: its own `sync` name, else mark<N>.
+ * its phase: its own `sync` name, else mark<N>. A focus may still be a subject reference here:
+ * validation reads only the phases, and the timeline gets marks after references are placed.
  */
-export function visualMarks(visual: Visual): Array<FrameMark & { step?: number }> {
+export function visualMarks(
+  visual: Visual,
+): Array<Omit<FrameMark, 'focus'> & { focus: MarkEntry['focus']; step?: number }> {
   const marks: Array<{ mark: MarkEntry; step?: number }> =
     visual.kind === 'screenshot'
       ? (visual.marks ?? []).map((mark) => ({ mark }))

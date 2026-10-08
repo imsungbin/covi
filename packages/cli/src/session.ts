@@ -18,6 +18,7 @@ import {
   type Logger,
   loadRepositoryConfig,
   type ModelProvider,
+  openSubject,
   type ParsedConfigInput,
   type ProviderChoice,
   Redactor,
@@ -32,6 +33,8 @@ import {
   resolveChange,
   resolveConfig,
   resolveOutputLanguage,
+  runsRootFor,
+  type SubjectHandle,
   TRUST_HINT,
   TrustStore,
   understandChange,
@@ -88,6 +91,11 @@ export interface Session {
   language: ResolvedLanguage;
   /** The language settings speech resolution honors: a flag, or a configured language. */
   languageSettings: LanguageSettings;
+  /**
+   * What Covi has seen of the software, for this run to read and update; absent when
+   * `subject.store` is off.
+   */
+  subject?: SubjectHandle;
 }
 
 export interface LanguageSettings {
@@ -223,6 +231,10 @@ export async function startSession(options: SessionOptions): Promise<Session> {
     coviVersion: await coviVersion(),
     dir: options.out,
     runsDir: config.output.dir,
+    // In CI the checkout is the change's: a runs directory it links elsewhere is refused, unless
+    // the user chose the place (--out, or output.dir on the command line or in the environment).
+    confined:
+      Boolean(options.trustedConfig) && !/^explicit/.test(resolved.provenance['output.dir'] ?? ''),
     headSha: change.head.sha,
     keep: config.output.keep,
     redactor,
@@ -231,6 +243,16 @@ export async function startSession(options: SessionOptions): Promise<Session> {
   run.setConfig(resolved, options.options);
   const language = changeLanguage(resolved, change);
   run.setLanguage(language);
+  // What earlier runs saw of the software. In CI the repository's copy comes from the base
+  // revision, like configuration, so a change cannot steer its own demonstration.
+  const subject = await openSubject({
+    root,
+    runsRoot: runsRootFor(root, config.output.dir),
+    config,
+    baseRevision: options.trustedConfig ? change.base.sha : undefined,
+    git,
+    warn: (message) => run.warn(message),
+  });
   for (const note of platform?.notes ?? []) run.warn(note);
   const execution: ExecutionPolicy = {
     allowed: platform?.allowExecution ?? true,
@@ -268,6 +290,7 @@ export async function startSession(options: SessionOptions): Promise<Session> {
     execution,
     language,
     languageSettings: languageSettingsOf(resolved),
+    subject,
   };
 }
 

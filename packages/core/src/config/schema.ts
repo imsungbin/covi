@@ -35,6 +35,12 @@ export const MUSIC_PLACEMENTS = ['auto', 'continuous', 'bookends'] as const;
 export type MusicPlacementSetting = (typeof MUSIC_PLACEMENTS)[number];
 export const VIEWPORTS = ['desktop', 'tablet', 'mobile'] as const;
 
+/** Where Covi keeps what it has seen of the software: the repository, the runs directory, or nowhere. */
+export const SUBJECT_STORES = ['repo', 'runs', 'off'] as const;
+export type SubjectStoreName = (typeof SUBJECT_STORES)[number];
+/** How many revisions the subject model keeps when configuration does not say (`subject.expireAfter`). */
+export const SUBJECT_EXPIRE_AFTER = 20;
+
 /** One step of a scripted browser flow. Exactly one action key per step. */
 export const FlowStepSchema = z.union([
   z.strictObject({ goto: z.string() }),
@@ -207,6 +213,25 @@ export const ConfigInputSchema = z.strictObject({
         ),
     })
     .optional(),
+  subject: z
+    .strictObject({
+      store: z
+        .enum(SUBJECT_STORES)
+        .optional()
+        .describe(
+          'Where Covi keeps what it has seen of the software (screens, elements, flows that passed): repo (.covi/subject/subject.json, small and meant to be committed), runs (subject.json in the runs directory, never committed), or off.',
+        ),
+      expireAfter: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe(
+          'Forget a screen, element, flow, or scenario Covi has not seen in this many revisions. Default 20.',
+        ),
+    })
+    .optional(),
   video: z
     .strictObject({
       when: z.enum(['auto', 'always', 'never']).optional(),
@@ -312,6 +337,8 @@ export interface CoviConfig {
     /** Record browser flows; recording only happens when a browser runs. */
     record: boolean;
   };
+  /** The subject model: where it is kept, and how many revisions an unseen entry survives. */
+  subject: { store: SubjectStoreName; expireAfter: number };
   video: {
     when: 'auto' | 'always' | 'never';
     mode: VideoMode;
@@ -342,6 +369,7 @@ export const DEFAULT_CONFIG: CoviConfig = {
   test: { timeout: 600 },
   app: { readyPath: '/', timeout: 120, env: {}, passEnv: [] },
   demo: { pages: [], flows: [], commands: [], requests: [], viewports: ['desktop'], record: true },
+  subject: { store: 'repo', expireAfter: SUBJECT_EXPIRE_AFTER },
   video: {
     when: 'auto',
     mode: 'short',

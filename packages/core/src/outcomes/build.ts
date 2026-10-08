@@ -9,15 +9,17 @@ const defined = <T extends object>(value: T): T =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
 
 /**
- * Votes on a finding's anchor, without the change author's: they would rather their code ship, so
- * their vote on a finding about it says more about that wish than about the finding.
+ * Votes on a finding's anchor, one per person, without the change author's: they would rather their
+ * code ship, so their vote on a finding about it says more about that wish than about the finding.
+ * Someone who gave both 👍 and 👎 has not decided, so they count on neither side.
  */
 function thumbsOf(anchor: ChangeSignals['anchors'][number], author: string) {
-  const votes = anchor.reactions.filter((r) => r.user !== author);
-  return {
-    up: votes.filter((r) => r.vote === 'up').length,
-    down: votes.filter((r) => r.vote === 'down').length,
-  };
+  const votes = new Map<string, Set<'up' | 'down'>>();
+  for (const r of anchor.reactions)
+    if (r.user !== author) votes.set(r.user, (votes.get(r.user) ?? new Set()).add(r.vote));
+  const thumbs = { up: 0, down: 0 };
+  for (const vote of votes.values()) if (vote.size === 1) thumbs[[...vote][0]!]++;
+  return thumbs;
 }
 
 /**

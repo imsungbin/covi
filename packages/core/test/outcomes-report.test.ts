@@ -52,14 +52,22 @@ describe('labels', () => {
     expect(labelFinding(f(), change('closed'))).toEqual(unlabeled);
   });
 
-  it('labels nothing superseded, not even by its thumbs', () => {
-    // A reworded finding, or a stale entry an edited ledger left behind, is not the finding
-    // anyone voted on last.
-    const stale = f({ fate: 'superseded', thumbs: { up: 3, down: 0 } });
-    expect(labelFinding(stale, change('merged'))).toEqual(unlabeled);
-    expect(labelFinding({ ...stale, thumbs: { up: 0, down: 3 } }, change('open'))).toEqual(
+  it('labels a superseded finding only by its thumbs', () => {
+    // A reworded finding was neither fixed nor shipped as reported; only votes judge it.
+    const stale = f({ fate: 'superseded', certainty: 'confirmed' });
+    expect(labelFinding({ ...stale, thumbs: { up: 3, down: 0 } }, change('merged'))).toEqual({
+      label: 'right',
+      signal: 'thumbs',
+    });
+    for (const state of ['merged', 'open'] as const)
+      expect(labelFinding({ ...stale, thumbs: { up: 0, down: 3 } }, change(state))).toEqual({
+        label: 'wrong',
+        signal: 'thumbs',
+      });
+    expect(labelFinding({ ...stale, thumbs: { up: 2, down: 2 } }, change('merged'))).toEqual(
       unlabeled,
     );
+    expect(labelFinding(stale, change('merged'))).toEqual(unlabeled);
   });
 });
 
@@ -270,6 +278,29 @@ describe('buildOutcome', () => {
     const outcome = buildOutcome(others, '2026-10-09T12:00:00Z').outcome!;
     expect(outcome.findings[0]!.thumbs).toEqual({ up: 1, down: 0 });
     expect(labelFinding(outcome.findings[0]!, outcome.change).label).toBe('right');
+  });
+
+  it('counts one vote per person, and none from someone who gave both', () => {
+    const key = outcomeKey(discount);
+    const torn = signals({
+      anchors: [
+        {
+          key,
+          id: '301',
+          reactions: [
+            { user: '11', vote: 'up' },
+            { user: '11', vote: 'down' },
+            { user: '12', vote: 'down' },
+            { user: '12', vote: 'down' },
+          ],
+          replies: 0,
+        },
+      ],
+    });
+    expect(buildOutcome(torn, '2026-10-09T12:00:00Z').outcome!.findings[0]!.thumbs).toEqual({
+      up: 0,
+      down: 1,
+    });
   });
 
   it('says why it skips a change', () => {

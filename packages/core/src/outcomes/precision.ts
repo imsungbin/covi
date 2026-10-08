@@ -13,9 +13,6 @@ export function labelFinding(
   finding: OutcomeFinding,
   change: OutcomeFile['change'],
 ): { label: Label; signal: LabelSignal } {
-  // A reworded finding, or a stale entry an edited ledger left behind, is not the claim anyone
-  // judged last, so even its votes say nothing about it.
-  if (finding.fate === 'superseded') return UNLABELED;
   const thumbs = finding.thumbs;
   // People's explicit votes on the finding win over anything inferred.
   if (thumbs && thumbs.up !== thumbs.down)
@@ -23,6 +20,9 @@ export function labelFinding(
   // Until a change closes, what happens to its findings is still in motion.
   if (change.state === 'open') return UNLABELED;
   if (finding.fate === 'addressed') return { label: 'right', signal: 'addressed' };
+  // A reworded finding, or a stale entry an edited ledger left behind, was not fixed and did not
+  // ship as reported: only votes can say how it held up.
+  if (finding.fate === 'superseded') return UNLABELED;
   // Shipping code Covi called an issue says the team disagreed. A revert says the change was
   // wrong somehow, not that this finding was; risks and questions are not claims of a defect.
   if (change.state === 'merged' && !change.revertedBy && isBlockingCandidate(finding))
@@ -109,7 +109,9 @@ export function outcomeReport(files: readonly OutcomeFile[]): OutcomeReport {
       };
     })
     .sort(
-      (a, b) => a.repository.localeCompare(b.repository) || a.platform.localeCompare(b.platform),
+      (a, b) =>
+        a.repository.localeCompare(b.repository, 'en') ||
+        a.platform.localeCompare(b.platform, 'en'),
     );
   return { schemaVersion: 1, files: files.length, repositories };
 }

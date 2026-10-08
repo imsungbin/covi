@@ -868,7 +868,7 @@ question:
 outcomes:
   empty: まだ結果がありません。Covi が変更にコメントしたあと、`covi outcomes collect` でその結果を集めてください。
   repository: '{repository}:'
-  changes: { other: 'レビューした変更 {count} 件: マージ {merged} 件(うち後で取り消し {reverted} 件)、マージせずクローズ {closed} 件、オープン中 {open} 件。' }
+  changes: { other: 'レビューした変更 {count} 件: マージ {merged} 件（うち後で取り消し {reverted} 件）、マージせずクローズ {closed} 件、オープン中 {open} 件。' }
   rating: 'Covi のコメントへの反応: 👍 {up} · 👎 {down}。'
-  precision: '{certainty}: {labeled} 件中 {right} 件が妥当でした({percent}%)。シグナルなし {unlabeled} 件。'
+  precision: '{certainty}: {labeled} 件中 {right} 件が妥当でした（{percent}%）。シグナルなし {unlabeled} 件。'
   noSignal: { other: '{certainty}: {count} 件を報告、まだシグナルなし。' }

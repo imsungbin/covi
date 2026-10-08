@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { type Analysis, analyze } from '../../../tests/helpers/analyze.ts';
+import { resolveConfig } from '../src/config/resolve.ts';
+import { Git } from '../src/git/git.ts';
+import { runRules } from '../src/review/engine.ts';
 
 let a: Analysis | undefined;
 afterEach(() => a?.repo.cleanup());
@@ -300,5 +303,44 @@ describe('a sound change', () => {
       'feat: allow custom precision in format()',
     );
     expect(r.findings).toEqual([]);
+  });
+});
+
+describe('rule findings cite their evidence', () => {
+  it('cites the diff hunk each rule finding points at', async () => {
+    const r = await run(
+      { 'src/a.test.ts': "it('a', () => {});\n" },
+      { 'src/a.test.ts': "it('a', () => {});\nit.only('b', () => {});\n" },
+    );
+    expect(r.findings.find((x) => x.source.id === 'focused-test')!.evidenceIds).toEqual([
+      'diff-hunk:src/a.test.ts:1',
+    ]);
+  });
+
+  it('reports a rule finding outside the diff as a risk, citing nothing', async () => {
+    const r = await run({ 'a.ts': 'x\n' }, { 'a.ts': 'y\n' });
+    const { findings } = await runRules(r.change, r.context, {
+      git: new Git(r.repo.root),
+      config: resolveConfig([]).config,
+      rules: [
+        {
+          id: 'elsewhere',
+          checks: 'a test rule that points outside the diff',
+          run: () => [
+            {
+              title: 'Something elsewhere',
+              certainty: 'likely',
+              severity: 'low',
+              category: 'correctness',
+              location: { path: 'not-in-diff.ts', line: 1 },
+              evidence: 'e',
+              explanation: 'x',
+            },
+          ],
+        },
+      ],
+    });
+    expect(findings[0]).toMatchObject({ certainty: 'risk' });
+    expect(findings[0]!.evidenceIds).toBeUndefined();
   });
 });

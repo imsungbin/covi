@@ -1,6 +1,6 @@
 import type { EvidenceFile, EvidenceItem } from '../model/evidence.ts';
 import type { Explanation } from '../model/explanation.ts';
-import { type Certainty, isBlockingCandidate } from '../model/finding.ts';
+import { type Certainty, type FindingsFile, isBlockingCandidate } from '../model/finding.ts';
 import { truncate } from '../util/text.ts';
 
 /** A run's evidence by every id a claim may cite: each item's own id and each of its parts. */
@@ -160,4 +160,26 @@ export function ungroundedStatements(
   for (const [i, c] of explanation.changes.entries())
     if (!c.evidenceIds?.length) out.push(`changes[${i}] (${truncate(c.area, 40)})`);
   return out;
+}
+
+/** A model's findings, grounded like Covi's own; the notes say what changed, for run warnings. */
+export function groundModelFindings(
+  file: FindingsFile,
+  index: EvidenceIndex,
+): { findings: FindingsFile; notes: string[] } {
+  const notes: string[] = [];
+  const findings = file.findings.map((f) => {
+    const grounded = groundFinding(f, index);
+    const title = truncate(f.title, 80);
+    if (grounded.dropped.length)
+      notes.push(
+        `Model finding "${title}" cited evidence the run does not have (${grounded.dropped.join(', ')}); those ids were dropped.`,
+      );
+    if (grounded.demoted)
+      notes.push(
+        `Model finding "${title}" cited no evidence, so it is reported as a risk rather than ${grounded.demoted}.`,
+      );
+    return grounded.finding;
+  });
+  return { findings: { ...file, schemaVersion: 2, findings }, notes };
 }

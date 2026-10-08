@@ -28,6 +28,7 @@ export {
   type GroundableFinding,
   type Grounded,
   groundFinding,
+  groundModelFindings,
   hunksAt,
   hunksOf,
   indexEvidence,

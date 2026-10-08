@@ -1113,6 +1113,9 @@ exports[`English output (baseline) > api-users-pagination > writes the same rule
       "category": "testing",
       "certainty": "risk",
       "evidence": "1 source file changed (14 added lines) and no test files changed: \`app.js\`.",
+      "evidenceIds": [
+        "diff-hunk:app.js:1",
+      ],
       "explanation": "New behavior without tests is easy to break in later changes.",
       "id": "missing-tests-01e4a91d1b29",
       "location": {
@@ -1130,6 +1133,9 @@ exports[`English output (baseline) > api-users-pagination > writes the same rule
       "category": "configuration",
       "certainty": "risk",
       "evidence": "\`USERS_PAGE_SIZE\` is read by the code but missing from .env.example.",
+      "evidenceIds": [
+        "diff-hunk:app.js:1",
+      ],
       "explanation": "Deployments and teammates rely on the example file to know what to set; a missing variable usually surfaces as a runtime failure.",
       "id": "env-var-undocumented-fb3333296776",
       "location": {
@@ -8061,6 +8067,9 @@ exports[`English output (baseline) > visual-pricing-cards > writes the same rule
       "category": "accessibility",
       "certainty": "likely",
       "evidence": ".button:focus { outline: none; }",
+      "evidenceIds": [
+        "diff-hunk:pricing.css:1",
+      ],
       "explanation": "Keyboard users rely on the focus outline to see where they are. Removing it without a :focus-visible replacement makes the interface hard to use without a mouse.",
       "id": "focus-outline-removed-80d64bbad28e",
       "location": {

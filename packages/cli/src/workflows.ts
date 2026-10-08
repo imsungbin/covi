@@ -1,16 +1,20 @@
 import { readFile } from 'node:fs/promises';
 import { relative } from 'node:path';
-import { demonstrate } from '@covi/capture';
+import { demonstrate, RecordingUnavailableError } from '@covi/capture';
 import {
   analyzeWithModel,
+  type BehaviorDiff,
   type BuiltReview,
   buildReview,
   type CodeChange,
   childEnv,
+  code,
+  DEMO_PATHS,
   type Demonstration,
   ExitCode,
   type Explanation,
   ExplanationSchema,
+  escapeMarkdown,
   execShell,
   explainHeuristically,
   type Finding,
@@ -38,10 +42,17 @@ import {
   type TestRunResult,
   TRUST_HINT,
   t,
+  truncate,
   UsageError,
 } from '@covi/core';
 import type { PlatformContext } from '@covi/platforms';
-import { decideVideo, type ProduceVideoResult, produceVideo, type VideoSpec } from '@covi/video';
+import {
+  decideVideo,
+  Media,
+  type ProduceVideoResult,
+  produceVideo,
+  type VideoSpec,
+} from '@covi/video';
 import type { Session } from './session.ts';
 
 /**
@@ -57,6 +68,27 @@ export const WORKFLOW_DEFAULTS: Partial<Record<string, ParsedConfigInput>> = {
   video: BOTH_VIEWPORTS,
   ci: BOTH_VIEWPORTS,
 };
+
+/**
+ * Whether flows are recorded, and whether failing to record is an error: only when someone asked
+ * for it (a flag, COVI_DEMO_RECORD, or the repository's configuration), never by default.
+ */
+export function recordingOf(session: Pick<Session, 'config' | 'resolved'>): {
+  enabled: boolean;
+  required: boolean;
+} {
+  const enabled = session.config.demo.record;
+  const source = session.resolved.provenance['demo.record'] ?? '';
+  return { enabled, required: enabled && /^(repository|explicit)/.test(source) };
+}
+
+/** ffmpeg as video rendering finds it (COVI_FFMPEG, else PATH); recordings stay WebM without it. */
+export function locateFfmpeg(): Promise<string | undefined> {
+  return Media.locate().then(
+    (media) => media.ffmpegPath,
+    () => undefined,
+  );
+}
 
 export interface WorkflowResult {
   ok: boolean;
@@ -447,8 +479,9 @@ export async function reviewWorkflow(
   const outcome = await reviewSession(session, change, { runTests: options.runTests, demo });
   finishReview(session, result, outcome);
   if (demo) {
-    artifact(session, result, 'captures', 'demo/captures.json');
-    artifact(session, result, 'demo', 'demo/demo.md');
+    artifact(session, result, 'captures', DEMO_PATHS.captures);
+    artifact(session, result, 'demo', DEMO_PATHS.notes);
+    if (demo.behavior) artifact(session, result, 'behaviorDiff', DEMO_PATHS.behaviorDiff);
   }
   result.data = { review: outcome.review };
   return result;
@@ -462,7 +495,7 @@ async function demoStage(
 ): Promise<Demonstration | undefined> {
   session.logger.step('Demonstrating the change');
   // Keep the plan the agent or user supplied next to what it produced.
-  if (plan !== undefined) await session.run.writeJson('demo/plan.json', plan, 'capture');
+  if (plan !== undefined) await session.run.writeJson(DEMO_PATHS.plan, plan, 'capture');
   try {
     const demo = await session.run.stage('demonstrate', () =>
       demonstrate({
@@ -475,15 +508,22 @@ async function demoStage(
         execution: session.execution,
         prefer,
         language: session.language.language,
+        recording: recordingOf(session),
+        locateFfmpeg,
       }),
     );
+    const behavior = demo.behavior
+      ? await session.run.readJson<BehaviorDiff>(demo.behavior.path)
+      : undefined;
     await session.run.writeText(
-      'demo/demo.md',
-      renderDemo(demo, session.language.language),
+      DEMO_PATHS.notes,
+      renderDemo(demo, session.language.language, behavior),
       'capture',
     );
     return demo;
   } catch (error) {
+    // An explicit request to record that cannot be honored is the user's to see (exit 3).
+    if (error instanceof RecordingUnavailableError) throw error;
     session.run.warn(`Demonstration failed: ${(error as Error).message.split('\n')[0]}`);
     session.logger.warn(`Demonstration failed: ${(error as Error).message.split('\n')[0]}`);
     return undefined;
@@ -503,8 +543,9 @@ export async function demoWorkflow(
     result.message = 'The demonstration could not run; see warnings in run.json.';
     return result;
   }
-  artifact(session, result, 'captures', 'demo/captures.json');
-  artifact(session, result, 'demo', 'demo/demo.md');
+  artifact(session, result, 'captures', DEMO_PATHS.captures);
+  artifact(session, result, 'demo', DEMO_PATHS.notes);
+  if (demo.behavior) artifact(session, result, 'behaviorDiff', DEMO_PATHS.behaviorDiff);
   result.data = { demo };
   if (demo.shots.length + demo.commands.length + demo.requests.length === 0) {
     result.message =
@@ -513,7 +554,11 @@ export async function demoWorkflow(
   return result;
 }
 
-export function renderDemo(demo: Demonstration, language: Language = 'en'): string {
+export function renderDemo(
+  demo: Demonstration,
+  language: Language = 'en',
+  behavior?: BehaviorDiff,
+): string {
   const say = (key: string, params?: Record<string, string | number>) =>
     t(language, `demo.${key}`, params);
   const out = [`# ${say('title')}`, ''];
@@ -551,12 +596,136 @@ export function renderDemo(demo: Demonstration, language: Language = 'en'): stri
     if (c.before) out.push(say('before'), '', '```', c.before.output, '```', '');
     out.push(say('after'), '', '```', c.after.output, '```', '');
   }
+  out.push(...renderRecordings(demo, say));
+  if (behavior) out.push(...renderBehavior(behavior, say));
   if (demo.skipped.length) {
     out.push(`## ${say('notDemonstrated')}`, '');
     for (const s of demo.skipped) out.push(`- ${s.what}: ${s.reason}`);
     out.push('');
   }
   return out.join('\n');
+}
+
+type Say = (key: string, params?: Record<string, string | number>) => string;
+
+/** One line of text that came from the page (a URL, a console message, an error), as inline code. */
+function inline(text: string): string {
+  return code(truncate(text.replace(/\s+/g, ' ').trim(), 160));
+}
+
+function recordingNote(status: Demonstration['recording'], say: Say): string | undefined {
+  if (status?.status !== 'webm' && status?.status !== 'unavailable') return undefined;
+  if (status.cause === 'no-ffmpeg') return say('recording.webm');
+  const detail = inline(status.detail ?? status.cause ?? '');
+  if (status.status === 'webm') return say('recording.convertFailed', { detail });
+  return say(status.cause === 'save-failed' ? 'recording.saveFailed' : 'recording.unavailable', {
+    detail,
+  });
+}
+
+function renderRecordings(demo: Demonstration, say: Say): string[] {
+  const recordings = demo.recordings ?? [];
+  const note = recordingNote(demo.recording, say);
+  if (!recordings.length && !note) return [];
+  const out = [`## ${say('recordings')}`, ''];
+  for (const r of recordings)
+    out.push(
+      `- ${say('recording.item', {
+        name: escapeMarkdown(r.flow),
+        revision: r.revision,
+        file: escapeMarkdown(r.path.split('/').at(-1)!),
+        path: `../${r.path}`,
+      })}`,
+    );
+  if (recordings.length) out.push('');
+  if (note) out.push(note, '');
+  return out;
+}
+
+function whereOf(step: string, say: Say): string {
+  const n = /^s(\d+)$/.exec(step)?.[1];
+  if (n) return say('behavior.where.step', { n: Number(n) });
+  return say(`behavior.where.${step === 'open' || step === 'load' ? step : 'end'}`);
+}
+
+function statusOf(ref: { status?: number; failure?: string }, say: Say): string {
+  if (ref.status !== undefined) return `HTTP ${ref.status}`;
+  return ref.failure ? inline(ref.failure) : say('behavior.noResponse');
+}
+
+/** One block per scenario that changed or could not be compared, then a count of the rest. */
+function renderBehavior(behavior: BehaviorDiff, say: Say): string[] {
+  if (!behavior.scenarios.length) return [];
+  const out = [`## ${say('behavior.title')}`, ''];
+  for (const s of behavior.scenarios.filter((x) => x.status !== 'unchanged')) {
+    out.push(
+      `### ${say('behavior.scenario', { name: escapeMarkdown(s.name), viewport: s.viewport })}`,
+      '',
+    );
+    const lines: string[] = [];
+    if (s.missing)
+      lines.push(say('behavior.incomplete', { revision: s.missing === 'base' ? 'head' : 'base' }));
+    for (const revision of ['base', 'head'] as const) {
+      const error = s.failure?.[revision];
+      if (error) lines.push(say('behavior.failed', { revision, error: inline(error) }));
+    }
+    for (const step of s.steps) {
+      const where = whereOf(step.id, say);
+      const label = step.label ? say('behavior.label', { label: escapeMarkdown(step.label) }) : '';
+      if (step.base !== step.head)
+        lines.push(
+          say('behavior.stepState', {
+            where,
+            label,
+            base: say(`behavior.state.${step.base}`),
+            head: say(`behavior.state.${step.head}`),
+          }),
+        );
+      if (step.changedRatio !== undefined)
+        lines.push(
+          say('behavior.step', {
+            where,
+            label,
+            percent: (step.changedRatio * 100).toFixed(2),
+            diff: step.diff ? say('diffLink', { path: `../${step.diff}` }) : '',
+          }),
+        );
+    }
+    for (const r of s.network.changed)
+      lines.push(
+        say('behavior.requestChanged', {
+          request: inline(`${r.method} ${r.url}`),
+          base: statusOf(r.base, say),
+          head: statusOf(r.head, say),
+        }),
+      );
+    for (const r of s.network.added)
+      lines.push(
+        say('behavior.requestAdded', {
+          request: inline(`${r.method} ${r.url}`),
+          status: statusOf(r, say),
+        }),
+      );
+    for (const r of s.network.removed)
+      lines.push(
+        say('behavior.requestRemoved', {
+          request: inline(`${r.method} ${r.url}`),
+          status: statusOf(r, say),
+        }),
+      );
+    for (const m of s.console.added)
+      lines.push(say('behavior.consoleAdded', { text: inline(m.text) }));
+    for (const m of s.console.removed)
+      lines.push(say('behavior.consoleRemoved', { text: inline(m.text) }));
+    for (const d of s.timing.steps)
+      lines.push(
+        say('behavior.timing', { where: whereOf(d.step, say), base: d.baseMs, head: d.headMs }),
+      );
+    out.push(...lines.map((line) => `- ${line}`), '');
+  }
+  const same = behavior.scenarios.filter((x) => x.status === 'unchanged').length;
+  if (same) out.push(say('behavior.same', { count: same }), '');
+  return out;
 }
 
 export interface VideoOptions {
@@ -723,8 +892,8 @@ export async function renderWorkflow(
         'explanation.json',
       ) as Explanation)
     : explainHeuristically(session.context, session.language.language);
-  const demo = (await run.has('demo/captures.json'))
-    ? await run.readJson<Demonstration>('demo/captures.json')
+  const demo = (await run.has(DEMO_PATHS.captures))
+    ? await run.readJson<Demonstration>(DEMO_PATHS.captures)
     : undefined;
   const produced = await run.stage('video', () =>
     produceVideo({
@@ -800,8 +969,8 @@ export async function reportWorkflow(session: Session): Promise<WorkflowResult> 
       `findings.json dismisses unknown rule finding id(s): ${unknown.map((d) => d.id).join(', ')}`,
       'Use ids from rule-findings.json.',
     );
-  const demo = (await run.has('demo/captures.json'))
-    ? await run.readJson<Demonstration>('demo/captures.json')
+  const demo = (await run.has(DEMO_PATHS.captures))
+    ? await run.readJson<Demonstration>(DEMO_PATHS.captures)
     : undefined;
   const built = buildReview({
     ruleFindings: rules.findings,

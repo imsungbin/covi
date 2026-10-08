@@ -633,6 +633,39 @@ demo:
   changed: ' · 変更あり'
   shapeChange: '形の変更: {shape}。'
   notDemonstrated: デモで見せられなかったもの
+  recordings: 録画
+  recording:
+    item: '{name}（{revision}）: [{file}]({path})'
+    webm: 'ffmpeg が見つからないため、録画は WebM のままです。MP4 にするには ffmpeg をインストールするか COVI_FFMPEG を設定してください。'
+    convertFailed: 'MP4 への変換に失敗したため、録画は WebM のままです: {detail}'
+    unavailable: 'フローを録画できませんでした: {detail}'
+    saveFailed: 'フローは録画しましたが、録画を保存できませんでした: {detail}'
+  behavior:
+    title: base と head の動作
+    scenario: '{name}（{viewport}）'
+    same:
+      other: '{count} 件のシナリオは base と head で同じように動作しました。'
+    incomplete: '比較していません: {revision} でのみ実行しました。'
+    failed: '{revision} で失敗しました: {error}'
+    where:
+      step: 'ステップ {n}'
+      open: 最初の画面
+      end: 最後の画面
+      load: ページ
+    label: '（「{label}」）'
+    step: '{where}{label}: 画面が異なります。ピクセルの {percent}% が変わりました{diff}。'
+    stepState: '{where}{label}: base では{base}、head では{head}。'
+    state:
+      ok: 完了
+      failed: 失敗
+      missing: 未到達
+    requestChanged: '{request}: base では {base}、head では {head}'
+    requestAdded: '新しいリクエスト: {request} → {status}'
+    requestRemoved: '送られなくなったリクエスト: {request}（base では {status}）'
+    noResponse: 応答なし
+    consoleAdded: '新しいコンソールエラー: {text}'
+    consoleRemoved: '出なくなったコンソールエラー: {text}'
+    timing: '{where}: head では {head} ms、base では {base} ms かかりました。'
 
 video:
   label:

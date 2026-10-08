@@ -1,9 +1,20 @@
-import { rmSync } from 'node:fs';
-import { type Demonstration, normalizeFinding } from '@covi/core';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  type ConfigLayer,
+  type Demonstration,
+  normalizeFinding,
+  parseConfigInput,
+  resolveConfig,
+} from '@covi/core';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
+import { recordingOf, renderDemo } from '../packages/cli/src/workflows.ts';
+import { BEHAVIOR_APP } from './helpers/behavior-app.ts';
 import { covi } from './helpers/cli.ts';
 import { canUseBrowser } from './helpers/env.ts';
+import { createChangeRepo } from './helpers/repo.ts';
 
 const browser = await canUseBrowser();
 const examples = await listExamples();
@@ -89,5 +100,81 @@ describe('demonstrations', () => {
     const result = await demo('refactor-retry-helper');
     expect(result.shots).toEqual([]);
     expect(result.skipped[0]!.reason).toMatch(/Nothing user-visible changes/);
+  });
+});
+
+describe('recording', () => {
+  it('is required only when someone asked for it', () => {
+    const of = (...layers: ConfigLayer[]) => {
+      const resolved = resolveConfig(layers);
+      return recordingOf({ config: resolved.config, resolved });
+    };
+    const record = (value: boolean) => parseConfigInput({ demo: { record: value } }, 't');
+    expect(of()).toEqual({ enabled: true, required: false });
+    expect(of({ name: 'workflow', values: record(true) })).toEqual({
+      enabled: true,
+      required: false,
+    });
+    expect(of({ name: 'repository', source: '.covi/config.yml', values: record(true) })).toEqual({
+      enabled: true,
+      required: true,
+    });
+    expect(of({ name: 'explicit', source: 'command line', values: record(false) })).toEqual({
+      enabled: false,
+      required: false,
+    });
+  });
+
+  it('says when a recording was made but could not be saved', () => {
+    const demo: Demonstration = {
+      schemaVersion: 1,
+      shots: [],
+      commands: [],
+      requests: [],
+      skipped: [],
+      findings: [],
+      recording: { status: 'unavailable', cause: 'save-failed', detail: 'EACCES demo/recordings' },
+    };
+    expect(renderDemo(demo)).toContain(
+      'Flows were recorded, but a recording could not be saved: `EACCES demo/recordings`',
+    );
+  });
+
+  it('keeps reviewing without a browser, and exits 3 only when recording was asked for', () => {
+    const repo = createChangeRepo(BEHAVIOR_APP.base, BEHAVIOR_APP.head);
+    dirs.push(repo.root);
+    const empty = mkdtempSync(join(tmpdir(), 'covi-no-browser-'));
+    dirs.push(empty);
+    // An empty browsers directory: Playwright finds no Chromium.
+    const env = { PLAYWRIGHT_BROWSERS_PATH: empty };
+    const quiet = covi(['review', '--demo', '--repo', repo.root, '--json'], { env });
+    expect(quiet.code).toBe(0);
+    expect((quiet.json().warnings as string[]).join('\n')).toMatch(/Demonstration failed/);
+    const asked = covi(['review', '--demo', '--record', '--repo', repo.root, '--json'], { env });
+    expect(asked.code).toBe(3);
+    expect(String(asked.json().error)).toMatch(/Flows cannot be recorded/);
+  });
+
+  it.skipIf(!browser)('writes the behavior section to demo.md and honors --no-record', () => {
+    const repo = createChangeRepo(BEHAVIOR_APP.base, BEHAVIOR_APP.head);
+    dirs.push(repo.root);
+    const result = covi(['demo', '--no-record', '--repo', repo.root, '--json']);
+    expect(result.code).toBe(0);
+    const json = result.json() as unknown as {
+      data: { demo: Demonstration };
+      artifacts: Record<string, string>;
+      runDir: string;
+    };
+    expect(json.data.demo.recording).toEqual({ status: 'off' });
+    expect(json.data.demo.recordings).toBeUndefined();
+    expect(existsSync(json.artifacts.behaviorDiff!)).toBe(true);
+    const notes = readFileSync(json.artifacts.demo!, 'utf8');
+    expect(notes).toContain('## Behavior at base and head');
+    expect(notes).toContain(
+      '- `GET /items.json?session=[REDACTED]`: HTTP 200 at base, HTTP 404 at head',
+    );
+    expect(notes).toContain('- New console error: `Could not load items: HTTP 404`');
+    const manifest = JSON.parse(readFileSync(join(json.runDir, 'run.json'), 'utf8'));
+    expect(manifest.config.provenance['demo.record']).toBe('explicit (command line)');
   });
 });

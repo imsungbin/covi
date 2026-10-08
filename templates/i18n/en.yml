@@ -642,6 +642,40 @@ demo:
   changed: ' · changed'
   shapeChange: 'Shape change: {shape}.'
   notDemonstrated: Not demonstrated
+  recordings: Recordings
+  recording:
+    item: '{name} at {revision}: [{file}]({path})'
+    webm: Recordings are WebM because ffmpeg was not found. Install ffmpeg, or set COVI_FFMPEG, to get MP4.
+    convertFailed: 'Recordings are WebM because converting them to MP4 failed: {detail}'
+    unavailable: 'Flows were not recorded: {detail}'
+    saveFailed: 'Flows were recorded, but a recording could not be saved: {detail}'
+  behavior:
+    title: Behavior at base and head
+    scenario: '{name} ({viewport})'
+    same:
+      one: '{count} scenario behaved the same at base and head.'
+      other: '{count} scenarios behaved the same at base and head.'
+    incomplete: 'Not compared: it ran only at {revision}.'
+    failed: 'Failed at {revision}: {error}'
+    where:
+      step: 'Step {n}'
+      open: The opening frame
+      end: The final frame
+      load: The page
+    label: ' (“{label}”)'
+    step: '{where}{label} looks different: {percent}% of pixels changed{diff}.'
+    stepState: '{where}{label}: {base} at base, {head} at head.'
+    state:
+      ok: completed
+      failed: failed
+      missing: not reached
+    requestChanged: '{request}: {base} at base, {head} at head'
+    requestAdded: 'New request: {request} → {status}'
+    requestRemoved: 'No longer requested: {request} ({status} at base)'
+    noResponse: no response
+    consoleAdded: 'New console error: {text}'
+    consoleRemoved: 'Console error no longer logged: {text}'
+    timing: '{where} took {head} ms at head and {base} ms at base.'
 
 # Labels drawn in the video.
 video:

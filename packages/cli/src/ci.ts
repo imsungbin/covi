@@ -1,5 +1,5 @@
 import { relative } from 'node:path';
-import { demonstrate } from '@covi/capture';
+import { demonstrate, RecordingUnavailableError } from '@covi/capture';
 import {
   type CommentLinks,
   type CoviConfig,
@@ -36,6 +36,8 @@ import {
   applyVideoResult,
   baseResult,
   commentFromRun,
+  locateFfmpeg,
+  recordingOf,
   reviewSession,
   WORKFLOW_DEFAULTS,
   type WorkflowResult,
@@ -104,9 +106,13 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
             // Vertical videos show phone-sized pages, so flows are captured there.
             prefer: spec.height > spec.width ? 'mobile' : 'desktop',
             language: session.language.language,
+            recording: recordingOf(session),
+            locateFfmpeg,
           }),
         )
         .catch((error: Error) => {
+          // Recording asked for explicitly and impossible: fail the job (exit 3) rather than warn.
+          if (error instanceof RecordingUnavailableError) throw error;
           run.warn(`Demonstration failed: ${error.message.split('\n')[0]}`);
           return undefined;
         })

@@ -633,6 +633,39 @@ demo:
   changed: ' · 有变化'
   shapeChange: '结构变化：{shape}。'
   notDemonstrated: 未能演示的内容
+  recordings: 录像
+  recording:
+    item: '{name}（{revision}）：[{file}]({path})'
+    webm: '未找到 ffmpeg，录像保留为 WebM。安装 ffmpeg 或设置 COVI_FFMPEG 即可得到 MP4。'
+    convertFailed: '转换为 MP4 失败，录像保留为 WebM：{detail}'
+    unavailable: '未能录制流程：{detail}'
+    saveFailed: '流程已录制，但未能保存录像：{detail}'
+  behavior:
+    title: base 与 head 的行为
+    scenario: '{name}（{viewport}）'
+    same:
+      other: '{count} 个场景在 base 和 head 上表现相同。'
+    incomplete: '未比较：只在 {revision} 上运行过。'
+    failed: '在 {revision} 上失败：{error}'
+    where:
+      step: '第 {n} 步'
+      open: 开头画面
+      end: 最终画面
+      load: 页面
+    label: '（“{label}”）'
+    step: '{where}{label}：画面不同，{percent}% 的像素有变化{diff}。'
+    stepState: '{where}{label}：base 上{base}，head 上{head}。'
+    state:
+      ok: 已完成
+      failed: 失败
+      missing: 未到达
+    requestChanged: '{request}：base 上为 {base}，head 上为 {head}'
+    requestAdded: '新请求：{request} → {status}'
+    requestRemoved: '不再发送的请求：{request}（base 上为 {status}）'
+    noResponse: 无响应
+    consoleAdded: '新的控制台错误：{text}'
+    consoleRemoved: '不再出现的控制台错误：{text}'
+    timing: '{where}：head 上用了 {head} 毫秒，base 上用了 {base} 毫秒。'
 
 video:
   label:

@@ -1,6 +1,24 @@
 import { appendFile, readFile } from 'node:fs/promises';
-import { COMMENT_MARKER, type Finding, isBlockingCandidate, type Language, t } from '@covi/core';
-import type { FetchLike, PlatformContext, Publisher, PublishOutcome } from './types.ts';
+import {
+  type AnchorDraft,
+  anchorKeyOf,
+  COMMENT_MARKER,
+  type Finding,
+  isBlockingCandidate,
+  type Language,
+  MAX_ANCHORS,
+  t,
+} from '@covi/core';
+import { PlatformHttpError, readJson } from './http.ts';
+import {
+  type AnchorsOutcome,
+  type ExistingComment,
+  type FetchLike,
+  namesChange,
+  type PlatformContext,
+  type Publisher,
+  type PublishOutcome,
+} from './types.ts';
 
 const ZERO_SHA = /^0+$/;
 
@@ -106,6 +124,18 @@ export async function githubContext(env: NodeJS.ProcessEnv): Promise<PlatformCon
     // Link to the run that reviewed the change, where its artifacts live.
     if (run?.html_url) ctx.links = { run: run.html_url, artifacts: `${run.html_url}#artifacts` };
   }
+  // Only the default branch: anyone who can dispatch a workflow can pick their own branch, and
+  // its configuration names whose comments count. GitHub runs a schedule only on the default
+  // branch's latest commit, and its payload names neither a ref nor the repository.
+  const defaultBranch = (payload.repository as { default_branch?: unknown } | undefined)
+    ?.default_branch;
+  const onDefault =
+    typeof defaultBranch === 'string' && payload.ref === `refs/heads/${defaultBranch}`;
+  if (
+    (event === 'schedule' || ((event === 'workflow_dispatch' || event === 'push') && onDefault)) &&
+    !namesChange(ctx)
+  )
+    ctx.trustedCheckout = true;
   return ctx;
 }
 
@@ -136,6 +166,8 @@ export class GitHubClient {
         ...(body ? { 'content-type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
+      // Never follow a redirect: the token belongs to this API alone.
+      redirect: 'manual',
       signal: AbortSignal.timeout(30_000),
     });
   }
@@ -157,44 +189,95 @@ export async function resolvePullRequest(
   if (!target && context.pullRequestHead) {
     const { owner, branch, sha } = context.pullRequestHead;
     const head = encodeURIComponent(`${owner}:${branch}`);
-    const response = await client.request(
-      'GET',
-      `/repos/${repository}/pulls?state=open&head=${head}&per_page=100`,
-    );
-    if (!response.ok)
+    const path = `/repos/${repository}/pulls`;
+    const response = await client.request('GET', `${path}?state=open&head=${head}&per_page=100`);
+    if (!response.ok) {
+      await response.body?.cancel();
       return { reason: `could not look up the pull request (HTTP ${response.status})` };
-    const pulls = (await response.json()) as Array<{ number: number; head: { sha: string } }>;
-    target = pulls.find((p) => p.head.sha === sha)?.number;
+    }
+    const pulls = await bodyOf<Array<{ number?: number; head?: { sha?: string } }>>(response, path);
+    if ('reason' in pulls) return pulls;
+    target = Array.isArray(pulls.data)
+      ? pulls.data.find((p) => p.head?.sha === sha)?.number
+      : undefined;
     if (!target)
       return { reason: `no open pull request has head ${sha.slice(0, 7)} (${owner}:${branch})` };
   }
   if (!target) return { reason: 'not a pull request event' };
   if (context.expectedHead) {
-    const response = await client.request('GET', `/repos/${repository}/pulls/${target}`);
-    if (!response.ok)
+    const path = `/repos/${repository}/pulls/${target}`;
+    const response = await client.request('GET', path);
+    if (!response.ok) {
+      await response.body?.cancel();
       return { reason: `could not read pull request #${target} (HTTP ${response.status})` };
-    const pull = (await response.json()) as { head: { sha: string } };
-    if (pull.head.sha !== context.expectedHead)
+    }
+    const pull = await bodyOf<{ head?: { sha?: string } }>(response, path);
+    if ('reason' in pull) return pull;
+    const head = String(pull.data?.head?.sha ?? '');
+    if (head !== context.expectedHead)
       return {
-        reason: `pull request #${target} now points at ${pull.head.sha.slice(0, 7)}, not the reviewed ${context.expectedHead.slice(0, 7)}; the newer run will comment`,
+        reason: `pull request #${target} now points at ${head.slice(0, 7) || 'an unknown commit'}, not the reviewed ${context.expectedHead.slice(0, 7)}; the newer run will comment`,
       };
   }
   return { number: target };
 }
 
+/** A bounded JSON body, or why it could not be read (too large, or not JSON), naming the path. */
+async function bodyOf<T>(
+  response: Response,
+  path: string,
+): Promise<{ data: T } | { reason: string }> {
+  try {
+    return { data: await readJson<T>(response, 'GitHub', path) };
+  } catch (error) {
+    return { reason: (error as Error).message };
+  }
+}
+
 export interface GitHubPublisherOptions extends GitHubClientOptions {
   repository: string;
   number: number;
+  /**
+   * The bot a token without a user of its own comments as (`publish.botLogin`): the workflow
+   * token's `github-actions[bot]` unless Covi runs as another GitHub App.
+   */
+  botLogin?: string;
+}
+
+/** Who wrote a comment, as GitHub lists it. */
+export type Author = { id?: number; login?: string; type?: string } | null | undefined;
+
+/** The token's own user id, or `null` for a token that has no user (a workflow or app token). */
+export type Identity = { user: number | null };
+
+/** The bot a workflow token comments as. */
+const DEFAULT_BOT_LOGIN = 'github-actions[bot]';
+/** A GitHub App's bot login, the only shape named back in a warning. */
+const BOT_LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\[bot\]$/;
+
+/**
+ * Whether Covi wrote a comment. Anyone can paste the marker, and other apps can quote it, so only
+ * the token's own user counts; a token with no user (it comments as a bot) trusts only its bot's
+ * login.
+ */
+export function authoredBy(author: Author, me: Identity, botLogin = DEFAULT_BOT_LOGIN): boolean {
+  if (me.user !== null) return author?.id === me.user;
+  return author?.type === 'Bot' && author.login === botLogin;
 }
 
 /** Creates or updates Covi's single summary comment on a pull request (issue comments API). */
 export class GitHubPublisher implements Publisher {
   readonly platform = 'github' as const;
+  readonly target: { repository: string; number: number };
   private readonly options: GitHubPublisherOptions;
   private readonly client: GitHubClient;
+  private me?: Identity;
+  /** Another bot whose comment starts with the marker, when none of Covi's own was found. */
+  private otherBot?: string;
 
   constructor(options: GitHubPublisherOptions) {
     this.options = options;
+    this.target = { repository: options.repository, number: options.number };
     this.client = new GitHubClient(options);
   }
 
@@ -202,36 +285,171 @@ export class GitHubPublisher implements Publisher {
     return this.client.request(method, path, body);
   }
 
-  async upsertComment(body: string): Promise<PublishOutcome> {
+  /** Reads a JSON body, bounded, naming the path (without its query) if it is not JSON. */
+  private json<T>(response: Response, path: string): Promise<T> {
+    return readJson<T>(response, 'GitHub', path.split('?')[0]!);
+  }
+
+  /**
+   * Who the token is, asked once. A workflow or app token cannot read `/user` (401/403); any other
+   * failure throws and is asked again next time, so a passing outage cannot pass for "no user".
+   */
+  private async whoami(): Promise<Identity> {
+    if (this.me) return this.me;
+    const response = await this.request('GET', '/user');
+    if (response.status === 401 || response.status === 403) {
+      await response.body?.cancel();
+      this.me = { user: null };
+    } else if (!response.ok) {
+      await response.body?.cancel();
+      throw new PlatformHttpError('GitHub', response.status, '/user');
+    } else {
+      const { id } = await this.json<{ id?: unknown }>(response, '/user');
+      if (typeof id !== 'number') throw new Error('GitHub sent no user id for /user');
+      this.me = { user: id };
+    }
+    return this.me;
+  }
+
+  /** The first comment Covi wrote (see `authoredBy`). */
+  private async own<T extends { user?: Author }>(comments: readonly T[]): Promise<T | undefined> {
+    if (!comments.length) return undefined;
+    const me = await this.whoami();
+    return comments.find((c) => authoredBy(c.user, me, this.options.botLogin));
+  }
+
+  async findComment(): Promise<ExistingComment | null> {
+    const { repository, number } = this.options;
+    type Listed = { id: number; body?: string; html_url: string; user?: Author };
+    const marked: Listed[] = [];
+    this.otherBot = undefined;
+    for (let page = 1; page <= 10; page++) {
+      const response = await this.request(
+        'GET',
+        `/repos/${repository}/issues/${number}/comments?per_page=100&page=${page}`,
+      );
+      if (!response.ok) throw new Error((await failure(response, 'list comments')).reason);
+      const comments = await this.json<Listed[]>(
+        response,
+        `/repos/${repository}/issues/${number}/comments`,
+      );
+      marked.push(...comments.filter((c) => c.body?.includes(COMMENT_MARKER)));
+      if (comments.length < 100) break;
+    }
+    const own = await this.own(marked);
+    if (own) return { id: String(own.id), body: own.body ?? '', url: own.html_url };
+    // An app token left at the default bot login cannot claim the comments its app posted. It
+    // trusts none of them (another app can post the marker too), but it can say what to set.
+    if (this.me?.user === null)
+      this.otherBot = marked
+        .filter((c) => c.user?.type === 'Bot' && c.body?.startsWith(COMMENT_MARKER))
+        .map((c) => c.user?.login)
+        .find((login): login is string => typeof login === 'string' && BOT_LOGIN.test(login));
+    return null;
+  }
+
+  async upsertComment(body: string, existing?: ExistingComment | null): Promise<PublishOutcome> {
     const { repository, number } = this.options;
     try {
-      let existing: { id: number; html_url: string } | undefined;
-      for (let page = 1; page <= 10 && !existing; page++) {
-        const response = await this.request(
-          'GET',
-          `/repos/${repository}/issues/${number}/comments?per_page=100&page=${page}`,
-        );
-        if (!response.ok) return failure(response, 'list comments');
-        const comments = (await response.json()) as Array<{
-          id: number;
-          body?: string;
-          html_url: string;
-        }>;
-        existing = comments.find((c) => c.body?.includes(COMMENT_MARKER));
-        if (comments.length < 100) break;
-      }
-      const response = existing
-        ? await this.request('PATCH', `/repos/${repository}/issues/comments/${existing.id}`, {
-            body,
-          })
-        : await this.request('POST', `/repos/${repository}/issues/${number}/comments`, { body });
-      if (!response.ok)
-        return failure(response, existing ? 'update the comment' : 'create a comment');
-      const json = (await response.json()) as { html_url?: string };
-      return { status: existing ? 'updated' : 'created', url: json.html_url };
+      const found = existing === undefined ? await this.findComment() : existing;
+      const path = found
+        ? `/repos/${repository}/issues/comments/${found.id}`
+        : `/repos/${repository}/issues/${number}/comments`;
+      const response = await this.request(found ? 'PATCH' : 'POST', path, { body });
+      if (!response.ok) return failure(response, found ? 'update the comment' : 'create a comment');
+      const json = await this.json<{ id?: number; html_url?: string }>(response, path);
+      const bot = this.options.botLogin ?? DEFAULT_BOT_LOGIN;
+      return {
+        status: found ? 'updated' : 'created',
+        id: json.id !== undefined ? String(json.id) : found?.id,
+        url: json.html_url,
+        ...(!found && this.otherBot
+          ? {
+              warnings: [
+                `Covi's earlier comment here was posted by ${this.otherBot}, not ${bot}, so this token cannot update it and posted a new one. If Covi runs as that GitHub App, set \`publish.botLogin: ${this.otherBot}\` in .covi/config.yml.`,
+              ],
+            }
+          : {}),
+      };
     } catch (error) {
       return { status: 'failed', reason: (error as Error).message };
     }
+  }
+
+  async postAnchors(anchors: readonly AnchorDraft[], head: string): Promise<AnchorsOutcome> {
+    const { repository, number } = this.options;
+    const outcome: AnchorsOutcome = { posted: [], existing: 0, skipped: [] };
+    if (!anchors.length) return outcome;
+    try {
+      const marked: Array<{ key: string; user?: Author }> = [];
+      for (let page = 1; page <= 10; page++) {
+        const response = await this.request(
+          'GET',
+          `/repos/${repository}/pulls/${number}/comments?per_page=100&page=${page}`,
+        );
+        if (!response.ok)
+          throw new Error(`could not list review comments (HTTP ${response.status})`);
+        const comments = await this.json<Array<{ body?: string; user?: Author }>>(
+          response,
+          `/repos/${repository}/pulls/${number}/comments`,
+        );
+        for (const c of comments) {
+          const key = anchorKeyOf(c.body ?? '');
+          if (key) marked.push({ key, user: c.user });
+        }
+        if (comments.length < 100) break;
+      }
+      // A pasted anchor marker must not keep Covi from posting the real anchor.
+      const have = new Set<string>();
+      for (const key of new Set(marked.map((m) => m.key)))
+        if (await this.own(marked.filter((m) => m.key === key))) have.add(key);
+      for (const [index, anchor] of anchors.entries()) {
+        // Each anchor is a notification; Decision 3 allows a run this many.
+        if (index >= MAX_ANCHORS) {
+          outcome.skipped.push({
+            key: anchor.key,
+            reason: `only ${MAX_ANCHORS} anchors are posted per run`,
+          });
+          continue;
+        }
+        // An anchor stays once posted: its reactions are what outcomes count.
+        if (have.has(anchor.key)) {
+          outcome.existing++;
+          continue;
+        }
+        const response = await this.request(
+          'POST',
+          `/repos/${repository}/pulls/${number}/comments`,
+          {
+            body: anchor.body,
+            commit_id: head,
+            path: anchor.path,
+            line: anchor.line,
+            side: 'RIGHT',
+          },
+        );
+        if (response.ok) {
+          const json = await this.json<{ id: number }>(
+            response,
+            `/repos/${repository}/pulls/${number}/comments`,
+          );
+          outcome.posted.push({ key: anchor.key, id: String(json.id) });
+        } else
+          outcome.skipped.push({
+            key: anchor.key,
+            reason:
+              response.status === 422
+                ? 'the line is not part of the diff GitHub shows'
+                : `GitHub answered HTTP ${response.status}`,
+          });
+      }
+    } catch (error) {
+      const done = new Set([...outcome.posted, ...outcome.skipped].map((a) => a.key));
+      for (const anchor of anchors)
+        if (!done.has(anchor.key))
+          outcome.skipped.push({ key: anchor.key, reason: (error as Error).message });
+    }
+    return outcome;
   }
 }
 

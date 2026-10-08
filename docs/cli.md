@@ -58,7 +58,7 @@ Details:
 - **Empty side of a range:** an empty side means `HEAD`, so `main..` is `main..HEAD`.
 - **Base branch:** with no arguments, the base branch is the configured `base`, tried as `origin/<base>` and then `<base>`. Otherwise Covi uses the first of these that exists: `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`, `origin/trunk`, `trunk`, `origin/develop`, `develop`.
 - **No commits beyond the base:** Covi reviews uncommitted work against `HEAD`. If there is none either, it prints `No changes: …` and exits 0 without creating a run.
-- **Uncommitted work:** included only when the head is implicit and the working tree is dirty. Untracked files count unless git ignores them. Covi's own `.covi/runs/`, `.covi/cache/`, and `.covi/subject/` never count.
+- **Uncommitted work:** included only when the head is implicit and the working tree is dirty. Untracked files count unless git ignores them. Covi's own `.covi/runs/`, `.covi/cache/`, `.covi/subject/`, and `.covi/outcomes/` never count.
 - **Usage errors (exit 2):**
   - A range together with `--base` or `--head`.
   - `--staged` or `--uncommitted` together with a range or `--base`.
@@ -116,8 +116,8 @@ Understands a change and writes an agent brief. This starts an [agent-driven rev
   - `diff.patch`: the redacted diff.
   - `rule-findings.json`: deterministic findings with ids.
   - `explanation.draft.json`: a structural explanation to start from.
-  - `brief.md`: signals, reading order, the prioritized diff, and next steps for the agent.
-- **Result `data`:** `intent`, `size`, `demonstration` (`value`, `kinds`, `recommendation`), and `ruleFindings` (`id`, `title`, `certainty`, `severity`, `location`).
+  - `brief.md`: signals, reading order, the prioritized diff, and next steps for the agent. When `.covi/outcomes/` has at least five labeled findings of a certainty, it also says how this repository's past findings held up (`review.calibration`). Only outcomes of the repository the `origin` remote names count, so a checkout without an `origin` remote gets no such section.
+- **Result `data`:** `intent`, `size`, `demonstration` (`value`, `kinds`, `recommendation`), `ruleFindings` (`id`, `title`, `certainty`, `severity`, `location`), and `calibration` (the brief's hint as numbers, or `null`).
 
 ### `covi explain [range]`
 
@@ -275,6 +275,7 @@ Runs Covi in GitHub Actions or GitLab CI. It is never interactive. It takes the 
 | `--video <when>` | Render a video: `auto` (when useful), `always`, or `never`. |
 | `--no-annotations` | Do not annotate findings inline on GitHub. On GitLab, the Code Quality report is written empty. |
 | `--comment`, `--no-comment` | Post or update the summary comment, or skip it (for example, when a later step publishes). Default: `publish.comment`. |
+| `--anchors`, `--no-anchors` | Post confirmed and likely findings as inline comments people can react to (GitHub; sets `publish.anchors`). |
 | `--run-tests` | Run `test.command`. |
 | `--out <dir>` | Write the run to this exact directory. |
 | `--record` | Record browser flows at base and head (the default), and exit 3 if they cannot be recorded. |
@@ -305,6 +306,10 @@ See [GitHub Action](github-action.md), [GitLab CI](gitlab-ci.md), and [Security]
 
 Posts or updates the summary comment for a finished run. Covi re-renders the comment from the run's schema-validated `review.json` and `explanation.json`, with dynamic text escaped; from `context.json` it prints only the base and head commit ids, and only when they are hexadecimal. Free-form Markdown from the run is never posted. One comment per pull or merge request is updated in place.
 
+The comment ends with "Was this useful? 👍 👎" (`publish.rating`) and a hidden ledger of what Covi reported push by push. With `publish.anchors`, confirmed and likely findings are also posted as inline comments, once each. After posting, Covi records where the comment went in `run.json` → `publish`, so `covi outcomes collect` can find it again.
+
+Covi updates only a comment its own token wrote: the token's user, or, for a GitHub token without a user (the workflow token), the bot in `publish.botLogin`. If it cannot read the existing comment, it posts nothing, so the ledger is never overwritten unread.
+
 | Option | Meaning |
 |---|---|
 | `--run <id>` | Run id, run directory, or `latest` (default). Ids and `latest` are looked up in the configured runs directory (`output.dir`). |
@@ -313,6 +318,8 @@ Posts or updates the summary comment for a finished run. Covi re-renders the com
 | `--expect-head <sha>` | Refuse (exit 2) unless the run reviewed this commit. |
 | `--artifact-url <url>` | Link to the uploaded run artifacts. |
 | `--video-url <url>` | Link to the video. |
+| `--anchors`, `--no-anchors` | Post confirmed and likely findings as inline comments people can react to (GitHub). Default: the run's `publish.anchors`. |
+| `--no-rating` | Leave "Was this useful? 👍 👎" out of the comment. Default: the run's `publish.rating`. |
 
 In a GitHub `workflow_run` event (the [fork-safe pattern](github-action.md)), Covi takes the target from the trusted event, never from the run directory:
 
@@ -320,6 +327,8 @@ In a GitHub `workflow_run` event (the [fork-safe pattern](github-action.md)), Co
 - **Expected head:** the event's head commit, unless `--expect-head` is given. A run that reviewed any other commit is refused with exit 2.
 - **Moved on:** if the pull request no longer points at that commit, Covi skips the comment; the newer run comments instead.
 - **Links:** to the run that reviewed the change, where its artifacts are.
+- **Settings from flags only:** the run directory may be a fork's, so anchors and the rating line come from `--anchors` and `--no-rating`, not from its `run.json`. With `--anchors`, the anchors carry the run's findings, rebuilt from `review.json` and escaped like the comment.
+- **The ledger stays as it was:** the comment keeps the ledger an earlier trusted run wrote, so a fork's review never writes the history `covi outcomes collect` reads. A fork's pull request gets no ledger at all.
 
 Tokens come from:
 
@@ -404,9 +413,34 @@ Shows what Covi has seen of the software: the [subject model](artifacts.md#the-s
 
 Without `--run`, it reads the store `subject.store` names, from the working tree (never from a base revision). Without `--json`, one line per screen (key, path, viewports, title), one per element under it with its reference (`subject:<screen>#<element>`), role, and label, then one per flow and scenario; with `--run`, also one per head capture with the elements it shows, the ones a storyboard `focus` can name there. With `--json`, the result object's `data` is `{ source, path, status, model }` for the store (`source` is `repo` or `runs`; `status` is `loaded`, `empty`, or `invalid`, with the reason in `warnings`), `{ source: "off" }` when `subject.store` is `off`, and `{ source: "run", schemaVersion, store, revision, model, images }` with `--run`. Everything printed is redacted. A run without `demo/subject.json` exits 2.
 
+### `covi outcomes collect`
+
+Asks GitHub or GitLab what became of the changes Covi commented on, and writes one file per change to `.covi/outcomes/<run-id>.json` (redacted, `covi schema outcome`). Each file records the change's state (open, merged, or closed), a revert, 👍/👎 on the comment and on each finding's anchor, replies, and what happened to each finding in the comment's ledger. It reads only the API, so it works outside a checkout.
+
+| Option | Meaning |
+|---|---|
+| `--platform <platform>` | `auto` (default: the CI platform, else the platform of the runs published here, else `github`), `github`, or `gitlab`. |
+| `--number <n>` | One pull or merge request. |
+| `--recent <n>` | The `n` (1–100) most recently closed ones. |
+| `--repository <name>` | `owner/name` or `group/project`. Default: from CI, else from the runs published here. |
+| `--api-url <url>` | The API base. Default: `GITHUB_API_URL` or `CI_API_V4_URL`, else the public API. Never taken from a run's files. |
+| `--max-requests <n>` | Stop after this many API requests (default 300). |
+
+Without `--number` or `--recent`, it collects the CI event's pull or merge request, or, outside CI, every change that a run here published a comment on. At a rate limit or the request budget, it keeps what it collected, reports `data.incomplete` with the reset time, and exits 0. It exits 3 when nothing could be collected because of the limit, when the token is missing or refused (401), or when the platform cannot answer at all, and 2 when it cannot tell which repository to ask about.
+
+Tokens are read like `covi publish`'s, and read access is enough: on GitHub, `COVI_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `GH_TOKEN`; on GitLab, `COVI_GITLAB_TOKEN` or `GITLAB_TOKEN`, with the `read_api` scope. The scheduled GitLab job collects with `GITLAB_TOKEN` alone (see [GitLab CI](gitlab-ci.md#learning-from-outcomes)).
+
+Only Covi's own comment counts, never one with a pasted marker: the comment and anchors the token's own user wrote, or the bot named in `publish.botLogin` (GitHub, default `github-actions[bot]`) or `publish.gitlabBotUser` (GitLab, once GitLab confirms it is a bot). A change Covi did not comment on is skipped. In CI those two keys come from the base revision's configuration, as in `covi ci`. In a scheduled, manually started, or push run on the default branch, the checkout is not a change under review, so they come from the checkout, as they do outside CI. Started on any other branch, the checkout's configuration is not read for them.
+
+### `covi outcomes report`
+
+Precision by certainty, per repository, from `.covi/outcomes/`, as counts (`reported`, `right`, `wrong`, `unlabeled`, `precision`) and a short summary (`--language`, default `en`). Only the repository the origin remote names counts, or the one `--repository` names. Without `--json`, only the summary goes to stdout, so it can be appended to a job summary. Outcome files committed to the repository are ignored, with a warning; so is a `.covi` or `.covi/outcomes` that is a symbolic link.
+
+How a finding is counted is described in [Learning from outcomes](github-action.md#learning-from-outcomes).
+
 ### `covi schema <name>`
 
-Prints the JSON Schema of a file agents author or read: `explanation`, `findings`, `storyboard`, `score`, `demo-plan`, `config`, `evidence` (what `covi evidence` prints), or `subject` (what `covi subject` prints).
+Prints the JSON Schema of a file agents author or read: `explanation`, `findings`, `storyboard`, `score`, `demo-plan`, `config`, `evidence` (what `covi evidence` prints), `subject` (what `covi subject` prints), or `outcome` (what `covi outcomes collect` writes).
 
 ### `covi templates`
 
@@ -498,7 +532,7 @@ Other shapes:
 | 0 | OK | A review with no gate failures, including one with findings, or no change to review. |
 | 1 | The review gate failed | `review`, `report`, or `ci` found confirmed or likely findings at or above `--fail-on`. |
 | 2 | Usage or invalid input | Unknown flag, a number out of range, bad range, invalid `.covi/config.yml`, schema errors in an agent-written file or demo plan, a `publish` head mismatch, or `covi trust` without confirmation when nobody can be asked. |
-| 3 | Environment | Not a git repository, a missing tool or browser, or a missing API key for a provider set explicitly. Also a demonstration that could not run, flows that could not be recorded when recording was asked for, or a failed `doctor` check. |
+| 3 | Environment | Not a git repository, a missing tool or browser, or a missing API key for a provider set explicitly. Also a demonstration that could not run, flows that could not be recorded when recording was asked for, a failed `doctor` check, or `covi outcomes collect` without a token or an answer from the platform. |
 | 4 | Internal error | A bug. Set `COVI_DEBUG=1` for the stack trace. |
 
 Artifacts are written even when the gate fails, so CI can upload them.
@@ -601,8 +635,8 @@ See [Video](video.md).
 | `COVI_OUTPUT_DIR` | `output.dir` |
 | `ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN`) | Enables the `anthropic` provider; `auto` picks it when set. |
 | `OPENAI_API_KEY`, `ELEVENLABS_API_KEY` | Hosted narration voices; `auto` prefers ElevenLabs, then OpenAI, then the system voice. |
-| `COVI_GITHUB_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN` | Token for GitHub comments (first one set wins). |
-| `COVI_GITLAB_TOKEN`, `GITLAB_TOKEN` | Token for GitLab notes and uploads. |
+| `COVI_GITHUB_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN` | Token for GitHub comments and `covi outcomes collect` (first one set wins). |
+| `COVI_GITLAB_TOKEN`, `GITLAB_TOKEN` | Token for GitLab notes, uploads, and `covi outcomes collect` (first one set wins). |
 | `COVI_FFMPEG`, `COVI_FFPROBE` | Paths to the ffmpeg and ffprobe binaries. |
 | `COVI_HOME` | A Covi installation directory to load resources from (`skills/`, `templates/`, `examples/`) instead of the one Covi runs from. |
 | `COVI_USE_DIST` | `1` runs the built bundle in `dist/` instead of the TypeScript sources (in a checkout). |

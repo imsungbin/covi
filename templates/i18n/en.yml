@@ -131,6 +131,8 @@ comment:
   artifacts: artifacts
   run: run
   truncated: …(truncated)
+  rate: 'Was this useful? 👍 👎 (react to this comment)'
+  anchorRate: React 👍 if this finding is right, 👎 if it is not.
 
 review:
   noIssues: No issues found in the areas Covi checked.{tests}
@@ -183,6 +185,10 @@ brief:
   step2: '2. Write `explanation.json` (schema: `covi schema explanation`) and `findings.json` (schema: `covi schema findings`) into the run directory.'
   cite: '   Cite the evidence behind each claim in `evidenceIds` (`covi evidence --run {runId}` lists it); confirmed and likely findings cite at least one.'
   step3: '3. Run `covi report --run {runId}` to validate them and render the Markdown reports.'
+  calibrationTitle: How past findings held up
+  calibrationFrom: { one: 'From {count} earlier reviewed change in this repository (`covi outcomes report`):', other: 'From {count} earlier reviewed changes in this repository (`covi outcomes report`):' }
+  calibrationLine: '- {certainty}: {right} of {labeled} held up ({percent}%)'
+  calibrationNote: 'Let this temper how sure you are, not what you report: it changes no finding''s certainty by itself. Classify each finding on its own evidence.'
 
 intent:
   kind:
@@ -881,3 +887,11 @@ question:
       continuous: '{what}. A quiet bed under the narration that rises in the pauses'
       throughout: '{what}. Plays under the whole video'
       byMode: '{what}. Quietly under short-form narration; around the narration in standard reviews'
+
+outcomes:
+  empty: No outcomes yet. Once Covi has commented on a change, `covi outcomes collect` gathers what became of it.
+  repository: '{repository}:'
+  changes: { one: '{count} reviewed change: {merged} merged ({reverted} reverted later), {closed} closed unmerged, {open} still open.', other: '{count} reviewed changes: {merged} merged ({reverted} reverted later), {closed} closed unmerged, {open} still open.' }
+  rating: 'Covi''s comments: 👍 {up} · 👎 {down}.'
+  precision: '{certainty}: {right} of {labeled} held up ({percent}%); {unlabeled} without a signal.'
+  noSignal: { one: '{certainty}: {count} reported, no signal yet.', other: '{certainty}: {count} reported, no signal yet.' }

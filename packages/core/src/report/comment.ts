@@ -3,7 +3,9 @@ import { t } from '../i18n/catalog.ts';
 import type { Language } from '../i18n/language.ts';
 import type { ReviewContext } from '../model/context.ts';
 import type { Explanation } from '../model/explanation.ts';
-import type { Finding, Review } from '../model/finding.ts';
+import { type Finding, isBlockingCandidate, type Review } from '../model/finding.ts';
+import type { Ledger } from '../model/outcome.ts';
+import { anchorMarker, outcomeKey, renderLedger } from '../outcomes/ledger.ts';
 import { escapeMarkdownKeepCode, fence, truncate } from '../util/text.ts';
 import { evidenceRefs } from './evidence.ts';
 
@@ -20,6 +22,13 @@ export interface CommentLinks {
    * by one (GitLab job artifacts). Without it, cited captures are named, not linked.
    */
   files?: string;
+}
+
+export interface CommentExtras {
+  /** What Covi reported on the change, push by push, for `covi outcomes collect` to read back. */
+  ledger?: Ledger;
+  /** End with "Was this useful? 👍 👎". Only a posted comment can be reacted to, not `comment.md`. */
+  rating?: boolean;
 }
 
 const SEVERITY_ICON: Record<Finding['severity'], string> = { high: '🔴', medium: '🟠', low: '🔵' };
@@ -59,6 +68,7 @@ export function renderComment(
   links: CommentLinks = {},
   language: Language = explanation.language ?? review.language ?? 'en',
   evidence?: EvidenceIndex,
+  extras: CommentExtras = {},
 ): string {
   const say = (key: string, params?: Record<string, string | number>) =>
     t(language, `comment.${key}`, params);
@@ -129,13 +139,82 @@ export function renderComment(
   if (links.run) meta.push(`[${say('run')}](${safeUrl(links.run)})`);
   out.push(`<sub>Covi · ${meta.join(' · ')}</sub>`);
   const body = out.join('\n');
-  return body.length > MAX_COMMENT
-    ? `${body.slice(0, MAX_COMMENT - 40)}\n\n${say('truncated')}`
-    : body;
+  // The rating line and the ledger survive truncation: outcomes are counted from them.
+  const tail = `${extras.rating ? `\n\n${say('rate')}` : ''}${extras.ledger ? `\n${renderLedger(extras.ledger)}` : ''}`;
+  const max = MAX_COMMENT - tail.length;
+  return `${body.length > max ? `${cutClosed(body, max - 40)}\n\n${say('truncated')}` : body}${tail}`;
+}
+
+/**
+ * Cuts the comment without leaving a code block or `<details>` open, so the notice and the rating
+ * line after it render as text rather than as code or collapsed. A cut code block is left out, and
+ * so is a tag or a surrogate pair the cut would split.
+ */
+function cutClosed(markdown: string, max: number): string {
+  let cut = markdown.slice(0, /[\uD800-\uDBFF]/.test(markdown[max - 1] ?? '') ? max - 1 : max);
+  const tag = cut.lastIndexOf('<');
+  if (tag > cut.lastIndexOf('>')) cut = cut.slice(0, tag);
+  let fence: { char: string; length: number; at: number } | undefined;
+  let details = false;
+  let at = 0;
+  for (const line of cut.split('\n')) {
+    if (fence) {
+      // CommonMark closes a fence with the same character, at least as many, and nothing after.
+      const close = /^ {0,3}(`+|~+) *$/.exec(line)?.[1];
+      if (close?.[0] === fence.char && close.length >= fence.length) fence = undefined;
+    } else {
+      const open = /^ {0,3}(`{3,}(?!.*`)|~{3,})/.exec(line)?.[1];
+      if (open) fence = { char: open[0]!, length: open.length, at };
+      else if (line.startsWith('<details>')) details = true;
+      else if (line === '</details>') details = false;
+    }
+    at += line.length + 1;
+  }
+  if (fence) cut = cut.slice(0, fence.at);
+  return details ? `${cut}\n\n</details>` : cut;
 }
 
 /** Only http(s) URLs without characters that could break out of Markdown link syntax. */
 export function safeUrl(url: string): string {
   if (!/^https?:\/\/[^\s()<>"'`]+$/.test(url)) return '#';
   return url;
+}
+
+/** One finding posted as an inline comment that people can react to. */
+export interface AnchorDraft {
+  key: string;
+  path: string;
+  line: number;
+  body: string;
+}
+
+/** Each anchor is a notification, so a run posts at most this many. */
+export const MAX_ANCHORS = 10;
+
+/**
+ * Inline anchors for the findings that can block (confirmed and likely) and point at a line. The
+ * hidden marker carries the finding's outcome key, so a later push finds its anchor again.
+ */
+export function anchorsFor(findings: readonly Finding[], language: Language): AnchorDraft[] {
+  const out: AnchorDraft[] = [];
+  for (const f of findings) {
+    if (out.length >= MAX_ANCHORS) break;
+    if (!isBlockingCandidate(f) || !f.location?.line) continue;
+    const key = outcomeKey(f);
+    if (out.some((a) => a.key === key)) continue;
+    out.push({
+      key,
+      path: f.location.path,
+      line: f.location.line,
+      body: [
+        anchorMarker(key),
+        `**Covi · ${t(language, `certainty.${f.certainty}`)}**: ${inline(f.title, 160)}`,
+        '',
+        inline(f.explanation, 500),
+        '',
+        `<sub>${t(language, 'comment.anchorRate')}</sub>`,
+      ].join('\n'),
+    });
+  }
+  return out;
 }

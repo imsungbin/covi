@@ -168,6 +168,62 @@ describe('Run', () => {
       '20260101-000002-review',
     ]);
   });
+
+  it('records where a run was published, redacted, and lists it with the run', async () => {
+    root = mkdtempSync(join(tmpdir(), 'covi-run-'));
+    const run = await Run.create(options());
+    await run.setPublish({
+      platform: 'github',
+      repository: 'acme/shop',
+      number: 7,
+      comment: { id: '42', url: 'https://github.com/acme/shop/pull/7?t=tok-secret-123' },
+      at: '2026-10-09T12:00:00.000Z',
+    });
+    const reopened = await Run.open(run.id, { root });
+    expect(reopened.manifest.publish).toMatchObject({
+      platform: 'github',
+      repository: 'acme/shop',
+      number: 7,
+      comment: { id: '42' },
+    });
+    expect(JSON.stringify(reopened.manifest.publish)).not.toContain('tok-secret-123');
+    expect((await listRuns(root))[0]!.publish?.number).toBe(7);
+  });
+
+  it('drops a publish record that does not fit its schema when listing or opening runs', async () => {
+    root = mkdtempSync(join(tmpdir(), 'covi-run-'));
+    const run = await Run.create(options());
+    const record = {
+      platform: 'github' as const,
+      repository: 'acme/shop',
+      number: 7,
+      comment: { id: '42' },
+      at: '2026-10-09T12:00:00.000Z',
+    };
+    // A run directory can come from a downloaded artifact, so run.json says whatever it likes.
+    for (const publish of [
+      { ...record, repository: '../../elsewhere' },
+      { ...record, platform: 'bitbucket' },
+      { ...record, comment: { id: '42/../../x' } },
+      { ...record, number: -1 },
+      { ...record, extra: true },
+      'acme/shop#7',
+    ]) {
+      const manifest = JSON.parse(readFileSync(join(run.dir, 'run.json'), 'utf8'));
+      writeFileSync(join(run.dir, 'run.json'), JSON.stringify({ ...manifest, publish }));
+      const [listed] = await listRuns(root);
+      expect(listed!.id).toBe(run.id);
+      expect(listed!.publish).toBeUndefined();
+      expect((await Run.open(run.id, { root })).manifest.publish).toBeUndefined();
+    }
+    // A GitLab project known only by its id still counts.
+    await run.setPublish({ ...record, platform: 'gitlab', repository: '5' });
+    expect((await listRuns(root))[0]!.publish).toMatchObject({
+      platform: 'gitlab',
+      repository: '5',
+    });
+    expect((await Run.open(run.id, { root })).manifest.publish?.repository).toBe('5');
+  });
 });
 
 describe('demo paths', () => {

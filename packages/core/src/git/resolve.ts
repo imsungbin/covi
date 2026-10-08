@@ -383,6 +383,7 @@ const COVI_OWNED = [
   ':(exclude).covi/runs',
   ':(exclude).covi/cache',
   ':(exclude).covi/subject',
+  ':(exclude).covi/outcomes',
   ':(exclude).covi/.gitignore',
 ];
 

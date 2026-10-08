@@ -3,6 +3,7 @@ import type { Language } from '../i18n/language.ts';
 import type { CodeChange } from '../model/change.ts';
 import type { ReviewContext } from '../model/context.ts';
 import type { Finding } from '../model/finding.ts';
+import type { Calibration } from '../outcomes/precision.ts';
 import type { Redactor } from '../security/redact.ts';
 import { renderDiffDigest } from './digest.ts';
 import { locationText } from './markdown.ts';
@@ -16,6 +17,11 @@ export interface BriefOptions {
   audience?: 'agent' | 'model';
   /** The language agents should write in; the brief itself is written in it too. */
   language?: Language;
+  /**
+   * How past findings held up in this repository (`.covi/outcomes/`). A hint for judging how
+   * sure to be; nothing changes a certainty because of it.
+   */
+  calibration?: Calibration;
 }
 
 /**
@@ -154,6 +160,20 @@ export function renderBrief(
     );
   out.push('');
 
+  if (options.calibration) {
+    const { changes, lines } = options.calibration;
+    out.push(`## ${say('calibrationTitle')}`, '', say('calibrationFrom', { count: changes }));
+    for (const line of lines)
+      out.push(
+        say('calibrationLine', {
+          certainty: t(language, `certainty.${line.certainty}`),
+          right: line.right,
+          labeled: line.labeled,
+          percent: line.percent,
+        }),
+      );
+    out.push('', say('calibrationNote'), '');
+  }
   if (context.signals.length || ruleFindings.length) {
     out.push(`## ${say('signals')}`, '');
     for (const f of ruleFindings) {

@@ -1,0 +1,20 @@
+[
+  {
+    "id": 31,
+    "body": "{{MARKER}}\nPasted by the merge request's author.",
+    "system": false,
+    "author": { "id": 5, "username": "author" }
+  },
+  {
+    "id": 30,
+    "body": "{{MARKER}}\nPosted by Covi.",
+    "system": false,
+    "author": { "id": 50, "username": "project_5_bot_covi" }
+  },
+  {
+    "id": 29,
+    "body": "added 1 commit",
+    "system": true,
+    "author": { "id": 5, "username": "author" }
+  }
+]

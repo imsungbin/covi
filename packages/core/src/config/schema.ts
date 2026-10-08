@@ -182,6 +182,7 @@ export const ConfigInputSchema = z.strictObject({
       focus: z.array(z.enum(FINDING_CATEGORIES)).optional(),
       disableRules: z.array(z.string()).optional(),
       runTests: z.boolean().optional(),
+      calibration: z.boolean().optional(),
     })
     .optional(),
   test: z.strictObject({ command: z.string().optional(), timeout: seconds.optional() }).optional(),
@@ -282,6 +283,22 @@ export const ConfigInputSchema = z.strictObject({
       comment: z.boolean().optional(),
       annotations: z.boolean().optional(),
       video: z.enum(['link', 'upload', 'none']).optional(),
+      anchors: z.boolean().optional(),
+      rating: z.boolean().optional(),
+      botLogin: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\[bot\]$/)
+        .optional()
+        .describe(
+          "The GitHub App bot Covi comments as when its token has no user (`name[bot]`). Only this bot's comments and anchors count as Covi's.",
+        ),
+      gitlabBotUser: z
+        .string()
+        .regex(/^[A-Za-z0-9_](?:[A-Za-z0-9_.-]{0,253}[A-Za-z0-9_-])?$/)
+        .optional()
+        .describe(
+          "The GitLab bot user Covi's CI comments as (a project or group access token's username). Collecting outcomes with another token counts its notes as Covi's once GitLab confirms the user is a bot.",
+        ),
     })
     .optional(),
 });
@@ -315,6 +332,8 @@ export interface CoviConfig {
     focus: Array<(typeof FINDING_CATEGORIES)[number]>;
     disableRules: string[];
     runTests: boolean;
+    /** Show how past findings held up (`.covi/outcomes/`) in the brief and the model's material. */
+    calibration: boolean;
   };
   test: { command?: string; timeout: number };
   app: {
@@ -357,7 +376,17 @@ export interface CoviConfig {
     outro: boolean;
   };
   output: { dir: string; keep: number };
-  publish: { comment: boolean; annotations: boolean; video: 'link' | 'upload' | 'none' };
+  publish: {
+    comment: boolean;
+    annotations: boolean;
+    video: 'link' | 'upload' | 'none';
+    anchors: boolean;
+    rating: boolean;
+    /** The bot a GitHub token without a user comments as; only its comments count as Covi's. */
+    botLogin: string;
+    /** The GitLab bot user CI comments as; no default, so another token reads only its own notes. */
+    gitlabBotUser?: string;
+  };
 }
 
 /** The global Covi defaults (lowest precedence layer). */
@@ -365,7 +394,14 @@ export const DEFAULT_CONFIG: CoviConfig = {
   language: 'auto',
   ignore: [],
   intelligence: { provider: 'auto', maxDiffChars: 120_000, timeout: 300 },
-  review: { failOn: 'none', maxFindings: 10, focus: [], disableRules: [], runTests: false },
+  review: {
+    failOn: 'none',
+    maxFindings: 10,
+    focus: [],
+    disableRules: [],
+    runTests: false,
+    calibration: true,
+  },
   test: { timeout: 600 },
   app: { readyPath: '/', timeout: 120, env: {}, passEnv: [] },
   demo: { pages: [], flows: [], commands: [], requests: [], viewports: ['desktop'], record: true },
@@ -384,5 +420,12 @@ export const DEFAULT_CONFIG: CoviConfig = {
     outro: true,
   },
   output: { dir: '.covi/runs', keep: 20 },
-  publish: { comment: true, annotations: true, video: 'link' },
+  publish: {
+    comment: true,
+    annotations: true,
+    video: 'link',
+    anchors: false,
+    rating: true,
+    botLogin: 'github-actions[bot]',
+  },
 };

@@ -154,6 +154,48 @@ describe('configuration', () => {
         /\.covi\/config\.yml is invalid/,
       );
   });
+
+  it('keeps anchors off, the rating line on, and calibration on unless configured', () => {
+    expect(DEFAULT_CONFIG.publish).toEqual({
+      comment: true,
+      annotations: true,
+      video: 'link',
+      anchors: false,
+      rating: true,
+      botLogin: 'github-actions[bot]',
+    });
+    const { config } = resolveConfig([
+      {
+        name: 'repository',
+        values: parseConfigInput(
+          { publish: { anchors: true, rating: false }, review: { calibration: false } },
+          'test',
+        ),
+      },
+    ]);
+    expect(config.publish).toMatchObject({ anchors: true, rating: false });
+    expect(config.review.calibration).toBe(false);
+  });
+
+  it('takes a GitHub App bot login for publish.botLogin, and nothing else', () => {
+    expect(
+      parseConfigInput({ publish: { botLogin: 'covi-app[bot]' } }, 't').publish?.botLogin,
+    ).toBe('covi-app[bot]');
+    for (const botLogin of ['octocat', 'some app[bot]', '[bot]', 'x[bot] '])
+      expect(() => parseConfigInput({ publish: { botLogin } }, 't')).toThrow(/publish\.botLogin/);
+  });
+
+  it('takes a GitLab username for publish.gitlabBotUser, with no default', () => {
+    expect(DEFAULT_CONFIG.publish.gitlabBotUser).toBeUndefined();
+    for (const user of ['project_5_bot_covi', 'group_12_bot_9f3a', 'covi.bot-1'])
+      expect(
+        parseConfigInput({ publish: { gitlabBotUser: user } }, 't').publish?.gitlabBotUser,
+      ).toBe(user);
+    for (const gitlabBotUser of ['', 'covi[bot]', 'some user', '-covi', 'covi.', 'a/b'])
+      expect(() => parseConfigInput({ publish: { gitlabBotUser } }, 't')).toThrow(
+        /publish\.gitlabBotUser/,
+      );
+  });
 });
 
 describe('music and sound effects', () => {

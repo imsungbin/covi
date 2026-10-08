@@ -4,10 +4,12 @@ import type { ResolvedConfig } from '../config/resolve.ts';
 import type { ResolvedLanguage } from '../i18n/language.ts';
 import type { ChangeSource, CodeChange, Revision } from '../model/change.ts';
 import type { Certainty, Verdict } from '../model/finding.ts';
+import { PublishRecordSchema } from '../model/outcome.ts';
 import { Redactor } from '../security/redact.ts';
 import { EnvironmentError, UsageError } from '../util/errors.ts';
 import { ensureDir, exists, linkedOrOutside, readJson, writeFileAtomic } from '../util/fs.ts';
 import { sha256File } from '../util/hash.ts';
+import { RUN_ID_PATTERN } from './paths.ts';
 
 export type ArtifactKind =
   | 'context'
@@ -79,6 +81,16 @@ export interface RunOutcome {
   message?: string;
 }
 
+/** Where a run's comment went, so `covi outcomes collect` can find it again from this machine. */
+export interface PublishRecord {
+  platform: 'github' | 'gitlab';
+  /** `owner/name` on GitHub; the project path (or id) on GitLab. */
+  repository: string;
+  number: number;
+  comment: { id: string; url?: string };
+  at: string;
+}
+
 export interface RunManifest {
   schemaVersion: 1;
   runId: string;
@@ -117,6 +129,7 @@ export interface RunManifest {
   warnings: string[];
   errors: Array<{ stage?: string; message: string }>;
   outcome?: RunOutcome;
+  publish?: PublishRecord;
 }
 
 export interface CreateRunOptions {
@@ -141,8 +154,6 @@ export interface CreateRunOptions {
   redactor?: Redactor;
   now?: Date;
 }
-
-const RUN_ID = /^\d{8}-\d{6}-[a-z-]+(-[0-9a-f]{7})?(-\d+)?$/;
 
 /**
  * A run is a directory of inspectable artifacts plus run.json, the manifest that records what was
@@ -241,6 +252,8 @@ export class Run {
     if (!(await exists(manifestPath)))
       throw new UsageError(`No Covi run at ${dir}`, 'List runs with `covi runs`.');
     const manifest = await readJson<RunManifest>(manifestPath);
+    // run.json may come from a downloaded artifact: a record that does not fit is no record.
+    manifest.publish = PublishRecordSchema.safeParse(manifest.publish).data;
     return new Run(manifest.runId, dir, manifest, options.redactor ?? Redactor.fromProcess());
   }
 
@@ -392,6 +405,12 @@ export class Run {
     };
   }
 
+  /** Records where the run's comment was posted (redacted, like everything in run.json). */
+  async setPublish(record: PublishRecord): Promise<void> {
+    this.manifest.publish = this.redactor.redactDeep(record);
+    await this.save();
+  }
+
   async finish(outcome: RunOutcome): Promise<void> {
     const finished = new Date();
     this.manifest.finishedAt = finished.toISOString();
@@ -450,6 +469,7 @@ export interface RunSummary {
   status?: OutcomeStatus;
   verdict?: Verdict;
   title?: string;
+  publish?: PublishRecord;
 }
 
 export async function listRuns(root: string, runsDir?: string): Promise<RunSummary[]> {
@@ -470,6 +490,7 @@ export async function listRuns(root: string, runsDir?: string): Promise<RunSumma
       status: manifest.outcome?.status,
       verdict: manifest.outcome?.verdict,
       title: manifest.change?.title,
+      publish: PublishRecordSchema.safeParse(manifest.publish).data,
     });
   }
   return out.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
@@ -479,7 +500,7 @@ export async function listRuns(root: string, runsDir?: string): Promise<RunSumma
 export async function pruneRuns(runsRoot: string, keep: number): Promise<string[]> {
   const entries = await readdir(runsRoot, { withFileTypes: true }).catch(() => []);
   const runs = entries
-    .filter((e) => e.isDirectory() && RUN_ID.test(e.name))
+    .filter((e) => e.isDirectory() && RUN_ID_PATTERN.test(e.name))
     .map((e) => e.name)
     .sort();
   const removed: string[] = [];

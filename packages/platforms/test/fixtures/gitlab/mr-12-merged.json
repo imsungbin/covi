@@ -1,0 +1,12 @@
+{
+  "iid": 12,
+  "state": "merged",
+  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "web_url": "https://gitlab.example/acme/shop/-/merge_requests/12",
+  "merged_at": "2026-10-02T09:00:00.000Z",
+  "closed_at": null,
+  "merge_commit_sha": "4444444444444444444444444444444444444444",
+  "squash_commit_sha": "5555555555555555555555555555555555555555",
+  "target_branch": "main",
+  "author": { "id": 5, "username": "author" }
+}

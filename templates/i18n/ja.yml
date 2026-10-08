@@ -128,6 +128,8 @@ comment:
   artifacts: 成果物
   run: 実行
   truncated: …（省略）
+  rate: '役に立ちましたか？👍 👎（このコメントにリアクションしてください）'
+  anchorRate: この指摘が正しければ 👍、違えば 👎 でリアクションしてください。
 
 review:
   noIssues: 'Covi が確認した範囲では問題は見つかりませんでした。{tests}'
@@ -180,6 +182,10 @@ brief:
   step2: '2. 実行ディレクトリに `explanation.json`（スキーマ: `covi schema explanation`）と `findings.json`（スキーマ: `covi schema findings`）を書いてください。'
   cite: '   各主張の根拠を `evidenceIds` に書いてください（一覧は `covi evidence --run {runId}`）。確認済みの問題と問題の可能性が高いものには、根拠が少なくとも一つ必要です。'
   step3: '3. `covi report --run {runId}` を実行して検証し、Markdown のレポートを生成してください。'
+  calibrationTitle: 過去の指摘の的中率
+  calibrationFrom: { other: 'このリポジトリで以前レビューした変更 {count} 件から（`covi outcomes report`）:' }
+  calibrationLine: '- {certainty}: {labeled} 件中 {right} 件が妥当（{percent}%）'
+  calibrationNote: 'これは確信の度合いを見直すためのもので、何を報告するかを変えるものではありません。これだけで指摘の確実度は変わりません。各指摘はそれ自体の根拠で分類してください。'
 
 intent:
   kind:
@@ -864,3 +870,11 @@ question:
       continuous: '{what}。ナレーションの下で静かに流れ、間で少し大きくなります'
       throughout: '{what}。動画全体に流れます'
       byMode: '{what}。ショート動画ではナレーションの下で静かに、標準レビューではナレーションの間に流れます'
+
+outcomes:
+  empty: まだ結果がありません。Covi が変更にコメントしたあと、`covi outcomes collect` でその結果を集めてください。
+  repository: '{repository}:'
+  changes: { other: 'レビューした変更 {count} 件: マージ {merged} 件（うち後で取り消し {reverted} 件）、マージせずクローズ {closed} 件、オープン中 {open} 件。' }
+  rating: 'Covi のコメントへの反応: 👍 {up} · 👎 {down}。'
+  precision: '{certainty}: {labeled} 件中 {right} 件が妥当でした（{percent}%）。シグナルなし {unlabeled} 件。'
+  noSignal: { other: '{certainty}: {count} 件を報告、まだシグナルなし。' }

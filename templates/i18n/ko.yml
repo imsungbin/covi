@@ -129,6 +129,8 @@ comment:
   artifacts: 산출물
   run: 실행
   truncated: …(생략됨)
+  rate: '도움이 되었나요? 👍 👎 (이 댓글에 반응을 남겨 주세요)'
+  anchorRate: 이 발견 사항이 맞으면 👍, 틀리면 👎 반응을 남겨 주세요.
 
 review:
   noIssues: 'Covi가 점검한 범위에서는 문제를 찾지 못했습니다.{tests}'
@@ -181,6 +183,10 @@ brief:
   step2: '2. 실행 디렉터리에 `explanation.json`(스키마: `covi schema explanation`)과 `findings.json`(스키마: `covi schema findings`)을 작성하세요.'
   cite: '   각 주장의 근거를 `evidenceIds`에 적으세요(`covi evidence --run {runId}`로 목록을 볼 수 있습니다). 확인된 문제와 가능성 높은 문제에는 근거가 하나 이상 있어야 합니다.'
   step3: '3. `covi report --run {runId}`를 실행해 검증하고 Markdown 보고서를 만드세요.'
+  calibrationTitle: 과거 발견 사항의 적중률
+  calibrationFrom: { other: '이 저장소에서 앞서 리뷰한 변경 {count}건 기준(`covi outcomes report`):' }
+  calibrationLine: '- {certainty}: {labeled}건 중 {right}건이 맞았습니다({percent}%)'
+  calibrationNote: '이 수치로 얼마나 확신할지를 가늠하되, 무엇을 보고할지는 바꾸지 마세요. 이것만으로 어떤 발견 사항의 확실성도 바뀌지 않습니다. 각 발견 사항은 그 자체의 근거로 분류하세요.'
 
 intent:
   kind:
@@ -865,3 +871,11 @@ question:
       continuous: '{what}. 내레이션 밑에 잔잔하게 깔리고 쉬는 틈에 커짐'
       throughout: '{what}. 영상 전체에 깔림'
       byMode: '{what}. 숏폼은 내레이션 밑에 잔잔하게, 일반 리뷰는 내레이션 사이에 들림'
+
+outcomes:
+  empty: 아직 수집한 결과가 없습니다. Covi가 변경에 댓글을 단 뒤 `covi outcomes collect`로 그 결과를 모으세요.
+  repository: '{repository}:'
+  changes: { other: '리뷰한 변경 {count}건: 머지 {merged}건(이후 되돌림 {reverted}건), 머지 없이 닫힘 {closed}건, 아직 열림 {open}건.' }
+  rating: 'Covi 댓글 반응: 👍 {up} · 👎 {down}.'
+  precision: '{certainty}: {labeled}건 중 {right}건이 맞았습니다({percent}%). 신호 없음 {unlabeled}건.'
+  noSignal: { other: '{certainty}: {count}건 보고, 아직 신호 없음.' }

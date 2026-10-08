@@ -65,3 +65,6 @@ export const demoPath = {
   /** Why the app did not start at a revision: the evidence an `app-start` finding cites. */
   appLog: (revision: DemoRevision) => `demo/app-${revision}.log`,
 } as const;
+
+// Defined with the outcome model, which validates run ids too; paths are found here.
+export { RUN_ID_PATTERN } from '../model/outcome.ts';

@@ -53,10 +53,11 @@ You don't need any configuration to start. Without an API key, Covi reviews with
 3. **Install the browser and video tools** (only for `command: review`):
    - When `video` isn't `never`: ffmpeg and espeak-ng from apt on Linux, ffmpeg from Homebrew on macOS, each only if missing.
    - Unless `install-browser` is `false`: `covi doctor --install-browser`, which installs the Chromium build that Covi's own Playwright version expects. On Linux it adds `--with-deps`, so Playwright installs the system libraries too (it asks sudo for them itself).
-4. **Review.** Runs `covi ci --platform github --out "$RUNNER_TEMP/covi-run" --no-comment`, plus one flag for each input you set. Inputs reach the script as environment variables and are never interpolated into it.
-5. **Upload artifacts.** Uploads the run directory with `actions/upload-artifact`.
-6. **Comment.** Runs `covi publish --platform github --run <run-dir> --artifact-url <url>`. The comment is posted after the upload so it can link to the artifact. Commenting is best effort: a failure logs a warning and doesn't fail the job.
-7. **Enforce the review gate.** Fails the job if the review step reported a gate failure (see [The review gate](#the-review-gate)).
+4. **Restore outcomes** (only with `outcomes: true`). Restores `.covi/outcomes/` from the Actions cache, so the review sees how past findings held up. On a closed pull request from this repository, the action then collects its outcome and saves the cache, and skips the browser install, the review, and every step after it (see [Learning from outcomes](#learning-from-outcomes)).
+5. **Review.** Runs `covi ci --platform github --out "$RUNNER_TEMP/covi-run" --no-comment`, plus one flag for each input you set. Inputs reach the script as environment variables and are never interpolated into it.
+6. **Upload artifacts.** Uploads the run directory with `actions/upload-artifact`.
+7. **Comment.** Runs `covi publish --platform github --run <run-dir> --artifact-url <url>`. The comment is posted after the upload so it can link to the artifact. Commenting is best effort: a failure logs a warning and doesn't fail the job.
+8. **Enforce the review gate.** Fails the job if the review step reported a gate failure (see [The review gate](#the-review-gate)).
 
 ## Permissions
 
@@ -68,6 +69,7 @@ Grant only what the jobs use:
 | `pull-requests: write` | Posting or updating the summary comment. Leave it out, or set `comment: false`, if you don't want a comment. |
 | `security-events: write` | Only if you upload the SARIF report to code scanning. |
 | `actions: read` | Only in the `workflow_run` comment workflow, to download the artifact from the review run. |
+| `pull-requests: read` | Only in a job that collects outcomes on a closed pull request (`outcomes: true`), to read its comments and reactions. Give that job no write permission. |
 
 The action doesn't use any other permission. Annotations, the job summary, step outputs, and the artifact upload need no extra scopes.
 
@@ -89,10 +91,12 @@ Inputs that mirror a Covi setting default to empty. Empty means the setting come
 | `provider` | empty (`intelligence.provider`, else `auto`) | Reasoning provider: `auto`, `heuristic`, `anthropic`, or `command`. |
 | `model` | empty | Model id for the `anthropic` provider. When empty, Covi uses `claude-opus-5-5`. |
 | `comment` | `true` | Post or update the summary comment, in the step after the upload. Needs `pull-requests: write`. This is an action setting: the review step always runs `covi ci --no-comment`. |
+| `finding-anchors` | empty (`publish.anchors`, else off) | `true` or `false`: also post each confirmed or likely finding that has a line as an inline review comment people can react to with 👍 or 👎. At most 10 per run, once per finding: a later push finds the anchor again. Passed as `--anchors` or `--no-anchors`, to the review and to `command: publish`. |
+| `outcomes` | `false` | `true`: learn how reviews held up. On a closed pull request from this repository, the action collects the outcome instead of reviewing. On other events, it restores collected outcomes before the review. See [Learning from outcomes](#learning-from-outcomes). |
 | `anthropic-api-key` | empty | Optional. Enables model-written explanations, findings, and narration. |
 | `openai-api-key` | empty | Optional. Narration with OpenAI voices. |
 | `elevenlabs-api-key` | empty | Optional. Narration with ElevenLabs voices. |
-| `github-token` | `${{ github.token }}` | Used only to post the comment. |
+| `github-token` | `${{ github.token }}` | Used to post the comment and, with `outcomes`, to read the pull request's outcome. |
 | `config` | empty | Path to a config file. A path inside the repository is read from the base revision, like `.covi/config.yml`; a file outside the checkout is read from disk. See [Configuration in CI](#configuration-in-ci). |
 | `working-directory` | `.` | Directory of the checked-out repository. |
 | `artifact-name` | `covi-review` | Name of the uploaded run artifact. |
@@ -190,7 +194,7 @@ With `upload-artifact: true`, the run directory is uploaded as `artifact-name` a
 
 ### The pull request comment
 
-Covi keeps one comment per pull request. It finds its earlier comment by a hidden marker, `<!-- covi:review -->`, and edits that comment on every push instead of adding new ones.
+Covi keeps one comment per pull request. It finds its earlier comment by a hidden marker, `<!-- covi:review -->`, and edits that comment on every push instead of adding new ones. Anyone can paste the marker, so only a comment Covi's token wrote counts: the workflow token's `github-actions[bot]` (or the bot in `publish.botLogin`), or the user a personal access token belongs to. If Covi cannot read the comments, it posts nothing rather than overwrite what it could not read.
 
 The comment is rebuilt from the run's schema-validated `review.json` and `explanation.json`, with all dynamic text escaped. It contains:
 
@@ -200,6 +204,11 @@ The comment is rebuilt from the run's schema-validated `review.json` and `explan
 - collapsible details with evidence and suggestions
 - what changed and what was not verified
 - links to the artifact and the workflow run
+- a last line, *Was this useful? 👍 👎*, whose reactions `covi outcomes` counts (`publish.rating: false` leaves it out)
+
+**Upgrading with a GitHub App token.** Earlier versions edited the first marker comment whoever wrote it. Covi now edits only its own, so if `github-token` is an app's installation token (for example from `actions/create-github-app-token`), set `publish.botLogin` to that app's bot, such as `my-covi-app[bot]`, in the base branch's `.covi/config.yml`. Until then Covi posts a new comment on each push and warns with the exact value to set.
+
+The comment also ends with a hidden ledger, `<!-- covi:ledger v1 … -->`. It records which findings Covi reported on each push, as hashes and certainties with no text. When a finding disappears after a push, `covi outcomes` can tell that it was addressed.
 
 GitHub has no API for attaching a video to a comment, so the video link points at the uploaded artifact, which reviewers download as a zip. To link a video hosted elsewhere, run `covi publish --video-url <url>` yourself.
 
@@ -257,6 +266,38 @@ Everything Covi writes passes through its redactor. [security.md](security.md) d
 The `config` input follows the same rule. If the path is inside the checked-out repository, Covi reads that file from the base revision, so a pull request can't edit it; the base must already have it. A file outside the checkout, for example one an earlier step writes, is read from disk.
 
 Commands in the base revision's configuration run without `covi trust`: trust is for configuration that comes from a working tree on your own machine.
+
+## Learning from outcomes
+
+Covi can learn how its reviews held up in your repository. With `outcomes: true`, a closed pull request runs a collection instead of a review:
+
+- **The pull request:** merged, or closed without merging, and whether a commit on the base branch since the merge reverted it. Git's "This reverts commit …" and GitHub's revert button both count.
+- **The comment:** 👍 and 👎 on Covi's comment, and later comments that quote it.
+- **Each finding:** 👍 and 👎 on its inline anchor, with `finding-anchors: true`, and replies in its thread.
+- **Fixes:** findings that disappeared after a push. The comment's ledger records them.
+
+`covi outcomes report` turns that into precision by certainty:
+
+- **Votes first.** A finding whose anchor has more 👍 than 👎 held up, and one with more 👎 did not, even while the pull request is open. The pull request author's own votes don't count, and neither does someone who voted both ways.
+- **Addressed counts for Covi.** A finding that disappeared after a push held up: the author changed the code until Covi stopped seeing the problem.
+- **Merged unchanged counts against it.** A confirmed or likely finding still there when the pull request merged, at the commit Covi last reviewed, and not reverted, did not hold up: the team shipped what Covi called an issue.
+- **Everything else counts neither way:** open pull requests without votes, closed-unmerged ones, reverted changes, findings reworded in a later push, risks and questions merged as they were, and findings still there when a pull request merged at a commit Covi had not reviewed (a push merged before its review finished).
+
+Precision is held up / (held up + not held up). The next review's brief shows it for every certainty with at least five labeled findings. The `covi-review` skill treats it as a hint about how sure to be, and Covi never changes a certainty because of it (`review.calibration: false` leaves it out). The 👍 and 👎 on the comment itself are reported as a rating of the comment; they never label a finding.
+
+[`examples/author-side.yml`](../integrations/github-action/examples/author-side.yml) sets it up. It reviews every push to a pull request from this repository (drafts too) and updates the one comment. When the pull request closes, it collects under `pull_request_target`, which runs in the base branch's context, so the outcome is saved to an Actions cache that every later review restores. That job holds a privileged token, so it runs nothing from the pull request: it checks out only the base commit (for the base's `.covi/config.yml` and the report), without persisted credentials, and reads the pull request through the API with `contents: read` and `pull-requests: read`.
+
+Who can feed what later reviews read:
+
+- **Only this repository's pull requests.** The action collects a closed pull request only when its head is in this repository, and the example's jobs check the same. A fork's pull request is never collected.
+- **Only Covi's own comment and anchors.** Covi reads a comment or an anchor only when its own token wrote it: the token's user, or `github-actions[bot]` for the workflow token (another bot with `publish.botLogin`, read from the base revision). A pasted marker never counts, and a pull request where Covi did not comment is skipped.
+
+Limits:
+
+- **Reverts after the close.** The close-time collection sees only what happened by then. To count a revert that lands later, run `covi outcomes collect --platform github --recent 50` on a schedule on the default branch, between restoring and saving the cache; the example's header shows how.
+- **Cache eviction.** GitHub evicts a cache entry nobody has used for 7 days, so a repository with no pull request activity for a week can lose its outcome history; the next collections start it again. A scheduled collect, which restores and saves the cache, keeps it in use. Covi keeps the newest 200 outcome files, as many as a review reads.
+- **Races.** The cache holds what was collected in this repository. If two pull requests close at the same moment, one outcome can be lost; the same scheduled collect fills it in again.
+- **Failures only warn.** A collection or report that fails logs a warning and doesn't fail the job.
 
 ## Pull requests from forks
 
@@ -325,6 +366,7 @@ The job runs whenever the review finished, including when its gate failed, so a 
 - **The pull request must still point there.** If someone pushed after the review, Covi skips the comment; the newer review run comments instead.
 - **Untrusted content stays data.** A fork can change the review workflow in its own pull request, so the downloaded artifact is untrusted. `covi publish` executes nothing from it. It validates `review.json` and `explanation.json` against their schemas, rebuilds the comment from them, and escapes all text, so the artifact can't inject links, HTML, or @-mentions.
 - **Links point at the review run,** where the artifact lives, not at the comment workflow.
+- **Settings come from the workflow, not the artifact.** Finding anchors are posted only when the publish step sets `finding-anchors: true`; the anchors then carry the artifact's findings, rebuilt and escaped like the comment. The comment keeps the ledger an earlier review in this repository wrote, so a fork's artifact never writes the history that outcomes are read from.
 
 The `pr-number` and `expect-head` inputs override the event's values for other setups, and the head check applies to them too.
 
@@ -360,5 +402,7 @@ On `push`, Covi reviews the pushed range (`before..after`). There's no pull requ
 ## How the integration is tested
 
 `tests/integrations.test.ts` checks the action's metadata: every input is documented and used, every output comes from a real step, no `${{ }}` expression is interpolated into a shell script, the flags it passes are flags `covi ci` accepts, setting inputs default to empty, and Covi is never installed by a package name it doesn't control. `tests/ci.test.ts` runs `covi ci` and `covi publish` against a local stand-in for the GitHub API, including the fork `workflow_run` flow. The example workflows were also checked with `actionlint`, and the action's scripts with `shellcheck`.
+
+The outcome collectors are tested against saved GitHub and GitLab responses (`packages/platforms/test/fixtures/`), including pagination, rate limits, and pasted markers. The author-side example is parsed and checked for its triggers and permissions, and to confirm that its close job checks out only the base commit and collects only pull requests from this repository.
 
 The action's steps have also been run in order inside the pinned Playwright image, with a mock GitHub API receiving the comment. That exercises installing Covi from source, the browser install, the review, the step outputs, the job summary, and the comment. It is not a run on GitHub's hosted runners.

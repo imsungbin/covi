@@ -1,0 +1,11 @@
+{
+  "number": 7,
+  "state": "closed",
+  "html_url": "https://github.com/acme/shop/pull/7",
+  "merged_at": "2026-10-02T09:00:00Z",
+  "closed_at": "2026-10-02T09:00:00Z",
+  "merge_commit_sha": "1111111111111111111111111111111111111111",
+  "user": { "login": "author", "id": 5, "type": "User" },
+  "head": { "ref": "fix/totals", "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  "base": { "ref": "main", "sha": "0000000000000000000000000000000000000000" }
+}

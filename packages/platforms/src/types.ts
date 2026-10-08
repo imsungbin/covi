@@ -1,4 +1,4 @@
-import type { ChangeMetadata, ChangeSource, Finding } from '@covi/core';
+import type { AnchorDraft, ChangeMetadata, ChangeSource, Finding } from '@covi/core';
 
 export type PlatformId = 'github' | 'gitlab' | 'local';
 
@@ -26,19 +26,60 @@ export interface PlatformContext {
   expectedHead?: string;
   /** Finds the pull request when the event does not name it (fork pull requests in workflow_run). */
   pullRequestHead?: { owner: string; branch: string; sha: string };
+  /**
+   * The checkout is the default branch in a scheduled, dispatched (GitLab: web or API), or push
+   * run, not a change under review, so its configuration can be read as it is. Never set on any
+   * other branch, nor when the event names a change (`metadata.number`, `pullRequestHead`,
+   * `expectedHead`).
+   */
+  trustedCheckout?: boolean;
 }
 
 export interface PublishOutcome {
   status: 'created' | 'updated' | 'skipped' | 'failed';
   url?: string;
   reason?: string;
+  /** The comment's id on the platform. */
+  id?: string;
+  /** What happened to the finding anchors, when they were asked for. */
+  anchors?: AnchorsOutcome;
+  /** What the person running Covi should know, such as a setting that would have found its comment. */
+  warnings?: string[];
+}
+
+/** Covi's comment as the platform has it. */
+export interface ExistingComment {
+  id: string;
+  body: string;
+  url?: string;
+}
+
+export interface AnchorsOutcome {
+  posted: Array<{ key: string; id: string }>;
+  /** Anchors already on the pull request from an earlier push. */
+  existing: number;
+  skipped: Array<{ key: string; reason: string }>;
 }
 
 export interface Publisher {
   readonly platform: Exclude<PlatformId, 'local'>;
-  upsertComment(body: string): Promise<PublishOutcome>;
+  /** Where comments go: the repository (GitLab: the project) and the pull/merge request. */
+  readonly target: { repository: string; number: number };
+  /**
+   * Covi's existing comment, or `null` when it has none. Only a comment Covi itself posted counts
+   * (a bot's, or the token's own user's): anyone can paste the marker. Throws when the platform
+   * refuses the lookup.
+   */
+  findComment(): Promise<ExistingComment | null>;
+  /**
+   * Creates or updates Covi's comment. Given what `findComment` returned (`null` included), it
+   * does not look again.
+   */
+  upsertComment(body: string, existing?: ExistingComment | null): Promise<PublishOutcome>;
   /** Uploads a file so it can be embedded in a comment (GitLab project uploads). */
   uploadFile?(path: string): Promise<{ url: string; markdown: string } | undefined>;
+  /** Posts findings as inline comments people can react to, once per finding key (GitHub). */
+  postAnchors?(anchors: readonly AnchorDraft[], head: string): Promise<AnchorsOutcome>;
 }
 
 export interface CiOutputs {
@@ -52,3 +93,8 @@ export interface FindingLocation {
 }
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+
+/** Whether the context names a change under review: then the checkout may be that change. */
+export function namesChange(ctx: PlatformContext): boolean {
+  return Boolean(ctx.metadata.number || ctx.pullRequestHead || ctx.expectedHead);
+}

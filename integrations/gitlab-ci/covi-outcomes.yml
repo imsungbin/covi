@@ -1,0 +1,85 @@
+# Covi outcomes for GitLab CI: on a schedule, collects what became of Covi's merge request notes
+# (merged or closed, reverted later, 👍/👎 on the note, replies in its thread) into the CI cache
+# that covi-review restores, so later reviews see how past findings held up.
+#
+# GitLab runs no pipeline when a merge request closes, so collection runs on a schedule on the
+# protected default branch: Build > Pipeline schedules > New schedule (daily is plenty). The cache
+# is protected, as GitLab makes it by default: reviews on protected branches restore it, and merge
+# requests from unprotected branches review without it.
+# It needs a token with the read_api scope in GITLAB_TOKEN (CI_JOB_TOKEN cannot read notes or award
+# emoji). Add it as a masked, protected CI/CD variable: this job runs only on a protected branch,
+# and protection keeps the token out of every other branch's pipeline. Keep it separate from
+# COVI_GITLAB_TOKEN, which covi-review needs on unprotected merge requests too, and which this
+# job ignores. Notes count as Covi's when GITLAB_TOKEN's user wrote them (store the same token
+# value again), or when publish.gitlabBotUser names their author.
+#
+# Include it next to covi.yml:
+#   include:
+#     - project: 'your-org/covi'
+#       ref: v1
+#       file: '/integrations/gitlab-ci/covi-outcomes.yml'
+#       inputs:
+#         covi-project: your-org/covi
+#         covi-ref: v1
+spec:
+  inputs:
+    stage:
+      default: test
+      description: Pipeline stage for the covi-outcomes job.
+    image:
+      default: node:22-bookworm
+      description: Image with Node.js 22.18+, bash, and git. No browser is needed.
+    covi-project:
+      default: your-org/covi
+      description: Project on this GitLab instance that holds Covi (the one this file is included from). Cloned with the job token.
+    covi-ref:
+      default: main
+      description: Branch, tag, or commit of Covi to install. Pin it to the ref you include.
+    covi-package:
+      default: ''
+      description: Install Covi from this npm package spec or tarball URL instead (a package you publish and control).
+    recent:
+      default: '50'
+      description: How many of the most recently closed merge requests to collect (1-100).
+---
+covi-outcomes:
+  stage: "$[[ inputs.stage ]]"
+  image: "$[[ inputs.image ]]"
+  # The protected default branch only: it is the checkout Covi reads its configuration from here,
+  # and only a protected ref reads and writes the protected cache reviews trust.
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
+  variables:
+    GIT_DEPTH: "1"
+    COVI_PROJECT: "$[[ inputs.covi-project ]]"
+    COVI_REF: "$[[ inputs.covi-ref ]]"
+    COVI_PACKAGE: "$[[ inputs.covi-package ]]"
+    COVI_INPUT_RECENT: "$[[ inputs.recent ]]"
+  # The cache covi-review pulls.
+  cache:
+    key: covi-outcomes
+    paths:
+      - .covi/outcomes/
+    policy: pull-push
+  before_script:
+    - |
+      if [ -n "$COVI_PACKAGE" ]; then
+        npm install --global --no-audit --no-fund "$COVI_PACKAGE"
+        export COVI_BIN=covi
+      else
+        # Covi's own source at a pinned ref, from this instance, with the job's token.
+        git init -q /opt/covi
+        git -C /opt/covi fetch -q --depth 1 \
+          "${CI_SERVER_PROTOCOL}://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${COVI_PROJECT}.git" \
+          "$COVI_REF"
+        git -C /opt/covi checkout -q FETCH_HEAD
+        (cd /opt/covi && npm ci --no-audit --no-fund)
+        export COVI_BIN=/opt/covi/bin/covi.mjs COVI_USE_DIST=1
+      fi
+  script:
+    - '[ -n "$GITLAB_TOKEN" ] || { echo "Set GITLAB_TOKEN: a masked, protected variable with a read_api token."; exit 1; }'
+    # Only the protected GITLAB_TOKEN: COVI_GITLAB_TOKEN would win otherwise.
+    - 'env -u COVI_GITLAB_TOKEN "$COVI_BIN" outcomes collect --platform gitlab --recent "$COVI_INPUT_RECENT"'
+    # Best effort: a failed report must not fail the job, or the cache keeps nothing just collected.
+    - '"$COVI_BIN" outcomes report --repository "$CI_PROJECT_PATH" || echo "Covi could not report the outcomes."'

@@ -102,9 +102,49 @@ export * from './model/demo.ts';
 export * from './model/evidence.ts';
 export * from './model/explanation.ts';
 export * from './model/finding.ts';
+export * from './model/outcome.ts';
 export * from './model/subject.ts';
+export { type BuiltOutcome, buildOutcome } from './outcomes/build.ts';
+// The ledger's `areaKey` stays out: `understand/areas.ts` exports one by that name.
+export {
+  anchorKeyOf,
+  anchorMarker,
+  mergeLedger,
+  outcomeKey,
+  parseLedger,
+  renderLedger,
+} from './outcomes/ledger.ts';
+export {
+  CALIBRATION_MIN_LABELED,
+  type Calibration,
+  type CertaintyStats,
+  calibrationOf,
+  type Label,
+  type LabelSignal,
+  labelFinding,
+  type OutcomeReport,
+  outcomeReport,
+  type RepositoryOutcomes,
+  summarizeOutcomes,
+} from './outcomes/precision.ts';
+export {
+  OUTCOMES_DIR,
+  outcomesDir,
+  outcomesOfRepository,
+  readOutcomes,
+  writeOutcome,
+} from './outcomes/store.ts';
 export { renderBrief } from './report/brief.ts';
-export { COMMENT_MARKER, type CommentLinks, renderComment, safeUrl } from './report/comment.ts';
+export {
+  type AnchorDraft,
+  anchorsFor,
+  COMMENT_MARKER,
+  type CommentExtras,
+  type CommentLinks,
+  MAX_ANCHORS,
+  renderComment,
+  safeUrl,
+} from './report/comment.ts';
 export { renderDiffDigest, renderFileDiff, renderHunk } from './report/digest.ts';
 export { type EvidenceRefOptions, evidenceRefs } from './report/evidence.ts';
 export {

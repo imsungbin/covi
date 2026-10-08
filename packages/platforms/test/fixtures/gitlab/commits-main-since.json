@@ -1,0 +1,7 @@
+[
+  {
+    "id": "6666666666666666666666666666666666666666",
+    "message": "Revert \"Fix cart totals\"\n\nThis reverts merge request !12",
+    "web_url": "https://gitlab.example/acme/shop/-/commit/6666666666666666666666666666666666666666"
+  }
+]

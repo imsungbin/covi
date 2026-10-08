@@ -1,0 +1,75 @@
+# Author-side Covi: feedback on every push to your pull request in one comment that updates in
+# place, and a record of how its findings held up once the pull request closes.
+#
+# - pull_request (opened, every push, reopened, ready for review): reviews the newest commit and
+#   updates the one Covi comment. Drafts too: this is for the author, while the work is in
+#   progress. A newer push cancels the review still running for an older one. Branches in this
+#   repository only: a fork's pull request gets a read-only token, so this job skips it (see
+#   fork-safe-comment.yml).
+# - pull_request_target (closed): collects the outcome so far (merged or closed, 👍/👎 and replies
+#   on the comment and on each finding) into the Actions cache. It runs in the base branch's
+#   context, so every later review can restore it. It reads the pull request through the API
+#   only: it checks out the base commit (for the base's .covi/config.yml and the report), never
+#   the pull request's code, and runs nothing from it. Pull requests from forks are not
+#   collected, so outsiders cannot feed what later reviews read.
+#
+# A revert that lands after the pull request closed is not seen at close time. To count it, add
+# a scheduled workflow on the default branch that, with pull-requests: read:
+#   1. restores the cache: actions/cache/restore@v4 with path .covi/outcomes,
+#      key covi-outcomes-${{ github.run_id }}-${{ github.run_attempt }}, restore-keys covi-outcomes-
+#   2. runs `covi outcomes collect --platform github --recent 50` (COVI_GITHUB_TOKEN set)
+#   3. saves it: actions/cache/save@v4 with the same path and key.
+name: Covi (author)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: covi-author-${{ github.event.pull_request.number }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Covi diffs against the merge base
+
+      - uses: imsungbin/covi/integrations/github-action@v1   # or your fork; pin a tag or commit SHA
+        with:
+          outcomes: true          # restore collected outcomes: the review sees how past findings held up
+          finding-anchors: true   # each confirmed or likely finding as an inline comment to 👍 or 👎
+          video: never            # keep every push fast; use auto to get a video when it helps
+          # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}   # optional: model-written review
+
+  outcomes:
+    if: >-
+      github.event_name == 'pull_request_target' && github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # The base commit, never the pull request's: this job holds a privileged token.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - uses: imsungbin/covi/integrations/github-action@v1   # the same ref as above
+        with:
+          outcomes: true

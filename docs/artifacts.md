@@ -20,6 +20,9 @@ Runs are written to `.covi/runs/<run-id>/` inside the reviewed repository. Set `
     music/                        rendered music, keyed by everything it depends on
   subject/
     subject.json                  the subject model (subject.store: repo), meant to be committed
+  outcomes/
+    .gitignore                    "*"
+    20261004-144549-ci-b3c73b6.json   what became of one change (covi outcomes collect)
 ```
 
 **Run ids** are `<YYYYMMDD>-<HHMMSS>-<workflow>-<head7>`: the UTC start time, the workflow (`analyze`, `explain`, `review`, `demo`, `video`, `summarize`, `ci`), and the first seven characters of the head commit. If two runs start in the same second, the second gets a `-2` suffix.
@@ -28,7 +31,9 @@ Runs are written to `.covi/runs/<run-id>/` inside the reviewed repository. Set `
 
 **Pruning.** When it creates a run, Covi deletes the oldest runs so that at most `output.keep` remain, counting the new one (default 20, allowed 1–1000). It only deletes directories whose names are run ids and that contain a `run.json`. A run written with `--out` does not prune anything and does not update `LATEST`.
 
-**Nothing to commit.** The runs and cache directories each contain a `.gitignore` with `*`, so nothing Covi generates shows up in `git status`, except the [subject model](#the-subject-model), which is meant to be committed. Covi never edits your own `.gitignore`, and its own directories never make the working tree count as changed. A directory given with `--out` gets no `.gitignore`.
+**Outcomes** sit next to the runs, not inside them, because runs are pruned and outcomes must outlive them. `covi outcomes collect` writes one file per pull or merge request, named after the run that last updated Covi's comment there, and removes the older file for the same change. They hold ids, counts, states, certainties, and links, never text from the change or its comments. Reviews read at most the 200 newest, each at most 256 KB, and skip any that do not fit `covi schema outcome`; writing one removes any beyond the newest 200.
+
+**Nothing to commit.** The runs, cache, and outcomes directories each contain a `.gitignore` with `*`, so nothing Covi generates shows up in `git status`, except the [subject model](#the-subject-model), which is meant to be committed. Covi never edits your own `.gitignore`, and its own directories never make the working tree count as changed. A directory given with `--out` gets no `.gitignore`. Outcome files are never read back if they are committed: in CI the checkout is the change under review. If git tracks any file under `.covi/outcomes/`, or `.covi` or `.covi/outcomes` is a symbolic link, Covi ignores the whole directory and warns.
 
 ## run.json
 
@@ -55,6 +60,7 @@ The manifest records what was asked, what ran, what was produced, and how it end
 | `artifacts` | Every recorded file: `path` (relative to the run), `kind`, `bytes`, `sha256` |
 | `warnings`, `errors` | Things that degraded the run, and stage failures with their messages |
 | `outcome` | `status` (`success`, `partial`, `failed`, `gated`), `exitCode`, `verdict`, finding counts by certainty, `gateFailures`, `video` (`rendered`, `reason`, `path` relative to the run, `seconds`), and a `message` |
+| `publish` | Where `covi publish` posted the comment: `platform`, `repository`, `number`, `comment.id` and `url`, `at`. |
 
 Stage names are `understand`, `demonstrate`, `rules`, `model-analysis`, `tests`, `video`, and `report`. A run that stops on an error keeps the failed stage and the error, but has no `outcome`.
 
@@ -70,7 +76,7 @@ Paths are relative to the run directory. The kind is the `kind` recorded for the
 | `context.json` | `context` | every command | The `ReviewContext` from the Understand phase: change digest, size, intent, areas, surfaces, symbols, routes, dependencies, environment variables, data changes, tests, demonstration assessment, reading order, signals |
 | `diff.patch` | `diff` | every command | The change as a unified diff, rebuilt from the parsed hunks |
 | `evidence.json` | `evidence` | every command that starts a run; rewritten after a demonstration and after the review | The evidence registry: every diff hunk, screenshot, pixel diff, recording, trace, request, command, app start-up error, and test run in the run, with its id, kind, file, revision, sha256, and a short label. See [Evidence](#evidence). |
-| `brief.md` | `brief` | `analyze` | The agent brief: author description, what Covi determined, signals, reading order, the prioritized diff, and next steps |
+| `brief.md` | `brief` | `analyze` | The agent brief: author description, what Covi determined, how past findings held up (when `.covi/outcomes/` has enough), signals, reading order, the prioritized diff, and next steps |
 | `rule-findings.json` | `findings` | `analyze`, `review`, `video`, `summarize`, `ci` | Findings from the deterministic rules (plus observations from a demonstration in the same run), each with a stable id, and the list of what the rules checked |
 | `explanation.draft.json` | `explanation` | `analyze` | Covi's structural explanation, a starting point for an agent's `explanation.json` |
 | `explanation.json`, `explanation.md` | `explanation` | `explain`, `review`, `video`, `summarize`, `ci`, `report` | The explanation and its rendering |
@@ -202,6 +208,7 @@ An agent can write these files and hand them to Covi, which validates them again
 | `.covi/config.yml` (or `.covi/config.yaml`) | `covi schema config` | every command |
 | — | `covi schema evidence` | `evidence.json` is Covi's; the schema documents what `covi evidence` prints |
 | — | `covi schema subject` | `.covi/subject/subject.json` is Covi's; the schema documents what `covi subject` prints |
+| — | `covi schema outcome` | `.covi/outcomes/*.json` is Covi's; the schema documents what `covi outcomes collect` writes |
 
 The objects are strict: unknown keys are rejected rather than ignored. A minimal `explanation.json`:
 
@@ -249,7 +256,7 @@ Dismissing an id that is not in `rule-findings.json` is an error (exit code 2). 
 
 `explanation.json`, `findings.json`, and `video/storyboard.json` accept an optional `language` (`en`, `ko`, `ja`, or `zh`; `zh-CN` and `zh-Hans` are read as `zh`). It says what language the prose is in: reports rendered from the file use its headings, and a storyboard's language sets the narration language. Covi writes it on what it generates in Korean, Japanese, and Chinese, and on every drafted storyboard; English explanations and reviews leave it out, as before. Text Covi writes into `context.json` (signals, notes, reading order, ambiguities, demonstration reasons) and `rule-findings.json` is in the run's language too.
 
-JSON files that agents write or that later stages read back carry a `schemaVersion`: `findings.json` is at 2 (confirmed and likely findings cite evidence; version 1 files are still read, without that rule, and `covi report` warns about what it let through), and `run.json`, `context.json`, `rule-findings.json`, `explanation.json`, `explanation.draft.json`, `review.json`, `evidence.json`, `demo/captures.json`, `demo/traces/*.json`, `demo/behavior-diff.json`, `demo/subject.json`, `.covi/subject/subject.json`, `video/storyboard.json`, `video/score.json`, `video/audio.json`, and `video/frames.json` are at 1. Agent-authored files may omit it; it defaults to the current version. A demo plan has no version field. `video/timeline.json` carries its own `version: 1`, read by the browser runtime; `video/speech.json` carries `schemaVersion: 1`; `video/decision.json` and `video/qc.json` are diagnostic records.
+JSON files that agents write or that later stages read back carry a `schemaVersion`: `findings.json` is at 2 (confirmed and likely findings cite evidence; version 1 files are still read, without that rule, and `covi report` warns about what it let through), and `run.json`, `context.json`, `rule-findings.json`, `explanation.json`, `explanation.draft.json`, `review.json`, `evidence.json`, `demo/captures.json`, `demo/traces/*.json`, `demo/behavior-diff.json`, `demo/subject.json`, `.covi/subject/subject.json`, `.covi/outcomes/*.json`, `video/storyboard.json`, `video/score.json`, `video/audio.json`, and `video/frames.json` are at 1. Agent-authored files may omit it; it defaults to the current version. A demo plan has no version field. `video/timeline.json` carries its own `version: 1`, read by the browser runtime; `video/speech.json` carries `schemaVersion: 1`; `video/decision.json` and `video/qc.json` are diagnostic records.
 
 Additive changes, such as a new optional field, keep the version. A breaking change to a versioned file bumps `schemaVersion`. The configuration and the demo plan have no version, so they only grow: keys are added, never repurposed. Either way, the skills that describe the file are updated with it.
 

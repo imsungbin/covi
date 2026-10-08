@@ -128,6 +128,8 @@ comment:
   artifacts: 产物
   run: 运行
   truncated: …（已截断）
+  rate: '有帮助吗？👍 👎（请对这条评论添加表情回应）'
+  anchorRate: 如果这个发现正确请回应 👍，否则回应 👎。
 
 review:
   noIssues: '在 Covi 检查的范围内没有发现问题。{tests}'
@@ -180,6 +182,10 @@ brief:
   step2: '2. 在运行目录中写入 `explanation.json`（模式：`covi schema explanation`）和 `findings.json`（模式：`covi schema findings`）。'
   cite: '   在 `evidenceIds` 中写明每个结论的依据（用 `covi evidence --run {runId}` 列出）。已确认的问题和可能的问题至少引用一条依据。'
   step3: '3. 运行 `covi report --run {runId}` 进行验证并生成 Markdown 报告。'
+  calibrationTitle: 以往发现的准确度
+  calibrationFrom: { other: '基于本仓库此前评审的 {count} 个变更（`covi outcomes report`）：' }
+  calibrationLine: '- {certainty}：{labeled} 个中有 {right} 个成立（{percent}%）'
+  calibrationNote: '用它来调整你的把握程度，而不是决定报告什么：它本身不会改变任何发现的确定性。请依据每个发现自身的证据来分类。'
 
 intent:
   kind:
@@ -864,3 +870,11 @@ question:
       continuous: '{what}；在旁白下方轻轻铺底，停顿时稍稍抬起'
       throughout: '{what}；贯穿整个视频'
       byMode: '{what}；短视频中在旁白下方轻轻铺底，标准审查中出现在旁白之间'
+
+outcomes:
+  empty: 还没有结果。Covi 在变更上发表评论后，用 `covi outcomes collect` 收集后续结果。
+  repository: '{repository}:'
+  changes: { other: '已评审 {count} 个变更：合并 {merged} 个（其中后来回滚 {reverted} 个），未合并关闭 {closed} 个，仍开放 {open} 个。' }
+  rating: 'Covi 评论的反馈：👍 {up} · 👎 {down}。'
+  precision: '{certainty}：{labeled} 个中有 {right} 个成立（{percent}%）；{unlabeled} 个没有信号。'
+  noSignal: { other: '{certainty}：报告 {count} 个，暂无信号。' }

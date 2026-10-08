@@ -54,6 +54,13 @@ describe('resolveChange', () => {
     expect(change.base.ref).toBe('HEAD');
   });
 
+  it('never counts what Covi keeps in .covi/outcomes as work in the tree', async () => {
+    repo = createRepo({ 'a.ts': 'x\n' });
+    // Even without the directory's own .gitignore.
+    repo.write({ '.covi/outcomes/20261009-120001-ci-aaaaaaa.json': '{}\n' });
+    await expect(resolveChange({ repo: repo.root })).rejects.toBeInstanceOf(NoChangesError);
+  });
+
   it('supports staged-only changes', async () => {
     repo = createRepo({ 'a.ts': 'x\n', 'b.ts': 'x\n' });
     repo.write({ 'a.ts': 'staged\n', 'b.ts': 'unstaged\n' });

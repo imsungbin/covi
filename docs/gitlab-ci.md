@@ -1,6 +1,6 @@
 # GitLab CI
 
-This page covers reviewing merge requests with the CI template in `integrations/gitlab-ci/covi.yml`. It explains setup, the template's inputs, how the job installs Covi, what the job produces, the token for merge request notes, and how forks and protected variables affect a run.
+This page covers reviewing merge requests with the CI template in `integrations/gitlab-ci/covi.yml`. It explains setup, the template's inputs, how the job installs Covi, what the job produces, the token for merge request notes, how forks and protected variables affect a run, and how Covi learns from outcomes.
 
 The template defines one job, `covi-review`, which runs [`covi ci --platform gitlab`](cli.md) in merge request pipelines. Its first document is a `spec:inputs` header, so your GitLab version must support CI/CD inputs. The job's scripts use bash.
 
@@ -151,7 +151,7 @@ The run also writes `reports/covi.sarif` (SARIF 2.1.0), which is kept with the a
 
 ### The merge request note
 
-With a token, and unless `comment` (or `publish.comment`) turns it off, Covi keeps one note per merge request. It finds its earlier note by a hidden marker, `<!-- covi:review -->`, and edits that note on every pipeline instead of adding new ones.
+With a token, and unless `comment` (or `publish.comment`) turns it off, Covi keeps one note per merge request. It finds its earlier note by a hidden marker, `<!-- covi:review -->`, and edits that note on every pipeline instead of adding new ones. Anyone can paste the marker, so only a note the token's own user wrote counts (Covi asks GitLab who that is). If Covi cannot read the notes, it posts nothing rather than overwrite what it could not read.
 
 The note is rebuilt from the run's schema-validated `review.json` and `explanation.json`, with all dynamic text escaped. It contains:
 
@@ -161,6 +161,9 @@ The note is rebuilt from the run's schema-validated `review.json` and `explanati
 - collapsible details with evidence and suggestions
 - what changed and what was not verified
 - links to the job artifacts and the pipeline
+- a last line, *Was this useful? 👍 👎*, whose award emoji `covi outcomes` counts (`publish.rating: false` leaves it out)
+
+The note also ends with a hidden ledger, `<!-- covi:ledger v1 … -->`: which findings Covi reported on each pipeline, as hashes and certainties with no text. See [Learning from outcomes](#learning-from-outcomes).
 
 Each finding in the note lists the evidence it cites; captures (screenshots, recordings, traces) link to the file in the job's artifacts.
 
@@ -192,6 +195,7 @@ covi-review:
 
 Covi reads the token from `COVI_GITLAB_TOKEN`, then from `GITLAB_TOKEN`, and sends it in the `PRIVATE-TOKEN` header. It uses the token only for these requests:
 
+- ask GitLab whose token it is (`GET /user`), so Covi edits only its own note
 - list the merge request's notes
 - create or update its own note
 - upload the video, when `publish.video` is `upload`
@@ -208,7 +212,7 @@ Notes don't use `CI_JOB_TOKEN`, because a job token can't write them; the templa
 ### Masked and protected variables
 
 - **Masked:** store the token, and any API keys, as masked variables, so they don't appear in job logs. Covi also redacts token-shaped strings and the values of credential-named environment variables from everything it writes (see [security.md](security.md)).
-- **Protected:** a protected variable is only exposed to pipelines that run on protected refs. If you protect `COVI_GITLAB_TOKEN`, merge request pipelines on unprotected branches won't see it, so Covi reviews them without posting a note.
+- **Protected:** a protected variable is only exposed to pipelines that run on protected refs. Leave `COVI_GITLAB_TOKEN` unprotected: most merge request pipelines run on unprotected branches, and without the token Covi reviews them without posting a note. The token that collects outcomes is a different matter: it goes in its own protected variable, `GITLAB_TOKEN` (see [Learning from outcomes](#learning-from-outcomes)).
 
 ## Merge requests from forks
 
@@ -227,6 +231,46 @@ Covi's own safeguards still apply in that case:
 - no note is posted for a fork
 
 But no tool can constrain a pipeline definition supplied by the fork. Review a fork's changes before running its pipeline in your project.
+
+## Learning from outcomes
+
+GitLab runs no pipeline when a merge request closes, so outcomes are collected on a schedule. Include the outcomes component next to the review:
+
+```yaml
+include:
+  - project: 'your-org/covi'
+    ref: v1
+    file: '/integrations/gitlab-ci/covi.yml'
+    inputs: { covi-project: your-org/covi, covi-ref: v1 }
+  - project: 'your-org/covi'
+    ref: v1
+    file: '/integrations/gitlab-ci/covi-outcomes.yml'
+    inputs: { covi-project: your-org/covi, covi-ref: v1, recent: '50' }
+```
+
+Then:
+
+1. **Add a token for collecting.** A project access token with the `read_api` scope, stored as the CI/CD variable `GITLAB_TOKEN`, masked and protected. `CI_JOB_TOKEN` cannot read notes or award emoji. The job ignores `COVI_GITLAB_TOKEN`, which keeps its role for the review's note. Notes count as Covi's when `GITLAB_TOKEN`'s user wrote them, so the simplest setup stores the same token value in both variables. To collect with a different token, set `publish.gitlabBotUser` in `.covi/config.yml` on the default branch to the username of the token that posts the notes; Covi then counts that user's notes too, once GitLab confirms the account is a bot.
+2. **Add a pipeline schedule** on the default branch (**Build > Pipeline schedules**; daily is plenty). The job also runs when you start a pipeline on the default branch by hand.
+
+The `covi-outcomes` job runs only on the protected default branch. It runs `covi outcomes collect --platform gitlab --recent <n>` and then `covi outcomes report`, and keeps `.covi/outcomes/` in the CI cache `covi-outcomes`. A merge request pipeline on a protected branch pulls that cache, so the brief of its review shows how past findings held up.
+
+The job collects, for each recently closed merge request Covi commented on:
+
+- the merge request's state: merged, or closed without merging;
+- reverts since the merge, from git's "This reverts commit …" or GitLab's "This reverts merge request !n";
+- 👍 and 👎 award emoji on Covi's note, without the merge request author's own;
+- replies in the note's thread;
+- findings that disappeared after a push, from the note's hidden ledger.
+
+[Learning from outcomes](github-action.md#learning-from-outcomes) in the GitHub guide explains how that becomes precision by certainty. Per-finding anchors (inline comments to vote on) are GitHub-only for now, so on GitLab a finding is labeled by what happened to it, not by votes.
+
+What reviews trust, and what that costs:
+
+- **Only protected refs read outcomes.** GitLab keeps a protected and an unprotected cache for each key. Only the protected one is trusted: the schedule writes it, and reviews on protected refs pull it. Merge requests from unprotected branches (most of them) review without calibration, and before Covi runs, their job deletes any restored `.covi/outcomes/` and resets the checkout, so no cache can shape what is reviewed.
+- **Keep "Use separate caches for protected branches" on** (**Settings > CI/CD > General pipelines**; GitLab's default). Turned off, every branch's pipeline shares one cache, and any developer could write what reviews trust.
+- **Only Covi's own notes count.** A pasted marker never does, and a merge request where Covi did not comment is skipped.
+- **The data is validated and bounded,** and a review only reads it.
 
 ## Customizing the job
 
@@ -252,6 +296,6 @@ Using a different image:
 
 ## How the template is tested
 
-`tests/integrations.test.ts` checks the template: every input has a default and is used, every option list contains its default, the job runs on merge request pipelines with full history, the flags it passes are flags `covi ci` and `covi doctor` accept, rendering the template with its default inputs yields strings and never nulls, Covi is installed from source or a package you name, and the default image matches the pinned Playwright version. `tests/ci.test.ts` runs `covi ci` with GitLab's variables against a local stand-in for the GitLab API, including the note, the Code Quality and dotenv reports, and `--no-annotations`. The template and the example were also checked against GitLab's published CI/CD JSON schema.
+`tests/integrations.test.ts` checks the template: every input has a default and is used, every option list contains its default, the job runs on merge request pipelines with full history, the flags it passes are flags `covi ci` and `covi doctor` accept, rendering the template with its default inputs yields strings and never nulls, Covi is installed from source or a package you name, and the default image matches the pinned Playwright version. `tests/ci.test.ts` runs `covi ci` with GitLab's variables against a local stand-in for the GitLab API, including the note, the Code Quality and dotenv reports, and `--no-annotations`. The template and the example were also checked against GitLab's published CI/CD JSON schema. The outcomes component is checked too: it runs only on a schedule or a manual pipeline on the protected default branch, collects with `GITLAB_TOKEN` alone, and the review restores its cache only on a protected ref.
 
 The job's scripts have also been run unchanged inside the default image against an example merge request, with git redirecting the job-token clone URL to a local copy of Covi. That exercised installing the missing tools, installing Covi from source, the browser check, the review, a narrated video, and both reports. It is not a run on a GitLab instance.

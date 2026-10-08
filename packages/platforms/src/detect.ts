@@ -33,7 +33,12 @@ export async function platformContext(
 export function createPublisher(
   context: PlatformContext,
   env: NodeJS.ProcessEnv = process.env,
-  overrides: { number?: number; fetch?: GitHubPublisherOptions['fetch'] } = {},
+  overrides: {
+    number?: number;
+    fetch?: GitHubPublisherOptions['fetch'];
+    /** `publish.botLogin`: the bot a GitHub token without a user comments as. */
+    botLogin?: string;
+  } = {},
 ): { publisher?: Publisher; reason?: string } {
   const number = overrides.number ?? context.metadata.number;
   if (context.platform === 'github') {
@@ -48,6 +53,7 @@ export function createPublisher(
         repository: env.GITHUB_REPOSITORY,
         number,
         apiUrl: env.GITHUB_API_URL,
+        botLogin: overrides.botLogin,
         fetch: overrides.fetch,
       }),
     };
@@ -65,6 +71,7 @@ export function createPublisher(
       publisher: new GitLabPublisher({
         apiUrl: env.CI_API_V4_URL,
         projectId,
+        projectPath: env.CI_MERGE_REQUEST_PROJECT_PATH || env.CI_PROJECT_PATH || undefined,
         iid: number,
         token,
         fetch: overrides.fetch,

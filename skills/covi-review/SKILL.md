@@ -67,6 +67,7 @@ Every finding has a location (path and line when possible), evidence (quoted cod
 - Do not manufacture findings. "No issues found in what I checked" is a complete review when it is true, as long as you list what you checked and what you did not verify.
 - No style nits unless they hide a bug, and no speculative "might be slow" without a reason it is on a hot path.
 - Do not repeat what linters, type checkers, or CI already enforce, unless they are not run for this code.
+- **Past outcomes temper certainty; they never replace evidence.** When the brief has a "How past findings held up" section, it says how often this repository's earlier findings of each certainty held up once people acted on them. If `likely` findings have often not held up here, demand a firmer path before you call the next one `likely`. If they almost always held up, that is no license to skip evidence. Classify every finding on its own evidence; the numbers change no certainty by themselves.
 
 ## Presenting the review
 

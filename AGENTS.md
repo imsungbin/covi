@@ -48,7 +48,8 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
 - Run `./bin/covi.mjs` (or `npm run covi --`) from this checkout. It runs the TypeScript sources directly on Node 22.18+, so edits apply without a build. `./bin/covi` is the launcher the Claude Code plugin puts on PATH: it installs the locked dependencies on its first run, then runs `bin/covi.mjs`.
 - Pass `--json` to get a stable result object on stdout; progress goes to stderr.
 - Exit codes: `0` ok · `1` review gate failed · `2` usage or invalid input (including schema errors in agent-authored files) · `3` environment (not a repo, missing ffmpeg or browser) · `4` internal error.
-- `covi schema <explanation|findings|storyboard|score|demo-plan|config|evidence|subject>` prints the JSON Schema for files agents author or read.
+- `covi schema <explanation|findings|storyboard|score|demo-plan|config|evidence|subject|outcome>` prints the JSON Schema for files agents author or read.
+- `covi outcomes collect` reads what became of Covi's comments from GitHub or GitLab into `.covi/outcomes/`; `covi outcomes report --json` turns it into precision by certainty.
 - `covi evidence --run <id> --json` lists the run's evidence ids (read-only).
 - `covi examples create <name>` builds a real git repository for an example change; point any command at it with `--repo <dir>`.
 
@@ -70,7 +71,9 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
                        qc.json
 ```
 
-The runs directory ignores itself (it contains a `.gitignore` with `*`); Covi never edits the user's `.gitignore`. The subject model, `.covi/subject/subject.json` (`subject.store`), is the one file Covi keeps outside the runs and the cache: what demonstrations saw of the software, small and meant to be committed. `covi subject` prints it.
+The runs directory ignores itself (it contains a `.gitignore` with `*`); Covi never edits the user's `.gitignore`. The subject model, `.covi/subject/subject.json` (`subject.store`), is the one file Covi keeps outside its ignored directories: what demonstrations saw of the software, small and meant to be committed. `covi subject` prints it.
+
+Collected outcomes live next to the runs, in `.covi/outcomes/<run-id>.json` (one file per change; the directory ignores itself).
 
 ## Quality expectations
 
@@ -113,6 +116,7 @@ Repositories under review are untrusted input.
 - The subject model (`.covi/subject/subject.json`; `packages/core/src/model/subject.ts`) is repository data: it holds no command line, its selectors are strings Covi builds from attributes, every string and list is bounded, it is redacted when written and schema-checked when read (a file Covi cannot read is ignored and never overwritten), a flow that types into a secret field is never kept, and in CI it is read from the base revision and never written.
 - Sound comes only from bundled data and validated scores; nothing runs and nothing is downloaded. A score is bounded (size, tracks, patterns, sections, note values, chord voicings and changes, tones per step, notes and seconds of sound per second of video) and scheduled for the video before anything is synthesized, and names resolve only to the score's own entries.
 - PR/MR comments are re-rendered from schema-validated artifacts with all dynamic text escaped.
+- Outcomes read back from GitHub or GitLab are untrusted data. They are schema-validated, bounded (`OUTCOME_LIMITS`), and redacted, and they are never read when committed to the repository. Only Covi's own comment and anchors count (its token's user or its configured bot), and tokens go only to the configured API base.
 - Do not add code paths that bypass these.
 
 ## Testing

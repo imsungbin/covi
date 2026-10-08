@@ -1,0 +1,14 @@
+[
+  {
+    "sha": "3333333333333333333333333333333333333333",
+    "html_url": "https://github.com/acme/shop/commit/3333333333333333333333333333333333333333",
+    "commit": {
+      "message": "Revert \"fix: cart totals\"\n\nThis reverts commit 1111111111111111111111111111111111111111."
+    }
+  },
+  {
+    "sha": "2222222222222222222222222222222222222222",
+    "html_url": "https://github.com/acme/shop/commit/2222222222222222222222222222222222222222",
+    "commit": { "message": "docs: mention acme/shop#70" }
+  }
+]

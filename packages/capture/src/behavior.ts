@@ -173,10 +173,15 @@ function byKey(requests: readonly TraceRequest[]): Map<string, TraceRequest[]> {
   return out;
 }
 
+/** Whether the request finished: one still in flight when the trace ended has nothing to compare. */
+const settled = (r: TraceRequest) => r.status !== undefined || Boolean(r.failure);
+
 /**
  * Requests matched by `METHOD path`. A key on one side only is added or removed; paired requests
- * changed when their status or failure differs. Extra repeats of a key (polling) are ignored:
- * their count depends on how long the run took, not on the change.
+ * changed when their status differs or only one of them failed. The failure text itself is not
+ * compared: codes such as `net::ERR_ABORTED` depend on when a request was cancelled, and both
+ * texts stay in the traces. Extra repeats of a key (polling) are ignored, and so are pairs with a
+ * request still pending: both depend on when the run ended, not on the change.
  */
 export function diffNetwork(
   base: readonly TraceRequest[],
@@ -199,6 +204,7 @@ export function diffNetwork(
     for (let i = 0; i < Math.min(b.length, h.length); i++) {
       const x = b[i]!;
       const y = h[i]!;
+      if (!settled(x) || !settled(y)) continue;
       if (x.status !== y.status || Boolean(x.failure) !== Boolean(y.failure))
         out.changed.push({ key, method: y.method, url: y.url, base: refOf(x), head: refOf(y) });
     }

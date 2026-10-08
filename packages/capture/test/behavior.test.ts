@@ -111,6 +111,25 @@ describe('network', () => {
     expect(diffNetwork(poll(3), poll(5))).toEqual({ added: [], removed: [], changed: [] });
   });
 
+  it('stays quiet about a request still pending when the trace ended', () => {
+    const poll = (statuses: Array<number | undefined>) =>
+      statuses.map((status, i) => req(`n${i + 1}`, '/poll', status));
+    expect(diffNetwork(poll([200, 200, undefined]), poll([200, 200, 200, 200, undefined]))).toEqual(
+      { added: [], removed: [], changed: [] },
+    );
+    expect(
+      diffNetwork(poll([200, undefined]), poll([404, 200, undefined])).changed.map((c) => [
+        c.base,
+        c.head,
+      ]),
+    ).toEqual([
+      [
+        { request: 'n1', status: 200 },
+        { request: 'n1', status: 404 },
+      ],
+    ]);
+  });
+
   it('treats a failed request as a change from a response', () => {
     expect(
       diffNetwork(

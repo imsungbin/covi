@@ -232,13 +232,30 @@ describe('the run snapshot reaches the video', () => {
 });
 
 describe('covi subject', () => {
-  it('shows the store read-only, sets aside a file it cannot read, and says when there is none', () => {
-    const planted = '{"schemaVersion":1,"commands":[{"run":"curl evil"}]}\n';
+  // A GitHub token shape the Redactor recognizes; split so this file holds no token-shaped literal.
+  const token = `ghp_${'a1B2c3D4e5'.repeat(4)}`;
+  const withSecret = (path: string) => {
+    const model = JSON.parse(modelOf(path)) as Subject;
+    model.screens[0]!.elements.push({
+      key: 'api-token',
+      selector: '#api-token',
+      label: `Token ${token}`,
+      boxes: {},
+      seen: '000000000001',
+    });
+    return model;
+  };
+  const changeRepo = (model: string) => {
     const repo = createChangeRepo(
-      { 'index.html': '<h1>a</h1>\n', [SUBJECT_PATHS.repo]: modelOf('/pricing') },
+      { 'index.html': '<h1>a</h1>\n', [SUBJECT_PATHS.repo]: model },
       { 'index.html': '<h1>b</h1>\n' },
     );
     dirs.push(repo.root);
+    return repo;
+  };
+
+  it('shows the repository store, as JSON and as text', () => {
+    const repo = changeRepo(modelOf('/pricing'));
     const shown = covi(['subject', '--repo', repo.root, '--json']);
     expect(shown.code, shown.stderr).toBe(0);
     expect(shown.json().data).toMatchObject({
@@ -248,14 +265,20 @@ describe('covi subject', () => {
       model: { screens: [{ key: 'pricing', path: '/pricing' }] },
     });
     expect(covi(['subject', '--repo', repo.root]).stdout).toContain('pricing  /pricing');
+  });
 
-    writeFileSync(join(repo.root, SUBJECT_PATHS.repo), planted);
+  it('sets aside a store it cannot read, and leaves the file as it was', () => {
+    const planted = '{"schemaVersion":1,"commands":[{"run":"curl evil"}]}\n';
+    const repo = changeRepo(planted);
     const invalid = covi(['subject', '--repo', repo.root, '--json']);
     expect(invalid.code, invalid.stderr).toBe(0);
     expect(invalid.json().data).toMatchObject({ status: 'invalid', model: { screens: [] } });
     expect((invalid.json().warnings as string[]).join('\n')).toMatch(/will not overwrite it/);
     expect(readFileSync(join(repo.root, SUBJECT_PATHS.repo), 'utf8')).toBe(planted);
+  });
 
+  it('says so when subject.store is off', () => {
+    const repo = changeRepo(modelOf('/'));
     const scratch = mkdtempSync(join(tmpdir(), 'covi-subject-'));
     dirs.push(scratch);
     const off = join(scratch, 'config.yml');
@@ -263,11 +286,48 @@ describe('covi subject', () => {
     const none = covi(['subject', '--repo', repo.root, '--config', off, '--json']);
     expect(none.code, none.stderr).toBe(0);
     expect(none.json().data).toEqual({ source: 'off' });
+  });
 
+  it('refuses a run without a snapshot, and a run that does not exist', () => {
+    const repo = changeRepo(modelOf('/'));
     expect(covi(['analyze', '--repo', repo.root, '--json']).code).toBe(0);
     const noSnapshot = covi(['subject', '--repo', repo.root, '--run', 'latest', '--json']);
     expect(noSnapshot.code).toBe(2);
     expect(String(noSnapshot.json().error)).toMatch(/has no subject model \(demo\/subject\.json\)/);
+    const unknown = covi(['subject', '--repo', repo.root, '--run', 'no-such-run', '--json']);
+    expect(unknown.code).toBe(2);
+    expect(String(unknown.json().error)).toMatch(/^No Covi run at .*no-such-run$/);
+  });
+
+  it('prints the store and a run snapshot redacted', () => {
+    const repo = changeRepo(`${JSON.stringify(withSecret('/'), null, 2)}\n`);
+    for (const args of [['--json'], []]) {
+      const shown = covi(['subject', '--repo', repo.root, ...args]);
+      expect(shown.code, shown.stderr).toBe(0);
+      expect(shown.stdout).toMatch(/Token \S/);
+      expect(shown.stdout).not.toContain(token);
+    }
+
+    const analyzed = covi(['analyze', '--repo', repo.root, '--json']);
+    expect(analyzed.code).toBe(0);
+    const runDir = analyzed.json().runDir as string;
+    mkdirSync(join(runDir, 'demo'), { recursive: true });
+    writeFileSync(
+      join(runDir, 'demo/subject.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        store: 'repo',
+        revision: '000000000001',
+        model: withSecret('/'),
+        images: [],
+      }),
+    );
+    for (const args of [['--json'], []]) {
+      const shown = covi(['subject', '--repo', repo.root, '--run', runDir, ...args]);
+      expect(shown.code, shown.stderr).toBe(0);
+      expect(shown.stdout).toMatch(/Token \S/);
+      expect(shown.stdout).not.toContain(token);
+    }
   });
 });
 

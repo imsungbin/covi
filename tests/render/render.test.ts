@@ -33,6 +33,8 @@ import {
 import { type Browser, chromium } from 'playwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../../packages/cli/src/examples.ts';
+import { contactSheetFrames, sheetColumns } from '../../packages/video/src/render/renderer.ts';
+import { tileLayout } from '../../packages/video/src/render/sheet.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import {
   edgeEntrance,
@@ -146,6 +148,21 @@ describe.skipIf(!available)('rendering', () => {
     const failing = qc.checks.filter((c) => c.status === 'fail' && c.id !== 'duration');
     expect(failing).toEqual([]);
     expect(readFileSync(result.contactSheet!).length).toBeGreaterThan(1000);
+    // Each tile is the frame with its label in a band below it: the label never covers the
+    // captions, and the sheet is as tall as frames plus bands.
+    const { label } = tileLayout(360, 640);
+    const captioned = result.layouts.filter((l) => l.captions);
+    expect(captioned.length).toBeGreaterThan(0);
+    for (const l of captioned) {
+      const c = l.captions!;
+      expect(c.y + c.height, `frame ${l.frame}`).toBeLessThanOrEqual(label.y);
+    }
+    const tiles = contactSheetFrames(timeline).length;
+    const rows = Math.ceil(tiles / sheetColumns(tiles, true));
+    const tile = (320 * (640 + label.height)) / 360;
+    const sheet = await media.probe(result.contactSheet!);
+    expect(sheet.width).toBe(12 + sheetColumns(tiles, true) * (320 + 12));
+    expect(Math.abs(sheet.height! - (12 + rows * (tile + 12)))).toBeLessThanOrEqual(rows * 2);
     // The outro is the last scene; its frames were sampled, and its text fits.
     expect(timeline.scenes.at(-1)!.visual.kind).toBe('outro');
     const outro = result.layouts.filter((l) => l.scene === OUTRO_ID);

@@ -11,7 +11,7 @@ import {
   type Timeline,
 } from '../timeline/types.ts';
 import type { Media } from './ffmpeg.ts';
-import { HIDE_LABEL_SCRIPT, sheetLabel, showLabelScript } from './sheet.ts';
+import { HIDE_LABEL_SCRIPT, sheetLabel, showLabelScript, tileLayout } from './sheet.ts';
 
 export interface RenderOptions {
   /** Directory holding the composition's index.html. */
@@ -156,23 +156,35 @@ export function sheetColumns(tiles: number, vertical: boolean): number {
   return Math.max(1, Math.min(tiles, vertical ? 6 : tiles > 12 ? 4 : 3));
 }
 
+/** A contact sheet tile: the frame as the video shows it, and its label band (see `tileLayout`). */
+interface Tile {
+  picture: Buffer;
+  label: Buffer;
+}
+
 /**
- * A contact sheet tile of the frame the page shows: the scene it belongs to and the evidence it
- * cites, on a strip that is removed again, so the video's own frames stay clean.
+ * A contact sheet tile of the frame the page shows, and a band naming the scene it belongs to and
+ * the evidence it cites. The band is shot on its own and removed again, so neither the tile's
+ * frame nor the video's frames carry it.
  */
 async function shootTile(
   page: Page,
-  timeline: Pick<Timeline, 'fps' | 'scenes' | 'width'>,
+  timeline: Pick<Timeline, 'fps' | 'scenes' | 'width' | 'height'>,
   frame: number,
-): Promise<Buffer> {
-  await page.evaluate(showLabelScript(sheetLabel(timeline, frame), timeline.width));
-  try {
-    return await page.screenshot({
+): Promise<Tile> {
+  const shot = (clip?: { x: number; y: number; width: number; height: number }) =>
+    page.screenshot({
       type: 'jpeg',
       quality: 94,
       animations: 'disabled',
       caret: 'hide',
+      ...(clip ? { clip } : {}),
     });
+  const picture = await shot();
+  const { label } = tileLayout(timeline.width, timeline.height);
+  await page.evaluate(showLabelScript(sheetLabel(timeline, frame), timeline.width));
+  try {
+    return { picture, label: await shot({ ...label, y: 0 }) };
   } finally {
     await page.evaluate(HIDE_LABEL_SCRIPT);
   }
@@ -206,7 +218,7 @@ export async function renderContactSheet(options: ContactSheetOptions): Promise<
       timeline.height,
       errors,
     );
-    const tiles: Buffer[] = [];
+    const tiles: Tile[] = [];
     for (const frame of contactSheetFrames(timeline)) {
       await page.evaluate((f) => (globalThis as CompositionWindow).covi!.seek(f), frame);
       tiles.push(await shootTile(page, timeline, frame));
@@ -265,7 +277,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
   const encoderArgs = await media.videoEncoderArgs();
   const pageErrors: string[] = [];
   const layouts: LayoutReport[] = [];
-  const sheet = new Map<number, Buffer>();
+  const sheet = new Map<number, Tile>();
   let poster: Buffer | undefined;
   let done = 0;
   const encoders: Array<ReturnType<typeof encodeSegment>> = [];
@@ -451,10 +463,13 @@ export function canReuseFrames(
   return Boolean(previous && videoExists && previous.key === key);
 }
 
-/** Tiles the sampled frames into one image so a person or agent can review the whole video at a glance. */
+/**
+ * Tiles the sampled frames, each with its label band stacked below it, into one image so a person
+ * or agent can review the whole video at a glance.
+ */
 async function contactSheet(
   media: Media,
-  frames: Buffer[],
+  tiles: Tile[],
   out: string,
   workDir: string,
   width: number,
@@ -463,18 +478,19 @@ async function contactSheet(
   const dir = join(workDir, 'sheet');
   await mkdir(dir, { recursive: true });
   await Promise.all(
-    frames.map((b, i) => writeFile(join(dir, `f-${String(i).padStart(3, '0')}.jpg`), b)),
+    tiles.flatMap((tile, i) => [
+      writeFile(join(dir, `f-${String(i).padStart(3, '0')}.jpg`), tile.picture),
+      writeFile(join(dir, `l-${String(i).padStart(3, '0')}.jpg`), tile.label),
+    ]),
   );
-  const cols = sheetColumns(frames.length, height > width);
-  const rows = Math.ceil(frames.length / cols);
+  const cols = sheetColumns(tiles.length, height > width);
+  const rows = Math.ceil(tiles.length / cols);
   const tileWidth = height > width ? 320 : 560;
   await media.ffmpeg([
-    '-framerate',
-    '1',
-    '-i',
-    join(dir, 'f-%03d.jpg'),
-    '-vf',
-    `scale=${tileWidth}:-2,tile=${cols}x${rows}:padding=12:margin=12:color=0xF8F9FB`,
+    ...['-framerate', '1', '-i', join(dir, 'f-%03d.jpg')],
+    ...['-framerate', '1', '-i', join(dir, 'l-%03d.jpg')],
+    '-filter_complex',
+    `[0:v][1:v]vstack=inputs=2,scale=${tileWidth}:-2,tile=${cols}x${rows}:padding=12:margin=12:color=0xF8F9FB`,
     '-frames:v',
     '1',
     '-q:v',

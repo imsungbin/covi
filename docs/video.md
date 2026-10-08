@@ -649,7 +649,7 @@ Covi samples the layout checks at two frames per scene, 35% and 70% of the way t
 
 The overall status is `fail` if any check fails, `warn` if any warns, and `pass` otherwise. QC never deletes the video and never changes the exit code. Failed and warning checks are added to the run's warnings. The result object carries `video.qc`, and a failed QC adds the warning "Video QC failed; see video/qc.json."
 
-After a render, read `qc.json`, then open `contact-sheet.jpg` (each tile is labeled with its scene and the evidence it cites, `—` for none) and `poster.png`. If a scene is wrong, crowded, or not grounded in evidence, fix the storyboard and run `covi render` again.
+After a render, read `qc.json`, then open `contact-sheet.jpg` (each tile is labeled, in a band below the frame so the label never covers the captions, with its scene and the evidence it cites, `—` for none) and `poster.png`. If a scene is wrong, crowded, or not grounded in evidence, fix the storyboard and run `covi render` again.
 
 ## Videos in CI
 

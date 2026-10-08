@@ -5705,6 +5705,84 @@ exports[`English output (baseline) > refactor-retry-helper > writes the same rul
 "
 `;
 
+exports[`English output (baseline) > renders behavior differences and recordings in the demonstration notes 1`] = `
+"# Demonstration
+
+## Page / (desktop)
+
+Before: ![before](../demo/screenshots/home-desktop-before.png)
+
+After: ![after](../demo/screenshots/home-desktop-after.png)
+
+Changed pixels: 4.00%
+
+## compose · step 1: Type a comment (desktop)
+
+After: ![after](../demo/screenshots/flow-0.png)
+
+## compose · step 2: Counter updates as you type (desktop)
+
+After: ![after](../demo/screenshots/flow-1.png)
+
+## compose · step 3: Post the comment (desktop)
+
+After: ![after](../demo/screenshots/flow-2.png)
+
+## GET /api/users
+
+Before: HTTP 200 · After: HTTP 200 · changed
+
+Shape change: the response changed from a JSON array to a JSON object with keys items, nextCursor.
+
+## \`node cli.js "Hello World"\`
+
+Before:
+
+\`\`\`
+Error: bad input
+
+\`\`\`
+
+After:
+
+\`\`\`
+hello-world
+
+\`\`\`
+
+## Recordings
+
+- Load items at base: [flow-load-items-base.webm](../demo/recordings/flow-load-items-base.webm)
+- Load items at head: [flow-load-items-head.webm](../demo/recordings/flow-load-items-head.webm)
+
+Recordings are WebM because ffmpeg was not found. Install ffmpeg, or set COVI_FFMPEG, to get MP4.
+
+## Behavior at base and head
+
+### Load items (desktop)
+
+- Step 2 (“Open the menu”): failed at base, completed at head.
+- The final frame (“Load items”) looks different: 1.23% of pixels changed ([diff](../demo/diffs/flow-load-items-end.png)).
+- \`GET /items.json?session=[REDACTED]\`: HTTP 200 at base, HTTP 404 at head
+- New request: \`GET /api/limits\` → HTTP 200
+- No longer requested: \`GET /legacy.js\` (HTTP 200 at base)
+- New console error: \`Could not load items: HTTP 404\`
+- Console error no longer logged: \`Deprecated API\`
+- Step 1 took 1200 ms at head and 300 ms at base.
+
+### Checkout (mobile)
+
+- Not compared: it ran only at head.
+- Failed at head: \`locator.click: Timeout 8000ms exceeded\`
+
+1 scenario behaved the same at base and head.
+
+## Not demonstrated
+
+- tablet viewport: not configured
+"
+`;
+
 exports[`English output (baseline) > renders the same demonstration notes 1`] = `
 "# Demonstration
 

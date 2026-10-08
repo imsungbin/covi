@@ -98,6 +98,64 @@ const ASSIGNMENT_PATTERN =
 
 const URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^/\s:@]+):([^/\s@]+)@/gi;
 
+/**
+ * Query and fragment parameters whose values are credentials (`?token=…`, `#access_token=…`,
+ * `X-Amz-Signature=…`). A name counts when it ends with a credential word in any style
+ * (`authToken`, `csrftoken`, `X-Auth`, `api_key`, `userSid`). That also masks names like
+ * `monkey` or `barcode`; for untrusted apps that is the safe side.
+ */
+const SECRET_PARAM =
+  /(?:token|key|secret|session|session[_-]?id|sid|signature|sig|password|passwd|pwd|auth|authorization|code|credentials?|jwt|otp)$/i;
+
+/**
+ * URLs inside free text: absolute ones, and paths that carry a query or a fragment. Console text
+ * comes from the app under review with no length limit, so a match may only start where no
+ * earlier failed attempt has already scanned: a scheme at the start of its run of scheme
+ * characters, a path at the start of the text or after whitespace or a quote. That keeps the
+ * scan linear; the cost is that a path glued to other text (`url=/a?token=…`) is not found.
+ */
+const URL_IN_TEXT =
+  /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+|(?<![^\s"'<>`])\/[^\s"'<>`?#]*[?#][^\s"'<>`]+/gi;
+
+function decodeName(name: string): string {
+  try {
+    return decodeURIComponent(name.replace(/\+/g, ' '));
+  } catch {
+    return name;
+  }
+}
+
+function maskPairs(text: string): string {
+  return text
+    .split('&')
+    .map((pair) => {
+      const eq = pair.indexOf('=');
+      if (eq <= 0) return pair;
+      const name = pair.slice(0, eq);
+      return name.length <= 64 && SECRET_PARAM.test(decodeName(name)) ? `${name}=[REDACTED]` : pair;
+    })
+    .join('&');
+}
+
+function maskFragment(fragment: string): string {
+  // Hash routers (`#/login?token=…`, `#!/cb?code=…`) carry a query inside the fragment.
+  const queryAt = fragment.indexOf('?');
+  if (queryAt < 0 || !(fragment.startsWith('/') || fragment.startsWith('!')))
+    return maskPairs(fragment);
+  return `${fragment.slice(0, queryAt)}?${maskPairs(fragment.slice(queryAt + 1))}`;
+}
+
+/** Masks the values of credential-shaped parameters in a URL's query and fragment. */
+function maskSecretParams(url: string): string {
+  const hashAt = url.indexOf('#');
+  const beforeHash = hashAt < 0 ? url : url.slice(0, hashAt);
+  const fragment = hashAt < 0 ? undefined : url.slice(hashAt + 1);
+  const queryAt = beforeHash.indexOf('?');
+  const path = queryAt < 0 ? beforeHash : beforeHash.slice(0, queryAt);
+  const query = queryAt < 0 ? undefined : beforeHash.slice(queryAt + 1);
+  return `${path}${query === undefined ? '' : `?${maskPairs(query)}`}${fragment === undefined ? '' : `#${maskFragment(fragment)}`}`;
+}
+
 /** Environment variable names that hold credentials. */
 export const SECRET_ENV_NAME =
   /(TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|PRIVATE|API_?KEY|ACCESS_?KEY|AUTH|SESSION|COOKIE|WEBHOOK|DSN|SIGNING|_PAT$|^PAT_)/i;
@@ -155,6 +213,17 @@ export class Redactor {
     );
     out = out.replace(URL_CREDENTIALS, (_m, scheme: string) => `${scheme}[REDACTED]@`);
     return out;
+  }
+
+  /** A URL with credential-shaped query and fragment parameters masked, then redacted as text. */
+  redactUrl(url: string): string {
+    return this.redact(maskSecretParams(url));
+  }
+
+  /** Text with every URL in it masked like `redactUrl` (console messages, error text). */
+  redactUrls(text: string): string {
+    if (!text) return text;
+    return this.redact(text.replace(URL_IN_TEXT, (url) => maskSecretParams(url)));
   }
 
   /** Deeply redacts strings inside JSON-like values. */

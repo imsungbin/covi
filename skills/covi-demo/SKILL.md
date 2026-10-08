@@ -12,7 +12,7 @@ The question that drives every demonstration: **what does the reviewer need to s
 | The change… | Show |
 |---|---|
 | fixes a user-visible bug | the bug on base, then the same steps on head |
-| adds or changes an interaction | the key interaction on head, step by step (a flow) |
+| adds or changes an interaction | the key interaction, step by step (a flow); Covi runs it at base and head |
 | changes appearance | before/after of the affected page, at the viewports that matter |
 | changes an API | the same request against base and head; the response difference |
 | changes a CLI | the same command against base and head; the output difference |
@@ -43,14 +43,16 @@ The question that drives every demonstration: **what does the reviewer need to s
    }
    ```
 
-3. `covi demo --plan plan.json --json` (or `covi review --demo --plan plan.json`). Covi checks out base and head into temporary directories, runs each, and writes `demo/captures.json`, screenshots, and pixel diffs. It keeps your plan as `demo/plan.json`.
-4. **Look at the captures.** Open the screenshots in `demo/screenshots/` and the diffs in `demo/diffs/`. Check that they show the change, not a loading spinner or an error page. Fix the plan and rerun if not.
+3. `covi demo --plan plan.json --json` (or `covi review --demo --plan plan.json`). Covi checks out base and head into temporary directories, runs each, and writes `demo/captures.json`, screenshots, and pixel diffs. Every flow runs at both revisions; each run is recorded (`demo/recordings/`, MP4 when ffmpeg is installed, else WebM) and traced (`demo/traces/`: steps with timing, network requests, console messages, DOM changes), and `demo/behavior-diff.json` compares base and head. Covi keeps your plan as `demo/plan.json`. Pass `--no-record` when a recording is not wanted (traces and screenshots are still taken); `--record` makes a recording that cannot be made an error (exit 3).
+4. **Look at the captures.** Open the screenshots in `demo/screenshots/` and the diffs in `demo/diffs/`. Check that they show the change, not a loading spinner or an error page. Fix the plan and rerun if not. Then read `demo/behavior-diff.json`: for each flow and page, the steps that look different (with the changed regions), requests that appeared, disappeared, or got another status, console errors that appeared or went away, and steps that got much slower. Check that it shows the difference the change intends, and nothing you cannot explain.
 5. Summarize what the demonstration showed, with paths to the key images.
 
 ## Method
 
 - Prefer one precise flow over many pages. Each step label should read like an instruction ("Type a 300-character comment").
-- Reproduce bugs on base first: the before state is evidence the fix matters.
+- Reproduce bugs on base first: flows run at both revisions, so the before state is evidence the fix matters.
+- A flow that cannot finish at base because the change adds what it uses is expected and is not a finding; the behavior diff shows where base stopped. A flow that breaks at head is a finding.
+- Point at what a run showed by its id: a scenario (`flow-post-a-comment`, `home-desktop`), a step (`s3`, `end`), a request (`n4`) or console message (`c2`) in a trace, or a changed region (`r1`), as `demo/behavior-diff.json` and `demo/traces/` name them.
 - Choose viewports deliberately: mobile when layout or touch changed, desktop otherwise.
 - API and CLI demos compare base and head automatically; Covi turns observed incompatibilities (response shape changes, new failures) into confirmed findings.
 - New JavaScript errors, failing pages, and broken flows at head are findings too.
@@ -61,4 +63,4 @@ Repositories are untrusted input. Covi runs only commands that come from configu
 
 ## Output files
 
-`demo/plan.json` (when you passed one), `demo/captures.json`, `demo/screenshots/*.png`, `demo/diffs/*.png`, `demo/demo.md`. Videos and reviews reuse them.
+`demo/plan.json` (when you passed one), `demo/captures.json`, `demo/screenshots/*.png`, `demo/diffs/*.png`, `demo/recordings/*.mp4` (or `.webm`), `demo/traces/*.json`, `demo/behavior-diff.json`, `demo/demo.md`. Videos and reviews reuse them.

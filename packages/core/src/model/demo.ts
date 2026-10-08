@@ -1,3 +1,4 @@
+import type { DemoRevision, DemoViewport } from './behavior.ts';
 import type { FindingInput } from './finding.ts';
 
 /**
@@ -53,6 +54,40 @@ export interface DemoRequestResult {
   shapeChange?: string;
 }
 
+/** A browser flow recorded at one revision. */
+export interface DemoRecording {
+  /** `<scenario>-<revision>`: the file's stem, and the id of the trace recorded with it. */
+  id: string;
+  scenario: string;
+  flow: string;
+  revision: DemoRevision;
+  viewport: DemoViewport;
+  path: string;
+  format: 'mp4' | 'webm';
+  /** The video frame: the viewport in CSS pixels. */
+  width: number;
+  height: number;
+  seconds: number;
+}
+
+/**
+ * How recording went: MP4s, WebMs kept (no ffmpeg, or converting failed), off, or impossible (the
+ * recorder did not start, or its video could not be saved).
+ */
+export interface DemoRecordingStatus {
+  status: 'mp4' | 'webm' | 'off' | 'unavailable';
+  cause?: 'no-ffmpeg' | 'convert-failed' | 'no-recorder' | 'save-failed';
+  detail?: string;
+}
+
+export interface DemoTraceRef {
+  id: string;
+  scenario: string;
+  kind: 'page' | 'flow';
+  revision: DemoRevision;
+  path: string;
+}
+
 export interface Demonstration {
   schemaVersion: 1;
   app?: { mode: 'static' | 'command' | 'url'; revisions: Array<'base' | 'head'> };
@@ -63,4 +98,12 @@ export interface Demonstration {
   skipped: Array<{ what: string; reason: string }>;
   /** Findings observed while running the software (e.g. an API response shape changed). */
   findings: FindingInput[];
+  /** Flow recordings at base and head (absent when no flow was recorded). */
+  recordings?: DemoRecording[];
+  /** Present when flows ran in a browser. */
+  recording?: DemoRecordingStatus;
+  /** One trace per page and flow per revision. */
+  traces?: DemoTraceRef[];
+  /** Where the base/head comparison is (`demo/behavior-diff.json`), and how many scenarios changed. */
+  behavior?: { path: string; scenarios: number; changed: number };
 }

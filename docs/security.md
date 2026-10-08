@@ -173,7 +173,7 @@ Matches become `[REDACTED]`. For known formats, a short prefix stays visible so 
 
 The `secret-in-diff` review rule uses the same token formats. It reports a secret that a change adds, and ignores obvious placeholders.
 
-Because a video's narration, captions, and on-screen code, output, and responses all come from the redacted storyboard, a token in the diff doesn't appear in the video. Redaction can't reach inside screenshots, though: a page that renders a secret shows it in the capture. That's why project code never gets Covi's secrets in the first place.
+Because a video's narration, captions, and on-screen code, output, and responses all come from the redacted storyboard, a token in the diff doesn't appear in the video. Redaction can't reach inside screenshots or recordings, though: a page that renders a secret shows it in the capture. That's why project code never gets Covi's secrets in the first place.
 
 ## What leaves your machine
 
@@ -202,7 +202,7 @@ Because a video's narration, captions, and on-screen code, output, and responses
 - the artifacts, with SHA-256 digests
 - the outcome
 
-It never records environment values. Command output appears only in `demo/captures.json` and the tests section of `review.json`, both redacted. See [artifacts.md](artifacts.md).
+It never records environment values. Command output appears only in `demo/captures.json` and the tests section of `review.json`, both redacted. Traces (`demo/traces/`) keep request URLs, console messages, and timing, never headers or bodies; credential-shaped URL parameters are masked before the usual redaction. See [artifacts.md](artifacts.md).
 
 Locally, runs live in `.covi/runs/`. That directory ignores itself with its own `.gitignore` containing `*`, so runs are never committed, and only the latest `output.keep` runs (20 by default) are kept. In CI, the run directory is uploaded as a job artifact: for 14 days in the GitHub Action, and for `expire-in` in GitLab.
 

@@ -208,6 +208,7 @@ function explicitConfig(cmd: Command): ParsedConfigInput {
   if (explicitSource(cmd, 'outro')) set('video', 'outro', o.outro);
   if (explicitSource(cmd, 'comment')) set('publish', 'comment', o.comment);
   if (explicitSource(cmd, 'annotations')) set('publish', 'annotations', o.annotations);
+  if (explicitSource(cmd, 'record')) set('demo', 'record', o.record);
   return parseConfigInput(raw, 'command-line options');
 }
 
@@ -230,6 +231,16 @@ function addLanguage(cmd: Command): Command {
     'language Covi writes and narrates in: auto (from the change), en, ko, ja, or zh (Simplified Chinese)',
     languageOption,
   );
+}
+
+/** --record and --no-record, for commands that may run browser flows. */
+function addRecord(cmd: Command): Command {
+  return cmd
+    .option(
+      '--record',
+      'record browser flows at base and head (the default); exit 3 if they cannot be recorded',
+    )
+    .option('--no-record', 'do not record browser flows (screenshots and traces are still taken)');
 }
 
 function addIntelligence(cmd: Command): Command {
@@ -523,11 +534,13 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
     await finish(cmd, result, s, ui(cmd).json ? undefined : markdown);
   });
 
-  addIntelligence(
-    addSelection(
-      program
-        .command('review')
-        .description('Review a change: explanation, evidence-based findings, and a verdict'),
+  addRecord(
+    addIntelligence(
+      addSelection(
+        program
+          .command('review')
+          .description('Review a change: explanation, evidence-based findings, and a verdict'),
+      ),
     ),
   )
     .addOption(
@@ -559,11 +572,13 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
       },
     );
 
-  addLanguage(
-    addSelection(
-      program
-        .command('demo')
-        .description('Run the software at base and head and capture what changed'),
+  addRecord(
+    addLanguage(
+      addSelection(
+        program
+          .command('demo')
+          .description('Run the software at base and head and capture what changed'),
+      ),
     ),
   )
     .option(
@@ -577,10 +592,12 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
       await finish(cmd, result, s);
     });
 
-  addVideo(
-    addIntelligence(
-      addSelection(
-        program.command('video').description('Make a review video when seeing the change helps'),
+  addRecord(
+    addVideo(
+      addIntelligence(
+        addSelection(
+          program.command('video').description('Make a review video when seeing the change helps'),
+        ),
       ),
     ),
   )
@@ -783,11 +800,13 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
       await finish(cmd, result, s);
     });
 
-  addVideo(
-    addIntelligence(
-      program
-        .command('ci')
-        .description('Run Covi in GitHub Actions or GitLab CI (never interactive)'),
+  addRecord(
+    addVideo(
+      addIntelligence(
+        program
+          .command('ci')
+          .description('Run Covi in GitHub Actions or GitLab CI (never interactive)'),
+      ),
     ),
   )
     .addOption(

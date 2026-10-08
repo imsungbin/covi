@@ -634,6 +634,45 @@ demo:
   changed: ' · 바뀜'
   shapeChange: '형태 변경: {shape}.'
   notDemonstrated: 시연하지 못한 것
+  revision:
+    base: 베이스
+    head: 헤드
+  recordings: 녹화
+  recording:
+    item: '{name}({revision}): [{file}]({path})'
+    cause:
+      no-ffmpeg: '녹화는 WebM 형식으로 남겼습니다(ffmpeg 없음). MP4로 받으려면 ffmpeg 설치 또는 COVI_FFMPEG 설정이 필요합니다'
+      convert-failed: 'MP4 변환에 실패해 녹화는 WebM 형식으로 남겼습니다'
+      no-recorder: '브라우저가 녹화하지 않아 흐름을 녹화하지 못했습니다'
+      save-failed: '흐름은 녹화했지만 녹화 파일을 저장하지 못했습니다'
+    withDetail: '{cause}: {detail}'
+    plain: '{cause}.'
+  behavior:
+    title: 베이스와 헤드의 동작
+    scenario: '{name}({viewport})'
+    same:
+      other: '{count}개 시나리오는 베이스와 헤드에서 똑같이 동작했습니다.'
+    incomplete: '비교하지 못했습니다: {revision}에서만 실행했습니다.'
+    failed: '{revision}에서 실패했습니다: {error}'
+    where:
+      step: '{n}단계'
+      open: 첫 화면
+      end: 마지막 화면
+      load: 페이지
+    label: ' (“{label}”)'
+    step: '{where}{label}: 화면이 다릅니다. 픽셀의 {percent}%가 바뀌었습니다{diff}.'
+    stepState: '{where}{label}: 베이스에서는 {base}, 헤드에서는 {head}.'
+    state:
+      ok: 완료
+      failed: 실패
+      missing: 도달하지 못함
+    requestChanged: '{request}: 베이스에서 {base}, 헤드에서 {head}'
+    requestAdded: '새 요청: {request} → {status}'
+    requestRemoved: '더 이상 보내지 않는 요청: {request}(베이스에서 {status})'
+    noResponse: 응답 없음
+    consoleAdded: '새 콘솔 오류: {text}'
+    consoleRemoved: '더 이상 나오지 않는 콘솔 오류: {text}'
+    timing: '{where}: 헤드에서 {head}ms, 베이스에서 {base}ms 걸렸습니다.'
 
 video:
   label:

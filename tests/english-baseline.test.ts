@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  type BehaviorDiff,
   buildReview,
   type Demonstration,
   explainHeuristically,
@@ -118,6 +119,88 @@ const DEMO: Demonstration = {
   ],
   skipped: [{ what: 'tablet viewport', reason: 'not configured' }],
   findings: [],
+};
+
+const BEHAVIOR: BehaviorDiff = {
+  schemaVersion: 1,
+  scenarios: [
+    {
+      id: 'flow-load-items',
+      kind: 'flow',
+      name: 'Load items',
+      viewport: 'desktop',
+      status: 'changed',
+      traces: { base: 'flow-load-items-base', head: 'flow-load-items-head' },
+      recordings: {
+        base: 'demo/recordings/flow-load-items-base.webm',
+        head: 'demo/recordings/flow-load-items-head.webm',
+      },
+      steps: [
+        { id: 's2', label: 'Open the menu', base: 'failed', head: 'ok', regions: [] },
+        {
+          id: 'end',
+          label: 'Load items',
+          base: 'ok',
+          head: 'ok',
+          changedRatio: 0.0123,
+          diff: 'demo/diffs/flow-load-items-end.png',
+          regions: [{ id: 'r1', x: 40, y: 120, width: 300, height: 48 }],
+        },
+      ],
+      network: {
+        added: [
+          { key: 'GET /api/limits', method: 'GET', url: '/api/limits', request: 'n4', status: 200 },
+        ],
+        removed: [
+          { key: 'GET /legacy.js', method: 'GET', url: '/legacy.js', request: 'n3', status: 200 },
+        ],
+        changed: [
+          {
+            key: 'GET /items.json',
+            method: 'GET',
+            url: '/items.json?session=[REDACTED]',
+            base: { request: 'n2', status: 200 },
+            head: { request: 'n2', status: 404 },
+          },
+        ],
+      },
+      console: {
+        added: [{ message: 'c2', level: 'error', text: 'Could not load items: HTTP 404' }],
+        removed: [{ message: 'c1', level: 'error', text: 'Deprecated API' }],
+      },
+      timing: {
+        totalMs: { base: 1800, head: 2900 },
+        steps: [{ step: 's1', baseMs: 300, headMs: 1200, deltaMs: 900 }],
+      },
+    },
+    {
+      id: 'home-desktop',
+      kind: 'page',
+      name: '/',
+      viewport: 'desktop',
+      status: 'unchanged',
+      traces: { base: 'home-desktop-base', head: 'home-desktop-head' },
+      steps: [],
+      network: { added: [], removed: [], changed: [] },
+      console: { added: [], removed: [] },
+      timing: { totalMs: { base: 900, head: 950 }, steps: [] },
+    },
+    {
+      id: 'flow-checkout',
+      kind: 'flow',
+      name: 'Checkout',
+      viewport: 'mobile',
+      status: 'incomplete',
+      missing: 'base',
+      traces: { head: 'flow-checkout-head' },
+      failure: { head: 'locator.click: Timeout 8000ms exceeded' },
+      steps: [],
+      network: { added: [], removed: [], changed: [] },
+      console: { added: [], removed: [] },
+      timing: { totalMs: { head: 8000 }, steps: [] },
+    },
+  ],
+  summary: { scenarios: 3, changed: 1, unchanged: 1, incomplete: 1 },
 };
 
 /** The parts of a storyboard a person reads or hears. */
@@ -240,5 +323,39 @@ describe('English output (baseline)', () => {
 
   it('renders the same demonstration notes', () => {
     expect(renderDemo(DEMO)).toMatchSnapshot();
+  });
+
+  it('renders behavior differences and recordings in the demonstration notes', () => {
+    const demo: Demonstration = {
+      ...DEMO,
+      recordings: [
+        {
+          id: 'flow-load-items-base',
+          scenario: 'flow-load-items',
+          flow: 'Load items',
+          revision: 'base',
+          viewport: 'desktop',
+          path: 'demo/recordings/flow-load-items-base.webm',
+          format: 'webm',
+          width: 1280,
+          height: 800,
+          seconds: 1.8,
+        },
+        {
+          id: 'flow-load-items-head',
+          scenario: 'flow-load-items',
+          flow: 'Load items',
+          revision: 'head',
+          viewport: 'desktop',
+          path: 'demo/recordings/flow-load-items-head.webm',
+          format: 'webm',
+          width: 1280,
+          height: 800,
+          seconds: 2.9,
+        },
+      ],
+      recording: { status: 'webm', cause: 'no-ffmpeg' },
+    };
+    expect(renderDemo(demo, 'en', BEHAVIOR)).toMatchSnapshot();
   });
 });

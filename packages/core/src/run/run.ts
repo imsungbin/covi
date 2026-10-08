@@ -22,6 +22,8 @@ export type ArtifactKind =
   | 'capture'
   | 'screenshot'
   | 'recording'
+  | 'trace'
+  | 'behavior-diff'
   | 'terminal'
   | 'storyboard'
   | 'timeline'

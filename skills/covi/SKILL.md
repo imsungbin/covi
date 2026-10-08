@@ -77,7 +77,7 @@ rule-findings.json    deterministic findings with ids you can confirm or dismiss
 explanation.json/.md  the explanation (you write the JSON; Covi renders the Markdown)
 findings.json         your findings; review.json/.md is the merged, rendered review
 summary.md            compact summary for PR/MR descriptions
-demo/                 captures.json, screenshots, diffs
+demo/                 captures.json, screenshots, diffs, recordings, traces, behavior-diff.json
 video/                storyboard.json, timeline.json, captions, audio.json, music.wav, covi-review.mp4, qc.json
 ```
 

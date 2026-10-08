@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { DEMO_PATHS, demoPath } from '../src/run/paths.ts';
 import { listRuns, pruneRuns, Run } from '../src/run/run.ts';
 import { Redactor } from '../src/security/redact.ts';
 
@@ -97,5 +98,36 @@ describe('Run', () => {
       '20260101-000003-review',
       '20260101-000002-review',
     ]);
+  });
+});
+
+describe('demo paths', () => {
+  it('names every file a scenario produces inside demo/', () => {
+    expect(demoPath.trace('flow-load-items', 'base')).toBe('demo/traces/flow-load-items-base.json');
+    expect(demoPath.recording('flow-load-items', 'head', 'mp4')).toBe(
+      'demo/recordings/flow-load-items-head.mp4',
+    );
+    expect(demoPath.recording('flow-load-items', 'base', 'webm')).toBe(
+      'demo/recordings/flow-load-items-base.webm',
+    );
+    // Head frames keep the names they had before flows also ran at base.
+    expect(demoPath.flowFrame('flow-load-items', 3, 'head')).toBe(
+      'demo/screenshots/flow-load-items-03.png',
+    );
+    expect(demoPath.flowFrame('flow-load-items', 3, 'base')).toBe(
+      'demo/screenshots/flow-load-items-03-base.png',
+    );
+    expect(demoPath.rawRecordingDir('flow-load-items', 'head')).toBe(
+      'demo/recordings/.flow-load-items-head',
+    );
+    expect(demoPath.stepDiff('flow-load-items', 'end')).toBe('demo/diffs/flow-load-items-end.png');
+    expect(demoPath.pageFull('home-desktop', 'base')).toBe(
+      'demo/screenshots/home-desktop-base.full.png',
+    );
+    expect(demoPath.pageCrop('home-desktop', 'after')).toBe(
+      'demo/screenshots/home-desktop-after.png',
+    );
+    expect(demoPath.pageDiff('home-desktop')).toBe('demo/diffs/home-desktop.png');
+    for (const path of Object.values(DEMO_PATHS)) expect(path.startsWith('demo/')).toBe(true);
   });
 });

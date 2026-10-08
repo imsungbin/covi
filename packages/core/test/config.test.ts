@@ -116,6 +116,22 @@ describe('configuration', () => {
     const { config } = resolveConfig([{ name: 'explicit', values: env }]);
     expect(config.video.narration).toMatchObject({ enabled: false, voice: 'Reed' });
   });
+
+  it('records browser flows by default; demo.record and COVI_DEMO_RECORD turn it off', () => {
+    expect(resolveConfig([]).config.demo.record).toBe(true);
+    const repo = resolveConfig([
+      {
+        name: 'repository',
+        source: '.covi/config.yml',
+        values: parseConfigInput({ demo: { record: false } }, 't'),
+      },
+    ]);
+    expect(repo.config.demo.record).toBe(false);
+    expect(repo.provenance['demo.record']).toBe('repository (.covi/config.yml)');
+    expect(configFromEnv({ COVI_DEMO_RECORD: '0' }).demo?.record).toBe(false);
+    expect(configFromEnv({ COVI_DEMO_RECORD: 'yes' }).demo?.record).toBe(true);
+    expect(() => parseConfigInput({ demo: { record: 'yes' } }, 't')).toThrow(/demo\.record/);
+  });
 });
 
 describe('music and sound effects', () => {

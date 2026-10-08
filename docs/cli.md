@@ -138,6 +138,8 @@ Reviews a change: an explanation, evidence-based findings, and a verdict.
 | `--run-tests` | Run `test.command` as part of the review. |
 | `--demo` | Also run the software and capture the change (see `covi demo`). Observed differences become findings. |
 | `--plan <file>` | With `--demo`: the demo plan to follow. Without `--demo` it is a usage error (exit 2). |
+| `--record` | With `--demo`: record browser flows at base and head (the default), and exit 3 if they cannot be recorded. |
+| `--no-record` | With `--demo`: do not record browser flows; screenshots, traces, and the behavior diff are still written. |
 
 Plus change selection and intelligence options.
 
@@ -146,7 +148,7 @@ Plus change selection and intelligence options.
   - `explanation.json`, `explanation.md`.
   - `findings.json`, `review.json`, `review.md`.
   - `summary.md`, `comment.md`.
-  - With `--demo`, also `demo/`: `captures.json`, screenshots, diffs, `demo.md`, and `plan.json` when you passed `--plan`.
+  - With `--demo`, also `demo/`: `captures.json`, screenshots, diffs, `recordings/`, `traces/`, `behavior-diff.json`, `demo.md`, and `plan.json` when you passed `--plan`.
 - **Tests:** with `--run-tests` (or `review.runTests`), `test.command` runs only if it is trusted on this machine; otherwise "Not verified" says why.
 - **Verdicts:** `looks-good`, `needs-attention`, or `needs-changes`.
 - **Result `data`:** `review`.
@@ -160,6 +162,8 @@ Runs the software at the base and head revisions and captures what changed. It n
 | Option | Meaning |
 |---|---|
 | `--plan <file>` | Demo plan JSON (pages, flows, commands, requests, viewports). See `covi schema demo-plan`. Covi validates it before running anything; an invalid plan exits 2 with one line per problem. |
+| `--record` | Record browser flows at base and head (the default), and exit 3 if they cannot be recorded. |
+| `--no-record` | Do not record browser flows; screenshots, traces, and the behavior diff are still written. |
 
 Plus change selection options.
 
@@ -173,10 +177,13 @@ Plus change selection options.
   - `demo/captures.json`.
   - `demo/screenshots/`, with before and after images.
   - `demo/diffs/`, with pixel diffs.
+  - `demo/recordings/`, each flow at base and head (MP4, or WebM without ffmpeg).
+  - `demo/traces/`, one trace per page and flow per revision.
+  - `demo/behavior-diff.json`.
   - `demo/demo.md`.
 - **Findings:** a difference Covi observes becomes a finding when you run `covi review --demo`, `covi video`, or `covi ci`. Examples are a changed response shape, a new server error, a page error, or a failing command.
 - **Result `data`:** `demo`.
-- **Exit code:** 3 when the demonstration cannot run at all, for example because Chromium is missing. When there is nothing to demonstrate, the result says why.
+- **Exit code:** 3 when the demonstration cannot run at all, for example because Chromium is missing, or when recording was asked for (`--record`, `COVI_DEMO_RECORD`, or `demo.record` in the repository's configuration) and flows cannot be recorded. When there is nothing to demonstrate, the result says why.
 
 ### `covi video [range]`
 
@@ -191,6 +198,8 @@ Makes a review video when seeing the change helps. Covi first decides whether a 
 | `--dry-run` | Print the resolved video plan and the questions worth asking, then stop. See [Video planning](#video-planning). |
 | `--force` | Render even when Covi judges a video unhelpful. |
 | `--workers <n>` | Parallel render workers, 1–64. |
+| `--record` | Record browser flows at base and head (the default), and exit 3 if they cannot be recorded. |
+| `--no-record` | Do not record browser flows; screenshots, traces, and the behavior diff are still written. |
 
 Plus change selection, intelligence, and video options.
 
@@ -264,6 +273,8 @@ Runs Covi in GitHub Actions or GitLab CI. It is never interactive. It takes the 
 | `--comment`, `--no-comment` | Post or update the summary comment, or skip it (for example, when a later step publishes). Default: `publish.comment`. |
 | `--run-tests` | Run `test.command`. |
 | `--out <dir>` | Write the run to this exact directory. |
+| `--record` | Record browser flows at base and head (the default), and exit 3 if they cannot be recorded. |
+| `--no-record` | Do not record browser flows; screenshots, traces, and the behavior diff are still written. |
 
 Plus intelligence and video options.
 
@@ -463,7 +474,7 @@ Other shapes:
 | 0 | OK | A review with no gate failures, including one with findings, or no change to review. |
 | 1 | The review gate failed | `review`, `report`, or `ci` found confirmed or likely findings at or above `--fail-on`. |
 | 2 | Usage or invalid input | Unknown flag, a number out of range, bad range, invalid `.covi/config.yml`, schema errors in an agent-written file or demo plan, a `publish` head mismatch, or `covi trust` without confirmation when nobody can be asked. |
-| 3 | Environment | Not a git repository, a missing tool or browser, or a missing API key for a provider set explicitly. Also a demonstration that could not run, or a failed `doctor` check. |
+| 3 | Environment | Not a git repository, a missing tool or browser, or a missing API key for a provider set explicitly. Also a demonstration that could not run, flows that could not be recorded when recording was asked for, or a failed `doctor` check. |
 | 4 | Internal error | A bug. Set `COVI_DEBUG=1` for the stack trace. |
 
 Artifacts are written even when the gate fails, so CI can upload them.
@@ -550,6 +561,7 @@ See [Video](video.md).
 | `COVI_LANGUAGE` | `language` |
 | `COVI_PROVIDER`, `COVI_MODEL` | `intelligence.provider`, `intelligence.model` |
 | `COVI_FAIL_ON` | `review.failOn` |
+| `COVI_DEMO_RECORD` | `demo.record` (`1`, `true`, `yes`, `on` mean on) |
 | `COVI_VIDEO_MODE`, `COVI_VIDEO_DURATION` | `video.mode`, `video.duration` |
 | `COVI_NARRATION` | `video.narration.enabled` (`1`, `true`, `yes`, `on` mean on) |
 | `COVI_TTS_PROVIDER`, `COVI_TTS_VOICE` | `video.narration.provider`, `video.narration.voice` |

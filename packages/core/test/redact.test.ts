@@ -78,3 +78,69 @@ describe('childEnv', () => {
     );
   });
 });
+
+describe('URL redaction', () => {
+  const r = new Redactor();
+
+  it('masks credential-shaped query and fragment parameters, keeping their names', () => {
+    expect(r.redactUrl('/items.json?session=sess-4f9c2a7b1e&page=2')).toBe(
+      '/items.json?session=[REDACTED]&page=2',
+    );
+    expect(
+      r.redactUrl('https://cdn.test/a.png?X-Amz-Signature=abc123&X-Amz-Credential=AK%2F1&w=10'),
+    ).toBe('https://cdn.test/a.png?X-Amz-Signature=[REDACTED]&X-Amz-Credential=[REDACTED]&w=10');
+    expect(r.redactUrl('/callback#access_token=zz9&state=ok')).toBe(
+      '/callback#access_token=[REDACTED]&state=ok',
+    );
+    expect(r.redactUrl('/login?api_key=k1&apiKey=k2&x-api-key=k3')).toBe(
+      '/login?api_key=[REDACTED]&apiKey=[REDACTED]&x-api-key=[REDACTED]',
+    );
+    expect(r.redactUrl('https://user:pw123456@example.test/x')).toBe(
+      'https://[REDACTED]@example.test/x',
+    );
+  });
+
+  it('leaves ordinary URLs alone', () => {
+    for (const url of [
+      '/',
+      '/items.json',
+      '/search?q=tokens&page=2',
+      '/items?id=7&page=2&q=keys',
+      '/kb?keyboard=us&tokenizer=1',
+      '/docs#section-2',
+      '/#/items',
+      '/a?flag',
+      '/a?=x',
+    ])
+      expect(r.redactUrl(url)).toBe(url);
+  });
+
+  it('masks URLs inside text', () => {
+    expect(
+      r.redactUrls('GET /a?token=abc123456 failed; see https://x.test/cb#code=zz9 (retry)'),
+    ).toBe('GET /a?token=[REDACTED] failed; see https://x.test/cb#code=[REDACTED] (retry)');
+    expect(r.redactUrls('Could not load items: HTTP 404')).toBe('Could not load items: HTTP 404');
+  });
+
+  it('masks camelCase and run-together credential names', () => {
+    expect(r.redactUrl('/a?authToken=t1&privateKey=k1&csrftoken=c1&X-Auth=a1&page=2')).toBe(
+      '/a?authToken=[REDACTED]&privateKey=[REDACTED]&csrftoken=[REDACTED]&X-Auth=[REDACTED]&page=2',
+    );
+  });
+
+  it('masks the query inside a hash-router fragment', () => {
+    expect(r.redactUrl('/#/login?token=abc&next=%2Fhome')).toBe(
+      '/#/login?token=[REDACTED]&next=%2Fhome',
+    );
+    expect(r.redactUrl('https://x.test/#!/cb?code=zz9')).toBe(
+      'https://x.test/#!/cb?code=[REDACTED]',
+    );
+  });
+
+  it('stays fast on hostile text', () => {
+    const hostile = '/-'.repeat(100_000);
+    const started = performance.now();
+    expect(r.redactUrls(hostile)).toBe(hostile);
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+});

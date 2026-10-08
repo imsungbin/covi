@@ -248,12 +248,57 @@ function spokenAt(timed: TimedWindow, j: number, weight: (char: string) => numbe
   return timed.cues.at(-1)?.end ?? 0;
 }
 
-/** Times cues within each speech window in proportion to their length, honoring a minimum duration. */
+/**
+ * Times cues within each speech window in proportion to their length, honoring a minimum
+ * duration, and marks a window's emphasized phrase in the cues that show it.
+ */
 export function buildCaptions(
-  windows: Array<{ text: string; start: number; end: number }>,
+  windows: Array<{ text: string; start: number; end: number; emphasis?: PhraseSpan }>,
   options: CaptionOptions,
 ): CaptionCue[] {
-  return windows.flatMap((w) => timeWindow(w, options)?.cues ?? []);
+  const weight = charWeight(options.language ?? 'en');
+  return windows.flatMap((w) => {
+    const timed = timeWindow(w, options);
+    if (!timed) return [];
+    if (w.emphasis && w.emphasis.index >= 0 && w.emphasis.length > 0)
+      emphasize(timed, w.emphasis, weight);
+    return timed.cues;
+  });
+}
+
+/**
+ * Finds the phrase in each line that shows part of it: the UTF-16 range it covers there, and
+ * when that part is spoken, for the caption's sweep.
+ */
+function emphasize(timed: TimedWindow, span: PhraseSpan, weight: (char: string) => number): void {
+  const end = span.index + span.length;
+  let from = 0;
+  for (const cue of timed.cues) {
+    cue.lines.forEach((line, l) => {
+      // The line's characters without whitespace, with where each starts in the string.
+      const chars: Array<{ at: number; size: number }> = [];
+      let at = 0;
+      for (const char of line) {
+        if (!/\s/.test(char)) chars.push({ at, size: char.length });
+        at += char.length;
+      }
+      const a = Math.max(span.index, from);
+      const b = Math.min(end, from + chars.length);
+      if (a < b) {
+        const first = chars[a - from]!;
+        const last = chars[b - 1 - from]!;
+        cue.emphasis ??= [];
+        cue.emphasis.push({
+          line: l,
+          from: first.at,
+          to: last.at + last.size,
+          start: round(spokenAt(timed, a, weight)),
+          end: round(spokenAt(timed, b, weight)),
+        });
+      }
+      from += chars.length;
+    });
+  }
 }
 
 /**

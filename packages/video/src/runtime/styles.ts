@@ -66,6 +66,9 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
   font-size: ${r.captionFont.toFixed(2)}px; line-height: 1.26; text-align: center; letter-spacing: -0.005em;
   box-shadow: 0 ${u(8)} ${u(28)} rgba(0,0,0,0.18); }
 .caption-box .line { display: block; white-space: nowrap; }
+.caption-box .em { background-image: linear-gradient(${c.primary}, ${c.primary}); background-repeat: no-repeat;
+  background-position: 0 50%; background-size: 0% 100%; border-radius: ${u(6)};
+  -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 
 .chip { display: inline-flex; align-items: center; gap: ${u(8)}; padding: ${u(7)} ${u(16)}; border-radius: 999px; font-weight: 650;
   font-size: ${u(vertical ? 22 : 18)}; line-height: 1.1; white-space: nowrap; }

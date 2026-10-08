@@ -3,7 +3,13 @@ import { type Language, seedFrom, t } from '@covi/core';
 import { buildCaptions, type CaptionOptions, captionOptionsFor, phraseTime } from '../captions.ts';
 import { cjkFontsFor, withCjkFamilies } from '../composition/fonts.ts';
 import { orientationOf, timingPreset, type VideoSpec } from '../spec.ts';
-import { findPhrase, parseEmphasis, stripEmphasis } from '../storyboard/grammar.ts';
+import {
+  emphasisSpan,
+  findPhrase,
+  type PhraseSpan,
+  parseEmphasis,
+  stripEmphasis,
+} from '../storyboard/grammar.ts';
 import type { Scene, Storyboard, Visual } from '../storyboard/schema.ts';
 import { heroScene } from '../templates.ts';
 import { SPEECH_RATE, speechUnits } from '../text.ts';
@@ -392,11 +398,15 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
   const orientation = orientationOf(spec.width, spec.height);
   const frames = Math.round(layout.duration * spec.fps);
   const captionOptions = { ...captionOptionsFor(orientation), language };
+  const emphasis = new Map<string, PhraseSpan>();
   const scenes: TimelineScene[] = input.scenes.map((scene, i) => {
     const timing = layout.scenes[i]!;
     const visual = toTimelineVisual(scene.visual, input.image);
     // The markup only marks the caption's emphasis: speech, captions, and reports get the text.
-    const text = parseEmphasis(scene.narration).text;
+    const line = parseEmphasis(scene.narration);
+    const text = line.text;
+    const span = emphasisSpan(line);
+    if (span) emphasis.set(timing.id, span);
     const phases = scenePhases(scene, text, timing, captionOptions);
     return {
       id: timing.id,
@@ -433,7 +443,9 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
   }
   const captions: CaptionCue[] = spec.captions
     ? buildCaptions(
-        scenes.filter((s) => s.speech).map((s) => captionWindow(s.speech!)),
+        scenes
+          .filter((s) => s.speech)
+          .map((s) => ({ ...captionWindow(s.speech!), emphasis: emphasis.get(s.id) })),
         captionOptions,
       )
     : [];

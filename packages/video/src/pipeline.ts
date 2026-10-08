@@ -52,6 +52,7 @@ import {
 } from './sound.ts';
 import type { VideoSpec } from './spec.ts';
 import { draftStoryboard } from './storyboard/draft.ts';
+import { stripEmphasis } from './storyboard/grammar.ts';
 import { refineNarration } from './storyboard/model.ts';
 import { type Scene, type Storyboard, StoryboardSchema } from './storyboard/schema.ts';
 import { loadTemplates } from './templates.ts';
@@ -246,7 +247,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   // 2. Narration-first timing: synthesize and measure each take. The voice reads the scene's
   // spoken form, normalized for its language (acronyms spelled out, pronunciations applied);
   // captions keep the narration as written.
-  const said = storyboard.scenes.map((s) => (s.say ?? s.narration).trim());
+  const said = storyboard.scenes.map((s) => stripEmphasis(s.say ?? s.narration).trim());
   let speechLanguage = resolveSpeechLanguage({
     flag: input.languageSettings?.flag ?? spec.language,
     storyboard: storyboard.language,

@@ -146,6 +146,7 @@ export class Stage {
   private captionLayer!: HTMLDivElement;
   private captionBox!: HTMLDivElement;
   private captionKey = '';
+  private emphasis: Array<{ node: HTMLElement; start: number; end: number }> = [];
   private progressBar!: HTMLDivElement;
   private progress: HTMLDivElement[] = [];
   private blinkTimes: number[] = [];
@@ -507,7 +508,23 @@ export class Stage {
     if (key !== this.captionKey) {
       this.captionKey = key;
       this.captionBox.innerHTML = '';
-      for (const line of cue?.lines ?? []) el('span', 'line', this.captionBox, line);
+      this.emphasis = [];
+      for (const [i, line] of (cue?.lines ?? []).entries()) {
+        const span = el('span', 'line', this.captionBox);
+        let at = 0;
+        for (const mark of (cue?.emphasis ?? []).filter((e) => e.line === i)) {
+          if (mark.from > at) span.append(line.slice(at, mark.from));
+          const node = el('span', 'em', span, line.slice(mark.from, mark.to));
+          this.emphasis.push({ node, start: mark.start, end: mark.end });
+          at = mark.to;
+        }
+        if (at < line.length) span.append(line.slice(at));
+      }
+    }
+    // The marker sweeps under the key phrase as it is spoken (at least a quarter second).
+    for (const e of this.emphasis) {
+      const p = easeInOutCubic(seg(time, e.start, Math.max(e.end, e.start + 0.25)));
+      e.node.style.backgroundSize = `${(p * 100).toFixed(2)}% 100%`;
     }
     if (cue) {
       const inP = seg(time, cue.start, cue.start + 0.12);

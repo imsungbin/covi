@@ -11,6 +11,7 @@ import {
 } from '@covi/core';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { stripEmphasis } from '../storyboard/grammar.ts';
 
 /**
  * Speech normalization: the text a voice should read, derived from the narration right before
@@ -349,11 +350,14 @@ export function speakScenes(
   options: SpeechOptions & { redact?: (text: string) => string },
 ): SpokenScene[] {
   return scenes.map((scene, i) => {
-    const normalized = normalizeSpeech((scene.say ?? scene.narration).trim(), options);
+    // `[[…]]` marks the caption's emphasis; the voice and speech.json get the words alone.
+    const narration = stripEmphasis(scene.narration);
+    const say = scene.say === undefined ? undefined : stripEmphasis(scene.say);
+    const normalized = normalizeSpeech((say ?? narration).trim(), options);
     return {
       id: scene.id ?? `s${i + 1}`,
-      narration: scene.narration,
-      say: scene.say,
+      narration,
+      say,
       spoken: options.redact ? options.redact(normalized.text) : normalized.text,
       changes: normalized.changes,
     };

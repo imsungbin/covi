@@ -179,10 +179,24 @@ export interface TimelineCue {
   detail?: string;
 }
 
+/** The key phrase in a caption line: where it is in the line and when it is spoken. */
+export interface CaptionEmphasis {
+  /** Index into the cue's `lines`. */
+  line: number;
+  /** UTF-16 offsets into that line: the phrase is `line.slice(from, to)`. */
+  from: number;
+  to: number;
+  /** When its first character is spoken and when its last one has been, in seconds. */
+  start: number;
+  end: number;
+}
+
 export interface CaptionCue {
   start: number;
   end: number;
   lines: string[];
+  /** The line's `[[…]]` phrase, split across lines (and cues) when it wraps. */
+  emphasis?: CaptionEmphasis[];
 }
 
 /** The brand theme, carried into the composition so the runtime draws with the same tokens. */

@@ -70,6 +70,7 @@ describe('pixel diffs', () => {
     const diff = await comparePngs(join(dir, 'a.png'), join(dir, 'b.png'), join(dir, 'diff.png'));
     expect(diff.bounds).toEqual({ x: 40, y: 10, width: 20, height: 20 });
     expect(diff.changedRatio).toBeCloseTo(400 / 8000, 3);
+    expect(existsSync(join(dir, 'diff.png'))).toBe(true);
     expect(
       await cropPng(
         join(dir, 'b.png'),
@@ -97,6 +98,20 @@ describe('pixel diffs', () => {
     });
     expect(diff.regions).toEqual([{ x: 0, y: 0, width: 2, height: 2 }]);
     expect(existsSync(join(dir, 'd.png'))).toBe(false);
+  });
+
+  it('writes the diff image when exactly minRatio of the pixels changed', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'covi-px-'));
+    writeFileSync(join(dir, 'a.png'), png(100, 80));
+    writeFileSync(
+      join(dir, 'b.png'),
+      png(100, 80, (x, y) => (x >= 40 && x < 60 && y >= 10 && y < 30 ? [0, 0, 255] : undefined)),
+    );
+    const diff = await comparePngs(join(dir, 'a.png'), join(dir, 'b.png'), join(dir, 'd.png'), {
+      minRatio: 0.05,
+    });
+    expect(diff.changedPixels).toBe(400);
+    expect(existsSync(join(dir, 'd.png'))).toBe(true);
   });
 });
 

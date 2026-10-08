@@ -15,6 +15,13 @@ function union(rects: readonly Rect[]): Rect {
   return { x, y, width: right - x, height: bottom - y };
 }
 
+/** The area a union of two boxes adds beyond their own, without allocating: it runs per pair. */
+function addedArea(a: Rect, b: Rect): number {
+  const width = Math.max(a.x + a.width, b.x + b.width) - Math.min(a.x, b.x);
+  const height = Math.max(a.y + a.height, b.y + b.height) - Math.min(a.y, b.y);
+  return width * height - area(a) - area(b);
+}
+
 function near(a: Rect, b: Rect, gap: number): boolean {
   return (
     a.x <= b.x + b.width + gap &&
@@ -42,7 +49,7 @@ function mergeOnce(boxes: Rect[], gap: number): boolean {
 /**
  * Scales boxes (CSS pixels → image pixels), drops empty ones, and merges boxes that overlap or
  * nearly touch. When more than `max` remain, the pair whose union adds the least area merges
- * until `max` are left. The input order never changes the result.
+ * until at most `max` are left, and no two left overlap. The input order never changes the result.
  */
 export function mergeRegions(
   rects: readonly Rect[],
@@ -78,7 +85,7 @@ export function mergeRegions(
     let bestCost = Number.POSITIVE_INFINITY;
     for (let i = 0; i < boxes.length; i++)
       for (let j = i + 1; j < boxes.length; j++) {
-        const cost = area(union([boxes[i]!, boxes[j]!])) - area(boxes[i]!) - area(boxes[j]!);
+        const cost = addedArea(boxes[i]!, boxes[j]!);
         if (cost < bestCost) {
           bestCost = cost;
           best = [i, j];
@@ -87,6 +94,9 @@ export function mergeRegions(
     const [i, j] = best;
     boxes[i] = union([boxes[i]!, boxes[j]!]);
     boxes.splice(j, 1);
+    while (mergeOnce(boxes, gap)) {
+      // The union can reach a box it did not include; merge those too so none overlap.
+    }
   }
   return boxes.sort(byPosition);
 }

@@ -262,11 +262,31 @@ function upsertScreen(model: Subject, seen: ObservedScreen, revision: string): v
   screen.elements = [...observed, ...screen.elements.filter((e) => !observed.has(e))];
 }
 
-function upsertFlow(model: Subject, flow: SubjectFlowObservation, revision: string): FlowOutcome {
-  const secretSelectors = new Set(
+/** Selectors of the fields the model marks secret, on any screen. */
+function secretSelectorsOf(model: Subject): Set<string> {
+  return new Set(
     model.screens.flatMap((s) => s.elements.filter((e) => e.secret).map((e) => e.selector)),
   );
-  const judged = flowEntry(flow, secretSelectors);
+}
+
+/**
+ * The secret fields the merge judges a run's flows by: the model's, once these screens are merged
+ * into it. Capture asks the same before it lets a flow's frames into an observation, so a flow the
+ * merge will drop gives the model nothing it saw.
+ */
+export function secretSelectors(
+  model: Subject,
+  screens: readonly ObservedScreen[] = [],
+): Set<string> {
+  if (screens.length === 0) return secretSelectorsOf(model);
+  const next = structuredClone(model);
+  // The revision is only stamped on entries of this throwaway copy.
+  for (const screen of screens) upsertScreen(next, screen, '');
+  return secretSelectorsOf(next);
+}
+
+function upsertFlow(model: Subject, flow: SubjectFlowObservation, revision: string): FlowOutcome {
+  const judged = flowEntry(flow, secretSelectorsOf(model));
   if (judged.outcome !== 'kept') return judged.outcome;
   const { entry } = judged;
   const existing = model.flows.find((f) => f.name === entry.name);

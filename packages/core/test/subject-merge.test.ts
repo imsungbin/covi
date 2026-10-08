@@ -13,6 +13,7 @@ import {
   hasObservations,
   mergeSubject,
   mergeSubjectWithOutcomes,
+  secretSelectors,
 } from '../src/subject/merge.ts';
 
 const rev = (n: number) => String(n).padStart(12, '0');
@@ -370,6 +371,18 @@ describe('mergeSubject', () => {
     expect(
       mergeSubject(emptySubject(), at(1, { flows: [typesIntoCode] }), OPTS).flows,
     ).toHaveLength(1);
+  });
+
+  it("names the secret fields a flow is judged by, once a run's screens are merged", () => {
+    const seenSecret = { ...load, selector: '#f-17', key: 'f', secret: true };
+    const model = mergeSubject(emptySubject(), at(1, { screens: [home([seenSecret])] }), OPTS);
+    expect([...secretSelectors(model)]).toEqual(['#f-17']);
+    // A screen that shows the field as ordinary clears it, as the merge would; other screens do not.
+    expect([...secretSelectors(model, [home([{ ...seenSecret, secret: undefined }])])]).toEqual([]);
+    expect([...secretSelectors(model, [page('/other', [load])])]).toEqual(['#f-17']);
+    expect([...secretSelectors(emptySubject(), [home([seenSecret])])]).toEqual(['#f-17']);
+    // Asking never changes the model.
+    expect(model.screens[0]!.elements[0]!.secret).toBe(true);
   });
 
   it('says why each flow is or is not remembered, without its values', () => {

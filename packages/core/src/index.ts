@@ -149,6 +149,7 @@ export {
   hasObservations,
   mergeSubject,
   mergeSubjectWithOutcomes,
+  secretSelectors,
 } from './subject/merge.ts';
 export {
   loadSubject,

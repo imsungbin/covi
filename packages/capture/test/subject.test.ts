@@ -1,4 +1,12 @@
-import { type DemoShot, demoPath, emptySubject, mergeSubject, type Rect } from '@covi/core';
+import {
+  type DemoShot,
+  demoPath,
+  emptySubject,
+  mergeSubject,
+  mergeSubjectWithOutcomes,
+  type Rect,
+  SUBJECT_LIMITS,
+} from '@covi/core';
 import { describe, expect, it } from 'vitest';
 import type { ViewportName } from '../src/browser.ts';
 import type { PageScan, ScannedElement } from '../src/elements.ts';
@@ -77,7 +85,7 @@ const CAPTURES: SubjectCaptures = {
 
 describe('subject observations', () => {
   it('turns what a run saw at head into an observation, never a command line', () => {
-    const observation = subjectObservation(CAPTURES);
+    const observation = subjectObservation(CAPTURES, emptySubject());
     // Frames first: the page load, merged last, has the final word on where things are.
     expect(
       observation.screens.map((s) => [s.viewport, s.size, s.title, s.elements.at(-1)!.box]),
@@ -131,14 +139,25 @@ describe('subject observations', () => {
           },
         ],
       },
+      // Not one Covi would replay: it leaves the app.
+      {
+        ...LOAD,
+        flow: { name: 'Away', path: '/', steps: [{ goto: 'https://elsewhere.example/' }] },
+        labels: ['hunter2'],
+        frames: [typed('e.png')],
+      },
     ];
-    const observation = subjectObservation({ ...CAPTURES, pages: [], flows: dropped });
+    const observation = subjectObservation(
+      { ...CAPTURES, pages: [], flows: dropped },
+      emptySubject(),
+    );
     expect(observation.screens).toEqual([]);
     expect(observation.flows.map((f) => [f.name, f.steps.map((s) => s.label)])).toEqual([
       ['Failed', [undefined, undefined]],
       ['Secret', [undefined, undefined]],
       ['Sign in', [undefined]],
       ['Pin', [undefined]],
+      ['Away', [undefined]],
     ]);
     expect(JSON.stringify(observation)).not.toContain('hunter2');
     // The merge still hears about each, so a run can say why it was not remembered.
@@ -147,11 +166,58 @@ describe('subject observations', () => {
       [true, true],
       [true, undefined],
       [true, undefined],
+      [true, undefined],
     ]);
   });
 
+  it('judges flows by the secret fields the model already knows, as the merge will', () => {
+    const code = { selector: '#code', key: 'code', box: { x: 0, y: 0, width: 10, height: 10 } };
+    const size = { width: 390, height: 844 };
+    // An earlier run saw `#code` as a one-time code field.
+    const model = mergeSubject(
+      emptySubject(),
+      {
+        revision: '000000000000',
+        screens: [{ path: '/x', viewport: 'mobile', size, elements: [{ ...code, secret: true }] }],
+        flows: [],
+        commands: [],
+      },
+      { expireAfter: 20 },
+    );
+    const frame = (image: string, elements: ScannedElement[]) => ({
+      image,
+      scan: scan(elements, undefined, '/x'),
+    });
+    const pin: SubjectFlowRun = {
+      ...LOAD,
+      flow: { name: 'Pin', path: '/x', steps: [{ fill: '#code', text: '1234' }] },
+      labels: ['hunter2'],
+      frames: [frame('a.png', [el('#typed', 'hunter2', code.box)])],
+    };
+    // A failed flow's frame shows `#code` as ordinary; the merge never takes that frame, so it
+    // must not clear the mark here either.
+    const failed: SubjectFlowRun = {
+      ...LOAD,
+      flow: { ...LOAD.flow, name: 'Failed' },
+      passed: false,
+      frames: [frame('b.png', [el('#code', 'code', code.box)])],
+    };
+    const captures = { ...CAPTURES, pages: [], flows: [pin, failed] };
+    const observation = subjectObservation(captures, model);
+    expect(observation.screens).toEqual([]);
+    expect(JSON.stringify(observation)).not.toContain('hunter2');
+    const merged = mergeSubjectWithOutcomes(model, observation, { expireAfter: 20 });
+    expect(merged.flows.map((f) => f.outcome)).toEqual(['secret', 'failed']);
+    // Without that earlier run, the same flow is kept, with what its frames saw.
+    const fresh = subjectObservation(captures, emptySubject());
+    expect(fresh.screens.map((s) => s.elements.map((e) => e.selector))).toEqual([['#typed']]);
+    expect(fresh.flows[0]!.steps[0]!.label).toBe('hunter2');
+  });
+
   it('indexes where each element is in each head image, at its viewport', () => {
-    const model = mergeSubject(emptySubject(), subjectObservation(CAPTURES), { expireAfter: 20 });
+    const model = mergeSubject(emptySubject(), subjectObservation(CAPTURES, emptySubject()), {
+      expireAfter: 20,
+    });
     const elsewhere = { image: 'x.png', scan: scan([], undefined, '/elsewhere') };
     const flows = [{ ...LOAD, frames: [FRAME, elsewhere] }];
     expect(subjectImages(model, { pages: [PAGE], flows })).toEqual([
@@ -191,7 +257,9 @@ describe('subject observations', () => {
     };
     const run = { ...LOAD, viewport: 'desktop' as const, frames: [frame] };
     const captures = { ...CAPTURES, pages: [desktop], flows: [run] };
-    const model = mergeSubject(emptySubject(), subjectObservation(captures), { expireAfter: 20 });
+    const model = mergeSubject(emptySubject(), subjectObservation(captures, emptySubject()), {
+      expireAfter: 20,
+    });
     expect(subjectImages(model, captures).map((i) => [i.path, i.viewport, i.elements])).toEqual([
       [
         demoPath.pageCrop('home-desktop', 'after'),
@@ -204,6 +272,22 @@ describe('subject observations', () => {
     expect(JSON.stringify(subjectImages(model, captures))).not.toContain(
       demoPath.pageCrop('home-desktop', 'before'),
     );
+  });
+
+  it('caps the index at images it keeps, not at images it skipped', () => {
+    const model = mergeSubject(emptySubject(), subjectObservation(CAPTURES, emptySubject()), {
+      expireAfter: 20,
+    });
+    const unknown = Array.from({ length: SUBJECT_LIMITS.images }, (_, i) => ({
+      image: `u${i}.png`,
+      scan: scan([], undefined, '/elsewhere'),
+    }));
+    const known = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ ...FRAME, image: `k${i}.png` }));
+    const index = (frames: SubjectFlowRun['frames']) =>
+      subjectImages(model, { pages: [], flows: [{ ...LOAD, frames }] }).map((i) => i.path);
+    expect(index([...unknown, ...known(1)])).toEqual(['k0.png']);
+    expect(index(known(SUBJECT_LIMITS.images + 1))).toHaveLength(SUBJECT_LIMITS.images);
   });
 
   describe('focus from the model', () => {
@@ -253,6 +337,40 @@ describe('subject observations', () => {
       const hero = el('#hero', 'hero', { x: 0, y: 0, width: 1280, height: 700 });
       expect(subjectFocus(before, page([load, hero]), size)).toBeUndefined();
       expect(subjectFocus(emptySubject(), page([load, retry]), size)).toBeUndefined();
+    });
+
+    it('counts an element as known only at the viewports it was seen at', () => {
+      const menu = el('#menu', 'menu', { x: 300, y: 10, width: 40, height: 40 });
+      const screen = (viewport: ViewportName, elements: ScannedElement[]) => ({
+        path: '/',
+        viewport,
+        size: { width: 390, height: 844 },
+        elements,
+      });
+      const both = mergeSubject(
+        emptySubject(),
+        {
+          revision: REV,
+          screens: [screen('desktop', [load, menu]), screen('mobile', [load])],
+          flows: [],
+          commands: [],
+        },
+        { expireAfter: 20 },
+      );
+      const mobile: SubjectPage = {
+        id: 'home-mobile',
+        viewport: 'mobile',
+        scan: scan([load, menu]),
+        window: { x: 0, y: 0, width: 780, height: 1688 },
+      };
+      // The menu was on desktop only: on mobile it is new. Scale 2, padded by 24 image px.
+      expect(subjectFocus(both, mobile, { width: 780, height: 1688 })).toEqual({
+        x: 576,
+        y: 0,
+        width: 128,
+        height: 124,
+      });
+      expect(subjectFocus(both, page([load, menu]), size)).toBeUndefined();
     });
 
     it('focuses only head-only page shots, as an app.url run takes them', () => {

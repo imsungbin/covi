@@ -13,6 +13,7 @@ import {
   type SubjectImage,
   type SubjectObservation,
   screenPath,
+  secretSelectors,
 } from '@covi/core';
 import { VIEWPORT_PRESETS, type ViewportName } from './browser.ts';
 import type { PageScan } from './elements.ts';
@@ -132,32 +133,31 @@ function flowOf(run: SubjectFlowRun, labelled: boolean): SubjectFlowObservation 
 }
 
 /**
- * The observation the model merges. Flow frames come before page loads, so where a page load put
- * an element is what the model keeps. A flow the model will not keep (it failed, typed a secret,
- * or is not one Covi would replay) gives it nothing it saw: no step labels and no frames, since
- * either may hold what it typed. Commands keep their name and exit code, never the command.
+ * The observation the model merges into `model`. Flow frames come before page loads, so where a
+ * page load put an element is what the model keeps. A flow the merge will not keep (it failed,
+ * typed a secret, or is not one Covi would replay) gives it nothing it saw: no step labels and no
+ * frames, since either may hold what it typed. Commands keep their name and exit code, never the
+ * command.
  */
-export function subjectObservation(captures: SubjectCaptures): SubjectObservation {
-  // A field any scan of this run marked secret makes a flow that types into it secret.
-  const secretSelectors = new Set(
-    [
-      ...captures.pages.map((p) => p.scan),
-      ...captures.flows.flatMap((f) => f.frames.map((x) => x.scan)),
-    ].flatMap((scan) => scan.elements.filter((e) => e.secret).map((e) => e.selector)),
-  );
-  const flows = captures.flows.map((run) => ({
-    run,
-    kept: flowKept(flowOf(run, false), secretSelectors) === 'kept',
-  }));
+export function subjectObservation(captures: SubjectCaptures, model: Subject): SubjectObservation {
+  const pages = captures.pages.map((p) => screenOf(p.scan, p.viewport, p.title));
+  const framesOf = (run: SubjectFlowRun) => run.frames.map((f) => screenOf(f.scan, run.viewport));
+  // The merge judges flows by the model's secret fields once this run's screens are in, and those
+  // screens include only the frames of flows it keeps. Start from every flow that could be kept and
+  // drop those judged secret until the frames let in agree with the judgment; a field marked
+  // secret by a run before this one counts too.
+  let kept = captures.flows.filter((run) => flowKept(flowOf(run, false)) === 'kept');
+  for (;;) {
+    const secret = secretSelectors(model, [...kept.flatMap(framesOf), ...pages]);
+    const still = kept.filter((run) => flowKept(flowOf(run, false), secret) === 'kept');
+    if (still.length === kept.length) break;
+    kept = still;
+  }
+  const keeps = new Set(kept);
   return {
     revision: captures.revision,
-    screens: [
-      ...flows.flatMap(({ run, kept }) =>
-        kept ? run.frames.map((f) => screenOf(f.scan, run.viewport)) : [],
-      ),
-      ...captures.pages.map((p) => screenOf(p.scan, p.viewport, p.title)),
-    ],
-    flows: flows.map(({ run, kept }) => flowOf(run, kept)),
+    screens: [...kept.flatMap(framesOf), ...pages],
+    flows: captures.flows.map((run) => flowOf(run, keeps.has(run))),
     commands: [
       ...captures.commands.map((c) => ({
         kind: 'cli' as const,
@@ -201,7 +201,8 @@ export function subjectImages(
     ),
   ];
   const images: SubjectImage[] = [];
-  for (const s of shown.slice(0, SUBJECT_LIMITS.images)) {
+  for (const s of shown) {
+    if (images.length >= SUBJECT_LIMITS.images) break;
     const path = screenPath(s.scan.path);
     const screen = path ? model.screens.find((x) => x.path === path) : undefined;
     if (!screen) continue;
@@ -234,7 +235,10 @@ export function subjectFocus(
   const path = screenPath(page.scan.path);
   const known = path ? before.screens.find((s) => s.path === path) : undefined;
   if (!known?.viewports.some((v) => v.name === page.viewport)) return undefined;
-  const selectors = new Set(known.elements.map((e) => e.selector));
+  // Known means seen at this viewport: a menu only mobile shows is new there, whatever desktop had.
+  const selectors = new Set(
+    known.elements.filter((e) => e.boxes[page.viewport]).map((e) => e.selector),
+  );
   const added = page.scan.elements.filter((e) => !selectors.has(e.selector));
   if (!added.length || added.length > MAX_FOCUS_ELEMENTS) return undefined;
   const scale = scaleOf(page.viewport);

@@ -27,9 +27,10 @@ export interface PlatformContext {
   /** Finds the pull request when the event does not name it (fork pull requests in workflow_run). */
   pullRequestHead?: { owner: string; branch: string; sha: string };
   /**
-   * The checkout is a branch only maintainers move (a scheduled, dispatched, or default-branch
-   * run), not a change under review, so its configuration can be read as it is. Never set when
-   * the event names a change (`metadata.number`, `pullRequestHead`, `expectedHead`).
+   * The checkout is the default branch in a scheduled, dispatched (GitLab: web or API), or push
+   * run, not a change under review, so its configuration can be read as it is. Never set on any
+   * other branch, nor when the event names a change (`metadata.number`, `pullRequestHead`,
+   * `expectedHead`).
    */
   trustedCheckout?: boolean;
 }

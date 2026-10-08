@@ -124,13 +124,16 @@ export async function githubContext(env: NodeJS.ProcessEnv): Promise<PlatformCon
     // Link to the run that reviewed the change, where its artifacts live.
     if (run?.html_url) ctx.links = { run: run.html_url, artifacts: `${run.html_url}#artifacts` };
   }
-  // Scheduled runs use the default branch; dispatching needs write access to the repository.
+  // Only the default branch: anyone who can dispatch a workflow can pick their own branch, and
+  // its configuration names whose comments count. A schedule's payload has no ref; GitHub sets
+  // GITHUB_REF to the default branch for it.
   const defaultBranch = (payload.repository as { default_branch?: unknown } | undefined)
     ?.default_branch;
-  const onDefault =
-    typeof defaultBranch === 'string' && payload.ref === `refs/heads/${defaultBranch}`;
+  const ref = typeof payload.ref === 'string' ? payload.ref : env.GITHUB_REF;
+  const onDefault = typeof defaultBranch === 'string' && ref === `refs/heads/${defaultBranch}`;
   if (
-    (event === 'schedule' || event === 'workflow_dispatch' || (event === 'push' && onDefault)) &&
+    (event === 'schedule' || event === 'workflow_dispatch' || event === 'push') &&
+    onDefault &&
     !namesChange(ctx)
   )
     ctx.trustedCheckout = true;

@@ -135,12 +135,17 @@ describe('GitHub', () => {
     ).toBeUndefined();
   });
 
-  it('trusts the checkout of scheduled, dispatched, and default-branch runs, never a change', async () => {
+  it('trusts the checkout of scheduled, dispatched, and pushed runs on the default branch only', async () => {
     const repository = { default_branch: 'main' };
-    const trusted = async (payload: object, name: string) =>
-      (await githubContext(event(payload, name))).trustedCheckout === true;
-    expect(await trusted({ repository }, 'schedule')).toBe(true);
-    expect(await trusted({ repository, ref: 'refs/heads/topic' }, 'workflow_dispatch')).toBe(true);
+    const trusted = async (payload: object, name: string, env: NodeJS.ProcessEnv = {}) =>
+      (await githubContext({ ...event(payload, name), ...env })).trustedCheckout === true;
+    // A schedule's payload names no ref; GitHub sets GITHUB_REF to the default branch.
+    expect(await trusted({ repository }, 'schedule', { GITHUB_REF: 'refs/heads/main' })).toBe(true);
+    expect(await trusted({ repository }, 'schedule')).toBe(false);
+    expect(await trusted({}, 'schedule', { GITHUB_REF: 'refs/heads/main' })).toBe(false);
+    expect(await trusted({ repository, ref: 'refs/heads/main' }, 'workflow_dispatch')).toBe(true);
+    // Anyone who can dispatch can pick their own branch, and with it the bot names it configures.
+    expect(await trusted({ repository, ref: 'refs/heads/topic' }, 'workflow_dispatch')).toBe(false);
     expect(await trusted({ repository, ref: 'refs/heads/main', after: 'ddd' }, 'push')).toBe(true);
     expect(await trusted({ repository, ref: 'refs/heads/topic', after: 'ddd' }, 'push')).toBe(
       false,
@@ -618,13 +623,27 @@ describe('GitLab', () => {
     expect(ctx.metadata.url).toBe('https://gitlab.example/acme/shop/-/merge_requests/12');
   });
 
-  it('trusts the checkout of scheduled, web, API, and default-branch pipelines, never a change', () => {
+  it('trusts the checkout of scheduled, web, API, and pushed pipelines on the default branch only', () => {
     const branch = { GITLAB_CI: 'true', CI_DEFAULT_BRANCH: 'main', CI_COMMIT_SHA: 'c1' };
     const trusted = (env: NodeJS.ProcessEnv) => gitlabContext(env).trustedCheckout === true;
-    for (const source of ['schedule', 'web', 'api'])
-      expect(trusted({ ...branch, CI_PIPELINE_SOURCE: source, CI_COMMIT_BRANCH: 'topic' })).toBe(
+    for (const source of ['schedule', 'web', 'api']) {
+      expect(trusted({ ...branch, CI_PIPELINE_SOURCE: source, CI_COMMIT_BRANCH: 'main' })).toBe(
         true,
       );
+      // A pipeline someone starts on their own branch reads that branch's bot names.
+      expect(trusted({ ...branch, CI_PIPELINE_SOURCE: source, CI_COMMIT_BRANCH: 'topic' })).toBe(
+        false,
+      );
+      // A tag named like the default branch is not the branch.
+      expect(
+        trusted({
+          ...branch,
+          CI_PIPELINE_SOURCE: source,
+          CI_COMMIT_REF_NAME: 'main',
+          CI_COMMIT_TAG: 'main',
+        }),
+      ).toBe(false);
+    }
     expect(trusted({ ...branch, CI_PIPELINE_SOURCE: 'push', CI_COMMIT_BRANCH: 'main' })).toBe(true);
     expect(trusted({ ...branch, CI_PIPELINE_SOURCE: 'push', CI_COMMIT_BRANCH: 'topic' })).toBe(
       false,

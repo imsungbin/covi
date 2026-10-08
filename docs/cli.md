@@ -116,7 +116,7 @@ Understands a change and writes an agent brief. This starts an [agent-driven rev
   - `diff.patch`: the redacted diff.
   - `rule-findings.json`: deterministic findings with ids.
   - `explanation.draft.json`: a structural explanation to start from.
-  - `brief.md`: signals, reading order, the prioritized diff, and next steps for the agent. When `.covi/outcomes/` has at least five labeled findings of a certainty, it also says how this repository's past findings held up (`review.calibration`).
+  - `brief.md`: signals, reading order, the prioritized diff, and next steps for the agent. When `.covi/outcomes/` has at least five labeled findings of a certainty, it also says how this repository's past findings held up (`review.calibration`). Only outcomes of the repository the `origin` remote names count, so a checkout without an `origin` remote gets no such section.
 - **Result `data`:** `intent`, `size`, `demonstration` (`value`, `kinds`, `recommendation`), `ruleFindings` (`id`, `title`, `certainty`, `severity`, `location`), and `calibration` (the brief's hint as numbers, or `null`).
 
 ### `covi explain [range]`
@@ -430,7 +430,7 @@ Without `--number` or `--recent`, it collects the CI event's pull or merge reque
 
 Tokens are read like `covi publish`'s, and read access is enough: on GitHub, `COVI_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `GH_TOKEN`; on GitLab, `COVI_GITLAB_TOKEN` or `GITLAB_TOKEN`, with the `read_api` scope. The scheduled GitLab job collects with `GITLAB_TOKEN` alone (see [GitLab CI](gitlab-ci.md#learning-from-outcomes)).
 
-Only Covi's own comment counts, never one with a pasted marker: the comment and anchors the token's own user wrote, or the bot named in `publish.botLogin` (GitHub, default `github-actions[bot]`) or `publish.gitlabBotUser` (GitLab, once GitLab confirms it is a bot). A change Covi did not comment on is skipped. In CI those two keys come from the base revision's configuration, as in `covi ci`. In a scheduled or manually started run, or a push to the default branch, the checkout is not a change under review, so they come from the checkout, as they do outside CI.
+Only Covi's own comment counts, never one with a pasted marker: the comment and anchors the token's own user wrote, or the bot named in `publish.botLogin` (GitHub, default `github-actions[bot]`) or `publish.gitlabBotUser` (GitLab, once GitLab confirms it is a bot). A change Covi did not comment on is skipped. In CI those two keys come from the base revision's configuration, as in `covi ci`. In a scheduled, manually started, or push run on the default branch, the checkout is not a change under review, so they come from the checkout, as they do outside CI. Started on any other branch, the checkout's configuration is not read for them.
 
 ### `covi outcomes report`
 

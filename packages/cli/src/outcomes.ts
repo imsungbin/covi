@@ -66,8 +66,8 @@ const stops = (error: unknown): error is RateLimitedError | BudgetExhaustedError
  * Whose comments count as Covi's besides the token's own user: `publish.botLogin` and
  * `publish.gitlabBotUser` from trusted configuration. In CI the checkout may be the change under
  * review, so that is the base revision's (or a `--config` outside the repository), unless the
- * platform says the checkout is a branch only maintainers move (`trustedCheckout`). Locally, and
- * there, the worktree's or `--config`'s.
+ * platform says the checkout is the default branch outside any change (`trustedCheckout`).
+ * Locally, and there, the worktree's or `--config`'s.
  */
 export async function collectorIdentity(
   root: string,
@@ -183,12 +183,7 @@ export async function collectOutcomes(o: CollectOptions): Promise<WorkflowResult
   let failed = 0;
   const now = o.now ?? (() => new Date());
   try {
-    const targets = await targetsOf(o, collector, records, context, (number, reason) => {
-      skip(number, reason);
-      warn(
-        `${label(number)}: skipped: ${reason}. Pass --repository group/project --number ${number} to collect it.`,
-      );
-    });
+    const targets = await targetsOf(o, collector, records, context, skip);
     attempted = targets.length;
     if (!targets.length && !skipped.length)
       warn('Nothing to collect: no run here published a comment. Pass --number or --recent.');
@@ -278,7 +273,7 @@ async function targetsOf(
     if (PROJECT_ID.test(record.repository))
       skip(
         record.number,
-        `its run recorded GitLab project id ${record.repository}, not the project's path, so Covi cannot tell whether it is ${collector.repository}`,
+        `its run recorded GitLab project id ${record.repository}, not the project's path, so Covi cannot tell whether it is ${collector.repository}; pass --repository group/project --number ${record.number} to collect it`,
       );
     else if (record.repository.toLowerCase() === repository)
       out.push({ number: record.number, commentId: record.comment.id });

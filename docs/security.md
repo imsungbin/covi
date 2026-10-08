@@ -122,18 +122,6 @@ Long-running commands, such as `app.start`, run in their own process group. When
 | Each demo command | Its own `timeout`, 60 s by default |
 | `intelligence.command` | `intelligence.timeout`, 300 s by default |
 
-## Outcomes
-
-`covi outcomes collect` reads comments, reactions, and commits from GitHub or GitLab. All of it is untrusted input, and what it collects feeds the calibration hint of every later review in the repository, so Covi limits who can shape it:
-
-- **Where tokens go.** Requests go only to the API base, which comes from `--api-url`, `GITHUB_API_URL`, `CI_API_V4_URL`, or the public default, and never from a run's files. Next pages are followed only under that base, and redirects are never followed, so a token never reaches another host.
-- **Only Covi's own comment.** Anyone can paste Covi's marker, so a comment or a finding anchor counts only when Covi's identity wrote it: the token's own user, or the bot in `publish.botLogin` (GitHub; default `github-actions[bot]`, matched by login and by type Bot) or `publish.gitlabBotUser` (GitLab; only once GitLab confirms the account is a bot). In CI those keys come from the base revision's configuration, or from the checkout when no change is under review (a scheduled or manually started run). A change without such a comment is skipped. `covi publish` is stricter still: it edits only a comment its own token wrote.
-- **The ledger.** Only the ledger at the very end of Covi's comment is read, so a ledger quoted inside a finding's evidence is never taken for it. It must decode, fit its schema, and stay under its size limit. Its run id must be a run id, because it names the outcome file. When `covi publish` posts an artifact from a `workflow_run`, it keeps the ledger an earlier trusted run wrote and builds nothing from the artifact; anchors and the rating line then come only from flags.
-- **Who can feed the shared data.** The GitHub Action collects only pull requests from the repository itself, never a fork's, in a job that checks out only the base commit and runs nothing from the pull request. On GitLab, only the scheduled job on the protected default branch writes the protected cache that reviews on protected refs read; merge requests from unprotected branches review without it, and their job removes any restored `.covi/outcomes/` before Covi runs. Keep GitLab's "Use separate caches for protected branches" on.
-- **Votes.** A pull or merge request's author would rather their change look good, so their own 👍 and 👎 on finding anchors (and, on GitLab, on Covi's note) are not counted. Someone who voted both ways counts on neither side.
-- **What is kept.** Outcome files hold no prose, only ids, counts, states, certainties, and links. They are redacted when written, bounded when read (at most 200 files, 256 KB each), and ignored entirely when git tracks any of them (in any letter case, or inside a submodule), when `.covi` or `.covi/outcomes` is a symbolic link, or when Covi cannot check. Reviews read them once, before any project command runs, so a demonstration cannot plant one.
-- **What the hint can say.** The brief's calibration hint is numbers and catalog text only, and it changes no certainty.
-
 ## Environment for project commands
 
 Project commands (`app.install`, `app.start`, `test.command`, `demo.commands`) never inherit Covi's environment. `childEnv` in `packages/core/src/security/env.ts` builds a new one from:
@@ -300,6 +288,18 @@ GitLab:
 - Pin `covi-ref` to a tag (or `covi-package` to a version you control), so a pipeline always runs the Covi you reviewed.
 
 Never install Covi by the bare npm name `covi`, and never run `npx covi`: on the public npm registry that name belongs to an unrelated project.
+
+## Outcomes
+
+`covi outcomes collect` reads comments, reactions, and commits from GitHub or GitLab. All of it is untrusted input, and what it collects feeds the calibration hint of every later review in the repository, so Covi limits who can shape it:
+
+- **Where tokens go.** Requests go only to the API base, which comes from `--api-url`, `GITHUB_API_URL`, `CI_API_V4_URL`, or the public default, and never from a run's files. Next pages and redirects are followed only under that base (one redirect at most), so a token never reaches another host.
+- **Only Covi's own comment.** Anyone can paste Covi's marker, so a comment or a finding anchor counts only when Covi's identity wrote it: the token's own user, or the bot in `publish.botLogin` (GitHub; default `github-actions[bot]`, matched by login and by type Bot) or `publish.gitlabBotUser` (GitLab; only once GitLab confirms the account is a bot). In CI those keys come from the base revision's configuration, or from the checkout when it is the default branch and no change is under review (a scheduled, manually started, or push run on the default branch). Started on any other branch, Covi reads neither key from the checkout, so a collaborator's branch cannot choose whose comments count. A change without such a comment is skipped. `covi publish` is stricter still: it edits only a comment its own token wrote.
+- **The ledger.** Only the ledger at the very end of Covi's comment is read, so a ledger quoted inside a finding's evidence is never taken for it. It must decode, fit its schema, and stay under its size limit. Its run id must be a run id, because it names the outcome file. When `covi publish` posts an artifact from a `workflow_run`, it keeps the ledger an earlier trusted run wrote and builds nothing from the artifact; anchors and the rating line then come only from flags.
+- **Who can feed the shared data.** The GitHub Action collects only pull requests from the repository itself, never a fork's, in a job that checks out only the base commit and runs nothing from the pull request. On GitLab, only the scheduled job on the protected default branch writes the protected cache that reviews on protected refs read; merge requests from unprotected branches review without it, and their job removes any restored `.covi/outcomes/` before Covi runs. Keep GitLab's "Use separate caches for protected branches" on.
+- **Votes.** A pull or merge request's author would rather their change look good, so their own 👍 and 👎 on finding anchors (and, on GitLab, on Covi's note) are not counted. Someone who voted both ways counts on neither side.
+- **What is kept.** Outcome files hold no prose, only ids, counts, states, certainties, and links. They are redacted when written, bounded when read (at most 200 files, 256 KB each), and ignored entirely when git tracks any of them (in any letter case, or inside a submodule), when `.covi` or `.covi/outcomes` is a symbolic link, or when Covi cannot check. Reviews read them once, before any project command runs, so a demonstration cannot plant one.
+- **What the hint can say.** The brief's calibration hint is numbers and catalog text only, and it changes no certainty.
 
 ## Reporting a vulnerability
 

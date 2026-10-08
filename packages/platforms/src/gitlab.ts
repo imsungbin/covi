@@ -63,16 +63,16 @@ export function gitlabContext(env: NodeJS.ProcessEnv): PlatformContext {
     if (env.CI_COMMIT_BEFORE_SHA && !ZERO_SHA.test(env.CI_COMMIT_BEFORE_SHA))
       ctx.base = env.CI_COMMIT_BEFORE_SHA;
     ctx.head = env.CI_COMMIT_SHA;
-    // Pipelines a maintainer starts (scheduled, from the web, through the API) or a push to the
-    // default branch: the checkout is not a change under review.
+    // A scheduled, web, API, or push pipeline on the default branch: the checkout is not a change
+    // under review. Any other branch is someone's own, and its configuration names whose comments
+    // count. CI_COMMIT_BRANCH, unlike CI_COMMIT_REF_NAME, is unset for a tag that shares the
+    // branch's name; a protected flag would also admit branches developers may push to.
     const source = env.CI_PIPELINE_SOURCE;
     const onDefault =
       Boolean(env.CI_COMMIT_BRANCH) && env.CI_COMMIT_BRANCH === env.CI_DEFAULT_BRANCH;
     if (
-      (source === 'schedule' ||
-        source === 'web' ||
-        source === 'api' ||
-        (source === 'push' && onDefault)) &&
+      (source === 'schedule' || source === 'web' || source === 'api' || source === 'push') &&
+      onDefault &&
       !namesChange(ctx)
     )
       ctx.trustedCheckout = true;

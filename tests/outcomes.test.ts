@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { collectorIdentity } from '../packages/cli/src/outcomes.ts';
@@ -160,6 +160,7 @@ describe('calibration', () => {
     // Planted during the first run's demo: that run's model never saw it; the next run's did.
     // (The covi-review methodology in the prompt names the section, so look for its heading.)
     expect(before).not.toContain('## How past findings held up');
+    expect(after).toContain('## How past findings held up');
     expect(after).toContain('- Likely issue: 4 of 5 held up (80%)');
     // The hint is material, not a verdict: the reported certainties are the same.
     expect(certainties(second)).toEqual(certainties(firstRun));
@@ -459,11 +460,23 @@ describe('covi outcomes', () => {
       const result = (await coviAsync(args, { env: trusted.env })).json() as Collected;
       expect(result.data.collected).toMatchObject([{ number: 7 }]);
 
-      // A scheduled run checks out the default branch: its configuration is read as it is.
+      // A scheduled or dispatched run on the default branch checks it out: its configuration is
+      // read as it is. Dispatched on someone's own branch, it is not.
       writeFileSync(join(repo.dir, '.covi/config.yml'), 'publish:\n  botLogin: covi-app[bot]\n');
-      const scheduled = { ...gh.env, GITHUB_EVENT_NAME: 'schedule' };
-      const nightly = (await coviAsync(args, { env: scheduled })).json() as Collected;
-      expect(nightly.data.collected).toMatchObject([{ number: 7 }]);
+      const started = (name: string, payload: object, env: NodeJS.ProcessEnv = {}) => {
+        const path = join(mkdtempSync(join(tmpdir(), 'covi-event-')), 'event.json');
+        dirs.push(dirname(path));
+        writeFileSync(path, JSON.stringify({ repository: { default_branch: 'main' }, ...payload }));
+        return { ...gh.env, GITHUB_EVENT_NAME: name, GITHUB_EVENT_PATH: path, ...env };
+      };
+      const run = async (env: NodeJS.ProcessEnv) =>
+        ((await coviAsync(args, { env })).json() as Collected).data.collected;
+      const nightly = started('schedule', {}, { GITHUB_REF: 'refs/heads/main' });
+      expect(await run(nightly)).toMatchObject([{ number: 7 }]);
+      expect(await run(started('workflow_dispatch', { ref: 'refs/heads/main' }))).toMatchObject([
+        { number: 7 },
+      ]);
+      expect(await run(started('workflow_dispatch', { ref: 'refs/heads/topic' }))).toEqual([]);
     } finally {
       rmSync(join(repo.dir, '.covi/config.yml'), { force: true });
     }
@@ -533,10 +546,27 @@ describe('covi outcomes', () => {
     const json = result.json() as Collected;
     expect(json.data.repository).toBe('acme/shop');
     expect(json.data.skipped).toMatchObject([
-      { number: 3, reason: expect.stringMatching(/project id 4242/) },
+      {
+        number: 3,
+        reason: expect.stringMatching(/project id 4242.*--repository group\/project --number 3/),
+      },
       { number: 5, reason: expect.stringMatching(/404/) },
     ]);
-    expect(json.warnings.join('\n')).toMatch(/!3: .*--repository group\/project --number 3/);
+    // Without --json, each skip is said once.
+    const human = await coviAsync(
+      [
+        'outcomes',
+        'collect',
+        '--repo',
+        dir,
+        '--platform',
+        'gitlab',
+        '--api-url',
+        `${api.url}/api/v4`,
+      ],
+      { env: { GITHUB_ACTIONS: '', GITLAB_CI: '', COVI_GITLAB_TOKEN: 't' } },
+    );
+    expect(human.stderr.match(/!3\b/g)).toHaveLength(1);
   });
 
   it('reports only on this repository, and never from outcomes it cannot trust', async () => {

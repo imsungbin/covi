@@ -411,7 +411,17 @@ describe('GitLab outcomes component', () => {
     });
     // GitLab keeps protected and non-protected caches apart unless told otherwise.
     expect(`${text}\n${reviewText}`).not.toMatch(/^\s*unprotect:/m);
-    expect(text).toMatch(/masked, protected/);
+  });
+
+  it('collects with its own protected token and leaves COVI_GITLAB_TOKEN to the review', () => {
+    // covi-review needs COVI_GITLAB_TOKEN on unprotected merge requests, so it cannot be protected.
+    expect(text).toContain('a token with the read_api scope in GITLAB_TOKEN');
+    expect(text).toContain('Add it as a masked, protected CI/CD variable');
+    const collect = job.script.find((l) => l.includes('outcomes collect'))!;
+    expect(collect).toMatch(/^env -u COVI_GITLAB_TOKEN "\$COVI_BIN" outcomes collect /);
+    const check = job.script.findIndex((l) => l.includes('[ -n "$GITLAB_TOKEN" ] ||'));
+    expect(check).toBeGreaterThanOrEqual(0);
+    expect(check).toBeLessThan(job.script.indexOf(collect));
   });
 
   it('restores outcomes in a review only on a protected ref, and never lets them shape an unprotected checkout', () => {

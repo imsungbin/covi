@@ -83,10 +83,12 @@ covi-review:
     COVI_INPUT_PROVIDER: "$[[ inputs.provider ]]"
   # Outcomes collected by covi-outcomes.yml, when it is included: the brief then shows how past
   # findings held up. Without that job the cache is empty and nothing changes.
-  # GitLab keeps a protected and a non-protected cache per key. Only the protected one is written
-  # by covi-outcomes alone; any branch's pipeline can write the non-protected one. So a pipeline on
-  # a protected ref pulls the cache, and one on an unprotected ref (most merge requests) restores
-  # nothing: its policy is push, and a review writes no outcomes, so nothing is uploaded either.
+  # GitLab keeps a protected and a non-protected cache per key, as long as the project setting
+  # "Use separate caches for protected branches" stays on (GitLab's default): turned off, any
+  # branch's pipeline could write what reviews trust. Only covi-outcomes writes the protected one;
+  # any branch's pipeline can write the non-protected one. So a pipeline on a protected ref pulls
+  # the cache, and one on an unprotected ref (most merge requests) restores nothing: its policy is
+  # push, and nothing reads the non-protected cache it may upload to.
   cache:
     key: covi-outcomes
     paths:

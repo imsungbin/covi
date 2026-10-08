@@ -6,9 +6,12 @@
 # protected default branch: Build > Pipeline schedules > New schedule (daily is plenty). The cache
 # is protected, as GitLab makes it by default: reviews on protected branches restore it, and merge
 # requests from unprotected branches review without it.
-# It needs COVI_GITLAB_TOKEN with the read_api scope (CI_JOB_TOKEN cannot read notes or award
+# It needs a token with the read_api scope in GITLAB_TOKEN (CI_JOB_TOKEN cannot read notes or award
 # emoji). Add it as a masked, protected CI/CD variable: this job runs only on a protected branch,
-# and protection keeps the token out of every other branch's pipeline.
+# and protection keeps the token out of every other branch's pipeline. Keep it separate from
+# COVI_GITLAB_TOKEN, which covi-review needs on unprotected merge requests too, and which this
+# job ignores. Notes count as Covi's when GITLAB_TOKEN's user wrote them (store the same token
+# value again), or when publish.gitlabBotUser names their author.
 #
 # Include it next to covi.yml:
 #   include:
@@ -75,6 +78,8 @@ covi-outcomes:
         export COVI_BIN=/opt/covi/bin/covi.mjs COVI_USE_DIST=1
       fi
   script:
-    - '"$COVI_BIN" outcomes collect --platform gitlab --recent "$COVI_INPUT_RECENT"'
+    - '[ -n "$GITLAB_TOKEN" ] || { echo "Set GITLAB_TOKEN: a masked, protected variable with a read_api token."; exit 1; }'
+    # Only the protected GITLAB_TOKEN: COVI_GITLAB_TOKEN would win otherwise.
+    - 'env -u COVI_GITLAB_TOKEN "$COVI_BIN" outcomes collect --platform gitlab --recent "$COVI_INPUT_RECENT"'
     # Best effort: a failed report must not fail the job, or the cache keeps nothing just collected.
     - '"$COVI_BIN" outcomes report --repository "$CI_PROJECT_PATH" || echo "Covi could not report the outcomes."'

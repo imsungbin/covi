@@ -13,9 +13,12 @@
 #   the pull request's code, and runs nothing from it. Pull requests from forks are not
 #   collected, so outsiders cannot feed what later reviews read.
 #
-# A revert that lands after the pull request closed is not seen at close time. To count it, also
-# run `covi outcomes collect --platform github --recent 50` on a schedule on the default branch,
-# saving .covi/outcomes into the same cache (key covi-outcomes-<run id>).
+# A revert that lands after the pull request closed is not seen at close time. To count it, add
+# a scheduled workflow on the default branch that, with pull-requests: read:
+#   1. restores the cache: actions/cache/restore@v4 with path .covi/outcomes,
+#      key covi-outcomes-${{ github.run_id }}-${{ github.run_attempt }}, restore-keys covi-outcomes-
+#   2. runs `covi outcomes collect --platform github --recent 50` (COVI_GITHUB_TOKEN set)
+#   3. saves it: actions/cache/save@v4 with the same path and key.
 name: Covi (author)
 
 on:

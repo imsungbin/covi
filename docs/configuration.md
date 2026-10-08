@@ -384,6 +384,23 @@ Commands in `demo.commands` run only once [trusted](#trusted-commands) on your m
 
 Differences Covi observes become findings in `covi review --demo`, `covi video`, and `covi ci`. Examples are a changed response shape, a new server error, a page error, a command that now fails, a flow that cannot complete, or an app that no longer starts. Every demonstration that runs at both revisions also writes `demo/behavior-diff.json`, the step-by-step comparison of each page and flow.
 
+### `subject`
+
+The subject model is what Covi has seen of the software: the screens it captured at head, the elements on them, the flows that passed, and the CLI and HTTP scenarios that ran. A demonstration updates it, and the next one replays its flows when neither the plan nor `demo.flows` names any (see [Artifacts](artifacts.md#the-subject-model)).
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `store` | `repo`, `runs`, `off` | `repo` | `repo` keeps the model in `.covi/subject/subject.json`. It is small and meant to be committed, so everyone's runs share it. `runs` keeps it as `subject.json` in the runs directory, never committed. `off` neither reads nor writes one. In CI, `repo` is read from the base revision, like configuration, and never written: the run's `demo/subject.json` holds what it saw. A `runs` store is read and written in CI too, unless the change committed that file or reaches it through a symbolic link; then it is set aside with a warning. |
+| `expireAfter` | integer, 1–100 | `20` | Forget a screen, element, flow, or scenario not seen in this many revisions. A revision is a distinct commit at which a demonstration updated the model. Running again at the same commit does not count. |
+
+**Replayed flows.** When neither the plan nor `demo.flows` names a flow, Covi replays up to two flows from the model that passed within its revisions and start on a page this run captures, the most recently passed first, with exactly the steps that passed. It replays them only on an app it starts or serves, never on one reached through `app.url` alone. A replayed flow that fails at head is a `risk` finding, so it never fails a gate. A plan with `"flows": []` turns replays off for one run; `subject.store: off` turns them off for good.
+
+```yaml
+subject:
+  store: runs       # keep the model out of the repository
+  expireAfter: 30
+```
+
 ### `video`
 
 | Key | Type | Default | Meaning |

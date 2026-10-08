@@ -158,6 +158,7 @@ Everything Covi writes as text passes through a `Redactor`:
 - video storyboards, before narration, captions, frames, and the composition are made from them
 - every prompt sent to a model, including the prompts that refine a video's narration and compose its music
 - `evidence.json`: labels and paths, and the registry `covi evidence` rebuilds in memory for an older run
+- the subject model: `.covi/subject/subject.json` (or `subject.json` in the runs directory) and each run's `demo/subject.json`, and what `covi subject` prints
 
 It masks four kinds of text:
 
@@ -206,6 +207,20 @@ Because a video's narration, captions, and on-screen code, output, and responses
 It never records environment values. Command output appears only in `demo/captures.json` and the tests section of `review.json`, both redacted. Traces (`demo/traces/`) keep request URLs, console messages, and timing, never headers or bodies; credential-shaped URL parameters are masked before the usual redaction. See [artifacts.md](artifacts.md).
 
 Locally, runs live in `.covi/runs/`. That directory ignores itself with its own `.gitignore` containing `*`, so runs are never committed, and only the latest `output.keep` runs (20 by default) are kept. In CI, the run directory is uploaded as a job artifact: for 14 days in the GitHub Action, and for `expire-in` in GitLab.
+
+In CI the checkout belongs to the change, and the runs directory is inside it by default. If the change makes that directory a symbolic link, or it resolves outside the checkout, Covi refuses to write runs there (exit 3), unless you chose the place yourself: `--out`, or `output.dir` on the command line or in `COVI_OUTPUT_DIR`.
+
+### The subject model
+
+The [subject model](artifacts.md#the-subject-model) (`.covi/subject/subject.json`) is kept in the repository by default, so it is untrusted input like the rest of it.
+
+- **Data only.** Nothing in it runs. It holds no command line: a CLI scenario keeps a name and an exit code, an HTTP scenario a method, a path without its query, and a status, and a `run` field fails the schema. Flow steps are browser actions, and a `goto` must stay on the app (a path with one leading `/`).
+- **Selectors Covi builds.** Element selectors are strings Covi builds in Node from attributes the page reported; the page never writes a selector. Values are quoted, ids that frameworks generate are skipped, and a selector is kept only when it finds exactly one element.
+- **Page text is page input.** Titles and labels are cut to one line, control and bidi characters (terminal escapes among them) are removed, and lengths are capped. Covi never reads what is typed into a field, so typed text never becomes a label.
+- **Secrets are never kept.** A flow that types into, presses keys in, or chooses from a secret field is never kept: a password, one-time code, or card field, told by its `type` or `autocomplete`, or by a selector or note that names one. A field the page cannot describe in time counts as secret. Its frames give the model nothing, and the run warns with the flow's name and why, never its values.
+- **Redacted and checked.** What Covi writes (the store and `demo/subject.json`) passes through the `Redactor` and the schema first. What it reads is schema-checked (strict objects, every string and list bounded, at most 512 KB, sized before it is read). A file that fails is ignored with a warning and never overwritten. A store or lock reached through a symbolic link is neither read nor written.
+- **From the base revision in CI.** With `subject.store: repo`, CI reads the model from the base revision, like configuration, and never writes it, so a change cannot steer its own demonstration; the run's `demo/subject.json` keeps what it saw. A `runs` store that the change committed, or that a link leads to, is set aside.
+- **Bounded replay.** Flows from the model are replayed only when neither the plan nor configuration names one, only on an app Covi starts or serves (never at `app.url` alone), with exactly the steps that passed. A replayed flow that fails at head is a `risk` finding and never fails a gate.
 
 ## CI integrations
 

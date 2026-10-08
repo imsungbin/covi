@@ -131,6 +131,8 @@ comment:
   artifacts: artifacts
   run: run
   truncated: …(truncated)
+  rate: 'Was this useful? 👍 👎 (react to this comment)'
+  anchorRate: React 👍 if this finding is right, 👎 if it is not.
 
 review:
   noIssues: No issues found in the areas Covi checked.{tests}

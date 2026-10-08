@@ -80,6 +80,16 @@ export interface RunOutcome {
   message?: string;
 }
 
+/** Where a run's comment went, so `covi outcomes collect` can find it again from this machine. */
+export interface PublishRecord {
+  platform: 'github' | 'gitlab';
+  /** `owner/name` on GitHub; the project path (or id) on GitLab. */
+  repository: string;
+  number: number;
+  comment: { id: string; url?: string };
+  at: string;
+}
+
 export interface RunManifest {
   schemaVersion: 1;
   runId: string;
@@ -118,6 +128,7 @@ export interface RunManifest {
   warnings: string[];
   errors: Array<{ stage?: string; message: string }>;
   outcome?: RunOutcome;
+  publish?: PublishRecord;
 }
 
 export interface CreateRunOptions {
@@ -391,6 +402,12 @@ export class Run {
     };
   }
 
+  /** Records where the run's comment was posted (redacted, like everything in run.json). */
+  async setPublish(record: PublishRecord): Promise<void> {
+    this.manifest.publish = this.redactor.redactDeep(record);
+    await this.save();
+  }
+
   async finish(outcome: RunOutcome): Promise<void> {
     const finished = new Date();
     this.manifest.finishedAt = finished.toISOString();
@@ -449,6 +466,7 @@ export interface RunSummary {
   status?: OutcomeStatus;
   verdict?: Verdict;
   title?: string;
+  publish?: PublishRecord;
 }
 
 export async function listRuns(root: string, runsDir?: string): Promise<RunSummary[]> {
@@ -469,6 +487,7 @@ export async function listRuns(root: string, runsDir?: string): Promise<RunSumma
       status: manifest.outcome?.status,
       verdict: manifest.outcome?.verdict,
       title: manifest.change?.title,
+      publish: manifest.publish,
     });
   }
   return out.sort((a, b) => b.startedAt.localeCompare(a.startedAt));

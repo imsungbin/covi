@@ -283,6 +283,8 @@ export const ConfigInputSchema = z.strictObject({
       comment: z.boolean().optional(),
       annotations: z.boolean().optional(),
       video: z.enum(['link', 'upload', 'none']).optional(),
+      anchors: z.boolean().optional(),
+      rating: z.boolean().optional(),
     })
     .optional(),
 });
@@ -360,7 +362,13 @@ export interface CoviConfig {
     outro: boolean;
   };
   output: { dir: string; keep: number };
-  publish: { comment: boolean; annotations: boolean; video: 'link' | 'upload' | 'none' };
+  publish: {
+    comment: boolean;
+    annotations: boolean;
+    video: 'link' | 'upload' | 'none';
+    anchors: boolean;
+    rating: boolean;
+  };
 }
 
 /** The global Covi defaults (lowest precedence layer). */
@@ -394,5 +402,5 @@ export const DEFAULT_CONFIG: CoviConfig = {
     outro: true,
   },
   output: { dir: '.covi/runs', keep: 20 },
-  publish: { comment: true, annotations: true, video: 'link' },
+  publish: { comment: true, annotations: true, video: 'link', anchors: false, rating: true },
 };

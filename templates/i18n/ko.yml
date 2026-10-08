@@ -129,6 +129,8 @@ comment:
   artifacts: 산출물
   run: 실행
   truncated: …(생략됨)
+  rate: '도움이 되었나요? 👍 👎 (이 댓글에 반응을 남겨 주세요)'
+  anchorRate: 이 발견 사항이 맞으면 👍, 틀리면 👎 반응을 남겨 주세요.
 
 review:
   noIssues: 'Covi가 점검한 범위에서는 문제를 찾지 못했습니다.{tests}'

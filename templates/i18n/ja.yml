@@ -128,6 +128,8 @@ comment:
   artifacts: 成果物
   run: 実行
   truncated: …（省略）
+  rate: '役に立ちましたか？👍 👎（このコメントにリアクションしてください）'
+  anchorRate: この指摘が正しければ 👍、違えば 👎 でリアクションしてください。
 
 review:
   noIssues: 'Covi が確認した範囲では問題は見つかりませんでした。{tests}'

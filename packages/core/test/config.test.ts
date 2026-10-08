@@ -154,6 +154,27 @@ describe('configuration', () => {
         /\.covi\/config\.yml is invalid/,
       );
   });
+
+  it('keeps anchors off, the rating line on, and calibration on unless configured', () => {
+    expect(DEFAULT_CONFIG.publish).toEqual({
+      comment: true,
+      annotations: true,
+      video: 'link',
+      anchors: false,
+      rating: true,
+    });
+    const { config } = resolveConfig([
+      {
+        name: 'repository',
+        values: parseConfigInput(
+          { publish: { anchors: true, rating: false }, review: { calibration: false } },
+          'test',
+        ),
+      },
+    ]);
+    expect(config.publish).toMatchObject({ anchors: true, rating: false });
+    expect(config.review.calibration).toBe(false);
+  });
 });
 
 describe('music and sound effects', () => {

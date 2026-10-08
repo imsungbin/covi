@@ -135,7 +135,16 @@ export {
   writeOutcome,
 } from './outcomes/store.ts';
 export { renderBrief } from './report/brief.ts';
-export { COMMENT_MARKER, type CommentLinks, renderComment, safeUrl } from './report/comment.ts';
+export {
+  type AnchorDraft,
+  anchorsFor,
+  COMMENT_MARKER,
+  type CommentExtras,
+  type CommentLinks,
+  MAX_ANCHORS,
+  renderComment,
+  safeUrl,
+} from './report/comment.ts';
 export { renderDiffDigest, renderFileDiff, renderHunk } from './report/digest.ts';
 export { type EvidenceRefOptions, evidenceRefs } from './report/evidence.ts';
 export {

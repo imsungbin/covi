@@ -168,6 +168,27 @@ describe('Run', () => {
       '20260101-000002-review',
     ]);
   });
+
+  it('records where a run was published, redacted, and lists it with the run', async () => {
+    root = mkdtempSync(join(tmpdir(), 'covi-run-'));
+    const run = await Run.create(options());
+    await run.setPublish({
+      platform: 'github',
+      repository: 'acme/shop',
+      number: 7,
+      comment: { id: '42', url: 'https://github.com/acme/shop/pull/7?t=tok-secret-123' },
+      at: '2026-10-09T12:00:00.000Z',
+    });
+    const reopened = await Run.open(run.id, { root });
+    expect(reopened.manifest.publish).toMatchObject({
+      platform: 'github',
+      repository: 'acme/shop',
+      number: 7,
+      comment: { id: '42' },
+    });
+    expect(JSON.stringify(reopened.manifest.publish)).not.toContain('tok-secret-123');
+    expect((await listRuns(root))[0]!.publish?.number).toBe(7);
+  });
 });
 
 describe('demo paths', () => {

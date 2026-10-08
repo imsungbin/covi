@@ -40,6 +40,12 @@ const SECRET_WORDS = new Set([
   'cvv',
   'csc',
   'ssn',
+  // Compounds written as one word, which no split finds.
+  'apikey',
+  'cardnum',
+  'cardnumber',
+  'ccnum',
+  'creditcard',
 ]);
 /** Adjacent words that name a secret together; `2fa` splits at its digit, so it is a pair too. */
 const SECRET_PHRASES = new Set([
@@ -48,8 +54,10 @@ const SECRET_PHRASES = new Set([
   'security code',
   'verification code',
   'card number',
+  'card num',
   'credit card',
   'cc number',
+  'cc num',
   'cc csc',
   'cc exp',
   'api key',

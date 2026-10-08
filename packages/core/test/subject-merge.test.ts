@@ -287,6 +287,12 @@ describe('mergeSubject', () => {
       '#totp',
       '#twoFactor2faCode',
       '#apiKey',
+      '#apikey',
+      '#cardNum',
+      '#cardnumber',
+      '#ccnum',
+      '#ccNum',
+      '#creditcard',
       '#oneTimeCode',
       '#creditCard',
       '#card',
@@ -309,6 +315,8 @@ describe('mergeSubject', () => {
       '#comment',
       '#spinner',
       '#opinion',
+      '#cardinal',
+      '#numeric-card-count',
     ])
       expect(fillsSecret(fill(selector)), selector).toBe(false);
     expect(fillsSecret(fill('#field', 'Describe the pricing card'))).toBe(false);

@@ -26,6 +26,16 @@ export {
 } from './browser.ts';
 export { type Checkout, checkoutRevision, tempWorkspace } from './checkout.ts';
 export { type DemonstrateInput, demonstrate } from './demonstrate.ts';
+export {
+  isSecretField,
+  type PageScan,
+  parseScan,
+  quoteSelector,
+  SCAN_ELEMENTS,
+  type ScannedElement,
+  scanPage,
+  selectorFor,
+} from './elements.ts';
 export { flowScenario, pageScenario, slug, uniqueIds } from './ids.ts';
 export { collectMutations, MUTATION_SCRIPT, observe } from './observe.ts';
 export { comparePngs, cropPng, type PixelDiff, readPng } from './pixels.ts';

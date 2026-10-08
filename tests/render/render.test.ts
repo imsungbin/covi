@@ -582,6 +582,11 @@ describe.skipIf(!available)('rendering', () => {
       const mid = await rows(frameAt('s2', (typing[0] + typing[1]) / 2));
       expect(mid.lit[2]).toBe(0);
       expect(mid.lit[4]).toBe(0);
+      // Nor while the second still types: the group waits for it, then lights as one.
+      const second = m.typing.get(4)!;
+      const late = await rows(frameAt('s2', (second[0] + second[1]) / 2));
+      expect(late.lit[2]).toBe(0);
+      expect(late.lit[4]).toBe(0);
       expect(errors).toEqual([]);
     } finally {
       await browser.close();

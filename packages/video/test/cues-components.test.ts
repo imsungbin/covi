@@ -102,18 +102,38 @@ describe('a code morph', () => {
     const atMorph: Code = { ...morph, groups: [{ lines: [1], phase: 'morph' }] };
     expect(codeHighlights(atMorph, 4).get(1)).toBeCloseTo(1.8, 9);
     expect(codeHighlights(atMorph, 4, { morph: 1 }).get(1)).toBeCloseTo(1.7, 9);
-    // So does the `highlight` phase, and a group pinned earlier, line by line.
+    // So does the `highlight` phase.
     expect(codeHighlights(morph, 4, { highlight: 0.5 }).get(1)).toBeCloseTo(1.7, 9);
+    // A group waits as one, for its last line to type (line 1, at 1.7 s), and keeps lighting
+    // together, 0.05 s apart in order; the deleted line, there all along, waits with it.
     const both: Code = {
       ...morph,
       highlight: [0, 1, 2],
       groups: [{ lines: [0, 1, 2], phase: 'early' }],
     };
     const starts = codeHighlights(both, 4, { early: 0.5 });
-    // The deleted line is there from the start, so it lights at its phase.
-    expect(starts.get(0)).toBeCloseTo(0.5, 9);
+    expect(starts.get(0)).toBeCloseTo(1.65, 9);
     expect(starts.get(1)).toBeCloseTo(1.7, 9);
-    expect(starts.get(2)).toBeCloseTo(1.37 + 13 / 60, 9);
+    expect(starts.get(2)).toBeCloseTo(1.75, 9);
+    // So does the list sharing the `highlight` phase.
+    const shared = codeHighlights({ ...morph, highlight: [0, 1, 2] }, 4, { highlight: 0.5 });
+    expect([0, 1, 2].map((line) => shared.get(line)! - 1.65)).toEqual([
+      expect.closeTo(0, 9),
+      expect.closeTo(0.05, 9),
+      expect.closeTo(0.1, 9),
+    ]);
+    // Groups with phases of their own each wait for their own lines.
+    const two: Code = {
+      ...morph,
+      highlight: [0, 2],
+      groups: [
+        { lines: [0], phase: 'early' },
+        { lines: [2], phase: 'early' },
+      ],
+    };
+    const apart = codeHighlights(two, 4, { early: 0.5 });
+    expect(apart.get(0)).toBeCloseTo(0.5, 9);
+    expect(apart.get(2)).toBeCloseTo(1.37 + 13 / 60, 9);
     // A diff types nothing: its phases hold.
     const diff = codeHighlights({ ...both, mode: undefined }, 4, { early: 0.5 });
     expect(diff.get(1)).toBeCloseTo(0.55, 9);

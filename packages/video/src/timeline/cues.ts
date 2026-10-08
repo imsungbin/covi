@@ -300,6 +300,9 @@ export const HIGHLIGHT_SWEEP = 0.4;
  * phase (`highlight<N>` for the N-th entry of `highlight`, or the name the group gave itself),
  * lines of a group 0.05 s apart; else the `highlight` phase with later lines following 0.05 s per
  * line; else from `from` (a morph's highlights wait for its typing); else a third of the way in.
+ * Lines that light together wait together: when `ready` says a line is not there yet at its
+ * start (a morph's added line still to type), its whole group, or every line sharing the
+ * fallback, moves later by the longest such wait, keeping its stagger.
  */
 export function highlightStarts(
   duration: number,
@@ -307,26 +310,33 @@ export function highlightStarts(
   phases: Phases = {},
   groups?: readonly HighlightGroup[],
   from?: number,
+  ready?: (line: number) => number | undefined,
 ): Map<number, number> {
   const first = Math.min(...highlight);
   const all = phases.highlight;
-  const starts = new Map<number, number>();
+  const fallback = (line: number) =>
+    all !== undefined
+      ? all + (line - first) * 0.05
+      : from !== undefined
+        ? from + (line - first) * 0.05
+        : duration * 0.32 + line * 0.05;
+  const wait = (set: ReadonlyArray<readonly [number, number]>) =>
+    Math.max(0, ...set.map(([line, start]) => (ready?.(line) ?? start) - start));
   const list =
     groups ?? highlight.map((line, n) => ({ lines: [line], phase: `highlight${n + 1}` }));
+  const shared = wait(
+    list
+      .filter((group) => phaseAt(phases, group.phase) === undefined)
+      .flatMap((group) => group.lines.map((line) => [line, fallback(line)] as const)),
+  );
+  const starts = new Map<number, number>();
   for (const group of list) {
     const own = phaseAt(phases, group.phase);
-    group.lines.forEach((line, k) => {
-      starts.set(
-        line,
-        own !== undefined
-          ? own + k * 0.05
-          : all !== undefined
-            ? all + (line - first) * 0.05
-            : from !== undefined
-              ? from + (line - first) * 0.05
-              : duration * 0.32 + line * 0.05,
-      );
-    });
+    const set = group.lines.map(
+      (line, k) => [line, own === undefined ? fallback(line) : own + k * 0.05] as const,
+    );
+    const delay = own === undefined ? shared : wait(set);
+    for (const [line, start] of set) starts.set(line, start + delay);
   }
   return starts;
 }
@@ -377,8 +387,9 @@ export function morphTiming(
 /**
  * When each highlighted line of a code visual lights up, a morph's after its typing, but early
  * enough to sweep in before the scene ends (a late morph ends with the scene). An added line
- * never lights before it has typed in, whatever phase its group names (`morph` itself, say): it
- * waits for its typing, or, when that would leave the sweep no time, at least until it opens.
+ * never lights before it has typed in, whatever phase its group names (`morph` itself, say): its
+ * group waits for its typing, or, when that would leave the sweep no time, at least until it
+ * opens (the sweep is then cut short by the scene's end).
  */
 export function codeHighlights(
   visual: Pick<CodeVisual, 'lines' | 'highlight' | 'groups' | 'mode'>,
@@ -389,18 +400,17 @@ export function codeHighlights(
     return highlightStarts(duration, visual.highlight, phases, visual.groups);
   const morph = morphTiming(duration, visual.lines, phases);
   const latest = duration - HIGHLIGHT_SWEEP;
-  const starts = highlightStarts(
+  return highlightStarts(
     duration,
     visual.highlight,
     phases,
     visual.groups,
     Math.min(morph.end + 0.1, latest),
+    (line) => {
+      const typing = morph.typing.get(line);
+      return typing && Math.max(Math.min(typing[1], latest), typing[0]);
+    },
   );
-  for (const [line, start] of starts) {
-    const typing = morph.typing.get(line);
-    if (typing) starts.set(line, Math.max(start, Math.min(typing[1], latest), typing[0]));
-  }
-  return starts;
 }
 
 export interface BeforeAfterTiming {

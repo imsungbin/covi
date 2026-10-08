@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -83,6 +83,20 @@ describe('pixel diffs', () => {
     dir = mkdtempSync(join(tmpdir(), 'covi-px-'));
     writeFileSync(join(dir, 'a.png'), png(20, 20));
     expect((await comparePngs(join(dir, 'a.png'), join(dir, 'a.png'))).bounds).toBeUndefined();
+  });
+
+  it('lists separate regions and writes the diff image only above minRatio', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'covi-px-'));
+    writeFileSync(join(dir, 'a.png'), png(100, 80));
+    writeFileSync(
+      join(dir, 'b.png'),
+      png(100, 80, (x, y) => (x < 2 && y < 2 ? [0, 0, 255] : undefined)),
+    );
+    const diff = await comparePngs(join(dir, 'a.png'), join(dir, 'b.png'), join(dir, 'd.png'), {
+      minRatio: 0.01,
+    });
+    expect(diff.regions).toEqual([{ x: 0, y: 0, width: 2, height: 2 }]);
+    expect(existsSync(join(dir, 'd.png'))).toBe(false);
   });
 });
 

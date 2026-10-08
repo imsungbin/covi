@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
+import { changedRegions } from './regions.ts';
 
 export interface Rect {
   x: number;
@@ -13,6 +14,8 @@ export interface PixelDiff {
   changedRatio: number;
   changedPixels: number;
   bounds?: Rect;
+  /** Separate areas of change (at most six), in image pixels. */
+  regions: Rect[];
   sizeChanged: boolean;
 }
 
@@ -20,11 +23,15 @@ export async function readPng(path: string): Promise<PNG> {
   return PNG.sync.read(await readFile(path));
 }
 
-/** Compares two screenshots; writes a diff image and returns where pixels changed. */
+/**
+ * Compares two screenshots; writes a diff image (only when at least `minRatio` of the pixels
+ * changed, if given) and returns where pixels changed.
+ */
 export async function comparePngs(
   beforePath: string,
   afterPath: string,
   diffPath?: string,
+  options: { minRatio?: number } = {},
 ): Promise<PixelDiff> {
   const a = await readPng(beforePath);
   const b = await readPng(afterPath);
@@ -45,7 +52,9 @@ export async function comparePngs(
     includeAA: false,
     alpha: 0.25,
   });
-  if (diffPath) await writeFile(diffPath, PNG.sync.write(diff));
+  const changedRatio = changedPixels / (width * height);
+  if (diffPath && changedRatio >= (options.minRatio ?? 0))
+    await writeFile(diffPath, PNG.sync.write(diff));
   let minX = width;
   let minY = height;
   let maxX = -1;
@@ -65,9 +74,10 @@ export async function comparePngs(
   const sizeChanged = a.width !== b.width || a.height !== b.height;
   return {
     changedPixels,
-    changedRatio: changedPixels / (width * height),
+    changedRatio,
     bounds:
       maxX >= 0 ? { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 } : undefined,
+    regions: changedRegions(diff),
     sizeChanged,
   };
 }

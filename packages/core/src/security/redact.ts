@@ -98,6 +98,49 @@ const ASSIGNMENT_PATTERN =
 
 const URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^/\s:@]+):([^/\s@]+)@/gi;
 
+/**
+ * Query and fragment parameters whose values are credentials (`?token=…`, `#access_token=…`,
+ * `X-Amz-Signature=…`). The name must match whole, after an optional prefix such as `x-api-`,
+ * so `keyboard` or `monkey` stay readable.
+ */
+const SECRET_PARAM =
+  /^(?:[a-z0-9]+[_-])*(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|api[_-]?key|apikey|key|secret|client[_-]?secret|password|passwd|pwd|auth|authorization|session|session[_-]?id|sessionid|sid|sig|signature|credentials?|code|jwt|otp)$/i;
+
+/** URLs inside free text: absolute ones, and paths that carry a query or a fragment. */
+const URL_IN_TEXT =
+  /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+|(?<![\w./])\/[^\s"'<>`?#]*[?#][^\s"'<>`]+/gi;
+
+function decodeName(name: string): string {
+  try {
+    return decodeURIComponent(name.replace(/\+/g, ' '));
+  } catch {
+    return name;
+  }
+}
+
+function maskPairs(text: string): string {
+  return text
+    .split('&')
+    .map((pair) => {
+      const eq = pair.indexOf('=');
+      if (eq <= 0) return pair;
+      const name = pair.slice(0, eq);
+      return name.length <= 64 && SECRET_PARAM.test(decodeName(name)) ? `${name}=[REDACTED]` : pair;
+    })
+    .join('&');
+}
+
+/** Masks the values of credential-shaped parameters in a URL's query and fragment. */
+function maskSecretParams(url: string): string {
+  const hashAt = url.indexOf('#');
+  const beforeHash = hashAt < 0 ? url : url.slice(0, hashAt);
+  const fragment = hashAt < 0 ? undefined : url.slice(hashAt + 1);
+  const queryAt = beforeHash.indexOf('?');
+  const path = queryAt < 0 ? beforeHash : beforeHash.slice(0, queryAt);
+  const query = queryAt < 0 ? undefined : beforeHash.slice(queryAt + 1);
+  return `${path}${query === undefined ? '' : `?${maskPairs(query)}`}${fragment === undefined ? '' : `#${maskPairs(fragment)}`}`;
+}
+
 /** Environment variable names that hold credentials. */
 export const SECRET_ENV_NAME =
   /(TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|PRIVATE|API_?KEY|ACCESS_?KEY|AUTH|SESSION|COOKIE|WEBHOOK|DSN|SIGNING|_PAT$|^PAT_)/i;
@@ -155,6 +198,17 @@ export class Redactor {
     );
     out = out.replace(URL_CREDENTIALS, (_m, scheme: string) => `${scheme}[REDACTED]@`);
     return out;
+  }
+
+  /** A URL with credential-shaped query and fragment parameters masked, then redacted as text. */
+  redactUrl(url: string): string {
+    return this.redact(maskSecretParams(url));
+  }
+
+  /** Text with every URL in it masked like `redactUrl` (console messages, error text). */
+  redactUrls(text: string): string {
+    if (!text) return text;
+    return this.redact(text.replace(URL_IN_TEXT, (url) => maskSecretParams(url)));
   }
 
   /** Deeply redacts strings inside JSON-like values. */

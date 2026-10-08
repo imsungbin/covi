@@ -78,3 +78,45 @@ describe('childEnv', () => {
     );
   });
 });
+
+describe('URL redaction', () => {
+  const r = new Redactor();
+
+  it('masks credential-shaped query and fragment parameters, keeping their names', () => {
+    expect(r.redactUrl('/items.json?session=sess-4f9c2a7b1e&page=2')).toBe(
+      '/items.json?session=[REDACTED]&page=2',
+    );
+    expect(
+      r.redactUrl('https://cdn.test/a.png?X-Amz-Signature=abc123&X-Amz-Credential=AK%2F1&w=10'),
+    ).toBe('https://cdn.test/a.png?X-Amz-Signature=[REDACTED]&X-Amz-Credential=[REDACTED]&w=10');
+    expect(r.redactUrl('/callback#access_token=zz9&state=ok')).toBe(
+      '/callback#access_token=[REDACTED]&state=ok',
+    );
+    expect(r.redactUrl('/login?api_key=k1&apiKey=k2&x-api-key=k3')).toBe(
+      '/login?api_key=[REDACTED]&apiKey=[REDACTED]&x-api-key=[REDACTED]',
+    );
+    expect(r.redactUrl('https://user:pw123456@example.test/x')).toBe(
+      'https://[REDACTED]@example.test/x',
+    );
+  });
+
+  it('leaves ordinary URLs alone', () => {
+    for (const url of [
+      '/',
+      '/items.json',
+      '/search?q=tokens&page=2',
+      '/kb?keyboard=us&monkey=1',
+      '/docs#section-2',
+      '/a?flag',
+      '/a?=x',
+    ])
+      expect(r.redactUrl(url)).toBe(url);
+  });
+
+  it('masks URLs inside text', () => {
+    expect(
+      r.redactUrls('GET /a?token=abc123456 failed; see https://x.test/cb#code=zz9 (retry)'),
+    ).toBe('GET /a?token=[REDACTED] failed; see https://x.test/cb#code=[REDACTED] (retry)');
+    expect(r.redactUrls('Could not load items: HTTP 404')).toBe('Could not load items: HTTP 404');
+  });
+});

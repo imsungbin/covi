@@ -471,7 +471,7 @@ describe('covi outcomes', () => {
       };
       const run = async (env: NodeJS.ProcessEnv) =>
         ((await coviAsync(args, { env })).json() as Collected).data.collected;
-      const nightly = started('schedule', {}, { GITHUB_REF: 'refs/heads/main' });
+      const nightly = started('schedule', { repository: undefined, schedule: '0 3 * * *' });
       expect(await run(nightly)).toMatchObject([{ number: 7 }]);
       expect(await run(started('workflow_dispatch', { ref: 'refs/heads/main' }))).toMatchObject([
         { number: 7 },

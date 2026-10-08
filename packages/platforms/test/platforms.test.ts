@@ -139,10 +139,9 @@ describe('GitHub', () => {
     const repository = { default_branch: 'main' };
     const trusted = async (payload: object, name: string, env: NodeJS.ProcessEnv = {}) =>
       (await githubContext({ ...event(payload, name), ...env })).trustedCheckout === true;
-    // A schedule's payload names no ref; GitHub sets GITHUB_REF to the default branch.
-    expect(await trusted({ repository }, 'schedule', { GITHUB_REF: 'refs/heads/main' })).toBe(true);
-    expect(await trusted({ repository }, 'schedule')).toBe(false);
-    expect(await trusted({}, 'schedule', { GITHUB_REF: 'refs/heads/main' })).toBe(false);
+    // GitHub runs a schedule only on the default branch's latest commit, and its payload names
+    // neither a ref nor the repository.
+    expect(await trusted({ schedule: '0 3 * * *' }, 'schedule')).toBe(true);
     expect(await trusted({ repository, ref: 'refs/heads/main' }, 'workflow_dispatch')).toBe(true);
     // Anyone who can dispatch can pick their own branch, and with it the bot names it configures.
     expect(await trusted({ repository, ref: 'refs/heads/topic' }, 'workflow_dispatch')).toBe(false);

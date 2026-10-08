@@ -27,9 +27,9 @@ Use it only when the change hands you the list. A video with one thing to check 
 5. **Wrap**: the verdict in a few words.
 
 ## New feature
-1. **Cold open**: the new behavior on head, mid-interaction, a step short of the payoff: save that screen for the hero. Hook: the payoff, or the question it answers.
+1. **Cold open**: the new behavior on head, mid-interaction, a step short of the payoff: save that screen for the hero. Hook: the question the payoff answers.
 2. **Before** (optional): the old workflow, briefly, only if the contrast helps.
-3. **See it**, the hero (beat `interaction`): the step where the change lands, as a screenshot with a tight `focus`. Its tile is the scene's middle frame, which in a two-step interaction falls between the steps.
+3. **See it**, the hero (beat `interaction`): the step where the change lands, on its own: a screenshot with a tight `focus`, not a multi-step interaction.
 4. **How it works**: the one implementation detail reviewers need.
 5. **Worth a look**: the edge case or finding to check.
 6. **Wrap**.

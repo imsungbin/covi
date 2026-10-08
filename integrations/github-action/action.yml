@@ -44,6 +44,12 @@ inputs:
   comment:
     description: "Post or update a summary comment on the pull request (needs pull-requests: write)."
     default: "true"
+  finding-anchors:
+    description: "true or false: also post each confirmed or likely finding as an inline review comment people can react to with 👍 or 👎 (at most 10 per run, once per finding). Empty: publish.anchors, else off."
+    default: ""
+  outcomes:
+    description: "true: learn how reviews held up. On a closed pull request from this repository the action collects the outcome (merged, closed, reverted, reactions) instead of reviewing, and keeps it in the Actions cache; on other events it restores that cache first, so the review sees how past findings held up. Use pull_request_target for the closed event (see examples/author-side.yml)."
+    default: "false"
   anthropic-api-key:
     description: "Optional. Enables model-written explanations, findings, and narration."
     default: ""
@@ -54,7 +60,7 @@ inputs:
     description: "Optional. Higher-quality narration voices."
     default: ""
   github-token:
-    description: "Token used only to post the comment."
+    description: "Token used to post the comment and, with outcomes, to read the pull request's outcome."
     default: ${{ github.token }}
   config:
     description: "Config file path. A path inside the repository is read from the base revision, like .covi/config.yml."
@@ -138,7 +144,7 @@ runs:
         fi
 
     - name: Install the browser and video tools
-      if: inputs.command == 'review'
+      if: inputs.command == 'review' && !(inputs.outcomes == 'true' && github.event.action == 'closed')
       shell: bash
       env:
         VIDEO: ${{ inputs.video }}
@@ -165,9 +171,47 @@ runs:
           fi
         fi
 
+    - name: Restore outcomes
+      if: inputs.outcomes == 'true'
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ inputs.working-directory }}/.covi/outcomes
+        key: covi-outcomes-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: covi-outcomes-
+
+    # A fork's pull request is never collected: outsiders must not feed the cache every review restores.
+    - name: Collect outcomes
+      if: inputs.outcomes == 'true' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        COVI_GITHUB_TOKEN: ${{ inputs.github-token }}
+        REPOSITORY: ${{ github.repository }}
+        CONFIG: ${{ inputs.config }}
+      run: |
+        # Reads the pull request through the API only: nothing from it is checked out or run.
+        args=(outcomes collect --platform github)
+        if [ -n "$CONFIG" ]; then args=(--config "$CONFIG" "${args[@]}"); fi
+        if "$COVI_BIN" "${args[@]}"; then
+          # The report needs a checkout (the base, under pull_request_target) to tell collected
+          # outcomes from committed ones; without one it is left out.
+          if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            "$COVI_BIN" outcomes report --repository "$REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        else
+          echo "::warning::Covi could not collect this pull request's outcome."
+        fi
+
+    - name: Save outcomes
+      if: inputs.outcomes == 'true' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ inputs.working-directory }}/.covi/outcomes
+        key: covi-outcomes-${{ github.run_id }}-${{ github.run_attempt }}
+
     - name: Review
       id: covi
-      if: inputs.command == 'review'
+      if: inputs.command == 'review' && !(inputs.outcomes == 'true' && github.event.action == 'closed')
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -180,6 +224,7 @@ runs:
         CAPTIONS: ${{ inputs.captions }}
         LANGUAGE: ${{ inputs.language }}
         ANNOTATIONS: ${{ inputs.annotations }}
+        FINDING_ANCHORS: ${{ inputs.finding-anchors }}
         PROVIDER: ${{ inputs.provider }}
         MODEL: ${{ inputs.model }}
         CONFIG: ${{ inputs.config }}
@@ -198,6 +243,8 @@ runs:
         if [ "$CAPTIONS" = "false" ]; then args+=(--no-captions); fi
         if [ -n "$LANGUAGE" ]; then args+=(--language "$LANGUAGE"); fi
         if [ "$ANNOTATIONS" = "false" ]; then args+=(--no-annotations); fi
+        if [ "$FINDING_ANCHORS" = "true" ]; then args+=(--anchors); fi
+        if [ "$FINDING_ANCHORS" = "false" ]; then args+=(--no-anchors); fi
         if [ -n "$PROVIDER" ]; then args+=(--provider "$PROVIDER"); fi
         if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
         if [ -n "$CONFIG" ]; then args=(--config "$CONFIG" "${args[@]}"); fi

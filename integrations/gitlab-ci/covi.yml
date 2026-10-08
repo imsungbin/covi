@@ -76,6 +76,15 @@ covi-review:
     COVI_INPUT_LANGUAGE: "$[[ inputs.language ]]"
     COVI_INPUT_COMMENT: "$[[ inputs.comment ]]"
     COVI_INPUT_PROVIDER: "$[[ inputs.provider ]]"
+  # Outcomes collected by covi-outcomes.yml, when it is included: the brief then shows how past
+  # findings held up. Reviews only pull it; without that job the cache is empty and nothing changes.
+  # The cache stays protected, so only pipelines on protected branches (where the scheduled job
+  # writes it) see it: an unprotected one could be written by any branch's pipeline.
+  cache:
+    key: covi-outcomes
+    paths:
+      - .covi/outcomes/
+    policy: pull
   before_script:
     - |
       missing=""

@@ -24,13 +24,17 @@ const EMOJI_901 = `GET ${MR}/notes/901/award_emoji?per_page=100`;
 const COMMITS = `GET ${PROJECT}/repository/commits?ref_name=main&since=2026-10-02T09%3A00%3A00.000Z&per_page=100`;
 /** A project access token reads /user: Covi is its bot user (id 50). */
 const projectToken = { [`GET ${BASE}/user`]: { fixture: 'gitlab/user.json' } };
-const collector = (fetch: ReturnType<typeof fixtureFetch>['fetch']) =>
+/** A maintainer's own token: /user is a person (id 9), not the bot CI posts as. */
+const personalToken = { [`GET ${BASE}/user`]: { fixture: 'gitlab/user-person.json' } };
+const BOT = `GET ${BASE}/users/50`;
+const collector = (fetch: ReturnType<typeof fixtureFetch>['fetch'], botUser?: string) =>
   new GitLabCollector({
     token: 'glpat',
     repository: 'acme/shop',
     apiUrl: BASE,
     fetch,
     budget: new RequestBudget(50),
+    botUser,
   });
 const merged: Record<string, Reply> = {
   [`GET ${MR}`]: { fixture: 'gitlab/mr-12-merged.json' },
@@ -120,6 +124,129 @@ describe('GitLabCollector', () => {
     expect((await gitlab.collect(12, { commentId: '905' })).comment?.id).toBe('906');
     // Who the token is was asked once.
     expect(api.calls.filter((c) => c.url === `${BASE}/user`)).toHaveLength(1);
+  });
+
+  it("reads CI's bot note with a person's token once GitLab confirms the bot", async () => {
+    const api = fixtureFetch(
+      { ...merged, ...personalToken, [BOT]: { fixture: 'gitlab/user.json' } },
+      replace,
+    );
+    const gitlab = collector(api.fetch, 'project_5_bot_covi');
+    expect((await gitlab.collect(12)).comment).toMatchObject({ id: '901', up: 1, down: 1 });
+    expect((await gitlab.collect(12)).comment?.id).toBe('901');
+    // GitLab is asked once whether the user is a bot.
+    expect(api.calls.filter((c) => c.url === `${BASE}/users/50`)).toHaveLength(1);
+    // Without the key, a person's token reads only that person's notes.
+    const plain = fixtureFetch({ ...merged, ...personalToken }, replace);
+    expect((await collector(plain.fetch).collect(12)).comment).toBeUndefined();
+  });
+
+  it('refuses a configured bot name GitLab does not confirm, or another user', async () => {
+    for (const reply of [
+      { json: { id: 50, username: 'project_5_bot_covi', bot: false } },
+      { json: { id: 50, username: 'project_5_bot_covi' } },
+      { json: { id: 50, username: 'someone_else', bot: true } },
+      { json: { id: 51, username: 'project_5_bot_covi', bot: true } },
+      { status: 404, json: { message: '404 Not found' } },
+      { status: 403, json: { message: '403 Forbidden' } },
+    ]) {
+      const api = fixtureFetch({ ...merged, ...personalToken, [BOT]: reply }, replace);
+      expect(
+        (await collector(api.fetch, 'project_5_bot_covi').collect(12)).comment,
+      ).toBeUndefined();
+    }
+    // Another username is never looked up; a display name that matches is not a username.
+    const impostor = fixtureFetch({
+      ...merged,
+      ...personalToken,
+      [DISCUSSIONS]: {
+        json: [
+          {
+            id: 'd1',
+            notes: [
+              {
+                ...note(907, 66, `<!-- covi:review -->\n${renderLedger(forged)}`),
+                author: { id: 66, username: 'impostor', name: 'project_5_bot_covi' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(
+      (await collector(impostor.fetch, 'project_5_bot_covi').collect(12)).comment,
+    ).toBeUndefined();
+    expect(impostor.calls.some((c) => c.url.includes('/users/'))).toBe(false);
+  });
+
+  it('stops rather than guess when the bot check is rate limited', async () => {
+    const api = fixtureFetch(
+      {
+        ...merged,
+        ...personalToken,
+        [BOT]: { status: 429, headers: { 'ratelimit-reset': '1790000000' } },
+      },
+      replace,
+    );
+    await expect(collector(api.fetch, 'project_5_bot_covi').collect(12)).rejects.toThrow(
+      /rate limit/,
+    );
+  });
+
+  it('counts someone who gave both 👍 and 👎 on neither side', async () => {
+    const api = fixtureFetch(
+      {
+        ...merged,
+        ...projectToken,
+        [EMOJI_901]: {
+          json: [
+            { name: 'thumbsup', user: { id: 6 } },
+            { name: 'thumbsdown', user: { id: 6 } },
+            { name: 'thumbsup', user: { id: 7 } },
+            { name: 'thumbsdown', user: { id: 8 } },
+            { name: 'tada', user: { id: 8 } },
+            { name: 'thumbsup' },
+          ],
+        },
+      },
+      replace,
+    );
+    expect((await collector(api.fetch).collect(12)).comment).toMatchObject({ up: 1, down: 1 });
+  });
+
+  it('says which commits it could not read for a revert', async () => {
+    const page = (n: number) => `${COMMITS.slice(4)}&page=${n}`;
+    const link = (rels: Record<string, number>) =>
+      Object.entries(rels)
+        .map(([rel, n]) => `<${page(n)}>; rel="${rel}"`)
+        .join(', ');
+    const commit = (n: number) => ({ id: String(n).repeat(40), message: 'chore' });
+    // GitLab linked only forward: the newest page alone was read.
+    const forward = fixtureFetch(
+      {
+        ...merged,
+        ...projectToken,
+        [COMMITS]: { json: [commit(9)], headers: { link: link({ next: 2 }) } },
+      },
+      replace,
+    );
+    expect((await collector(forward.fetch).collect(12)).notes).toEqual([
+      'commits since the merge: GitLab linked no last page, so only the newest page was read and a revert nearer the merge is missed',
+    ]);
+    // With a last page: the two nearest the merge and the newest.
+    const paged = fixtureFetch(
+      {
+        ...merged,
+        ...projectToken,
+        [COMMITS]: { json: [commit(9)], headers: { link: link({ next: 2, last: 4 }) } },
+        [`GET ${page(4)}`]: { json: [commit(1)], headers: { link: link({ prev: 3 }) } },
+        [`GET ${page(3)}`]: { json: [commit(2)], headers: { link: link({ prev: 2 }) } },
+      },
+      replace,
+    );
+    expect((await collector(paged.fetch).collect(12)).notes).toEqual([
+      'commits since the merge: more than 3 pages; read the 2 nearest the merge and the newest, so a revert in between is missed',
+    ]);
   });
 
   it('notes award emoji cut at their page limit', async () => {
@@ -243,6 +370,47 @@ describe('createCollector', () => {
         { budget },
       ).collector,
     ).toMatchObject({ platform: 'gitlab', repository: 'acme/shop' });
+  });
+
+  it("prefers the merge request's project and falls back to GITLAB_TOKEN", async () => {
+    const api = fixtureFetch({
+      [`GET ${BASE}/projects/acme%2Fshop/merge_requests?state=all&order_by=updated_at&sort=desc&per_page=100`]:
+        { json: [] },
+    });
+    const made = createCollector(
+      'gitlab',
+      {
+        // A merge request from a fork runs in the fork's project; its target is the one to ask.
+        CI_MERGE_REQUEST_PROJECT_PATH: 'acme/shop',
+        CI_PROJECT_PATH: 'someone/shop-fork',
+        GITLAB_TOKEN: 'fallback',
+        CI_API_V4_URL: BASE,
+      },
+      { budget: new RequestBudget(5), fetch: api.fetch },
+    );
+    expect(made.collector?.repository).toBe('acme/shop');
+    await made.collector?.recent(1);
+    expect(api.calls.map((c) => c.headers['PRIVATE-TOKEN'])).toEqual(['fallback']);
+    expect(
+      createCollector(
+        'gitlab',
+        { CI_PROJECT_PATH: 'acme/shop', GITLAB_TOKEN: 'a', COVI_GITLAB_TOKEN: 'b' },
+        { budget: new RequestBudget(1), repository: 'acme/api' },
+      ).collector?.repository,
+    ).toBe('acme/api');
+  });
+
+  it('passes the configured GitLab bot user on', async () => {
+    const api = fixtureFetch(
+      { ...merged, ...personalToken, [BOT]: { fixture: 'gitlab/user.json' } },
+      replace,
+    );
+    const made = createCollector(
+      'gitlab',
+      { CI_PROJECT_PATH: 'acme/shop', COVI_GITLAB_TOKEN: 't', CI_API_V4_URL: BASE },
+      { budget: new RequestBudget(20), fetch: api.fetch, gitlabBotUser: 'project_5_bot_covi' },
+    );
+    expect((await made.collector!.collect(12)).comment?.id).toBe('901');
   });
 
   it("asks GitLab CI's own API, else gitlab.com", async () => {

@@ -14,6 +14,8 @@ export interface CollectorOptions {
   sleep?: (ms: number) => Promise<void>;
   /** `publish.botLogin` from the base revision's configuration: Covi's GitHub App bot. */
   botLogin?: string;
+  /** `publish.gitlabBotUser` from the base revision's configuration: Covi's GitLab bot user. */
+  gitlabBotUser?: string;
 }
 
 /** A collector for the platform, or what is missing to make one. */
@@ -50,6 +52,7 @@ export function createCollector(
       token,
       repository,
       apiUrl: options.apiUrl || env.CI_API_V4_URL || 'https://gitlab.com/api/v4',
+      botUser: options.gitlabBotUser,
     }),
   };
 }

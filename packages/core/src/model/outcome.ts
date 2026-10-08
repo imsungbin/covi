@@ -41,11 +41,10 @@ const Timestamp = z
 /**
  * `owner/repo` on GitHub, `group/…/project` on GitLab. Reports and file lookups use it, and it
  * comes from the platform or a flag, so it may only be a path with no `.` or `..` segment.
+ * Collectors check a name with it before they ask about it.
  */
-const Repository = z
-  .string()
-  .max(200)
-  .regex(/^(?!\.\.?(?:\/|$))(?!.*\/\.\.?(?:\/|$))[\w.-]+(?:\/[\w.-]+)+$/);
+export const REPOSITORY_PATTERN = /^(?!\.\.?(?:\/|$))(?!.*\/\.\.?(?:\/|$))[\w.-]+(?:\/[\w.-]+)+$/;
+const Repository = z.string().max(200).regex(REPOSITORY_PATTERN);
 const CommentId = z.string().regex(/^\d{1,20}$/);
 
 /** One finding in a comment's ledger. Short keys: the ledger rides along in every comment. */

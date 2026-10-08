@@ -1,10 +1,16 @@
-import { type ChangeSignals, COMMENT_MARKER } from '@covi/core';
-import { ApiClient, PlatformHttpError, type RequestBudget } from '../http.ts';
+import { type ChangeSignals, COMMENT_MARKER, REPOSITORY_PATTERN } from '@covi/core';
+import {
+  ApiClient,
+  BudgetExhaustedError,
+  PlatformHttpError,
+  RateLimitedError,
+  type RequestBudget,
+} from '../http.ts';
 import type { FetchLike } from '../types.ts';
 import { findRevert } from './signals.ts';
 import type { OutcomeCollector } from './types.ts';
 
-type User = { id?: unknown } | null | undefined;
+type User = { id?: unknown; username?: unknown } | null | undefined;
 interface Note {
   id: number;
   body?: string | null;
@@ -43,10 +49,10 @@ export interface GitLabCollectorOptions {
   fetch?: FetchLike;
   budget: RequestBudget;
   sleep?: (ms: number) => Promise<void>;
+  /** `publish.gitlabBotUser`: the bot user CI comments as, for a collect with another token. */
+  botUser?: string;
 }
 
-/** A project path, as outcome files name it; a numeric project id would not fit them. */
-const PROJECT = /^(?!\.\.?(?:\/|$))(?!.*\/\.\.?(?:\/|$))[\w.-]+(?:\/[\w.-]+)+$/;
 /** Commits since the merge are read for a revert up to this many pages (Decision 2). */
 const COMMIT_PAGES = 3;
 const AWARD_PAGES = 3;
@@ -57,22 +63,27 @@ const userId = (user: User) => (typeof user?.id === 'number' ? user.id : undefin
 
 /**
  * What became of a merge request Covi commented on, from GitLab's REST API (read-only). Covi's
- * note is read only when the token's own user wrote it: anyone can paste the marker, and what is
- * collected here feeds the whole repository's calibration. It has no per-finding anchors:
- * positioned diff notes are not posted by Covi yet.
+ * note is read only when Covi wrote it (the token's own user, or the configured bot user): anyone
+ * can paste the marker, and what is collected here feeds the whole repository's calibration. It
+ * has no per-finding anchors: positioned diff notes are not posted by Covi yet.
  */
 export class GitLabCollector implements OutcomeCollector {
   readonly platform = 'gitlab' as const;
   readonly repository: string;
   private readonly api: ApiClient;
+  private readonly botUser?: string;
   private me?: { user: number | null };
+  /** Whether GitLab confirmed a user id as the configured bot, asked once per id. */
+  private readonly bots = new Map<number, boolean>();
 
   constructor(options: GitLabCollectorOptions) {
-    if (options.repository.length > 200 || !PROJECT.test(options.repository))
+    // A path, as outcome files name the project; a numeric project id would not fit them.
+    if (options.repository.length > 200 || !REPOSITORY_PATTERN.test(options.repository))
       throw new Error(
         `Not a GitLab project path (group/name): ${options.repository.slice(0, 200)}`,
       );
     this.repository = options.repository;
+    this.botUser = options.botUser;
     this.api = new ApiClient({
       platform: 'GitLab',
       base: options.apiUrl,
@@ -141,7 +152,8 @@ export class GitLabCollector implements OutcomeCollector {
         .map((n) => ({ discussion, note: n })),
     );
     const me = marked.length ? await this.whoami() : null;
-    const own = me === null ? [] : marked.filter((m) => userId(m.note.author) === me);
+    const own: typeof marked = [];
+    for (const m of marked) if (await this.covi(m.note.author, me)) own.push(m);
     // The note a run recorded, if Covi wrote it, else Covi's newest, which the publisher updates
     // (discussions come oldest first). None: nothing to collect.
     const sticky = own.find((m) => String(m.note.id) === hint.commentId) ?? own.at(-1);
@@ -153,12 +165,18 @@ export class GitLabCollector implements OutcomeCollector {
         note,
         AWARD_PAGES,
       );
-      // The author would rather their change look good, so their own emoji say little.
+      // The author would rather their change look good, so their own emoji say little. Someone
+      // who gave both 👍 and 👎 has not decided, so they count on neither side.
+      const given = new Map<number, Set<string>>();
+      for (const a of awards) {
+        const user = userId(a.user);
+        if (user !== undefined && user !== author && typeof a.name === 'string')
+          given.set(user, (given.get(user) ?? new Set()).add(a.name));
+      }
       const votes = (name: string) =>
-        awards.filter((a) => {
-          const user = userId(a.user);
-          return a.name === name && user !== undefined && user !== author;
-        }).length;
+        [...given.values()].filter(
+          (names) => names.has(name) && !names.has(name === 'thumbsup' ? 'thumbsdown' : 'thumbsup'),
+        ).length;
       signals.comment = {
         id: String(id),
         url: mr.web_url ? `${mr.web_url}#note_${id}` : undefined,
@@ -166,22 +184,30 @@ export class GitLabCollector implements OutcomeCollector {
         up: votes('thumbsup'),
         down: votes('thumbsdown'),
         replies: (sticky.discussion.notes ?? []).filter(
-          (n) => n.id !== id && !n.system && userId(n.author) !== me,
+          (n) =>
+            n.id !== id &&
+            !n.system &&
+            userId(n.author) !== me &&
+            userId(n.author) !== userId(sticky.note.author),
         ).length,
       };
     }
     if (state === 'merged' && mr.merged_at && mr.target_branch) {
       // From the merge forward, as on GitHub: a revert usually follows soon.
-      const { items: commits, truncated } = await this.api.getOldestFirst<Commit>(
+      const window = await this.api.getOldestFirst<Commit>(
         `${this.project}/repository/commits?ref_name=${encodeURIComponent(mr.target_branch)}&since=${encodeURIComponent(mr.merged_at)}&per_page=100`,
         COMMIT_PAGES,
       );
-      if (truncated)
+      if (window.newestOnly)
         note(
-          `commits since the merge: more than ${COMMIT_PAGES} pages, so a revert among those not read is missed`,
+          'commits since the merge: GitLab linked no last page, so only the newest page was read and a revert nearer the merge is missed',
+        );
+      else if (window.truncated)
+        note(
+          `commits since the merge: more than ${COMMIT_PAGES} pages; read the ${COMMIT_PAGES - 1} nearest the merge and the newest, so a revert in between is missed`,
         );
       const revert = findRevert(
-        commits.flatMap((c) =>
+        window.items.flatMap((c) =>
           typeof c.id === 'string' && typeof c.message === 'string'
             ? [{ sha: c.id, message: c.message, url: c.web_url }]
             : [],
@@ -199,8 +225,42 @@ export class GitLabCollector implements OutcomeCollector {
   }
 
   /**
-   * The token's own user id, asked once, or `null` when the token cannot say (401/403): then no
-   * note counts as Covi's. Anything else (a rate limit, an outage) throws rather than guess.
+   * Whether Covi wrote a note: the token's own user, or the configured bot user, so a maintainer
+   * collecting with their own token still reads what CI posted. A username alone is not enough:
+   * GitLab must say the account is a bot.
+   */
+  private async covi(author: User, me: number | null): Promise<boolean> {
+    const id = userId(author);
+    if (id === undefined) return false;
+    if (id === me) return true;
+    return Boolean(this.botUser) && author?.username === this.botUser && (await this.isBot(id));
+  }
+
+  /**
+   * One `GET /users/:id` per id: the same id and username, and `bot: true`. Any other answer, or a
+   * refusal, is "no". A rate limit or the budget stops the collect instead, and is not remembered.
+   */
+  private async isBot(id: number): Promise<boolean> {
+    const known = this.bots.get(id);
+    if (known !== undefined) return known;
+    let bot: boolean;
+    try {
+      const { data } = await this.api.get<{ id?: unknown; username?: unknown; bot?: unknown }>(
+        `/users/${id}`,
+      );
+      bot = data?.id === id && data.username === this.botUser && data.bot === true;
+    } catch (error) {
+      if (error instanceof RateLimitedError || error instanceof BudgetExhaustedError) throw error;
+      bot = false;
+    }
+    this.bots.set(id, bot);
+    return bot;
+  }
+
+  /**
+   * The token's own user id, asked once, or `null` when the token cannot say (401/403): then only
+   * a confirmed bot user's note counts. Anything else (a rate limit, an outage) throws rather than
+   * guess.
    */
   private async whoami(): Promise<number | null> {
     if (this.me) return this.me.user;

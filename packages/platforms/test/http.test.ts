@@ -224,6 +224,16 @@ describe('ApiClient', () => {
       truncated: false,
     });
     expect(single.calls).toHaveLength(1);
+    // Linked only forward: the newest page is all it can read from this end.
+    const forward = fixtureFetch({
+      [`GET ${base}`]: { json: [10, 9], headers: { link: link({ next: 2 }) } },
+    });
+    expect(await client(forward.fetch).getOldestFirst('/repos/a/b/commits?per_page=2')).toEqual({
+      items: [9, 10],
+      truncated: true,
+      newestOnly: true,
+    });
+    expect(forward.calls).toHaveLength(1);
   });
 
   it('names the request, not the token, when a body is empty or not JSON', async () => {

@@ -143,14 +143,22 @@ export class ApiClient {
    * A list the platform serves newest first, read from its oldest end, oldest first: the first
    * page (which links to the last), then the last page and back, up to `maxPages` pages in all.
    * For a window that starts at an event (commits since a merge), what follows the event most
-   * closely is then read on every collect, however much lands after it.
+   * closely is then read on every collect, however much lands after it. A platform that links
+   * only forward (no last page) leaves the newest page alone readable: `newestOnly` says so.
    */
-  async getOldestFirst<T>(path: string, maxPages = 3): Promise<{ items: T[]; truncated: boolean }> {
+  async getOldestFirst<T>(
+    path: string,
+    maxPages = 3,
+  ): Promise<{ items: T[]; truncated: boolean; newestOnly?: boolean }> {
     const first = await this.get<T[]>(path);
     const pages: T[][] = [];
     // Without a last link the list is one page, unless the platform only links forward.
-    if (!first.last)
-      return { items: this.list(first.data, path).reverse(), truncated: !!first.next };
+    if (!first.last) {
+      const items = this.list(first.data, path).reverse();
+      return first.next
+        ? { items, truncated: true, newestOnly: true }
+        : { items, truncated: false };
+    }
     let at: string | undefined = first.last;
     while (at && pageNumber(at) > 1 && pages.length + 1 < maxPages) {
       const page: { data: T[]; prev?: string } = await this.get<T[]>(at);

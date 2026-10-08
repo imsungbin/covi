@@ -184,6 +184,18 @@ describe('configuration', () => {
     for (const botLogin of ['octocat', 'some app[bot]', '[bot]', 'x[bot] '])
       expect(() => parseConfigInput({ publish: { botLogin } }, 't')).toThrow(/publish\.botLogin/);
   });
+
+  it('takes a GitLab username for publish.gitlabBotUser, with no default', () => {
+    expect(DEFAULT_CONFIG.publish.gitlabBotUser).toBeUndefined();
+    for (const user of ['project_5_bot_covi', 'group_12_bot_9f3a', 'covi.bot-1'])
+      expect(
+        parseConfigInput({ publish: { gitlabBotUser: user } }, 't').publish?.gitlabBotUser,
+      ).toBe(user);
+    for (const gitlabBotUser of ['', 'covi[bot]', 'some user', '-covi', 'covi.', 'a/b'])
+      expect(() => parseConfigInput({ publish: { gitlabBotUser } }, 't')).toThrow(
+        /publish\.gitlabBotUser/,
+      );
+  });
 });
 
 describe('music and sound effects', () => {

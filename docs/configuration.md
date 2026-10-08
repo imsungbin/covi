@@ -478,6 +478,7 @@ Used by `covi ci` and `covi publish`.
 | `annotations` | boolean | `true` | Annotate findings inline: workflow annotations in GitHub Actions, the Code Quality report in GitLab CI (written empty when `false`). |
 | `video` | `link`, `upload`, `none` | `link` | How the comment refers to the video. `link` links to it: the job artifact file on GitLab, otherwise the uploaded artifacts. `upload` uploads the MP4 where the platform supports it (GitLab) for inline playback, and links elsewhere. `none` leaves the video out. |
 | `botLogin` | `name[bot]` | `github-actions[bot]` | The GitHub App bot Covi comments as when its token has no user of its own (the workflow token, or an app token). Covi takes a comment or a finding anchor as its own only when that bot wrote it, or, for a token with a user, when that user did. |
+| `gitlabBotUser` | GitLab username | none | The GitLab bot user Covi's CI comments as: the username of the project or group access token in `COVI_GITLAB_TOKEN`, such as `project_5_bot_1a2b`. Collecting outcomes always takes the notes of the token's own user as Covi's. With this set, a collect that runs with another token (a maintainer's own) also takes this user's notes, once GitLab confirms the account is a bot (one `GET /users/:id`); if GitLab does not confirm it, those notes are ignored. |
 
 ## Environment variables
 

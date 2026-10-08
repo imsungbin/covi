@@ -292,6 +292,13 @@ export const ConfigInputSchema = z.strictObject({
         .describe(
           "The GitHub App bot Covi comments as when its token has no user (`name[bot]`). Only this bot's comments and anchors count as Covi's.",
         ),
+      gitlabBotUser: z
+        .string()
+        .regex(/^[A-Za-z0-9_](?:[A-Za-z0-9_.-]{0,253}[A-Za-z0-9_-])?$/)
+        .optional()
+        .describe(
+          "The GitLab bot user Covi's CI comments as (a project or group access token's username). Collecting outcomes with another token counts its notes as Covi's once GitLab confirms the user is a bot.",
+        ),
     })
     .optional(),
 });
@@ -377,6 +384,8 @@ export interface CoviConfig {
     rating: boolean;
     /** The bot a GitHub token without a user comments as; only its comments count as Covi's. */
     botLogin: string;
+    /** The GitLab bot user CI comments as; no default, so another token reads only its own notes. */
+    gitlabBotUser?: string;
   };
 }
 

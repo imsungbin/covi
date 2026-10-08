@@ -130,7 +130,7 @@ export const VisualSchema = z.discriminatedUnion('kind', [
       .max(40)
       .default([])
       .describe('Indexes into lines to emphasize, or groups of them that light together.'),
-    caption: z.string().optional().describe('A short line shown under the code.'),
+    caption: z.string().max(160).optional().describe('A short line shown under the code.'),
     mode: z
       .enum(['diff', 'morph'])
       .optional()
@@ -223,7 +223,10 @@ export const VisualSchema = z.discriminatedUnion('kind', [
       .min(2)
       .max(8),
     edges: z
-      .array(z.strictObject({ from: z.string(), to: z.string(), label: z.string().optional() }))
+      .array(
+        z.strictObject({ from: z.string(), to: z.string(), label: z.string().max(40).optional() }),
+      )
+      .max(16)
       .default([]),
   }),
   z.strictObject({

@@ -120,6 +120,32 @@ describe('component fields', () => {
     expect(issues(sb)[0]).toMatch(/^scenes\.0\.visual\.highlight: /);
   });
 
+  it('bound the text they render: a code caption, diagram edges and their labels', () => {
+    const sb = storyboard();
+    visualOf(sb, 0).caption = 'x'.repeat(160);
+    const nodes = [
+      { id: 'a', label: 'A' },
+      { id: 'b', label: 'B' },
+    ];
+    const edges = (n: number, label: string) =>
+      Array.from({ length: n }, () => ({ from: 'a', to: 'b', label }));
+    sb.scenes[2] = {
+      ...sb.scenes[2]!,
+      sync: {},
+      visual: { kind: 'diagram', nodes, edges: edges(16, 'x'.repeat(40)) },
+    };
+    expect(issues(sb)).toEqual([]);
+    visualOf(sb, 0).caption = 'x'.repeat(161);
+    visualOf(sb, 2).edges = edges(17, 'calls');
+    expect(issues(sb)).toEqual([
+      expect.stringMatching(/^scenes\.0\.visual\.caption: /),
+      expect.stringMatching(/^scenes\.2\.visual\.edges: /),
+    ]);
+    visualOf(sb, 0).caption = 'Clamped at zero';
+    visualOf(sb, 2).edges = edges(1, 'x'.repeat(41));
+    expect(issues(sb)).toEqual([expect.stringMatching(/^scenes\.2\.visual\.edges\.0\.label: /)]);
+  });
+
   it('read highlight entries as groups, and number marks through the visual', () => {
     expect(highlightGroups([3, { lines: 5 }, { lines: [6, 7], sync: 'fix' }])).toEqual([
       { lines: [3], phase: 'highlight1' },

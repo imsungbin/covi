@@ -272,15 +272,15 @@ How beats become scenes:
 |---|---|
 | `title` | Title card with subtitle, eyebrow, and meta chips; with `background` (a capture), the capture fills the media region and the title goes in the header, without the subtitle and meta: a cold open |
 | `change-map` | Up to 8 areas with their surfaces and line counts |
-| `code` | Up to 40 diff lines (`add`, `del`, `context`). `highlight` entries (up to 40) are line indexes, or groups (`{ "lines": [3, 4], "sync": "fix" }`) that light together at a phase. `mode: "morph"` shows the old code, then strikes the deleted lines to ghosts and types the added ones in their place at the `morph` phase. An optional `caption` sits under the code |
-| `screenshot` | One capture, with an optional `focus` region to zoom toward, or up to three `marks` (a `focus`, a `label` gloss shown under the frame, a `sync` phase) the camera pans between; a `click` point; and a `device` frame |
+| `code` | Up to 40 diff lines (`add`, `del`, `context`). `highlight` entries (up to 40) are line indexes, or groups (`{ "lines": [3, 4], "sync": "fix" }`) that light together at a phase. `mode: "morph"` shows the old code, then strikes the deleted lines to ghosts and types the added ones in their place at the `morph` phase. An optional `caption` (up to 160 characters) sits under the code |
+| `screenshot` | One capture, with an optional `focus` region to zoom toward, or up to three `marks` (a `focus`, a `label` gloss shown under the frame, a `sync` phase, which may be `hero` on the hero scene) the camera pans between; a `click` point; and a `device` frame |
 | `before-after` | Two captures in a `split`, `stack`, or `wipe` layout, with an optional focus region |
 | `interaction` | 1–8 flow steps, each with a capture, click point, focus or up to three marks, and label |
 | `terminal` | A command with its output, and optionally the base revision's output |
 | `api` | A request with the base and head status and body, highlighted in colors that stay readable on the light cards |
 | `findings` | 1–3 findings with certainty, severity, and location |
 | `callout` | An `info`, `warning`, or `success` card |
-| `diagram` | 2–8 nodes (marked changed or not) and edges, each with an optional label drawn on its line |
+| `diagram` | 2–8 nodes (marked changed or not) and up to 16 edges, each with an optional label (up to 40 characters) drawn on its line |
 | `summary` | Verdict, headline, up to 4 points, and change stats |
 
 Image paths are relative to the run directory (for example `demo/screenshots/home-desktop-after.png`) and must resolve inside it, so a storyboard cannot pull other files from the machine into a video. If an image is missing, rendering stops with an error that lists it.

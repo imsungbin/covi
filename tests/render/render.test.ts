@@ -653,7 +653,10 @@ describe.skipIf(!available)('rendering', () => {
   it('reports a code caption too long for its two lines', async () => {
     const browser = await chromium.launch();
     try {
-      const long = Array.from({ length: 8 }, () => 'the quantity is clamped at zero').join(', ');
+      // As long as the schema allows (160 characters), still more than two lines.
+      const long = Array.from({ length: 8 }, () => 'the quantity is clamped at zero')
+        .join(', ')
+        .slice(0, 160);
       const { timeline, frameAt, look, report } = await compose(browser, [
         cart,
         {
@@ -958,7 +961,7 @@ describe.skipIf(!available)('rendering', () => {
   it('labels diagram edges on their midpoints, and reports a label that does not fit', async () => {
     const browser = await chromium.launch();
     try {
-      const long = 'validates every quantity before it ever reaches the cart total';
+      const long = 'validates every quantity before checkout'; // 40 characters, the most allowed
       const { timeline, frameAt, look, report, errors } = await compose(browser, [
         cart,
         {

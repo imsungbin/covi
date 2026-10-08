@@ -1,20 +1,23 @@
 import { motion, themes, typography } from '@covi/brand';
 import { type Language, seedFrom, t } from '@covi/core';
-import { buildCaptions, captionOptionsFor } from '../captions.ts';
+import { buildCaptions, type CaptionOptions, captionOptionsFor, phraseTime } from '../captions.ts';
 import { cjkFontsFor, withCjkFamilies } from '../composition/fonts.ts';
 import { orientationOf, timingPreset, type VideoSpec } from '../spec.ts';
+import { findPhrase, parseEmphasis } from '../storyboard/grammar.ts';
 import type { Scene, Storyboard, Visual } from '../storyboard/schema.ts';
 import { heroScene } from '../templates.ts';
 import { SPEECH_RATE, speechUnits } from '../text.ts';
 import { buildCues } from './cues.ts';
-import type {
-  CaptionCue,
-  Expression,
-  ImageAsset,
-  Timeline,
-  TimelineLabels,
-  TimelineScene,
-  TimelineVisual,
+import {
+  type CaptionCue,
+  type Expression,
+  HERO_PHASE,
+  type ImageAsset,
+  type SceneTransition,
+  type Timeline,
+  type TimelineLabels,
+  type TimelineScene,
+  type TimelineVisual,
 } from './types.ts';
 
 /** The labels a video draws, from the message catalog of its language. */
@@ -48,6 +51,46 @@ export function timelineLabels(language: Language): TimelineLabels {
 
 /** Scenes overlap by the brand's transition length. */
 export const TRANSITION = motion.transition;
+
+/** How a scene enters: its own transition, else zoom-through into the hero, else a fade. */
+export function sceneTransition(scene: Pick<Scene, 'transition' | 'hero'>): SceneTransition {
+  const kind = scene.transition ?? (scene.hero ? 'zoom-through' : 'fade');
+  return { kind, seconds: motion.transitions[kind] };
+}
+
+/** A line's caption window: its speech, at least 0.9 s long so a short line's cue can be read. */
+function captionWindow(speech: { text: string; start: number; end: number }) {
+  return { ...speech, end: Math.max(speech.end, speech.start + 0.9) };
+}
+
+/**
+ * The moments a scene's visual pins to, in seconds since the scene started: each `sync` phrase
+ * placed in the line's caption window with the captions' own split, and the hero's `hero` (its
+ * `sync.hero` phrase, else the start of its line). `text` is the narration without markup, the
+ * line the captions show, even when the voice reads `say`: the speech is timed only as a whole,
+ * so the captions' split of the narration is the one measure of when a phrase is heard, phrases
+ * are validated against the narration, and a visual pinned to it lands with its caption.
+ */
+export function scenePhases(
+  scene: Pick<Scene, 'sync' | 'hero'>,
+  text: string,
+  timing: SceneTiming,
+  options: CaptionOptions,
+): Record<string, number> | undefined {
+  const phases: Record<string, number> = {};
+  const caption = captionWindow({ text, start: timing.speechStart, end: timing.speechEnd });
+  for (const [name, phrase] of Object.entries(scene.sync ?? {})) {
+    const span = findPhrase(text, phrase);
+    // Redaction can rewrite a line after it was validated: a phrase it hid, or made ambiguous,
+    // pins nothing.
+    if (span.count !== 1) continue;
+    const time = phraseTime(caption, span, options);
+    if (time) phases[name] = round(time.start - timing.start);
+  }
+  if (scene.hero && phases[HERO_PHASE] === undefined)
+    phases[HERO_PHASE] = round(timing.speechStart - timing.start);
+  return Object.keys(phases).length ? phases : undefined;
+}
 const LEAD_IN = 0.3;
 const TAIL = 0.5;
 /** Before the outro, the last scene lingers a moment after its last word. */
@@ -304,9 +347,13 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
   const language = input.language ?? 'en';
   const orientation = orientationOf(spec.width, spec.height);
   const frames = Math.round(layout.duration * spec.fps);
+  const captionOptions = { ...captionOptionsFor(orientation), language };
   const scenes: TimelineScene[] = input.scenes.map((scene, i) => {
     const timing = layout.scenes[i]!;
     const visual = toTimelineVisual(scene.visual, input.image);
+    // The markup only marks the caption's emphasis: speech, captions, and reports get the text.
+    const text = parseEmphasis(scene.narration).text;
+    const phases = scenePhases(scene, text, timing, captionOptions);
     return {
       id: timing.id,
       beat: scene.beat,
@@ -317,9 +364,11 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
       visual,
       expression: (scene.expression ?? 'explaining') as Expression,
       narrator: spec.mascot && !NO_NARRATOR.has(visual.kind),
-      speech: scene.narration
-        ? { start: timing.speechStart, end: timing.speechEnd, text: scene.narration }
-        : undefined,
+      speech: text.trim() ? { start: timing.speechStart, end: timing.speechEnd, text } : undefined,
+      ...(i > 0 ? { transition: sceneTransition(scene) } : {}),
+      ...(phases ? { phases } : {}),
+      ...(scene.hero ? { hero: true } : {}),
+      ...(scene.camera === 'static' ? { camera: 'static' as const } : {}),
     };
   });
   if (layout.outro) {
@@ -335,18 +384,13 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
       visual: { kind: 'outro', ...(verdict ? { verdict } : {}) },
       expression: 'neutral',
       narrator: false,
+      transition: { kind: 'fade', seconds: TRANSITION },
     });
   }
   const captions: CaptionCue[] = spec.captions
     ? buildCaptions(
-        scenes
-          .filter((s) => s.speech)
-          .map((s) => ({
-            text: s.speech!.text,
-            start: s.speech!.start,
-            end: Math.max(s.speech!.end, s.speech!.start + 0.9),
-          })),
-        { ...captionOptionsFor(orientation), language },
+        scenes.filter((s) => s.speech).map((s) => captionWindow(s.speech!)),
+        captionOptions,
       )
     : [];
   // Fonts follow the text that will be drawn, so CJK in a code excerpt is covered too.
@@ -409,6 +453,12 @@ function toTimelineVisual(visual: Visual, image: (path: string) => ImageAsset): 
           label: s.label,
         })),
       };
+    case 'title': {
+      const { background, ...rest } = visual;
+      return background
+        ? { ...rest, background: { ...image(background.path), label: background.label } }
+        : rest;
+    }
     default:
       return visual as TimelineVisual;
   }

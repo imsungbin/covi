@@ -31,6 +31,12 @@ export type TransitionKind = 'fade' | 'cut' | 'push' | 'wipe' | 'zoom-through';
 /** The phase every hero scene has: its `sync.hero` phrase, else the start of its line. */
 export const HERO_PHASE = 'hero';
 
+/** The transition into a scene, resolved: its kind and its length in seconds. */
+export interface SceneTransition {
+  kind: TransitionKind;
+  seconds: number;
+}
+
 /** An image placed in the composition, with its natural pixel size (needed for focus math). */
 export interface ImageAsset {
   src: string;
@@ -54,7 +60,15 @@ export interface FindingCard {
 }
 
 export type TimelineVisual =
-  | { kind: 'title'; title: string; subtitle?: string; eyebrow?: string; meta: string[] }
+  | {
+      kind: 'title';
+      title: string;
+      subtitle?: string;
+      eyebrow?: string;
+      meta: string[];
+      /** A capture the title is set over (a cold open). */
+      background?: ImageAsset;
+    }
   | {
       kind: 'change-map';
       areas: Array<{
@@ -133,6 +147,20 @@ export interface TimelineScene {
   /** Hide the corner narrator (title and summary scenes feature the fox themselves). */
   narrator: boolean;
   speech?: { start: number; end: number; text: string };
+  /**
+   * How the scene enters, and for how long. The first scene has none. Timelines written before
+   * transitions had kinds lack it: every scene faded in over `Timeline.transition`.
+   */
+  transition?: SceneTransition;
+  /**
+   * Moments the visual pins to, in seconds since the scene started, by phase name: the
+   * storyboard's `sync` phrases resolved against the speech, and the hero's `hero`.
+   */
+  phases?: Record<string, number>;
+  /** The scene where the change clicks (storyboard `hero: true`). */
+  hero?: boolean;
+  /** The storyboard asked the picture to hold still: no drift, no linger. */
+  camera?: 'static';
 }
 
 /**

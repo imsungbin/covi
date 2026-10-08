@@ -153,6 +153,19 @@ export const typography = {
 } as const;
 
 export const motion = {
-  /** Scene-to-scene transition length in seconds (scenes overlap by this much). */
+  /** The default scene transition (a fade) in seconds; consecutive scenes overlap by it. */
   transition: 0.45,
+  /**
+   * Each scene transition's length in seconds; a cut has none. All stay under 0.625 s, so the
+   * scene before a transition ends at most 0.6 s after its line (see the video timeline).
+   */
+  transitions: { fade: 0.45, cut: 0, push: 0.5, wipe: 0.55, 'zoom-through': 0.6 },
+  /** A capture's camera drift through its scene: a slow push-in of at most 2%, eased in and out. */
+  drift: 0.02,
+  /** The push-in once a visual has finished while its line continues, so it never holds still. */
+  linger: 0.02,
+  /** The hero's camera punch. */
+  punch: 0.06,
+  /** The hero's flash: how long it lasts (s) and its peak opacity. */
+  flash: { seconds: 0.18, opacity: 0.35 },
 } as const;

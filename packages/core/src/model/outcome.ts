@@ -149,4 +149,9 @@ export interface ChangeSignals {
     reactions: Array<{ user: string; vote: 'up' | 'down' }>;
     replies: number;
   }>;
+  /**
+   * What the collector could not read in full (a listing cut at its page limit). They are for
+   * the person running the collect; the outcome file holds no prose.
+   */
+  notes?: string[];
 }

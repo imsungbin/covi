@@ -1,9 +1,11 @@
 import { type ChangeSignals, type OutcomeFile, OutcomeFileSchema } from '../model/outcome.ts';
 import { parseLedger } from './ledger.ts';
 
-export type BuiltOutcome =
+/** `notes` are the collector's, passed on so the caller can warn; they never reach the file. */
+export type BuiltOutcome = (
   | { outcome: OutcomeFile; skipped?: undefined }
-  | { outcome?: undefined; skipped: string };
+  | { outcome?: undefined; skipped: string }
+) & { notes?: string[] };
 
 const defined = <T extends object>(value: T): T =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
@@ -27,6 +29,11 @@ function thumbsOf(anchor: ChangeSignals['anchors'][number], author: string) {
  * platform's signals say what became of the change, the comment, and each finding's anchor.
  */
 export function buildOutcome(signals: ChangeSignals, collectedAt: string): BuiltOutcome {
+  const built = outcomeOf(signals, collectedAt);
+  return signals.notes?.length ? { ...built, notes: [...signals.notes] } : built;
+}
+
+function outcomeOf(signals: ChangeSignals, collectedAt: string): BuiltOutcome {
   if (!signals.comment) return { skipped: 'Covi has not commented on it' };
   const ledger = parseLedger(signals.comment.body);
   if (!ledger)

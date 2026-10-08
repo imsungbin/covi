@@ -63,6 +63,16 @@ const MAX_WAIT_MS = 60_000;
 /** A page of 100 comments at GitHub's 65,536-character limit fits; anything bigger is refused. */
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 
+/** Pages a list response links to; each is checked to be under the API base. */
+export interface PageLinks {
+  next?: string;
+  prev?: string;
+  last?: string;
+}
+
+/** A page's number from its `page` parameter; the first page often has none. */
+const pageNumber = (url: string) => Number(new URL(url).searchParams.get('page') ?? '1');
+
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Read-only REST calls: pagination that stays on the API origin, rate limits, and a budget. */
@@ -96,8 +106,9 @@ export class ApiClient {
     return url.href;
   }
 
-  async get<T>(pathOrUrl: string): Promise<{ data: T; next?: string }> {
+  async get<T>(pathOrUrl: string): Promise<{ data: T } & PageLinks> {
     const { response, url } = await this.send(this.url(pathOrUrl));
+    const header = response.headers.get('link');
     return {
       data: await readJson<T>(
         response,
@@ -105,32 +116,69 @@ export class ApiClient {
         new URL(url).pathname,
         this.options.maxBytes,
       ),
-      next: this.nextLink(response.headers.get('link')),
+      next: this.link(header, 'next'),
+      prev: this.link(header, 'prev'),
+      last: this.link(header, 'last'),
     };
   }
 
   /** Every page of a list, following `rel="next"`, up to `maxPages` pages. */
   async getAll<T>(path: string, maxPages = 10): Promise<T[]> {
-    const out: T[] = [];
+    return (await this.getPages<T>(path, maxPages)).items;
+  }
+
+  /** Like `getAll`, and says whether the page limit left pages unread. */
+  async getPages<T>(path: string, maxPages = 10): Promise<{ items: T[]; truncated: boolean }> {
+    const items: T[] = [];
     let next: string | undefined = path;
     for (let page = 0; next && page < maxPages; page++) {
       const result: { data: T[]; next?: string } = await this.get<T[]>(next);
-      out.push(...result.data);
+      items.push(...this.list(result.data, next));
       next = result.next;
     }
-    return out;
+    return { items, truncated: Boolean(next) };
   }
 
-  private nextLink(header: string | null): string | undefined {
+  /**
+   * A list the platform serves newest first, read from its oldest end, oldest first: the first
+   * page (which links to the last), then the last page and back, up to `maxPages` pages in all.
+   * For a window that starts at an event (commits since a merge), what follows the event most
+   * closely is then read on every collect, however much lands after it.
+   */
+  async getOldestFirst<T>(path: string, maxPages = 3): Promise<{ items: T[]; truncated: boolean }> {
+    const first = await this.get<T[]>(path);
+    const pages: T[][] = [];
+    // Without a last link the list is one page, unless the platform only links forward.
+    if (!first.last)
+      return { items: this.list(first.data, path).reverse(), truncated: !!first.next };
+    let at: string | undefined = first.last;
+    while (at && pageNumber(at) > 1 && pages.length + 1 < maxPages) {
+      const page: { data: T[]; prev?: string } = await this.get<T[]>(at);
+      pages.push(this.list(page.data, at).reverse());
+      at = page.prev;
+    }
+    pages.push(this.list(first.data, path).reverse());
+    return { items: pages.flat(), truncated: Boolean(at && pageNumber(at) > 1) };
+  }
+
+  private list<T>(data: T[], path: string): T[] {
+    if (Array.isArray(data)) return data;
+    throw new Error(
+      `${this.options.platform} sent no list for ${new URL(this.url(path)).pathname}`,
+    );
+  }
+
+  private link(header: string | null, rel: 'next' | 'prev' | 'last'): string | undefined {
+    const pattern = new RegExp(`<([^>]+)>\\s*;\\s*rel="${rel}"`);
     const href = header
       ?.split(',')
-      .map((part) => /<([^>]+)>\s*;\s*rel="next"/.exec(part)?.[1])
+      .map((part) => pattern.exec(part)?.[1])
       .find(Boolean);
     if (!href) return undefined;
     try {
       return this.url(href);
     } catch {
-      // A next page somewhere else is not followed.
+      // A page somewhere else is not followed.
       return undefined;
     }
   }

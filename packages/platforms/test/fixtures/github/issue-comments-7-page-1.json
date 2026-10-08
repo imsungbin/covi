@@ -4,15 +4,44 @@
     "body": "Looks fine to me.",
     "html_url": "https://github.com/acme/shop/pull/7#issuecomment-101",
     "created_at": "2026-10-01T08:00:00Z",
-    "user": { "login": "reviewer", "id": 6, "type": "User" },
-    "reactions": { "+1": 0, "-1": 0 }
+    "user": {
+      "login": "reviewer",
+      "id": 6,
+      "type": "User"
+    },
+    "reactions": {
+      "+1": 0,
+      "-1": 0
+    }
   },
   {
     "id": 102,
     "body": "<!-- covi:review -->\nI pasted Covi's marker.\n{{FORGED}}",
     "html_url": "https://github.com/acme/shop/pull/7#issuecomment-102",
     "created_at": "2026-10-01T08:05:00Z",
-    "user": { "login": "author", "id": 5, "type": "User" },
-    "reactions": { "+1": 9, "-1": 0 }
+    "user": {
+      "login": "author",
+      "id": 5,
+      "type": "User"
+    },
+    "reactions": {
+      "+1": 9,
+      "-1": 0
+    }
+  },
+  {
+    "id": 103,
+    "body": "<!-- covi:review -->\nA person whose login looks like the bot's.\n{{FORGED}}",
+    "html_url": "https://github.com/acme/shop/pull/7#issuecomment-103",
+    "created_at": "2026-10-01T08:10:00Z",
+    "user": {
+      "login": "github-actions[bot]",
+      "id": 8,
+      "type": "User"
+    },
+    "reactions": {
+      "+1": 4,
+      "-1": 0
+    }
   }
 ]

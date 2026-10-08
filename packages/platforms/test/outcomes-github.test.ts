@@ -136,6 +136,93 @@ describe('GitHubCollector', () => {
     expect(api.calls.every((c) => c.redirect === 'manual')).toBe(true);
   });
 
+  it("reads CI's comment and anchors with a person's token, never another app's or a look-alike", async () => {
+    const api = fixtureFetch({ ...merged, ...personalToken }, replace);
+    const signals = await collector(api.fetch).collect(7);
+    expect(signals.comment).toMatchObject({ id: '201', up: 2, down: 1, replies: 1 });
+    expect(signals.anchors.map((a) => a.id)).toEqual(['301']);
+    expect(signals.revertedBy?.sha).toBe('3'.repeat(40));
+    // A recorded id naming someone else's comment is still not Covi's.
+    const again = fixtureFetch({ ...merged, ...personalToken }, replace);
+    for (const id of ['102', '103'])
+      expect((await collector(again.fetch).collect(7, { commentId: id })).comment?.id).toBe('201');
+  });
+
+  it("lists an anchor's votes only when its summary shows a 👍 or 👎", async () => {
+    const api = fixtureFetch(
+      {
+        [`GET ${API}/pulls/8`]: { fixture: 'github/pull-8-open.json' },
+        [`GET ${API}/issues/8/comments?per_page=100`]: {
+          fixture: 'github/issue-comments-7-page-2.json',
+        },
+        [`GET ${API}/pulls/8/comments?per_page=100`]: {
+          json: [
+            {
+              id: 601,
+              body: anchorMarker(outcomeKey(discount)),
+              created_at: '2026-10-01T09:00:05Z',
+              user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
+              reactions: { '+1': 0, '-1': 0, heart: 2 },
+            },
+          ],
+        },
+        ...workflowToken,
+      },
+      replace,
+    );
+    const signals = await collector(api.fetch).collect(8);
+    expect(signals.anchors).toEqual([
+      { key: outcomeKey(discount), id: '601', reactions: [], replies: 0 },
+    ]);
+    expect(pathsOf(api.calls)).not.toContain('/repos/acme/shop/pulls/comments/601/reactions');
+  });
+
+  it('looks for a revert from the merge forward, and notes a window it could not read whole', async () => {
+    const since = `${API}/commits?sha=main&since=2026-10-02T09%3A00%3A00Z&per_page=100`;
+    const commit = (n: number, message = `chore: ${n}`) => ({
+      sha: String(n).repeat(40).slice(0, 40),
+      commit: { message },
+    });
+    const link = (rels: Record<string, number>) =>
+      Object.entries(rels)
+        .map(([rel, n]) => `<${since}&page=${n}>; rel="${rel}"`)
+        .join(', ');
+    const api = fixtureFetch(
+      {
+        [`GET ${API}/pulls/7`]: { fixture: 'github/pull-7-merged.json' },
+        [`GET ${API}/issues/7/comments?per_page=100`]: {
+          fixture: 'github/issue-comments-7-own.json',
+        },
+        ...personalToken,
+        // Four pages, newest first. The revert landed right after the merge, on the last page.
+        [`GET ${since}`]: { json: [commit(9)], headers: { link: link({ next: 2, last: 4 }) } },
+        [`GET ${since}&page=4`]: {
+          json: [commit(5), commit(4, `Revert "fix"\n\nThis reverts commit ${'1'.repeat(40)}.`)],
+          headers: { link: link({ prev: 3 }) },
+        },
+        [`GET ${since}&page=3`]: { json: [commit(6)], headers: { link: link({ prev: 2 }) } },
+      },
+      replace,
+    );
+    const signals = await collector(api.fetch).collect(7, { commentId: '402' });
+    expect(signals.revertedBy).toEqual({ sha: '4'.repeat(40) });
+    expect(signals.notes).toEqual([
+      'commits since the merge: more than 3 pages; read the 2 nearest the merge and the newest, so a revert in between is missed',
+    ]);
+  });
+
+  it('notes a listing cut at its page limit instead of skipping it silently', async () => {
+    const comments = `${API}/issues/8/comments?per_page=100`;
+    const api = fixtureFetch({
+      [`GET ${API}/pulls/8`]: { fixture: 'github/pull-8-open.json' },
+      [`GET ${comments}`]: { json: [], headers: { link: `<${comments}>; rel="next"` } },
+    });
+    const signals = await collector(api.fetch).collect(8);
+    expect(signals.notes).toEqual(['issue comments: only the first 10 pages were read']);
+    expect(api.calls).toHaveLength(11);
+    expect(buildOutcome(signals, '2026-10-09T12:00:00.000Z').notes).toEqual(signals.notes);
+  });
+
   it('stops when the request budget runs out', async () => {
     const api = fixtureFetch({ ...merged, ...workflowToken }, replace);
     await expect(collector(api.fetch, 4).collect(7)).rejects.toBeInstanceOf(BudgetExhaustedError);
@@ -151,8 +238,7 @@ describe('GitHubCollector', () => {
           fixture: 'github/issue-comments-7-own.json',
         },
         ...personalToken,
-        // A cycle of commit pages: a revert is looked for in at most three of them.
-        [`GET ${commits}`]: { json: [], headers: { link: `<${commits}>; rel="next"` } },
+        [`GET ${commits}`]: { json: [] },
       },
       replace,
     );
@@ -165,9 +251,8 @@ describe('GitHubCollector', () => {
       '/repos/acme/shop/issues/7/comments',
       '/user',
       '/repos/acme/shop/commits',
-      '/repos/acme/shop/commits',
-      '/repos/acme/shop/commits',
     ]);
+    expect(signals.notes).toBeUndefined();
     // Without a recorded id, Covi's first comment.
     const again = fixtureFetch(
       {
@@ -294,6 +379,23 @@ describe('outcome signals', () => {
       findRevert([{ sha: 'b1', message: 'Reverts acme/shop#7\n\nBroke checkout.' }], reverts),
     ).toEqual({ sha: 'b1' });
     expect(findRevert([{ sha: 'c1', message: 'Reverts acme/shop#70' }], reverts)).toBeUndefined();
+    // Only a line that starts with the mention, as GitHub writes it: not an un-revert or a reland.
+    expect(findRevert([{ sha: 'e1', message: 'Unreverts acme/shop#7' }], reverts)).toBeUndefined();
+    expect(
+      findRevert(
+        [
+          {
+            sha: 'e2',
+            message:
+              'Reland the totals fix\n\nThe change that reverts acme/shop#7 broke prod; this restores it.',
+          },
+        ],
+        reverts,
+      ),
+    ).toBeUndefined();
+    expect(
+      findRevert([{ sha: 'e3', message: 'Revert "fix"\n\n  Reverts acme/shop#7' }], reverts),
+    ).toEqual({ sha: 'e3' });
     expect(
       findRevert([{ sha: 'd1', message: `This reverts commit ${'2'.repeat(40)}.` }], reverts),
     ).toBeUndefined();

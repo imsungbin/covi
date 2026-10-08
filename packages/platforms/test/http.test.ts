@@ -182,6 +182,50 @@ describe('ApiClient', () => {
     expect(api.calls).toHaveLength(13);
   });
 
+  it('says when the page limit left pages unread', async () => {
+    const page = 'https://api.github.com/repos/a/b/pulls?page=1';
+    const api = fixtureFetch({
+      [`GET ${page}`]: { json: [1], headers: { link: `<${page}>; rel="next"` } },
+      'GET https://api.github.com/one': { json: [1] },
+    });
+    expect(await client(api.fetch).getPages('/repos/a/b/pulls?page=1', 2)).toEqual({
+      items: [1, 1],
+      truncated: true,
+    });
+    expect(await client(api.fetch).getPages('/one')).toEqual({ items: [1], truncated: false });
+  });
+
+  it('reads a newest-first list from its oldest end, within the page limit', async () => {
+    const base = 'https://api.github.com/repos/a/b/commits?per_page=2';
+    const link = (rels: Record<string, number>) =>
+      Object.entries(rels)
+        .map(([rel, n]) => `<${base}&page=${n}>; rel="${rel}"`)
+        .join(', ');
+    const api = fixtureFetch({
+      [`GET ${base}`]: { json: [10, 9], headers: { link: link({ next: 2, last: 5 }) } },
+      [`GET ${base}&page=5`]: { json: [2, 1], headers: { link: link({ prev: 4, first: 1 }) } },
+      [`GET ${base}&page=4`]: { json: [4, 3], headers: { link: link({ prev: 3, next: 5 }) } },
+      [`GET ${base}&page=3`]: { json: [6, 5], headers: { link: link({ prev: 2, next: 4 }) } },
+      [`GET ${base}&page=2`]: { json: [8, 7], headers: { link: link({ prev: 1, next: 3 }) } },
+    });
+    // Three pages: the newest (for its link to the last), then the two oldest.
+    expect(await client(api.fetch).getOldestFirst('/repos/a/b/commits?per_page=2', 3)).toEqual({
+      items: [1, 2, 3, 4, 9, 10],
+      truncated: true,
+    });
+    // Enough pages: everything, oldest first, the first page read once.
+    expect(await client(api.fetch).getOldestFirst('/repos/a/b/commits?per_page=2', 5)).toEqual({
+      items: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      truncated: false,
+    });
+    const single = fixtureFetch({ [`GET ${base}`]: { json: [2, 1] } });
+    expect(await client(single.fetch).getOldestFirst('/repos/a/b/commits?per_page=2')).toEqual({
+      items: [1, 2],
+      truncated: false,
+    });
+    expect(single.calls).toHaveLength(1);
+  });
+
   it('names the request, not the token, when a body is empty or not JSON', async () => {
     const api = fixtureFetch({
       'GET https://api.github.com/empty': { fixture: 'empty.txt' },

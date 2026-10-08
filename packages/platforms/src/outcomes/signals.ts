@@ -16,8 +16,9 @@ export function quotesComment(reply: string, comment: string): boolean {
 
 /**
  * The first commit that reverts a merged change: git's "This reverts commit <sha>" naming one of
- * its commits, or the platform's own revert mention. A mention must not run on into more digits,
- * so #70 is not #7.
+ * its commits, or the platform's own revert mention. Each must start a line, as git and the
+ * platform write them, so prose that merely mentions a revert (an un-revert, a reland) does not
+ * count. A mention must not run on into more digits, so #70 is not #7.
  */
 export function findRevert(
   commits: ReadonlyArray<{ sha: string; message: string; url?: string }>,
@@ -25,11 +26,11 @@ export function findRevert(
 ): { sha: string; url?: string } | undefined {
   const shas = target.shas.filter((s) => /^[0-9a-f]{7,64}$/i.test(s)).map((s) => s.toLowerCase());
   const mentions = target.mentions.map(
-    (m) => new RegExp(`${m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d)`, 'i'),
+    (m) => new RegExp(`^\\s*${m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d)`, 'im'),
   );
   for (const commit of commits) {
     const message = commit.message.toLowerCase();
-    const reverted = [...message.matchAll(/this reverts commit ([0-9a-f]{7,64})/g)].some((m) =>
+    const reverted = [...message.matchAll(/^\s*this reverts commit ([0-9a-f]{7,64})/gm)].some((m) =>
       shas.some((sha) => sha.startsWith(m[1]!) || m[1]!.startsWith(sha)),
     );
     const mentioned = mentions.some((mention) => mention.test(commit.message));

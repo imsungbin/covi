@@ -314,4 +314,16 @@ describe('buildOutcome', () => {
     const odd = signals({ url: 'javascript:alert(1)' });
     expect(buildOutcome(odd, '2026-10-09T12:00:00Z').skipped).toMatch(/change\.url/);
   });
+
+  it("passes on the collector's notes, and keeps them out of the outcome file", () => {
+    const notes = ['review comments: only the first 10 pages were read'];
+    const built = buildOutcome(signals({ notes }), '2026-10-09T12:00:00Z');
+    expect(built.notes).toEqual(notes);
+    expect(JSON.stringify(built.outcome)).not.toContain('pages');
+    expect(buildOutcome(signals({ comment: undefined, notes }), '2026-10-09T12:00:00Z')).toEqual({
+      skipped: 'Covi has not commented on it',
+      notes,
+    });
+    expect(buildOutcome(signals(), '2026-10-09T12:00:00Z').notes).toBeUndefined();
+  });
 });

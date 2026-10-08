@@ -162,7 +162,33 @@ export function ungroundedStatements(
   return out;
 }
 
-/** A model's findings, grounded like Covi's own; the notes say what changed, for run warnings. */
+/**
+ * What grounding changed about a finding Covi wrote, as one sentence for a run warning (`who` names
+ * its source, such as "Model finding"); undefined when nothing changed.
+ */
+export function groundingNote(
+  who: string,
+  finding: GroundableFinding & { title: string },
+  grounded: Grounded<GroundableFinding>,
+): string | undefined {
+  const { dropped, demoted } = grounded;
+  const kept = (finding.evidenceIds?.length ?? 0) - dropped.length;
+  // Nothing the finding cited survived when it cited only unknown ids, or nothing at all.
+  const fallback = kept ? undefined : grounded.finding.evidenceIds;
+  const cited = dropped.length
+    ? `cited evidence the run does not have (${dropped.join(', ')})`
+    : 'cited no evidence';
+  const outcome = demoted
+    ? `, so it is reported as a risk rather than ${demoted}`
+    : fallback?.length
+      ? `, so it cites the diff at its location (${fallback.join(', ')})`
+      : dropped.length
+        ? '; those ids were dropped'
+        : undefined;
+  return outcome && `${who} "${truncate(finding.title, 80)}" ${cited}${outcome}.`;
+}
+
+/** A model's findings, grounded like Covi's own; one note per finding grounding changed. */
 export function groundModelFindings(
   file: FindingsFile,
   index: EvidenceIndex,
@@ -170,23 +196,41 @@ export function groundModelFindings(
   const notes: string[] = [];
   const findings = file.findings.map((f) => {
     const grounded = groundFinding(f, index);
-    const title = truncate(f.title, 80);
-    if (grounded.dropped.length)
-      notes.push(
-        `Model finding "${title}" cited evidence the run does not have (${grounded.dropped.join(', ')}); those ids were dropped.`,
-      );
-    if (grounded.demoted)
-      notes.push(
-        `Model finding "${title}" cited no evidence, so it is reported as a risk rather than ${grounded.demoted}.`,
-      );
-    // Nothing the model cited survived, so the hunk at its location stands in: say which.
-    const kept = (f.evidenceIds?.length ?? 0) - grounded.dropped.length;
-    const fallback = grounded.finding.evidenceIds;
-    if (!kept && fallback?.length)
-      notes.push(
-        `Model finding "${title}" cited no evidence the run has, so it cites the diff at its location (${fallback.join(', ')}).`,
-      );
+    const note = groundingNote('Model finding', f, grounded);
+    if (note) notes.push(note);
     return grounded.finding;
   });
   return { findings: { ...file, schemaVersion: 2, findings }, notes };
+}
+
+/**
+ * A model's explanation with only the ids the run's evidence has. A `changes[]` entry left citing
+ * nothing then cites its files' hunks (`citeChanges`); the notes say what was dropped.
+ */
+export function groundModelExplanation(
+  explanation: Explanation,
+  index: EvidenceIndex,
+): { explanation: Explanation; notes: string[] } {
+  const notes: string[] = [];
+  const ground = <T extends Cites>(where: string, claim: T): T => {
+    const unknown = unknownCitations(index, claim.evidenceIds);
+    if (!unknown.length) return claim;
+    notes.push(
+      `Model explanation ${where} cited evidence the run does not have (${unknown.join(', ')}); those ids were dropped.`,
+    );
+    const { evidenceIds, ...rest } = claim;
+    const kept = (evidenceIds ?? []).filter((id) => !unknown.includes(id));
+    return (kept.length ? { ...rest, evidenceIds: kept } : rest) as T;
+  };
+  return {
+    explanation: {
+      ...explanation,
+      intent: ground('intent', explanation.intent),
+      ...(explanation.behavior ? { behavior: ground('behavior', explanation.behavior) } : {}),
+      changes: explanation.changes.map((c, i) =>
+        ground(`changes[${i}] (${truncate(c.area, 40)})`, c),
+      ),
+    },
+    notes,
+  };
 }

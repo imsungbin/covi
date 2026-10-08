@@ -188,7 +188,7 @@ describe('evidence in reviews', () => {
     expect(badExplanation.text).toContain('explanation.json changes[0] (Cart): http:7');
   });
 
-  it("grounds a model's findings and writes the grounded file, so the run reports again", () => {
+  it("grounds a model's findings and explanation and writes them, so the run reports again", () => {
     const repo = change(
       { 'src/cart.ts': 'export const dec = (q) => q - 1;\n' },
       { 'src/cart.ts': 'export const dec = (q) => Math.max(0, q - 1);\n' },
@@ -207,8 +207,19 @@ describe('evidence in reviews', () => {
         depth: 'brief',
         headline: 'Clamp quantities at zero',
         summary: 'Decrementing stops at zero.',
-        intent: { statement: 'Totals went negative.', confidence: 'high' },
-        changes: [{ area: 'Cart', description: 'dec() clamps at zero.', files: ['src/cart.ts'] }],
+        intent: {
+          statement: 'Totals went negative.',
+          confidence: 'high',
+          evidenceIds: ['trace:made-up'],
+        },
+        changes: [
+          {
+            area: 'Cart',
+            description: 'dec() clamps at zero.',
+            files: ['src/cart.ts'],
+            evidenceIds: ['http:9'],
+          },
+        ],
       },
       review: {
         findings: [
@@ -234,14 +245,20 @@ describe('evidence in reviews', () => {
     const reviewed = covi(['--config', config, 'review', '--repo', repo.root, '--json']);
     expect(reviewed.code).toBe(0);
     const { runDir, warnings } = reviewed.json() as { runDir: string; warnings: string[] };
+    const explained = [
+      'Model explanation intent cited evidence the run does not have (trace:made-up); those ids were dropped.',
+      'Model explanation changes[0] (Cart) cited evidence the run does not have (http:9); those ids were dropped.',
+    ];
     expect(warnings).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('cited evidence the run does not have (trace:made-up)'),
-        expect.stringContaining(
-          '"Quantity can no longer go negative" cited no evidence the run has, so it cites the diff at its location (diff-hunk:src/cart.ts:1)',
-        ),
-        expect.stringContaining('"Somewhere else" cited no evidence, so it is reported as a risk'),
+        ...explained,
+        'Model finding "Quantity can no longer go negative" cited evidence the run does not have (trace:made-up), so it cites the diff at its location (diff-hunk:src/cart.ts:1).',
+        'Model finding "Somewhere else" cited no evidence, so it is reported as a risk rather than likely.',
       ]),
+    );
+    // One note per finding grounding changed.
+    expect(warnings.filter((w) => w.includes('"Quantity can no longer go negative"'))).toHaveLength(
+      1,
     );
     const written = read<{
       schemaVersion: number;
@@ -252,12 +269,47 @@ describe('evidence in reviews', () => {
       ['Quantity can no longer go negative', 'confirmed', ['diff-hunk:src/cart.ts:1']],
       ['Somewhere else', 'risk', undefined],
     ]);
-    const explanation = read<{ changes: Array<{ evidenceIds?: string[] }> }>(
-      runDir,
-      'explanation.json',
-    );
+    const explanation = read<{
+      intent: { evidenceIds?: string[] };
+      changes: Array<{ evidenceIds?: string[] }>;
+    }>(runDir, 'explanation.json');
+    expect(explanation.intent.evidenceIds).toBeUndefined();
+    // The made-up id is gone, so the change cites its file's hunk instead.
     expect(explanation.changes[0]!.evidenceIds).toEqual(['diff-hunk:src/cart.ts:1']);
-    expect(covi(['report', '--repo', repo.root, '--run', runDir, '--json']).code).toBe(0);
+    const reported = covi(['report', '--repo', repo.root, '--run', runDir, '--json']);
+    expect(reported.code).toBe(0);
+    expect((reported.json() as { artifacts: Record<string, string> }).artifacts.evidence).toBe(
+      join(runDir, 'evidence.json'),
+    );
+
+    // `covi explain` grounds the same explanation the same way.
+    const explainedRun = covi(['--config', config, 'explain', '--repo', repo.root, '--json']);
+    expect(explainedRun.code).toBe(0);
+    expect((explainedRun.json() as { warnings: string[] }).warnings).toEqual(
+      expect.arrayContaining(explained),
+    );
+    const explainDir = explainedRun.json().runDir as string;
+    expect(
+      read<{ changes: Array<{ evidenceIds?: string[] }> }>(explainDir, 'explanation.json')
+        .changes[0]!.evidenceIds,
+    ).toEqual(['diff-hunk:src/cart.ts:1']);
+  });
+
+  it('lists the evidence among the artifacts of a video run, even when no video is made', () => {
+    const repo = change({ 'a.js': 'a\n' }, { 'a.js': 'b\n' });
+    const video = covi(['video', '--repo', repo.root, '--json']);
+    expect(video.code).toBe(0);
+    const {
+      runDir,
+      artifacts,
+      video: made,
+    } = video.json() as {
+      runDir: string;
+      artifacts: Record<string, string>;
+      video: { rendered: boolean };
+    };
+    expect(made.rendered).toBe(false);
+    expect(artifacts.evidence).toBe(join(runDir, 'evidence.json'));
   });
 
   it('keeps the test output a run cites', () => {

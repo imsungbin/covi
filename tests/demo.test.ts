@@ -74,6 +74,35 @@ describe('demonstrations', () => {
     },
   );
 
+  it.skipIf(!browser)(
+    "reviews with a demonstration, and Covi's own findings.json reports again",
+    async () => {
+      const dir = await materializeExample(
+        examples.find((e) => e.name === 'api-users-pagination')!,
+      );
+      dirs.push(dir);
+      const reviewed = covi(['review', '--demo', '--repo', dir, '--json']);
+      const runDir = reviewed.json().runDir as string;
+      const runFile = <T>(rel: string) => JSON.parse(readFileSync(join(runDir, rel), 'utf8')) as T;
+      const ids = runFile<{ items: Array<{ id: string }> }>('evidence.json').items.map((i) => i.id);
+      // Without a model, findings.json holds the rule and demo findings as a version 2 file.
+      const written = runFile<{
+        schemaVersion: number;
+        findings: Array<{ source: { kind: string }; certainty: string; evidenceIds?: string[] }>;
+      }>('findings.json');
+      expect(written.schemaVersion).toBe(2);
+      const demoFindings = written.findings.filter((f) => f.source.kind === 'demo');
+      expect(demoFindings).toEqual([
+        expect.objectContaining({ certainty: 'confirmed', evidenceIds: ['http:1'] }),
+      ]);
+      for (const f of written.findings)
+        for (const id of f.evidenceIds ?? []) expect(ids).toContain(id);
+      const reported = covi(['report', '--repo', dir, '--run', runDir, '--json']);
+      expect(reported.code, reported.stderr).toBe(reviewed.code);
+      expect(reported.json().verdict).toBe(reviewed.json().verdict);
+    },
+  );
+
   it.skipIf(!browser)('captures a scripted flow step by step on a static site', async () => {
     const result = await demo('ui-comment-composer');
     const steps = result.shots.filter((s) => s.kind === 'flow-step');

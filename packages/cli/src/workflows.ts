@@ -25,6 +25,9 @@ import {
   type FindingsFile,
   FindingsFileSchema,
   gateFailures,
+  groundFinding,
+  groundingNote,
+  groundModelExplanation,
   groundModelFindings,
   indexEvidence,
   isBlockingCandidate,
@@ -190,6 +193,22 @@ async function evidenceOf(run: Session['run']): Promise<EvidenceIndex> {
   return indexEvidence((await loadEvidence(run)).evidence, (text) => run.redactor.redact(text));
 }
 
+/**
+ * Covi's explanation of the change, citing only what the run has: a model's unknown ids are
+ * dropped with a run warning, then each change cites its files' hunks.
+ */
+function citedExplanation(
+  run: Session['run'],
+  explanation: Explanation,
+  known: EvidenceIndex,
+  fromModel: boolean,
+): Explanation {
+  if (!fromModel) return citeChanges(explanation, known);
+  const grounded = groundModelExplanation(explanation, known);
+  for (const note of grounded.notes) run.warn(note);
+  return citeChanges(grounded.explanation, known);
+}
+
 /** Model analysis when a provider is configured; heuristics otherwise (or when the model fails). */
 async function analysis(
   session: Session,
@@ -286,9 +305,17 @@ export async function reviewSession(
   const rules = await run.stage('rules', () =>
     runRules(change, context, { git: session.git, config, logger, language }),
   );
-  const demoFindings = (options.demo?.findings ?? []).map((f) =>
-    normalizeFinding(f, { kind: 'demo' }),
-  );
+  // What every finding may cite: the diff's hunks and what the demonstration captured.
+  const known = await evidenceOf(run);
+  // Demo findings cite what they observed; grounding them keeps findings.json one that
+  // `covi report` accepts even if a capture they name was not kept.
+  const demoFindings = (options.demo?.findings ?? []).map((f) => {
+    const finding = normalizeFinding(f, { kind: 'demo' });
+    const grounded = groundFinding(finding, known);
+    const note = groundingNote('Demo finding', finding, grounded);
+    if (note) run.warn(note);
+    return grounded.finding;
+  });
   const ruleFindings = [...demoFindings, ...rules.findings];
   await run.writeJson(
     'rule-findings.json',
@@ -296,8 +323,6 @@ export async function reviewSession(
     'findings',
   );
 
-  // What the model may cite: the diff's hunks and what the demonstration captured.
-  const known = await evidenceOf(run);
   const model = await analysis(session, ruleFindings, change, known);
   const { execution } = session;
   const testWithheld = execution.withheld.some((c) => c.key === 'test.command');
@@ -313,9 +338,11 @@ export async function reviewSession(
   // The output behind `test-run:tests`.
   if (tests)
     await run.writeText(RUN_PATHS.testsLog, `$ ${tests.command}\n${tests.outputTail}\n`, 'log');
-  const explanation = citeChanges(
+  const explanation = citedExplanation(
+    run,
     model?.explanation ?? explainHeuristically(context, language),
     known,
+    Boolean(model),
   );
   // A model's findings are grounded like Covi's own; what grounding changed is a run warning, and
   // findings.json gets the grounded file, so `covi report` accepts the run again.
@@ -503,9 +530,11 @@ export async function explainWorkflow(
   );
   const known = await evidenceOf(session.run);
   const model = await analysis(session, rules.findings, change, known);
-  const explanation = citeChanges(
+  const explanation = citedExplanation(
+    session.run,
     model?.explanation ?? explainHeuristically(session.context, language),
     known,
+    Boolean(model),
   );
   await session.run.writeJson('explanation.json', explanation, 'explanation');
   await session.run.writeText(

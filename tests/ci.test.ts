@@ -574,6 +574,7 @@ describe('GitLab CI', () => {
     expect(reviewed.code).toBe(0);
     const runDir = reviewed.json().runDir as string;
     // A rendered video and a captured screenshot, as a CI run with a demonstration leaves them.
+    // Both are synthetic (no browser or ffmpeg needed); the item's sha256 is a placeholder.
     const run = await Run.open(runDir, { root: repo.dir });
     await run.writeText('video/covi-review.mp4', 'mp4', 'video');
     await run.writeText('demo/screenshots/pricing-desktop-after.png', 'png', 'capture');

@@ -178,6 +178,24 @@ describe('TraceCollector', () => {
     expect(clean!.text).toBe('short and clean');
   });
 
+  it('masks and clips the page title', () => {
+    const { trace } = collector();
+    const result = trace.finish({ title: `Reset /reset?token=abc ${'x'.repeat(300)}` });
+    expect(result.title).toMatch(/^Reset \/reset\?token=\[REDACTED\] x+…$/);
+    expect(result.title).toHaveLength(200);
+  });
+
+  it('masks and clips the error of a failed scenario and its open step', () => {
+    const { trace } = collector();
+    trace.beginStep({ id: 's1', action: 'click', target: '#go' });
+    const error = `Failed with ghp_${'A1b2C3d4E5'.repeat(4)} ${'x'.repeat(600)}`;
+    const result = trace.finish({ error });
+    for (const text of [result.error, result.steps[0]!.error]) {
+      expect(text).toMatch(/^Failed with ghp_\[REDACTED\] x+…$/);
+      expect(text).toHaveLength(TRACE_LIMITS.text);
+    }
+  });
+
   it('closes an open step as failed when the scenario failed, and ignores late events', () => {
     const { trace, at } = collector();
     trace.start();

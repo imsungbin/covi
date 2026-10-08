@@ -190,13 +190,13 @@ Where questions are asked:
 | Review | Explains and reviews the change; the story's review note comes from here | `explanation.json`, `review.json`, `review.md`, `summary.md`, … |
 | Storyboard | Drafts scenes from the evidence with a storytelling template, or validates the one you supply, then redacts it | `video/storyboard.json` |
 | Narration | Picks the narration language and the voice, rewrites each scene's spoken text for that voice (acronyms spelled out, your pronunciations applied), then synthesizes and measures one take per scene and places them on the voice stem, at −16 LUFS | `video/speech.json`, `video/narration.wav` |
-| Timing | Lays scenes out from the measured speech, with breathing room in narrated standard reviews and the outro at the end, and fits the duration window | (inside the timeline) |
+| Timing | Lays scenes out line by line from the measured speech (transitions start just before the next line, the hero holds, narrated standard reviews breathe, the outro ends it) and keeps the video under the duration window's maximum; it never pads | (inside the timeline) |
 | Captions | Splits the narration into cues timed to the speech | `video/captions.vtt`, `video/captions.srt` |
 | Timeline | Freezes everything the renderer needs: scenes (Covi's outro last), timings, captions, mouth movement, the moments that carry a sound (`cues`), theme, the language, and the labels the runtime draws (verdicts, stats, Before/After, the sign-off) in that language | `video/timeline.json`, `video/narration.md` |
 | Sound | Picks the music (the theme, the run's score, a model's score, or none), fits it to the timeline, renders it (cached), places the sound effects, and mixes everything under the narration (see [Sound](#sound)) | `video/audio.json`, `video/music.wav`, `video/score.json` |
 | Composition | Writes a self-contained HTML page that can draw any frame | `video/composition/` |
 | Render | Captures every frame in headless Chromium, encodes H.264, and muxes the mix; or, when only the sound changed, keeps the frames and muxes the new mix | `video/covi-review.mp4`, `video/poster.png`, `video/contact-sheet.jpg`, `video/frames.json` |
-| QC | Checks format, duration, audio and the mix, black frames, layout, caption timing, and the text the voice was given | `video/qc.json` |
+| QC | Checks format, duration, audio and the mix, black frames, still pictures under narration, layout, caption timing, the hook and the speech share, and the text the voice was given | `video/qc.json` |
 
 Two failures do not stop the run:
 
@@ -231,11 +231,12 @@ How beats become scenes:
   - terminal and API visuals come from command and request captures;
   - code comes from the diff;
   - findings come from the review.
-- **Missing evidence.** Optional beats without evidence are dropped. Required ones fall back to a callout with the explanation's summary.
+- **Missing evidence.** Optional beats without evidence are dropped. Required ones fall back to a callout with the explanation's summary, except the template's hero beats: a callout is never the payoff, so a hero beat without evidence is left out.
+- **Cold open.** The draft opens on the subject, not on a title card. With a captured page, the title is set over the most-changed after capture (`background`). Without one, the first scene showing code, a command, or a response (the hero only when nothing else does) moves to the front with the title as its eyebrow (cut to at most 32 characters, at a word boundary when it can) and the opening line before its own. When that scene shows the hero's very lines, it is dropped and the hero opens instead, so the lines are shown once. Only a change with none of these keeps its title card. The opening line is the change's intent; the draft never lists what is coming, and no later scene says the intent again: a later line loses that sentence, and a scene with nothing else to say is left out (the hero and the summary always stay).
+- **Hero.** The first scene playing one of the template's hero beats is marked `hero: true` and is never optional.
 - **Language.** Covi drafts in the run's language, or in a language the request names, and records it as the storyboard's `language`. Narration sentences, headings, eyebrows (each template beat carries them in Korean, Japanese, and Chinese), Before/After labels, and the "… more lines" marker come from the message catalogs; text taken from the change (titles, commit messages, area names, findings) stays as written.
 - **Narration budget.** Narration runs at about 2.5 words per second in English, 4.3 syllables per second in Korean, 4 characters per second in Japanese, and 3 in Chinese, scaled from measured voice rates with the same margin English has. It gets 80% of the target duration in short-form and 85% in standard, split by beat weight. The same idea takes more syllables in Korean, Japanese, and Chinese, so a short video says less; when a short video's findings lead does not fit, Covi keeps the finding ("Worth checking: …") instead of the lead.
 - **Depth for longer videos.** Standard-length videos say more, and only what the evidence supports:
-  - the title scene adds a one-line map of the scenes that follow ("We'll look at the response before and after, the code behind it, and what to check before merging.") when it fits the budget;
   - an API scene adds what the captured bodies show, such as a status change or sizes ("The old response listed 5 entries; the new items array holds 2.");
   - a terminal scene adds a changed exit code;
   - a code scene uses the explanation's own description of the file's area;
@@ -243,27 +244,31 @@ How beats become scenes:
   - the summary adds "Suggested next step: …" from the top finding when the verdict is not "looks good", or where to start reading the diff when it is.
 - **Spoken form.** The `say` field holds the spoken form when it differs from the caption text. Identifiers and file names are spelled out for speech, for example `app.js` becomes "the app script" (in Korean "app 스크립트"), and in Korean, Japanese, and Chinese routes are said segment by segment ("API 슬래시 users").
 
-**Model refinement.** If a model provider is configured (`intelligence.provider: anthropic` or `command`, or `auto` with an Anthropic key or a trusted `intelligence.command`), it rewrites the drafted narration within each scene's word budget, following the `covi-video` methodology. The prompt is redacted before it is sent. Visuals stay as drafted, because they are grounded in captured evidence. If refinement fails, Covi keeps the draft and records a warning.
+**Model refinement.** If a model provider is configured (`intelligence.provider: anthropic` or `command`, or `auto` with an Anthropic key or a trusted `intelligence.command`), it rewrites the drafted narration within each scene's budget, following the `covi-video` methodology: the draft's length plus a margin, at most one 15-word line (six seconds of speech: 26 syllables in Korean, 24 characters in Japanese, 18 in Chinese), and a total no larger than those lines hold or the target length allows. A rewritten line that runs more than a quarter past its budget (and past its draft) or breaks its `[[…]]` markup keeps the draft. The prompt is redacted before it is sent. Visuals stay as drafted, because they are grounded in captured evidence. If refinement fails, Covi keeps the draft and records a warning.
 
 **Redaction.** Every storyboard, drafted or supplied, passes through the `Redactor` before narration, captions, the timeline, or the composition are made from it, so a secret in a code excerpt or command output does not reach the audio or the frames. Screenshots are images of the running software and are shown as captured.
 
-**Format.** Run `covi schema storyboard` for the full JSON Schema. Top level: `title`, `template`, `draft` (true for Covi's draft), `language` (optional: `en`, `ko`, `ja`, or `zh`; see [Narration language](#narration-language)), and `scenes`, 2–14 of them. Each scene:
+**Format.** Run `covi schema storyboard` for the full JSON Schema. Top level: `title`, `template`, `draft` (true for Covi's draft), `language` (optional: `en`, `ko`, `ja`, or `zh`; see [Narration language](#narration-language)), and `scenes`, 2–24 of them. Each scene:
 
 | Field | Meaning |
 |---|---|
 | `id` | Optional; defaults to `s1`, `s2`, … |
 | `beat` | The template beat this scene plays |
 | `eyebrow`, `heading` | Section label (up to 40 characters) and heading (up to 90) |
-| `narration` | What Covi says, also used for captions (up to 600 characters) |
+| `narration` | What Covi says, also used for captions (up to 600 characters). `[[…]]` marks its key phrase (at most one), which the caption sweeps as it is spoken; the voice, reports, and subtitle files get the text without the brackets |
 | `say` | Spoken form, when it differs from the caption text. Covi still normalizes it before synthesis (see [Spoken form](#spoken-form)) |
 | `visual` | One of the kinds below |
 | `expression` | Narrator expression: `neutral`, `explaining` (default), `thinking`, `reviewing`, `warning`, `success` |
 | `minSeconds` | Overrides the visual's minimum time on screen (1–30) |
-| `optional` | May be dropped to fit the duration |
+| `optional` | May be dropped to fit the duration (never the hero) |
+| `sync` | Pins moments of the visual to phrases of `narration`: a phase name → a phrase that appears exactly once (see [Timing](#timing)) |
+| `transition` | How the scene enters: `fade` (default), `cut`, `push`, `wipe`, or `zoom-through` (the hero's default) |
+| `hero` | The one scene where the change clicks: it holds 0.4 s after its line, enters with `zoom-through`, plays the hero accent, and carries the music's lift |
+| `camera` | `drift` (default) or `static`: a static scene neither drifts nor pushes in |
 
 | Visual `kind` | Shows |
 |---|---|
-| `title` | Title card with subtitle, eyebrow, and meta chips |
+| `title` | Title card with subtitle, eyebrow, and meta chips; with `background` (a capture), the capture fills the media region and the title goes in the header, without the subtitle and meta: a cold open |
 | `change-map` | Up to 8 areas with their surfaces and line counts |
 | `code` | Up to 40 diff lines (`add`, `del`, `context`) with highlighted line indexes |
 | `screenshot` | One capture, with an optional `focus` region to zoom toward, a `click` point, and a `device` frame |
@@ -278,7 +283,9 @@ How beats become scenes:
 
 Image paths are relative to the run directory (for example `demo/screenshots/home-desktop-after.png`) and must resolve inside it, so a storyboard cannot pull other files from the machine into a video. If an image is missing, rendering stops with an error that lists it.
 
-The narrator, Covi's fox, appears in the header corner of content scenes. Title and summary cards draw it large instead, and the outro takes the summary's fox over (see [The outro](#the-outro)). See [Visual system](visual-system.md).
+Validation also checks what the JSON Schema cannot express, and stops with a usage error (exit 2) that names the scene: a `sync` phrase missing from its narration or appearing more than once, a phase the visual does not have, interaction steps synced out of order, `sync.hero` on a scene that is not the hero, a second hero, and a second, empty, or unbalanced `[[…]]`.
+
+The narrator, Covi's fox, appears in the header corner of content scenes. Title cards (without a `background`) and summary cards draw it large instead, and the outro takes the summary's fox over (see [The outro](#the-outro)). See [Visual system](visual-system.md).
 
 ### Storytelling templates
 
@@ -308,7 +315,7 @@ covi templates show bug-fix    # one template as JSON
 
 **Template format:**
 
-- Top-level keys: `id`, `name`, `description`, `use_when`, `beats`, `short` (beat ids, in order), and `hero` (the payoff beats, in priority order: the music lifts on a downbeat at the first scene that plays one of them).
+- Top-level keys: `id`, `name`, `description`, `use_when`, `beats`, `short` (beat ids, in order), and `hero` (the payoff beats, in priority order: the drafter marks the first scene that plays one of them `hero: true`, and the music lifts on a downbeat there).
 - Each beat has an `id`, an `eyebrow` (up to 40 characters), a `goal`, a list of `visuals`, an `expression`, and an `optional` flag.
 - A visual is a visual kind (`title`, `change-map`, `code`, `screenshot`, `before-after`, `interaction`, `terminal`, `api`, `findings`, `callout`, `diagram`, `summary`), optionally with `:before` or `:after` for screenshots.
 
@@ -407,6 +414,7 @@ Captions show the `narration` text, never the `say` form. How cues are built (`p
 - Each sentence is split into the fewest cues that fit. Words are spread evenly so no cue ends with an orphaned word, two-line cues are balanced, and a sentence end always closes a cue.
 - A line holds at most 30 half-width cells in vertical videos, 34 in square ones, and 44 in landscape ones: a Latin letter takes one cell and a Korean, Japanese, or Chinese character two (East Asian Width), so a vertical line holds 15 CJK characters. A cue has at most two lines.
 - Cues are timed within each scene's speech window, in proportion to their length, with at least 0.9 s per cue when the window allows.
+- A phrase marked `[[…]]` is swept with a marker in the brand's primary color, from when its first character is spoken to its last, by the same text-weighted split that times the cues; it is split across lines and cues when it wraps. The brackets never reach the voice, `video/speech.json`, `video/narration.md`, or the subtitle files.
 
 Line breaking follows the [narration language](#narration-language):
 
@@ -418,19 +426,24 @@ Line breaking follows the [narration language](#narration-language):
 
 Timing starts from the narration. Covi measures each scene's take (or, when there is no audio, estimates it from the text plus 0.25 s: 2.5 words per second in English, 4.3 syllables per second in Korean, 4 characters per second in Japanese, and 3 in Chinese) and lays the scenes out:
 
-- A scene lasts `max(visual minimum, lead-in + speech + tail)`, plus any extra hold. The tail is 0.5 s, or 0.8 s for the last scene before the outro, so it lingers a moment after its last word.
-- The lead-in is 0.2 s for the first scene and 0.3 s for the others, so consecutive lines are about 0.35 s apart.
-- Consecutive scenes overlap by a 0.45 s transition (the brand's `motion.transition`).
-- The video ends with [the outro](#the-outro), which enters like a scene. With `video.outro: false` (`--no-outro`), it holds its last scene for 1 s instead: room for the sonic logo after the last line.
+- Lines are 0.35 s apart at an ordinary scene change. The transition into the next scene (length d) starts at `max(line end − 0.5·d, next line − 0.6·d)`: at most half of it plays over the end of the line before, and the next line starts within its first 60%. So an ordinary scene outlasts its line by at most 0.6 s, and the picture changes with the words.
+- Transition lengths are the brand's `motion.transitions`: fade 0.45 s, cut 0, push 0.5 s, wipe 0.55 s, zoom-through 0.6 s. The first scene has none; the outro fades in over 0.45 s.
+- The first line starts 0.2 s in (0.3 s in narrated standard reviews), so the hook is heard by 0.5 s.
+- A scene stays up for at least its visual's minimum (below), and the next line waits for it. The hero holds 0.4 s after its line. The last scene lingers 0.8 s after its last word before the outro.
+- The video ends with [the outro](#the-outro), which enters like a scene. With `video.outro: false` (`--no-outro`), the last scene lingers 0.5 s and the video holds it for 1 s more: room for the sonic logo after the last line.
+- **Phases.** A scene's `sync` phrases become `phases` in `video/timeline.json`: seconds since the scene started, placed within the line's speech by the text-weighted split the captions use. Components start those moments there (a zoom, a click, a step, a highlight, the after state, a finding card, terminal output, the after response) and keep their default fractions of the scene otherwise. The hero's `hero` phase is its `sync.hero` phrase, else the start of its line, and never before its transition has finished. A phrase that redaction later removed from the line pins nothing.
 
 **Breathing room.** A narrated standard review (the standard preset, including landscape custom sizes) leaves the narration room to breathe, so music placed around the narration has somewhere to play:
 
 | Breath | Where | How long |
 |---|---|---|
-| Opening | The title card holds while the music opens | the first line starts at 2 s |
-| The hero | The hero scene (the story's payoff, see [Fitting the music](#fitting-the-music-to-the-picture)) settles 0.45 s after it starts; its line waits 1.4 s more, so the music's lift lands clear of speech | a pause of about 1.9 s between lines |
+| After the hook | The music opens in a breath before the second line | 1.25 s more lead-in: a pause of about 1.6 s |
+| The hero | The hero scene (`hero: true`, else the story's payoff, see [Fitting the music](#fitting-the-music-to-the-picture)) settles as its transition ends; its line waits 1.4 s more, so the music's lift lands clear of speech | a pause of about 1.9 s between lines |
+| After the hero | The line after the hero's breathes again | 1.25 s more lead-in |
 | The verdict | The summary's verdict lands before its line | 1.25 s more lead-in: a pause of about 1.6 s |
 | Long talk | A line that would start more than 24 s after the last breath (or a pause as long as one, 1.5 s) waits for a breath at that scene change | 1.25 s more lead-in |
+
+A line takes at most one breath. A breath belongs to the scene after it: the transition starts as at any scene change, and the new picture holds the pause.
 
 Breaths come from the kind of video and the story only, never from the music, so changing only the sound still keeps every frame. Short-form videos keep their tight timing, and so do videos without narration (or whose voice could not be synthesized), whose music plays throughout.
 
@@ -438,24 +451,23 @@ Minimum time on screen per visual (a scene's `minSeconds` overrides it):
 
 | Visual | Minimum |
 |---|---|
-| `title` | 2.6 s |
+| `title` | 1.5 s |
 | `summary` | 3.4 s |
-| `code` | 3.4 s + 0.07 s per line (at most +1.4 s) |
-| `before-after` | 4.2 s |
-| `interaction` | 1.7 s per step, at least 3.6 s |
+| `code` | 2.0 s |
+| `before-after` | 2.5 s |
+| `interaction` | 1.2 s per step |
 | `terminal` | 3.4 s, or 4.4 s with base output |
 | `api` | 3.6 s, or 4.6 s with a base response |
-| `findings` | 3.2 s + 0.6 s per finding |
+| `findings` | 2.0 s + 0.4 s per finding |
 | `diagram` | 3.8 s |
 | others | 3.0 s |
 
-`fitToDuration` (`packages/video/src/timeline/build.ts`) then fits the layout into the spec's window without touching required beats:
+`fitToDuration` (`packages/video/src/timeline/build.ts`) then keeps the layout under the window's maximum without touching required beats or the hero:
 
-1. **Too long:** it drops optional scenes, last first, while more than three scenes remain.
+1. **Too long:** it drops optional scenes (never the hero), last first, while more than three scenes remain.
 2. **Still too long:** it speeds speech up by at most 15%. The takes are synthesized again with an ffmpeg tempo filter; this applies only when there is narration audio.
-3. **Too short:** it extends the time on visual scenes (not the title or summary) rather than padding silence. Each scene gets at most 3 s extra for targets of 45 s or less, and at most 7 s for longer targets.
 
-Each adjustment is logged. If the video still misses the window, QC reports it. The breaths and the outro count toward the length being fitted, and fitting never removes them. A visual hold long enough to breathe in stands in for the pause after long talk, so the holds are topped up again until the video reaches its minimum.
+The maximum is a ceiling, not a target: a video is as long as its narration needs, and Covi never pads a short one. Each adjustment is logged. The breaths and the outro count toward the length, and fitting never removes them. QC's `duration` warns only past the maximum, or under a length someone asked for.
 
 ### The outro
 
@@ -505,13 +517,13 @@ With `video.music.placement: auto` (the default), the kind of video decides (`sp
 
 The gains apply to the music after it is brought to the voice's loudness (−16 LUFS). Before the first line and after the last, music sits at the "elsewhere" level, so bookends still open and close the video with music. Without narration there is no speech to duck under, so music plays at the "elsewhere" level throughout.
 
-Under bookends, a narrated standard review is heard with music mainly in its [breaths](#timing): the 2 s opening, the pause around the hero (the rise is done 0.45 s after the line before it ends, ahead of the hero's downbeat at 0.5 s), the pause before the verdict, pauses after long stretches of talk, and the time before the logo and over the outro. QC's `music-audible` measures how much is heard. A continuous bed under a standard review stays 20 dB under the voice, as WCAG 1.4.7 asks.
+Under bookends, a narrated standard review is heard with music mainly in its [breaths](#timing): the breath after the hook, the pause around the hero (the music has risen before the hero's downbeat) and the breath after its line, the pause before the verdict, pauses after long stretches of talk, and the time before the logo and over the outro. QC's `music-audible` measures how much is heard. A continuous bed under a standard review stays 20 dB under the voice, as WCAG 1.4.7 asks.
 
 #### Fitting the music to the picture
 
 Music fits the picture, never the reverse: the narration fixed every frame before the music is chosen, so changing only the music never moves a frame. The fitter (`fitMusic` in `packages/audio/src/music/fit.ts`) takes the video's length D, the hero moment H, the end of the last narration line L (without narration, the last story scene's start plus 0.45 s), the moment the outro card settles O, and the verdict (the summary scene's, else the review's):
 
-- **Hero.** Each storytelling template names its payoff beats (`hero`). The hero scene is the first scene playing one of them, taking the list in order; H is its start plus the 0.45 s transition, the moment it has settled.
+- **Hero.** The hero scene is the scene marked `hero: true`; without one, each storytelling template names its payoff beats (`hero`), and the hero scene is the first scene playing one of them, taking the list in order. H is the hero scene's start plus its own transition's length (0.6 s for `zoom-through`, 0.45 s for a fade), the moment it has settled.
 - **Bars.** Bar j starts at `start + j·bar`, where the music may start partway into its first bar (then it fades in over 0.3 s). The form is intro → loop sections → hero section → loop sections → ending; loops cycle and are cut at boundaries, and the intro is dropped when the hero comes too early for it.
 - **Constraints, in priority order:** the logo's first note starts at least 0.1 s after L; the logo lands (on the ending's first downbeat, T) at least 0.8 s before the end; T is exactly O when the video has an outro (the outro leaves the logo at least 1.35 s after the last line, room for its pickup at any tempo); the tempo stays within ±6% of the score's (±10% when nothing else fits, recorded); and the hero section's first downbeat is exactly H. The fitter searches whole numbers of bars from H to T and picks the tempo closest to the score's. Without an outro it also chooses T, preferring a landing about a second before the end. When no tempo within ±10% reaches H, the hero starts on the nearest bar and the fallback is recorded. Without a hero, the score's tempo holds exactly. Should the last line leave no room before O, the landing follows the rule for videos without an outro, and the fallback is recorded.
 - **The end.** The ending rings over the outro and past the video's end, then fades to silence: over 45% of its ring after the landing, between half a second and a second (0.81 s in a standard review's outro).
@@ -589,7 +601,7 @@ Open `index.html` in Chromium to see the first frame. Run `covi.seek(<frame>)` i
 - The encoder is libx264 (preset `medium`, CRF 18, High profile, `yuv420p`, BT.709 color tags, broadcast range) when ffmpeg has it. Otherwise Covi uses `h264_videotoolbox` (8 Mb/s), and `mpeg4` as a last resort.
 - By default Covi runs min(4, half the CPU cores) workers, never more than one per 45 frames. Override with `--workers <n>`.
 - The poster (`video/poster.png`) is the frame at 1.6 s, or a third of the way in for very short videos.
-- The contact sheet (`video/contact-sheet.jpg`) tiles the middle frame of each scene: six 320 px columns for vertical videos, three 560 px columns otherwise. Use it to review a whole video at a glance.
+- The contact sheet (`video/contact-sheet.jpg`) tiles, in time order, the frame at 0.3 s (the cold open), the middle of each scene, the middle of each transition (a cut has none), and the hero's accent 0.1 s after its `hero` phase: six 320 px columns for vertical videos; three 560 px columns otherwise, four past twelve tiles. Use it to review a whole video at a glance.
 
 Requirements:
 
@@ -605,13 +617,14 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | Check | Passes when | Otherwise |
 |---|---|---|
 | `format` | Size and fps match the spec, and the pixel format is `yuv420p` | fail |
-| `duration` | The duration is within the window, ±0.5 s | warn; fail when longer than 1.5× the maximum or shorter than half the minimum |
+| `duration` | The duration is at most the window's maximum + 0.5 s. The window is a ceiling: a shorter video passes, unless someone asked for a length (`--duration`, a length in the request, or `video.duration`) and the video is more than 0.5 s under its minimum | warn; fail when longer than 1.5× the maximum |
 | `audio` | Whenever narration, music, or effects play: an audio stream exists and is not silent (its loudest sample above −60 dBFS). A narrated mix reads −16 ± 1 LUFS; music without narration −20 ± 1. The true peak is at or below −1 dBTP. Effects alone have no loudness target. With all sound off, no stream is expected | fail without a stream, when silent, beyond ±2 LU, or with a true peak above −0.5 dBTP; warn within ±2 LU, with a true peak between −1 and −0.5 dBTP, or when narration was requested but no speech engine was available |
 | `music-under-speech` | Where someone speaks, the music sits at least 18 dB under the voice (continuous placement) or 30 dB (bookends), as K-weighted RMS from `video/audio.json`. WCAG 1.4.7 asks for 20 dB. Passes when no music plays under narration | continuous: warn from 12 to 18 dB, fail under 12; bookends: warn under 30 |
 | `music-fit` | The logo starts at least 0.1 s after the last line, lands at least 0.8 s before the end and within one frame of the outro settling, the hero downbeat is within one frame of the hero moment, the tempo is within ±6% of the score's, and the last 10 ms are below −60 dBFS | fail when the logo overlaps the last line or the end is not silent; warn on a late landing, a landing off the outro or a hero off its downbeat (naming the fallback), a tempo beyond ±6%, or a music render that failed |
 | `music-audible` | Music that was asked for (`theme` or `compose`) is heard for at least 3 s outside the logo, or 5% of the video when that is more (`music.audible` in `video/audio.json`), and, under bookends, the hero downbeat is clear of speech. Passes when music is off or none could play (`music-fit` says why) | warn |
 | `sound-effects` | Effects are at least 0.15 s apart, at most 3 in any second, and their peaks sit at least 6 dB under the voice's | fail on crowding or under 3 dB; warn from 3 to 6 dB |
 | `black-frames` | ffmpeg `blackdetect` (at least 0.4 s, pixel threshold 0.05) finds nothing | warn |
+| `still` | ffmpeg `freezedetect` on the media region (noise 0.001, at least 1.5 s) finds no freeze that covers 1.5 s or more of narration. Names the scene | warn |
 | `captions-clear-of-content` | The caption band never intersects demonstrated content | fail |
 | `captions-in-frame` | The caption band stays inside the frame, and no caption line is wider than its box | fail |
 | `text-fits` | No text element overflows its box | warn |
@@ -620,6 +633,8 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | `fonts` | Every bundled font face loaded, so no text fell back to the machine's fonts (boxes on a runner without CJK fonts) | fail |
 | `caption-timing` | No cue overlaps the next, reads faster than the language's limit, or lasts less than 0.7 s. Limits, in characters per second: English 24 (counting spaces), Korean 17, Chinese 13, Japanese 8 (not counting spaces; a half-width character such as a Latin letter counts half) | fail on overlap; warn on fast or short cues |
 | `narration-pace` | No scene's narration is faster than 4.2 words per second in English, 7.5 syllables per second in Korean, 7 characters per second in Japanese, or 5.5 in Chinese, counted with `Intl.Segmenter` on the text the voice was given | warn |
+| `hook` | The first line starts by 0.5 s | warn |
+| `speech-share` | Narration fills at least 70% of the video before the outro | warn |
 | `speech-acronyms` | Non-English narration: the text sent to the voice has no all-caps Latin token left (outside URLs, e-mail addresses, and versions). Names the scene and the token | warn: write the spoken form in `say` or add a pronunciation |
 | `voice-language` | The system voice's locale matches the narration language (hosted voices are not checked) | warn, with a voice to choose instead; also warn when the system voice list could not be read, so the voice's language is unknown |
 

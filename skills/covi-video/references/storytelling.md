@@ -4,9 +4,10 @@ A review video is a walkthrough that starts in the middle: open on the thing its
 
 ## What every video shares
 
-- **A cold open.** The first frame shows the subject: the captured screen, the terminal, or the key lines, with a short form of the title as the eyebrow. The first line is a hook: a question ("What happens to your comment when the request fails?"), a surprising fact from the evidence ("Remove one too many, and the cart says minus one."), or the payoff ("Your comment now appears before the server answers."). Never "This change shows…", and never a table of contents.
-- **One hero.** The moment the change clicks: the bug reproducing, the key lines side by side with the thing they fix, the after state landing. Give it the template's first hero beat (named in each pattern below), the strongest capture, and the line that pays off the hook. The beat is only how Covi finds the hero; viewers read the eyebrow. Give no earlier scene that beat, not even a cold open showing the same screen: Covi takes the first scene that plays it. The cold open plays the template's opening beat, `context`.
+- **A cold open.** The first frame shows the subject: the captured screen, the terminal, or the key lines, with a short form of the title as the eyebrow, or the title set over the captured page (`background` on a `title` visual). The first line starts by 0.5 s, and it is a hook: a question ("What happens to your comment when the request fails?"), a surprising fact from the evidence ("Remove one too many, and the cart says minus one."), or the payoff ("Your comment now appears before the server answers."). Never "This change shows…", and never a table of contents.
+- **One hero.** The moment the change clicks: the bug reproducing, the key lines side by side with the thing they fix, the after state landing. Mark it `"hero": true`, give it the strongest capture and the line that pays off the hook, and let it enter with `zoom-through` (its default). The patterns below name each template's hero beat, which Covi falls back to when no scene is marked.
 - **Short scenes.** Two to five seconds each. A beat that needs longer becomes two scenes: an interaction's setup, then the click; the fix in one file, then the other; before, then after.
+- **Motion follows the words.** Pin each visual's moment to its phrase with `sync` (the click on "press Post", the after state on "now"), and choose transitions for what they say: `cut` when the same subject continues, `push` for the next step, `wipe` from before to after, `zoom-through` into the hero.
 - **A short wrap.** The summary card with `minSeconds: 1.5` and one line of eight words or fewer, or none: Covi's outro carries the verdict.
 
 ## The list is the map
@@ -22,7 +23,7 @@ Use it only when the change hands you the list. A video with one thing to check 
 ## Bug fix
 1. **Cold open**: the bug on the base revision, as a screenshot, terminal output, or API response that shows the wrong behavior. Hook: "Remove one too many, and the cart says minus one."
 2. **The fix**: the two or three lines that matter, highlighted. Say why they work, not what they say. Two files, two scenes.
-3. **After**, the hero (beat `proof`): the same steps on head, now correct. Without an after capture, the fix lines are the hero: give that scene the beat `proof`.
+3. **After**, the hero (beat `proof`): the same steps on head, now correct. Without an after capture, the fix lines are the hero: mark that scene `"hero": true`.
 4. **Worth a look**: the regression risk ("clamping at zero changes what undo restores").
 5. **Wrap**: the verdict in a few words.
 
@@ -66,5 +67,5 @@ Only for large restructurings with nothing to click.
 
 ## Pacing
 - Short-form (9:16, 20–35 s): six to nine scenes, one idea each, the review note always included.
-- Standard (16:9, 60–120 s): ten to fourteen scenes, with room for before states, implementation detail, and a second finding. A storyboard holds at most 14 scenes, so a long standard review lets its scenes run a little past five seconds.
-- Covi holds each visual long enough to read it, whatever the line, so an interaction of three or more steps runs past five seconds. That is fine: its steps keep it moving. Still, split the steps of a long interaction across scenes when you can.
+- Standard (16:9, 60–120 s): ten to sixteen scenes, with room for before states, implementation detail, and a second finding. A storyboard holds at most 24 scenes.
+- Covi holds each visual just long enough to read it (an interaction 1.2 s per step) and never pads: a video is as long as its lines need, up to the target. Split a long interaction's steps across scenes when you can.

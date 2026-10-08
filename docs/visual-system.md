@@ -123,7 +123,7 @@ The seven named animations are defined once, in `foxPose()` (`packages/brand/src
 | Approve | With `success`, the fox nods twice between 0.15 and 0.95 s and wags its tail while the check badge pops in. Videos of changes that look good end on it. |
 | Point | On content scenes (code, screenshots, before/after, interactions, API calls, terminal output, findings, diagrams, change maps), the tail sweeps out once the content is on screen (0.8–1.6 s) and its ▶ turns into an arrow at the highlighted target: the highlighted lines, the focus box or click point (following the camera as it zooms, and gliding from step to step), the first finding, or the first changed node. With nothing highlighted, it points the way the eyes look. The body leans into it by only 1.5°. Screenshot and interaction scenes add a cursor that travels to the click point, a click ripple, and a focus ring around the changed region. |
 
-When nothing else moves it, the tail sways a tiny amount on a phase set by the seed. Transitions between states are eased, never popped: within a scene every movement starts from the resting pose, and across a cut between two narrated scenes the narrator eases from the outgoing scene's pose to the incoming one's over the scene transition (the expression switches halfway, with the old prop shrinking away before the new one appears). The narrator also springs in when it appears (scale 0.9 → 1) and bobs gently (±1.2 px sine). On title cards the large fox springs from 0.82 → 1.
+When nothing else moves it, the tail sways a tiny amount on a phase set by the seed. Transitions between states are eased, never popped: within a scene every movement starts from the resting pose, and across a cut between two narrated scenes the narrator eases from the outgoing scene's pose to the incoming one's over the scene transition (the expression switches halfway, with the old prop shrinking away before the new one appears). The narrator also springs in when it appears (scale 0.9 → 1) and bobs gently (±1.2 px sine). On title cards the large fox springs from 0.82 → 1, except on a title card that opens the video, which is in place from the first frame.
 
 ### The outro
 
@@ -133,7 +133,7 @@ The lockup keeps the stacked logo's proportions: the fox's 128-unit box is 1.364
 
 ### The narrator in the frame
 
-The narrator sits at the top right of the header band, clear of the media region and the caption band. It is the largest square that fits both the column the header leaves free on its right and the band between the progress bar and the media region, with 8 units to spare: 190 units on vertical video and 150 on square video (their whole columns), and 142 on landscape video (the band's height), where a unit is 1/1080 of the frame's short side. The box sits 4 view-box units into the side margin, because the resting tail curls a couple of units past the left edge of the fox's 128×128 box. The narrator is hidden on title and summary scenes, which show a larger fox of their own. With `video.mascot: false`, no fox appears at all.
+The narrator sits at the top right of the header band, clear of the media region and the caption band. It is the largest square that fits both the column the header leaves free on its right and the band between the progress bar and the media region, with 8 units to spare: 190 units on vertical video and 150 on square video (their whole columns), and 142 on landscape video (the band's height), where a unit is 1/1080 of the frame's short side. The box sits 4 view-box units into the side margin, because the resting tail curls a couple of units past the left edge of the fox's 128×128 box. The narrator is hidden on title cards and summary scenes, which show a larger fox of their own; a title set over a capture (a cold open) keeps it. With `video.mascot: false`, no fox appears at all.
 
 The tail may leave the narrator's box only into empty space: never over the header's text, the captions, the progress bar, or the media region. When the direction to the target would cover any of them, on the way out or once extended, the narrator takes the nearest direction that doesn't, up to 45° away. Past that the arrow would point at something else, so the tail stays curled and the eyes do the pointing. Whatever the tail is doing (pointing, the alert's puff and lift, a wag), each frame it eases back toward rest just far enough to stay clear. Video QC measures the fox as drawn, tail included, with `foxBounds`, and warns when it covers demonstrated content, the media region, captions, or header text (`narrator-clear-of-content`).
 
@@ -214,12 +214,25 @@ Text styles:
 
 ## Motion
 
-`motion` in `tokens.ts` holds one shared timing, `transition` (0.45 s). The video timeline overlaps consecutive scenes by exactly that much. Entrance timings live with each runtime component, in the same language:
+`motion` in `tokens.ts` holds the video's motion timings:
 
-- Scenes overlap by 0.45 s. The incoming scene fades in while rising; the outgoing scene fades out while drifting up. The narrator eases from one scene's pose to the next over the same overlap.
-- Elements enter with opacity plus a short upward drift on an ease-out cubic curve, staggered in reading order.
+| Token | Value | Use |
+|---|---|---|
+| `transition` | 0.45 s | The default scene transition (a fade), and the outro's fade |
+| `transitions` | fade 0.45 s, cut 0, push 0.5 s, wipe 0.55 s, zoom-through 0.6 s | Each scene transition's length. All stay under 0.625 s, so an ordinary scene ends at most 0.6 s after its line |
+| `drift` | 0.02 | A capture's camera drift through its scene |
+| `linger` | 0.02 | The push-in on a visual that has settled while its line continues |
+| `punch` | 0.06 | The hero's camera punch, and the most the camera ever pushes in |
+| `flash` | 0.18 s at 35% | The hero's white flash |
+
+How they move (`packages/video/src/runtime/transitions.ts` and `camera.ts`, pure functions of the frame time):
+
+- **Transitions.** A storyboard scene chooses how it enters. `fade`: the incoming scene fades in while rising, and the outgoing one fades out while drifting up. `cut`: no transition at all. `push`: the new scene slides in from the right as the old one leaves to the left. `wipe`: the new scene is uncovered from left to right over the old one. `zoom-through`: the old scene grows away as it fades, and the new one settles in from 92%; it is the hero's default. The narrator eases from one scene's pose to the next over the transition. The video's first scene has no entrance: it is in place at frame 0.
+- **The camera.** Each scene's media layer (not its header) scales about the center of the media region. Captures (screenshots, before/after, interactions, and a title set over a capture) drift in by 2% through the whole scene on a sine ease. Any other visual pushes in by 2% from the moment its own choreography settles to the end of the scene, when its line is still going, so no picture holds still under narration. Title and summary cards push their text panel instead, so the fox the outro takes over never moves. `camera: "static"` stops both.
+- **The hero accent.** At the hero's `hero` phase the camera punches in 6% (in over 0.1 s, out by 0.6 s), a white flash peaks at 35% and is gone within 0.18 s, and one ring in the primary color expands over 0.7 s around what the scene highlights. The flash and the ring are clipped to the media region, so they never cover the header or the captions. The camera never pushes past 6%, which keeps the media region's content clear of the caption band.
+- **Caption emphasis.** The phrase marked `[[…]]` in a line is swept with a primary-color marker as it is spoken.
+- Elements enter with opacity plus a short upward drift on an ease-out cubic curve, staggered in reading order. Screenshot scenes zoom to the changed region, spotlight it, then move the cursor and click, at the moments the storyboard's `sync` pins to the narration, or at fixed fractions of the scene without it.
 - The fox moves on damped springs and eased curves. The summary fox uses an overshoot ease.
-- Screenshot scenes follow a fixed choreography: settle, zoom to the changed region, spotlight it, then move the cursor and click.
 
 Motion supports the explanation and never decorates. There are no CSS transitions or animations: the composition stylesheet disables them, and every value is computed from the frame time.
 

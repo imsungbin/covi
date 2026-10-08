@@ -229,6 +229,7 @@ Templates are data in `templates/stories/<id>.yml`. They are validated when they
 | `name`, `description`, `use_when` | Shown by `covi templates` and read by agents choosing a template |
 | `beats` | Two or more beats, in order |
 | `short` | Ids of the beats used in short-form videos, in order (two or more; each must exist) |
+| `hero` | The payoff beats, in priority order. The drafter marks the first scene playing one of them `hero: true`, and the music lifts there. A hero beat is never `optional` (a test checks it) |
 
 Each beat has:
 
@@ -242,7 +243,7 @@ Each beat has:
 When Covi drafts a storyboard, each beat uses the first visual that has evidence behind it:
 
 - An optional beat with no usable visual is dropped. Optional beats are also the first to go when a video has to fit a duration.
-- A required beat with no usable visual becomes a callout, except the context and summary beats.
+- A required beat with no usable visual becomes a callout, except the context and summary beats and the `hero` beats: a callout is never the payoff, so a hero beat without evidence is left out.
 
 By convention, and checked by tests, the first beat offers `title` and the last offers `summary`.
 
@@ -269,7 +270,8 @@ When you add a template:
 
 The browser runtime in `packages/video/src/runtime/` draws every frame. It contains:
 
-- `stage.ts`: scenes, the narrator, captions, and progress. It hands the summary card's fox to the outro, which takes it over.
+- `stage.ts`: scenes with their transitions and camera, the hero accent, the narrator, captions, and progress. It hands the summary card's fox to the outro, which takes it over.
+- `transitions.ts` and `camera.ts`: how a scene enters and leaves, and the camera's drift, linger, and hero punch, as pure functions tested in Node (`packages/video/test/motion.test.ts`).
 - `components/`: the visuals; `outro.ts` draws Covi's outro, whose settle moment (`outroSettle` in `timeline/cues.ts`) is also where the music's logo lands.
 - `layout.ts`: the safe-area regions.
 - `styles.ts`: the stylesheet.
@@ -288,7 +290,7 @@ The renderer splits a video into segments and renders them in parallel browser p
 - **Text must fit its box.** Use `fitText` for text with a size range. Components report their layout, and video QC fails when captions cover demonstrated content. It also flags text overflow and warns when the narrator, tail included, covers content, captions, or header text. A component with something highlighted returns it from `target()`, and the narrator's tail points at it.
 - **Use the design tokens** from `packages/brand` through the timeline's theme. Don't hard-code colors (see [visual system](visual-system.md)).
 
-`npm run typecheck` checks the runtime against DOM types. To see a change, render an example. Then open `video/contact-sheet.jpg` (one frame per scene) and `video/poster.png` in the run directory. With ffmpeg and Chromium installed, `npm test` includes a determinism test that renders the same frame from two compositions and compares the bytes.
+`npm run typecheck` checks the runtime against DOM types. To see a change, render an example. Then open `video/contact-sheet.jpg` (the opening, every scene, every transition, and the hero's accent) and `video/poster.png` in the run directory. With ffmpeg and Chromium installed, `npm test` includes a determinism test that renders the same frame from two compositions and compares the bytes.
 
 A moment that makes a sound (a click, the before/after reveal, a finding card, the verdict) is timed by a function in `packages/video/src/timeline/cues.ts`, which the component draws with and the sound engine places effects with. Change the timing there, never as a number in the component; a test checks that the components import it.
 

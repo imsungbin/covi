@@ -1,6 +1,6 @@
 {
   "name": "covi",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Understand, explain, demonstrate, and review code changes. Skills for reviews, explanations, demos, and review videos, driven by the covi CLI.",
   "author": {
     "name": "Covi contributors"

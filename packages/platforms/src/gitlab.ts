@@ -1,7 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { COMMENT_MARKER, type Finding, isBlockingCandidate, shortHash } from '@covi/core';
-import type { FetchLike, PlatformContext, Publisher, PublishOutcome } from './types.ts';
+import type {
+  ExistingComment,
+  FetchLike,
+  PlatformContext,
+  Publisher,
+  PublishOutcome,
+} from './types.ts';
 
 const ZERO_SHA = /^0+$/;
 
@@ -62,6 +68,8 @@ export function gitlabContext(env: NodeJS.ProcessEnv): PlatformContext {
 export interface GitLabPublisherOptions {
   apiUrl: string;
   projectId: string;
+  /** The project's path (group/name), recorded where the note was posted; defaults to the id. */
+  projectPath?: string;
   iid: number;
   token: string;
   /** `private` for personal/project access tokens, `job` for CI_JOB_TOKEN. */
@@ -72,11 +80,14 @@ export interface GitLabPublisherOptions {
 /** Creates or updates Covi's merge request note and uploads videos for inline playback. */
 export class GitLabPublisher implements Publisher {
   readonly platform = 'gitlab' as const;
+  readonly target: { repository: string; number: number };
   private readonly options: GitLabPublisherOptions;
   private readonly fetch: FetchLike;
+  private me?: Promise<number | undefined>;
 
   constructor(options: GitLabPublisherOptions) {
     this.options = options;
+    this.target = { repository: options.projectPath ?? options.projectId, number: options.iid };
     this.fetch = options.fetch ?? ((url, init) => fetch(url, init));
   }
 
@@ -91,26 +102,50 @@ export class GitLabPublisher implements Publisher {
     return `${this.options.apiUrl}/projects/${encodeURIComponent(this.options.projectId)}${path}`;
   }
 
-  async upsertComment(body: string): Promise<PublishOutcome> {
+  /** The token's own user id, asked once (a project access token has its own bot user). */
+  private whoami(): Promise<number | undefined> {
+    this.me ??= this.fetch(`${this.options.apiUrl}/user`, {
+      headers: this.headers(false),
+      signal: AbortSignal.timeout(30_000),
+    })
+      .then(async (response) =>
+        response.ok ? ((await response.json()) as { id?: number }).id : undefined,
+      )
+      .catch(() => undefined);
+    return this.me;
+  }
+
+  /**
+   * The newest note the token's own user wrote with the marker. Anyone can paste the marker, so
+   * when the token cannot say who it is, no note counts as Covi's.
+   */
+  async findComment(): Promise<ExistingComment | null> {
+    const notes = `/merge_requests/${this.options.iid}/notes`;
+    type Listed = { id: number; body?: string; system?: boolean; author?: { id?: number } | null };
+    const marked: Listed[] = [];
+    for (let page = 1; page <= 10; page++) {
+      const response = await this.fetch(
+        this.url(`${notes}?per_page=100&page=${page}&sort=desc&order_by=created_at`),
+        { headers: this.headers(false), signal: AbortSignal.timeout(30_000) },
+      );
+      if (!response.ok)
+        throw new Error((await failure(response, 'list merge request notes')).reason);
+      const list = (await response.json()) as Listed[];
+      marked.push(...list.filter((n) => !n.system && n.body?.includes(COMMENT_MARKER)));
+      if (list.length < 100) break;
+    }
+    if (!marked.length) return null;
+    const me = await this.whoami();
+    const own = me === undefined ? undefined : marked.find((n) => n.author?.id === me);
+    return own ? { id: String(own.id), body: own.body ?? '' } : null;
+  }
+
+  async upsertComment(body: string, existing?: ExistingComment | null): Promise<PublishOutcome> {
     const notes = `/merge_requests/${this.options.iid}/notes`;
     try {
-      let existing: { id: number } | undefined;
-      for (let page = 1; page <= 10 && !existing; page++) {
-        const response = await this.fetch(
-          this.url(`${notes}?per_page=100&page=${page}&sort=desc&order_by=created_at`),
-          { headers: this.headers(false), signal: AbortSignal.timeout(30_000) },
-        );
-        if (!response.ok) return failure(response, 'list merge request notes');
-        const list = (await response.json()) as Array<{
-          id: number;
-          body?: string;
-          system?: boolean;
-        }>;
-        existing = list.find((n) => !n.system && n.body?.includes(COMMENT_MARKER));
-        if (list.length < 100) break;
-      }
-      const response = existing
-        ? await this.fetch(this.url(`${notes}/${existing.id}`), {
+      const found = existing === undefined ? await this.findComment() : existing;
+      const response = found
+        ? await this.fetch(this.url(`${notes}/${found.id}`), {
             method: 'PUT',
             headers: this.headers(true),
             body: JSON.stringify({ body }),
@@ -122,8 +157,12 @@ export class GitLabPublisher implements Publisher {
             body: JSON.stringify({ body }),
             signal: AbortSignal.timeout(30_000),
           });
-      if (!response.ok) return failure(response, existing ? 'update the note' : 'create a note');
-      return { status: existing ? 'updated' : 'created' };
+      if (!response.ok) return failure(response, found ? 'update the note' : 'create a note');
+      const json = (await response.json().catch(() => ({}))) as { id?: number };
+      return {
+        status: found ? 'updated' : 'created',
+        id: json.id !== undefined ? String(json.id) : found?.id,
+      };
     } catch (error) {
       return { status: 'failed', reason: (error as Error).message };
     }

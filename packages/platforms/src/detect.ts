@@ -65,6 +65,7 @@ export function createPublisher(
       publisher: new GitLabPublisher({
         apiUrl: env.CI_API_V4_URL,
         projectId,
+        projectPath: env.CI_MERGE_REQUEST_PROJECT_PATH || env.CI_PROJECT_PATH || undefined,
         iid: number,
         token,
         fetch: overrides.fetch,

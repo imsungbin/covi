@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { COMMENT_MARKER, type Finding, normalizeFinding } from '@covi/core';
+import { anchorMarker, COMMENT_MARKER, type Finding, normalizeFinding } from '@covi/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   annotations,
@@ -18,6 +18,7 @@ import {
 } from '../src/index.ts';
 import { artifactFileBase } from '../src/links.ts';
 import type { PlatformContext } from '../src/types.ts';
+import { fixtureFetch } from './fixtures.ts';
 
 let dir: string | undefined;
 afterEach(() => {
@@ -133,11 +134,18 @@ describe('GitHub', () => {
   });
 
   it('creates the comment once, then updates it in place', async () => {
-    let stored: Array<{ id: number; body: string; html_url: string }> = [];
+    let stored: Array<{ id: number; body: string; html_url: string; user: object }> = [];
     const api = fakeApi({
       'GET https://api.github.com/repos/acme/shop/issues/7/comments': () => [200, stored],
       'POST https://api.github.com/repos/acme/shop/issues/7/comments': (b) => {
-        stored = [{ id: 1, body: (b as { body: string }).body, html_url: 'https://x/1' }];
+        stored = [
+          {
+            id: 1,
+            body: (b as { body: string }).body,
+            html_url: 'https://x/1',
+            user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
+          },
+        ];
         return [201, stored[0]];
       },
       'PATCH https://api.github.com/repos/acme/shop/issues/comments/1': () => [
@@ -201,6 +209,166 @@ describe('GitHub', () => {
     const text = readFileSync(file, 'utf8');
     expect(text).toMatch(/^verdict=looks-good\nsummary<<COVI_EOF_\w+\na\nb\nCOVI_EOF_\w+\n$/);
   });
+  it("prefers the bot's comment over a pasted marker, and returns the comment's id", async () => {
+    const api = fakeApi({
+      'GET https://api.github.com/repos/acme/shop/issues/7/comments': () => [
+        200,
+        [
+          {
+            id: 5,
+            body: `${COMMENT_MARKER} pasted`,
+            html_url: 'https://x/5',
+            user: { login: 'author', type: 'User' },
+          },
+          {
+            id: 6,
+            body: `${COMMENT_MARKER} real`,
+            html_url: 'https://x/6',
+            user: { login: 'github-actions[bot]', type: 'Bot' },
+          },
+        ],
+      ],
+      'PATCH https://api.github.com/repos/acme/shop/issues/comments/6': () => [
+        200,
+        { id: 6, html_url: 'https://x/6' },
+      ],
+    });
+    const publisher = new GitHubPublisher({
+      token: 't',
+      repository: 'acme/shop',
+      number: 7,
+      fetch: api.fetchImpl,
+    });
+    expect(publisher.target).toEqual({ repository: 'acme/shop', number: 7 });
+    const existing = await publisher.findComment();
+    expect(existing).toEqual({ id: '6', body: `${COMMENT_MARKER} real`, url: 'https://x/6' });
+    expect(await publisher.upsertComment(`${COMMENT_MARKER}\nnew`, existing)).toEqual({
+      status: 'updated',
+      id: '6',
+      url: 'https://x/6',
+    });
+    // Given the comment it found, upsertComment does not list the comments again.
+    expect(api.calls.map((c) => c.method)).toEqual(['GET', 'PATCH']);
+  });
+
+  const comments =
+    'GET https://api.github.com/repos/acme/shop/issues/7/comments?per_page=100&page=1';
+  const whoami = 'GET https://api.github.com/user';
+  const publisherWith = (fetch: ReturnType<typeof fixtureFetch>['fetch']) =>
+    new GitHubPublisher({ token: 't', repository: 'acme/shop', number: 7, fetch });
+
+  it("never takes over a person's comment that carries the marker", async () => {
+    // The workflow token cannot read /user, so only a bot's comment could be Covi's.
+    const api = fixtureFetch(
+      {
+        [comments]: { fixture: 'github/issue-comments-not-covi.json' },
+        [whoami]: { status: 403, fixture: 'github/user-forbidden.json' },
+        'POST https://api.github.com/repos/acme/shop/issues/7/comments': {
+          status: 201,
+          json: { id: 103, html_url: 'https://github.com/acme/shop/pull/7#issuecomment-103' },
+        },
+      },
+      { '{{MARKER}}': COMMENT_MARKER },
+    );
+    const publisher = publisherWith(api.fetch);
+    const existing = await publisher.findComment();
+    expect(existing).toBeNull();
+    // null means "looked, found none": the comments are not listed a second time.
+    expect(await publisher.upsertComment(`${COMMENT_MARKER}\nnew`, existing)).toMatchObject({
+      status: 'created',
+      id: '103',
+    });
+    expect(api.calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      comments,
+      whoami,
+      'POST https://api.github.com/repos/acme/shop/issues/7/comments',
+    ]);
+  });
+
+  it("takes the token's own comment, by user id, when the token is a person's", async () => {
+    const api = fixtureFetch(
+      {
+        [comments]: { fixture: 'github/issue-comments-not-covi.json' },
+        [whoami]: { fixture: 'github/user.json' },
+      },
+      { '{{MARKER}}': COMMENT_MARKER },
+    );
+    expect(await publisherWith(api.fetch).findComment()).toEqual({
+      id: '102',
+      body: `${COMMENT_MARKER}\nPosted with a personal access token.`,
+      url: 'https://github.com/acme/shop/pull/7#issuecomment-102',
+    });
+  });
+
+  it('posts each anchor once, and skips a line GitHub does not show in the diff', async () => {
+    const posted: unknown[] = [];
+    const api = fakeApi({
+      'GET https://api.github.com/repos/acme/shop/pulls/7/comments': () => [
+        200,
+        [{ id: 1, body: `${anchorMarker('aaaaaaaaaaaa')}\nold`, user: { type: 'Bot' } }],
+      ],
+      'POST https://api.github.com/repos/acme/shop/pulls/7/comments': (b) => {
+        posted.push(b);
+        return (b as { line: number }).line === 99
+          ? [422, { message: 'pull_request_review_thread.line must be part of the diff' }]
+          : [201, { id: 10 + posted.length }];
+      },
+    });
+    const publisher = new GitHubPublisher({
+      token: 't',
+      repository: 'acme/shop',
+      number: 7,
+      fetch: api.fetchImpl,
+    });
+    const head = 'f'.repeat(40);
+    const outcome = await publisher.postAnchors(
+      [
+        { key: 'aaaaaaaaaaaa', path: 'src/a.ts', line: 3, body: 'a' },
+        { key: 'bbbbbbbbbbbb', path: 'src/b.ts', line: 4, body: 'b' },
+        { key: 'cccccccccccc', path: 'src/c.ts', line: 99, body: 'c' },
+      ],
+      head,
+    );
+    expect(outcome).toEqual({
+      posted: [{ key: 'bbbbbbbbbbbb', id: '11' }],
+      existing: 1,
+      skipped: [{ key: 'cccccccccccc', reason: 'the line is not part of the diff GitHub shows' }],
+    });
+    expect(posted[0]).toEqual({
+      body: 'b',
+      commit_id: head,
+      path: 'src/b.ts',
+      line: 4,
+      side: 'RIGHT',
+    });
+  });
+
+  it("does not count a person's pasted anchor marker as Covi's anchor", async () => {
+    const review = 'https://api.github.com/repos/acme/shop/pulls/7/comments';
+    const api = fixtureFetch(
+      {
+        [`GET ${review}?per_page=100&page=1`]: { fixture: 'github/review-comments.json' },
+        [whoami]: { status: 403, fixture: 'github/user-forbidden.json' },
+        [`POST ${review}`]: { status: 201, json: { id: 203 } },
+      },
+      {
+        '{{ANCHOR_A}}': anchorMarker('aaaaaaaaaaaa'),
+        '{{ANCHOR_B}}': anchorMarker('bbbbbbbbbbbb'),
+      },
+    );
+    const outcome = await publisherWith(api.fetch).postAnchors(
+      [
+        { key: 'aaaaaaaaaaaa', path: 'src/a.ts', line: 3, body: 'a' },
+        { key: 'bbbbbbbbbbbb', path: 'src/b.ts', line: 4, body: 'b' },
+      ],
+      'f'.repeat(40),
+    );
+    expect(outcome).toEqual({
+      posted: [{ key: 'bbbbbbbbbbbb', id: '203' }],
+      existing: 1,
+      skipped: [],
+    });
+  });
 });
 
 describe('GitLab', () => {
@@ -237,14 +405,18 @@ describe('GitLab', () => {
   });
 
   it('creates or updates the note, and uploads videos', async () => {
-    let notes: Array<{ id: number; body: string; system: boolean }> = [
-      { id: 3, body: 'system note', system: true },
+    let notes: Array<{ id: number; body: string; system: boolean; author: { id: number } }> = [
+      { id: 3, body: 'system note', system: true, author: { id: 1 } },
     ];
     const api = fakeApi({
+      'GET https://gitlab.example/api/v4/user': () => [200, { id: 50, username: 'covi-bot' }],
       'GET https://gitlab.example/api/v4/projects/5/merge_requests/12/notes': () => [200, notes],
       'POST https://gitlab.example/api/v4/projects/5/merge_requests/12/notes': (b) => {
-        notes = [...notes, { id: 4, body: (b as { body: string }).body, system: false }];
-        return [201, {}];
+        notes = [
+          ...notes,
+          { id: 4, body: (b as { body: string }).body, system: false, author: { id: 50 } },
+        ];
+        return [201, { id: 4 }];
       },
       'PUT https://gitlab.example/api/v4/projects/5/merge_requests/12/notes/4': () => [200, {}],
       'POST https://gitlab.example/api/v4/projects/5/uploads': () => [
@@ -265,7 +437,10 @@ describe('GitLab', () => {
     });
     expect(await publisher.upsertComment(`${COMMENT_MARKER} one`)).toMatchObject({
       status: 'created',
+      id: '4',
     });
+    expect(publisher.target).toEqual({ repository: '5', number: 12 });
+    expect(await publisher.findComment()).toMatchObject({ id: '4', body: `${COMMENT_MARKER} one` });
     expect(await publisher.upsertComment(`${COMMENT_MARKER} two`)).toMatchObject({
       status: 'updated',
     });
@@ -276,6 +451,41 @@ describe('GitLab', () => {
       url: '/acme/shop/uploads/abc/v.mp4',
       markdown: '![v](/uploads/abc/v.mp4)',
     });
+  });
+
+  it("takes only the token's own note, never a person's pasted marker", async () => {
+    const notes =
+      'GET https://gitlab.example/api/v4/projects/5/merge_requests/12/notes?per_page=100&page=1&sort=desc&order_by=created_at';
+    const whoami = 'GET https://gitlab.example/api/v4/user';
+    const publisher = (fetch: ReturnType<typeof fixtureFetch>['fetch']) =>
+      new GitLabPublisher({
+        apiUrl: mrEnv.CI_API_V4_URL,
+        projectId: '5',
+        projectPath: 'acme/shop',
+        iid: 12,
+        token: 'glpat',
+        fetch,
+      });
+    const own = fixtureFetch(
+      { [notes]: { fixture: 'gitlab/notes.json' }, [whoami]: { fixture: 'gitlab/user.json' } },
+      { '{{MARKER}}': COMMENT_MARKER },
+    );
+    const found = publisher(own.fetch);
+    expect(found.target).toEqual({ repository: 'acme/shop', number: 12 });
+    expect(await found.findComment()).toEqual({
+      id: '30',
+      body: `${COMMENT_MARKER}\nPosted by Covi.`,
+    });
+
+    // A token that cannot say who it is cannot tell Covi's note from a pasted one.
+    const unknown = fixtureFetch(
+      {
+        [notes]: { fixture: 'gitlab/notes.json' },
+        [whoami]: { status: 401, fixture: 'gitlab/user-unauthorized.json' },
+      },
+      { '{{MARKER}}': COMMENT_MARKER },
+    );
+    expect(await publisher(unknown.fetch).findComment()).toBeNull();
   });
 
   it('produces Code Quality and dotenv reports', () => {

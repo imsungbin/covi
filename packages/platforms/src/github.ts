@@ -1,6 +1,21 @@
 import { appendFile, readFile } from 'node:fs/promises';
-import { COMMENT_MARKER, type Finding, isBlockingCandidate, type Language, t } from '@covi/core';
-import type { FetchLike, PlatformContext, Publisher, PublishOutcome } from './types.ts';
+import {
+  type AnchorDraft,
+  anchorKeyOf,
+  COMMENT_MARKER,
+  type Finding,
+  isBlockingCandidate,
+  type Language,
+  t,
+} from '@covi/core';
+import type {
+  AnchorsOutcome,
+  ExistingComment,
+  FetchLike,
+  PlatformContext,
+  Publisher,
+  PublishOutcome,
+} from './types.ts';
 
 const ZERO_SHA = /^0+$/;
 
@@ -187,14 +202,20 @@ export interface GitHubPublisherOptions extends GitHubClientOptions {
   number: number;
 }
 
+/** Who wrote a comment, as GitHub lists it. */
+type Author = { id?: number; type?: string } | null | undefined;
+
 /** Creates or updates Covi's single summary comment on a pull request (issue comments API). */
 export class GitHubPublisher implements Publisher {
   readonly platform = 'github' as const;
+  readonly target: { repository: string; number: number };
   private readonly options: GitHubPublisherOptions;
   private readonly client: GitHubClient;
+  private me?: Promise<number | undefined>;
 
   constructor(options: GitHubPublisherOptions) {
     this.options = options;
+    this.target = { repository: options.repository, number: options.number };
     this.client = new GitHubClient(options);
   }
 
@@ -202,36 +223,127 @@ export class GitHubPublisher implements Publisher {
     return this.client.request(method, path, body);
   }
 
-  async upsertComment(body: string): Promise<PublishOutcome> {
+  /**
+   * The token's own user id, asked once. A workflow or app token cannot read `/user` (it posts as
+   * a bot), so it has none.
+   */
+  private whoami(): Promise<number | undefined> {
+    this.me ??= this.request('GET', '/user')
+      .then(async (response) =>
+        response.ok ? ((await response.json()) as { id?: number }).id : undefined,
+      )
+      .catch(() => undefined);
+    return this.me;
+  }
+
+  /**
+   * The first comment Covi wrote: a bot's (the workflow token comments as github-actions[bot]),
+   * else the token's own user's. Anyone can paste the marker, so a person's comment never counts.
+   */
+  private async own<T extends { user?: Author }>(comments: readonly T[]): Promise<T | undefined> {
+    const bot = comments.find((c) => c.user?.type === 'Bot');
+    if (bot || !comments.length) return bot;
+    const me = await this.whoami();
+    return me === undefined ? undefined : comments.find((c) => c.user?.id === me);
+  }
+
+  async findComment(): Promise<ExistingComment | null> {
+    const { repository, number } = this.options;
+    type Listed = { id: number; body?: string; html_url: string; user?: Author };
+    const marked: Listed[] = [];
+    for (let page = 1; page <= 10; page++) {
+      const response = await this.request(
+        'GET',
+        `/repos/${repository}/issues/${number}/comments?per_page=100&page=${page}`,
+      );
+      if (!response.ok) throw new Error((await failure(response, 'list comments')).reason);
+      const comments = (await response.json()) as Listed[];
+      marked.push(...comments.filter((c) => c.body?.includes(COMMENT_MARKER)));
+      if (comments.length < 100) break;
+    }
+    const own = await this.own(marked);
+    return own ? { id: String(own.id), body: own.body ?? '', url: own.html_url } : null;
+  }
+
+  async upsertComment(body: string, existing?: ExistingComment | null): Promise<PublishOutcome> {
     const { repository, number } = this.options;
     try {
-      let existing: { id: number; html_url: string } | undefined;
-      for (let page = 1; page <= 10 && !existing; page++) {
-        const response = await this.request(
-          'GET',
-          `/repos/${repository}/issues/${number}/comments?per_page=100&page=${page}`,
-        );
-        if (!response.ok) return failure(response, 'list comments');
-        const comments = (await response.json()) as Array<{
-          id: number;
-          body?: string;
-          html_url: string;
-        }>;
-        existing = comments.find((c) => c.body?.includes(COMMENT_MARKER));
-        if (comments.length < 100) break;
-      }
-      const response = existing
-        ? await this.request('PATCH', `/repos/${repository}/issues/comments/${existing.id}`, {
-            body,
-          })
+      const found = existing === undefined ? await this.findComment() : existing;
+      const response = found
+        ? await this.request('PATCH', `/repos/${repository}/issues/comments/${found.id}`, { body })
         : await this.request('POST', `/repos/${repository}/issues/${number}/comments`, { body });
-      if (!response.ok)
-        return failure(response, existing ? 'update the comment' : 'create a comment');
-      const json = (await response.json()) as { html_url?: string };
-      return { status: existing ? 'updated' : 'created', url: json.html_url };
+      if (!response.ok) return failure(response, found ? 'update the comment' : 'create a comment');
+      const json = (await response.json()) as { id?: number; html_url?: string };
+      return {
+        status: found ? 'updated' : 'created',
+        id: json.id !== undefined ? String(json.id) : found?.id,
+        url: json.html_url,
+      };
     } catch (error) {
       return { status: 'failed', reason: (error as Error).message };
     }
+  }
+
+  async postAnchors(anchors: readonly AnchorDraft[], head: string): Promise<AnchorsOutcome> {
+    const { repository, number } = this.options;
+    const outcome: AnchorsOutcome = { posted: [], existing: 0, skipped: [] };
+    if (!anchors.length) return outcome;
+    try {
+      const marked: Array<{ key: string; user?: Author }> = [];
+      for (let page = 1; page <= 10; page++) {
+        const response = await this.request(
+          'GET',
+          `/repos/${repository}/pulls/${number}/comments?per_page=100&page=${page}`,
+        );
+        if (!response.ok)
+          throw new Error(`could not list review comments (HTTP ${response.status})`);
+        const comments = (await response.json()) as Array<{ body?: string; user?: Author }>;
+        for (const c of comments) {
+          const key = anchorKeyOf(c.body ?? '');
+          if (key) marked.push({ key, user: c.user });
+        }
+        if (comments.length < 100) break;
+      }
+      // A pasted anchor marker must not keep Covi from posting the real anchor.
+      const have = new Set<string>();
+      for (const key of new Set(marked.map((m) => m.key)))
+        if (await this.own(marked.filter((m) => m.key === key))) have.add(key);
+      for (const anchor of anchors) {
+        // An anchor stays once posted: its reactions are what outcomes count.
+        if (have.has(anchor.key)) {
+          outcome.existing++;
+          continue;
+        }
+        const response = await this.request(
+          'POST',
+          `/repos/${repository}/pulls/${number}/comments`,
+          {
+            body: anchor.body,
+            commit_id: head,
+            path: anchor.path,
+            line: anchor.line,
+            side: 'RIGHT',
+          },
+        );
+        if (response.ok) {
+          const json = (await response.json()) as { id: number };
+          outcome.posted.push({ key: anchor.key, id: String(json.id) });
+        } else
+          outcome.skipped.push({
+            key: anchor.key,
+            reason:
+              response.status === 422
+                ? 'the line is not part of the diff GitHub shows'
+                : `GitHub answered HTTP ${response.status}`,
+          });
+      }
+    } catch (error) {
+      const done = new Set([...outcome.posted, ...outcome.skipped].map((a) => a.key));
+      for (const anchor of anchors)
+        if (!done.has(anchor.key))
+          outcome.skipped.push({ key: anchor.key, reason: (error as Error).message });
+    }
+    return outcome;
   }
 }
 

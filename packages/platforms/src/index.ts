@@ -11,10 +11,21 @@ export {
   writeOutputs,
 } from './github.ts';
 export { codeQualityReport, dotenvReport, GitLabPublisher, gitlabContext } from './gitlab.ts';
+export {
+  ApiClient,
+  type ApiOptions,
+  BudgetExhaustedError,
+  PlatformHttpError,
+  type PlatformName,
+  RateLimitedError,
+  RequestBudget,
+} from './http.ts';
 export { artifactFileBase } from './links.ts';
 export { toSarif } from './sarif.ts';
 export type {
+  AnchorsOutcome,
   CiOutputs,
+  ExistingComment,
   FetchLike,
   PlatformContext,
   PlatformId,

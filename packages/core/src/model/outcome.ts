@@ -46,6 +46,7 @@ const Repository = z
   .string()
   .max(200)
   .regex(/^(?!\.\.?(?:\/|$))(?!.*\/\.\.?(?:\/|$))[\w.-]+(?:\/[\w.-]+)+$/);
+const CommentId = z.string().regex(/^\d{1,20}$/);
 
 /** One finding in a comment's ledger. Short keys: the ledger rides along in every comment. */
 export const LedgerEntrySchema = z.strictObject({
@@ -105,12 +106,24 @@ export const OutcomeFileSchema = z.strictObject({
       .optional(),
   }),
   comment: z.strictObject({
-    id: z.string().regex(/^\d{1,20}$/),
+    id: CommentId,
     url: Url.optional(),
     rating: z.strictObject({ up: Count, down: Count }),
     replies: Count,
   }),
   findings: z.array(OutcomeFindingSchema).max(OUTCOME_LIMITS.findings),
+});
+
+/**
+ * `publish` in `run.json`: where a run's comment went. A run directory can come from a downloaded
+ * artifact, so the record is checked before anything uses it. A GitLab project may be named by id.
+ */
+export const PublishRecordSchema = z.strictObject({
+  platform: z.enum(OUTCOME_PLATFORMS),
+  repository: z.union([Repository, z.string().regex(/^\d{1,20}$/)]),
+  number: z.number().int().positive(),
+  comment: z.strictObject({ id: CommentId, url: Url.optional() }),
+  at: Timestamp,
 });
 
 export type OutcomeFinding = z.output<typeof OutcomeFindingSchema>;

@@ -1,0 +1,14 @@
+[
+  {
+    "id": 101,
+    "body": "{{MARKER}}\nPasted by the pull request's author.",
+    "html_url": "https://github.com/acme/shop/pull/7#issuecomment-101",
+    "user": { "login": "author", "id": 5, "type": "User" }
+  },
+  {
+    "id": 102,
+    "body": "{{MARKER}}\nPosted with a personal access token.",
+    "html_url": "https://github.com/acme/shop/pull/7#issuecomment-102",
+    "user": { "login": "covi-runner", "id": 77, "type": "User" }
+  }
+]

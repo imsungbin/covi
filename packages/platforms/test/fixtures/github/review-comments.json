@@ -1,0 +1,16 @@
+[
+  {
+    "id": 201,
+    "body": "{{ANCHOR_A}}\nPosted by Covi on an earlier push.",
+    "path": "src/a.ts",
+    "line": 3,
+    "user": { "login": "github-actions[bot]", "id": 41898282, "type": "Bot" }
+  },
+  {
+    "id": 202,
+    "body": "{{ANCHOR_B}}\nPasted by the pull request's author.",
+    "path": "src/b.ts",
+    "line": 4,
+    "user": { "login": "author", "id": 5, "type": "User" }
+  }
+]

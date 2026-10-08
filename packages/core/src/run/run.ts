@@ -4,6 +4,7 @@ import type { ResolvedConfig } from '../config/resolve.ts';
 import type { ResolvedLanguage } from '../i18n/language.ts';
 import type { ChangeSource, CodeChange, Revision } from '../model/change.ts';
 import type { Certainty, Verdict } from '../model/finding.ts';
+import { PublishRecordSchema } from '../model/outcome.ts';
 import { Redactor } from '../security/redact.ts';
 import { EnvironmentError, UsageError } from '../util/errors.ts';
 import { ensureDir, exists, linkedOrOutside, readJson, writeFileAtomic } from '../util/fs.ts';
@@ -487,7 +488,7 @@ export async function listRuns(root: string, runsDir?: string): Promise<RunSumma
       status: manifest.outcome?.status,
       verdict: manifest.outcome?.verdict,
       title: manifest.change?.title,
-      publish: manifest.publish,
+      publish: PublishRecordSchema.safeParse(manifest.publish).data,
     });
   }
   return out.sort((a, b) => b.startedAt.localeCompare(a.startedAt));

@@ -189,6 +189,39 @@ describe('Run', () => {
     expect(JSON.stringify(reopened.manifest.publish)).not.toContain('tok-secret-123');
     expect((await listRuns(root))[0]!.publish?.number).toBe(7);
   });
+
+  it('drops a publish record that does not fit its schema when listing runs', async () => {
+    root = mkdtempSync(join(tmpdir(), 'covi-run-'));
+    const run = await Run.create(options());
+    const record = {
+      platform: 'github' as const,
+      repository: 'acme/shop',
+      number: 7,
+      comment: { id: '42' },
+      at: '2026-10-09T12:00:00.000Z',
+    };
+    // A run directory can come from a downloaded artifact, so run.json says whatever it likes.
+    for (const publish of [
+      { ...record, repository: '../../elsewhere' },
+      { ...record, platform: 'bitbucket' },
+      { ...record, comment: { id: '42/../../x' } },
+      { ...record, number: -1 },
+      { ...record, extra: true },
+      'acme/shop#7',
+    ]) {
+      const manifest = JSON.parse(readFileSync(join(run.dir, 'run.json'), 'utf8'));
+      writeFileSync(join(run.dir, 'run.json'), JSON.stringify({ ...manifest, publish }));
+      const [listed] = await listRuns(root);
+      expect(listed!.id).toBe(run.id);
+      expect(listed!.publish).toBeUndefined();
+    }
+    // A GitLab project known only by its id still counts.
+    await run.setPublish({ ...record, platform: 'gitlab', repository: '5' });
+    expect((await listRuns(root))[0]!.publish).toMatchObject({
+      platform: 'gitlab',
+      repository: '5',
+    });
+  });
 });
 
 describe('demo paths', () => {

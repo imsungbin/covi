@@ -52,6 +52,9 @@ function mockApi(): Promise<{
           pulls.filter((p) => !head || head === `${p.owner}:${p.branch}`).map(shape),
         );
       }
+      // The token's own user on GitLab; GitHub's workflow token posts as a bot instead.
+      if (req.method === 'GET' && url.pathname === '/api/v4/user')
+        return json(200, { id: 50, username: 'project_5_bot' });
       if (req.method === 'GET' && /\/(comments|notes)/.test(req.url!))
         return json(
           200,
@@ -59,6 +62,8 @@ function mockApi(): Promise<{
             ...c,
             html_url: `https://example.test/c/${c.id}`,
             system: false,
+            user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
+            author: { id: 50, username: 'project_5_bot' },
           })),
         );
       if (req.method === 'POST' && /\/(comments|notes)/.test(req.url!)) {

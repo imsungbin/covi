@@ -1,8 +1,14 @@
 import {
-  beforeAfterReveal,
+  activeStep,
+  apiPanels,
+  beforeAfterTiming,
   findingEntrance,
-  interactionPointer,
-  interactionSlot,
+  HIGHLIGHT_SWEEP,
+  highlightStarts,
+  interactionTiming,
+  screenshotTiming,
+  TYPE_TO_OUTPUT,
+  terminalStarts,
 } from '../../timeline/cues.ts';
 import type { Point, Rect, TimelineVisual } from '../../timeline/types.ts';
 import { clamp, easeOutCubic, fade, lerp, rise, seg } from '../anim.ts';
@@ -13,6 +19,7 @@ import { choreograph, Frame } from './frame.ts';
 import {
   type Component,
   type ComponentContext,
+  entered,
   type LayoutItem,
   overflows,
   rectOf,
@@ -55,9 +62,10 @@ export function screenshot(v: V<'screenshot'>, ctx: ComponentContext): Component
     u: ctx.u,
   });
   return {
-    update({ t, duration }) {
-      rise(frame.root, seg(t, 0, 0.55), ctx.u(28));
-      choreograph(frame, v.focus, v.click, t, duration);
+    update(clock) {
+      const { t, duration } = clock;
+      rise(frame.root, entered(clock, 0, 0.55), ctx.u(28));
+      choreograph(frame, v.focus, v.click, t, screenshotTiming(duration, ctx.phases));
     },
     report: () => [
       ...frameItems([frame]),
@@ -123,16 +131,17 @@ export function beforeAfter(v: V<'before-after'>, ctx: ComponentContext): Compon
     });
   });
   return {
-    update({ t, duration }) {
-      const [revealStart, revealEnd] = beforeAfterReveal(v.layout, duration);
-      rise(frames[0]!.root, seg(t, 0, 0.5), ctx.u(24));
-      rise(labels[0]!, seg(t, 0.05, 0.5), ctx.u(10));
-      rise(frames[1]!.root, seg(t, revealStart, revealEnd), ctx.u(24));
-      rise(labels[1]!, seg(t, revealStart + 0.05, revealEnd), ctx.u(10));
-      const k = seg(t, duration * 0.4, duration * 0.62);
+    update(clock) {
+      const { t, duration } = clock;
+      const timing = beforeAfterTiming(v.layout, duration, ctx.phases);
+      rise(frames[0]!.root, entered(clock, 0, 0.5), ctx.u(24));
+      rise(labels[0]!, entered(clock, 0.05, 0.5), ctx.u(10));
+      rise(frames[1]!.root, seg(t, ...timing.reveal), ctx.u(24));
+      rise(labels[1]!, seg(t, ...timing.label), ctx.u(10));
+      const k = seg(t, ...timing.focus);
       for (const f of frames) {
         f.setCamera(v.focus, k * 0.6, 1.6);
-        f.spotlight(v.focus, v.focus ? seg(t, duration * 0.45, duration * 0.62) : 0);
+        f.spotlight(v.focus, v.focus ? seg(t, ...timing.spot) : 0);
       }
     },
     report: () => [
@@ -173,11 +182,13 @@ function wipe(v: V<'before-after'>, ctx: ComponentContext): Component {
     });
   }
   return {
-    update({ t, duration }) {
-      rise(before.root, seg(t, 0, 0.5), ctx.u(24));
+    update(clock) {
+      const { t, duration } = clock;
+      const timing = beforeAfterTiming('wipe', duration, ctx.phases);
+      rise(before.root, entered(clock, 0, 0.5), ctx.u(24));
       after.root.style.opacity = before.root.style.opacity;
-      fade(labels[0]!, seg(t, 0.1, 0.5));
-      const w = easeOutCubic(seg(t, ...beforeAfterReveal('wipe', duration)));
+      fade(labels[0]!, entered(clock, 0.1, 0.5));
+      const w = easeOutCubic(seg(t, ...timing.reveal));
       const vp = before.viewport;
       before.root.style.clipPath = `inset(0 0 0 ${(w * 100).toFixed(2)}%)`;
       Object.assign(divider.style, {
@@ -186,8 +197,8 @@ function wipe(v: V<'before-after'>, ctx: ComponentContext): Component {
         height: `${vp.height}px`,
         opacity: w > 0.001 && w < 0.999 ? '1' : '0',
       });
-      fade(labels[1]!, seg(t, duration * 0.3, duration * 0.5));
-      after.spotlight(v.focus, v.focus ? seg(t, duration * 0.7, duration * 0.85) : 0);
+      fade(labels[1]!, seg(t, ...timing.label));
+      after.spotlight(v.focus, v.focus ? seg(t, ...timing.spot) : 0);
     },
     report: () => frameItems([before]),
     target: () => frameTarget(after, v.focus, undefined),
@@ -208,51 +219,46 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
     top: `${box.y + box.height + ctx.u(16)}px`,
   });
   return {
-    update({ t, duration }) {
-      const slot = interactionSlot(duration, v.steps.length);
-      const { move, press } = interactionPointer(slot);
-      const active = Math.min(v.steps.length - 1, Math.floor(t / slot));
-      const sinceActive = t - active * slot;
+    update(clock) {
+      const { t, duration } = clock;
+      const timing = interactionTiming(duration, v.steps.length, ctx.phases);
+      const active = activeStep(timing, t);
+      const since = t - timing[active]!.start;
       frames.forEach((f, i) => {
-        const local = t - i * slot;
+        const step = timing[i]!;
         // The previous step stays underneath while the next one fades in on top.
-        if (i === active)
-          f.root.style.opacity = String(
-            easeOutCubic(seg(i === 0 ? t : local, 0, i === 0 ? 0.45 : 0.3)).toFixed(3),
-          );
-        else f.root.style.opacity = i === active - 1 && sinceActive < 0.3 ? '1' : '0';
+        if (i === active) {
+          const enter = i === 0 ? entered(clock, 0, 0.45) : seg(t, step.start, step.start + 0.3);
+          f.root.style.opacity = String(easeOutCubic(enter).toFixed(3));
+        } else f.root.style.opacity = i === active - 1 && since < 0.3 ? '1' : '0';
         if (i !== active) {
           f.hideOverlays();
           return;
         }
-        const step = v.steps[i]!;
-        f.setCamera(step.focus, seg(local, slot * 0.15, slot * 0.45) * 0.7, 1.5);
-        f.spotlight(step.focus, step.focus ? seg(local, slot * 0.2, slot * 0.45) * 0.8 : 0);
-        f.pointer(step.click, seg(local, ...move), seg(local, ...press));
+        const shown = v.steps[i]!;
+        f.setCamera(shown.focus, seg(t, ...step.zoom) * 0.7, 1.5);
+        f.spotlight(shown.focus, shown.focus ? seg(t, ...step.spot) * 0.8 : 0);
+        f.pointer(shown.click, seg(t, ...step.move), seg(t, ...step.press));
       });
-      const step = v.steps[active]!;
-      label.textContent = `${active + 1}/${v.steps.length}${step.label ? `  ${step.label}` : ''}`;
-      fade(label, seg(t - active * slot, 0, 0.3));
+      const shown = v.steps[active]!;
+      label.textContent = `${active + 1}/${v.steps.length}${shown.label ? `  ${shown.label}` : ''}`;
+      fade(label, active === 0 ? entered(clock, 0, 0.3) : seg(since, 0, 0.3));
     },
     report: () => frameItems(frames.slice(0, 1)),
     target({ t, duration }) {
-      const slot = interactionSlot(duration, v.steps.length);
+      const timing = interactionTiming(duration, v.steps.length, ctx.phases);
       // Each step's camera recomputed for this moment, so no frame depends on an earlier one.
       const of = (i: number) => {
-        const step = v.steps[i]!;
-        const local = t - i * slot;
-        const camera = frames[i]!.cameraFor(
-          step.focus,
-          seg(local, slot * 0.15, slot * 0.45) * 0.7,
-          1.5,
-        );
-        return frameTarget(frames[i]!, step.focus, step.click, camera);
+        const shown = v.steps[i]!;
+        const camera = frames[i]!.cameraFor(shown.focus, seg(t, ...timing[i]!.zoom) * 0.7, 1.5);
+        return frameTarget(frames[i]!, shown.focus, shown.click, camera);
       };
-      const active = Math.min(v.steps.length - 1, Math.floor(t / slot));
+      const active = activeStep(timing, t);
       const now = of(active);
       const prev = active > 0 ? of(active - 1) : undefined;
       // Glide from the previous step's target to this one's, so the tail never jumps at a cut.
-      const k = easeOutCubic(seg(t, active * slot, active * slot + 0.4));
+      const start = timing[active]!.start;
+      const k = easeOutCubic(seg(t, start, start + 0.4));
       if (!prev || !now || k >= 1) return now ?? prev;
       return {
         x: lerp(prev.x, now.x, k),
@@ -301,14 +307,16 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
     height: `${height}px`,
   });
   return {
-    update({ t, duration }) {
-      rise(panel, seg(t, 0, 0.5), ctx.u(30));
+    update(clock) {
+      const { t, duration } = clock;
+      rise(panel, entered(clock, 0, 0.5), ctx.u(30));
+      const starts = highlightStarts(duration, v.highlight, ctx.phases);
       rows.forEach(({ row, hl }, i) => {
-        fade(row, seg(t, 0.15 + i * 0.035, 0.45 + i * 0.035));
+        fade(row, entered(clock, 0.15 + i * 0.035, 0.45 + i * 0.035));
         if (hl) {
-          const k = easeOutCubic(
-            seg(t, duration * 0.32 + i * 0.05, duration * 0.32 + i * 0.05 + 0.4),
-          );
+          // A row has `hl` exactly when its index is in `highlight`, so it has a start.
+          const start = starts.get(i)!;
+          const k = easeOutCubic(seg(t, start, start + HIGHLIGHT_SWEEP));
           hl.style.transform = `scaleX(${k.toFixed(4)})`;
           hl.style.opacity = String(k.toFixed(3));
         }
@@ -366,7 +374,10 @@ function terminalWindow(
       const typed = Math.floor(command.length * seg(t, start, start + 0.6));
       cmd.textContent = command.slice(0, typed);
       for (const [i, line] of outLines.entries())
-        fade(line, seg(t, start + 0.7 + i * 0.06, start + 0.85 + i * 0.06));
+        fade(
+          line,
+          seg(t, start + TYPE_TO_OUTPUT + i * 0.06, start + TYPE_TO_OUTPUT + 0.15 + i * 0.06),
+        );
     },
   };
 }
@@ -405,10 +416,13 @@ export function terminal(v: V<'terminal'>, ctx: ComponentContext): Component {
     );
   }
   return {
-    update({ t, duration }) {
+    update(clock) {
+      const { t, duration } = clock;
+      const starts = terminalStarts(duration, windows.length, ctx.phases);
       windows.forEach((w, i) => {
-        const start = i === 0 ? 0.2 : Math.max(1.4, duration * 0.42);
-        rise(w.win, seg(t, start - 0.2, start + 0.3), ctx.u(24));
+        const start = starts[i]!;
+        // The first window is up from the start; a phase only moves when its command is typed.
+        rise(w.win, i === 0 ? entered(clock, 0, 0.5) : seg(t, start - 0.2, start + 0.3), ctx.u(24));
         w.play(t, start);
       });
     },
@@ -510,19 +524,14 @@ export function api(v: V<'api'>, ctx: ComponentContext): Component {
     make(area, ctx.timeline.labels?.response ?? 'Response', v.after.status, afterLines);
   }
   return {
-    update({ t, duration }) {
-      rise(req, seg(t, 0, 0.4), ctx.u(16));
-      for (const [i, p] of panels.entries()) {
-        rise(
-          p,
-          seg(
-            t,
-            0.25 + i * Math.max(0.6, duration * 0.25),
-            0.75 + i * Math.max(0.6, duration * 0.25),
-          ),
-          ctx.u(24),
-        );
-      }
+    update(clock) {
+      const { t, duration } = clock;
+      rise(req, entered(clock, 0, 0.4), ctx.u(16));
+      const spans = apiPanels(duration, panels.length, ctx.phases);
+      // The first panel (the only response, or the before panel) is the subject; the after
+      // panel is choreography and rises on time.
+      for (const [i, p] of panels.entries())
+        rise(p, i === 0 ? entered(clock, ...spans[0]!) : seg(t, ...spans[i]!), ctx.u(24));
     },
     report: () => [
       { role: 'media', rect: rectOf(req) },
@@ -587,7 +596,7 @@ export function findings(v: V<'findings'>, ctx: ComponentContext): Component {
   return {
     update({ t }) {
       cards.forEach(({ card }, i) => {
-        const e = easeOutCubic(seg(t, ...findingEntrance(i)));
+        const e = easeOutCubic(seg(t, ...findingEntrance(i, ctx.phases)));
         card.style.opacity = String(e.toFixed(3));
         card.style.transform = `translateX(${((1 - e) * ctx.u(60)).toFixed(2)}px)`;
       });
@@ -641,10 +650,10 @@ export function changeMap(v: V<'change-map'>, ctx: ComponentContext): Component 
     return { row, plus, minus };
   });
   return {
-    update({ t }) {
+    update(clock) {
       items.forEach(({ row, plus, minus }, i) => {
-        rise(row, seg(t, 0.1 + i * 0.12, 0.5 + i * 0.12), ctx.u(18));
-        const g = easeOutCubic(seg(t, 0.4 + i * 0.12, 1.1 + i * 0.12));
+        rise(row, entered(clock, 0.1 + i * 0.12, 0.5 + i * 0.12), ctx.u(18));
+        const g = easeOutCubic(entered(clock, 0.4 + i * 0.12, 1.1 + i * 0.12));
         plus.style.transform = `scaleX(${g.toFixed(4)})`;
         minus.style.transform = `scaleX(${g.toFixed(4)})`;
       });
@@ -683,11 +692,11 @@ export function callout(v: V<'callout'>, ctx: ComponentContext): Component {
   if (body) body.style.fontSize = `${ctx.u(ctx.timeline.orientation === 'vertical' ? 30 : 26)}px`;
   card.style.top = `${box.y + (box.height - card.offsetHeight) / 2}px`;
   return {
-    update({ t }) {
-      const e = easeOutCubic(seg(t, 0, 0.55));
+    update(clock) {
+      const e = easeOutCubic(entered(clock, 0, 0.55));
       card.style.opacity = String(e.toFixed(3));
       card.style.transform = `scale(${lerp(0.94, 1, e).toFixed(4)})`;
-      icon.style.transform = `scale(${lerp(0.6, 1, easeOutCubic(seg(t, 0.15, 0.6))).toFixed(4)})`;
+      icon.style.transform = `scale(${lerp(0.6, 1, easeOutCubic(entered(clock, 0.15, 0.6))).toFixed(4)})`;
     },
     report: () => [{ role: 'text', rect: rectOf(card), overflow: overflows(card) }],
   };
@@ -767,13 +776,13 @@ export function diagram(v: V<'diagram'>, ctx: ComponentContext): Component {
   svgLayer.style.zIndex = '0';
   for (const n of nodes) n.style.zIndex = '1';
   return {
-    update({ t }) {
+    update(clock) {
       for (const [i, n] of nodes.entries())
-        rise(n, seg(t, 0.1 + i * 0.1, 0.5 + i * 0.1), ctx.u(18));
+        rise(n, entered(clock, 0.1 + i * 0.1, 0.5 + i * 0.1), ctx.u(18));
       for (const [i, { line, length }] of edges.entries()) {
         line.setAttribute(
           'stroke-dashoffset',
-          String(length * (1 - easeOutCubic(seg(t, 0.8 + i * 0.12, 1.5 + i * 0.12)))),
+          String(length * (1 - easeOutCubic(entered(clock, 0.8 + i * 0.12, 1.5 + i * 0.12)))),
         );
       }
     },

@@ -154,7 +154,10 @@ export function musicVerdict(timeline: Pick<Timeline, 'scenes'>, review?: Verdic
   return summary?.kind === 'summary' ? summary.verdict : (review ?? 'looks-good');
 }
 
-/** The hero moment: the hero scene's start plus the transition, the moment it has settled. */
+/**
+ * The hero moment: the hero scene (marked `hero`, else the template's payoff beats) has settled,
+ * at its start plus its transition (timelines without one faded in over the shared length).
+ */
 export async function heroMoment(
   timeline: Pick<Timeline, 'scenes'>,
   template: string,
@@ -162,7 +165,9 @@ export async function heroMoment(
   const hero = (await loadTemplates()).get(template)?.hero;
   const scenes = storyScenes(timeline.scenes);
   const index = heroScene(scenes, hero);
-  return index === undefined ? undefined : scenes[index]!.start + TRANSITION;
+  if (index === undefined) return undefined;
+  const scene = scenes[index]!;
+  return scene.start + (scene.transition?.seconds ?? TRANSITION);
 }
 
 /** The end of the last narration line; without a voice, the last story scene's start plus 0.45 s. */

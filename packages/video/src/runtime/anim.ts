@@ -8,6 +8,8 @@ export const seg = (t: number, start: number, end: number) =>
 export const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 export const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
 export const easeOutQuart = (t: number) => 1 - (1 - t) ** 4;
+export const easeInCubic = (t: number) => t ** 3;
+export const easeInOutSine = (t: number) => -(Math.cos(Math.PI * t) - 1) / 2;
 export const easeOutBack = (t: number) => {
   const c1 = 1.4;
   const c3 = c1 + 1;

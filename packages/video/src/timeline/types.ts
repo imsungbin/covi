@@ -25,6 +25,18 @@ export interface Point {
   y: number;
 }
 
+/** How a scene enters: the transition into it (see `motion.transitions` for their lengths). */
+export type TransitionKind = 'fade' | 'cut' | 'push' | 'wipe' | 'zoom-through';
+
+/** The phase every hero scene has: its `sync.hero` phrase, else the start of its line. */
+export const HERO_PHASE = 'hero';
+
+/** The transition into a scene, resolved: its kind and its length in seconds. */
+export interface SceneTransition {
+  kind: TransitionKind;
+  seconds: number;
+}
+
 /** An image placed in the composition, with its natural pixel size (needed for focus math). */
 export interface ImageAsset {
   src: string;
@@ -48,7 +60,15 @@ export interface FindingCard {
 }
 
 export type TimelineVisual =
-  | { kind: 'title'; title: string; subtitle?: string; eyebrow?: string; meta: string[] }
+  | {
+      kind: 'title';
+      title: string;
+      subtitle?: string;
+      eyebrow?: string;
+      meta: string[];
+      /** A capture the title is set over (a cold open). */
+      background?: ImageAsset;
+    }
   | {
       kind: 'change-map';
       areas: Array<{
@@ -127,6 +147,20 @@ export interface TimelineScene {
   /** Hide the corner narrator (title and summary scenes feature the fox themselves). */
   narrator: boolean;
   speech?: { start: number; end: number; text: string };
+  /**
+   * How the scene enters, and for how long. The first scene has none. Timelines written before
+   * transitions had kinds lack it: every scene faded in over `Timeline.transition`.
+   */
+  transition?: SceneTransition;
+  /**
+   * Moments the visual pins to, in seconds since the scene started, by phase name: the
+   * storyboard's `sync` phrases resolved against the speech, and the hero's `hero`.
+   */
+  phases?: Record<string, number>;
+  /** The scene where the change clicks (storyboard `hero: true`). */
+  hero?: boolean;
+  /** The storyboard asked the picture to hold still: no drift, no linger. */
+  camera?: 'static';
 }
 
 /**
@@ -145,14 +179,31 @@ export interface TimelineCue {
   detail?: string;
 }
 
+/** The key phrase in a caption line: where it is in the line and when it is spoken. */
+export interface CaptionEmphasis {
+  /** Index into the cue's `lines`. */
+  line: number;
+  /** UTF-16 offsets into that line: the phrase is `line.slice(from, to)`. */
+  from: number;
+  to: number;
+  /** When its first character is spoken and when its last one has been, in seconds. */
+  start: number;
+  end: number;
+}
+
 export interface CaptionCue {
   start: number;
   end: number;
   lines: string[];
+  /** The line's `[[…]]` phrase, split across lines (and cues) when it wraps. */
+  emphasis?: CaptionEmphasis[];
 }
 
-/** The brand theme, carried into the composition so the runtime draws with the same tokens. */
-export type TimelineTheme = Theme;
+/**
+ * The brand theme, carried into the composition so the runtime draws with the same tokens.
+ * Timelines written before `captionMark` existed lack it.
+ */
+export type TimelineTheme = Omit<Theme, 'captionMark'> & { captionMark?: string };
 
 /** The video's language (`en`, `ko`, `ja`, or `zh` for Simplified Chinese). */
 export type TimelineLanguage = 'en' | 'ko' | 'ja' | 'zh';

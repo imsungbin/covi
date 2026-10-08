@@ -702,7 +702,13 @@ video:
 
 narration:
   meta: '{files} · +{additions} −{deletions}'
-  touches: '{areas}にまたがる変更です。'
+  opening:
+    imperative: 'これで{clause}'
+    titled: '{kind}です。タイトルは「{summary}」です。'
+    kind: '{kind}です: {summary}'
+  page:
+    home: ホームページ
+    homeHeading: ホームページ
   changeMap:
     text: '変更は{areas}にまたがり、主に{names}です。'
     heading: '{files}を変更'
@@ -790,18 +796,6 @@ narration:
       risk: リスク
       question: 質問
     pointLine: '{label}: {title}'
-  roadmap:
-    text: '{first}{stops}を順に見ていきます。'
-    api: 変更前後のレスポンス
-    apiNew: 新しいレスポンス
-    terminal: 変更前後のコマンド
-    terminalNew: コマンドの出力
-    beforeAfter: 変更前後のページ
-    screenshot: 実際の画面
-    interaction: 新しい流れ
-    code: その裏のコード
-    structure: 各部分のつながり
-    findings: マージ前に確認したい点
   file:
     phrase: '{name} の{noun}'
     module: モジュール
@@ -822,7 +816,7 @@ question:
     short: ショート
     shortDescription: '縦 9:16、約 30 秒、簡潔に'
     standard: 標準のレビュー
-    standardDescription: '16:9、60〜120 秒、詳しめに'
+    standardDescription: '16:9、最大 120 秒、詳しめに'
     custom: カスタム
     customDescription: サイズ、長さ、ナレーションを選びます
   duration:

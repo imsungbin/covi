@@ -4,11 +4,9 @@ exports[`English output (baseline) > api-users-pagination > drafts the same stor
 [
   [
     [
-      "This change paginates",
+      "Now it paginates",
       "GET /api/users.",
     ],
-  ],
-  [
     [
       "The key change is in app.js,",
     ],
@@ -39,7 +37,7 @@ exports[`English output (baseline) > api-users-pagination > drafts the same stor
 [
   [
     [
-      "This change paginates",
+      "Now it paginates",
       "GET /api/users.",
     ],
   ],
@@ -71,27 +69,8 @@ exports[`English output (baseline) > api-users-pagination > drafts the same stor
 [
   [
     [
-      "This change paginates GET /api/users.",
+      "Now it paginates GET /api/users.",
     ],
-    [
-      "We'll look at the code behind it",
-      "and what to check before merging.",
-    ],
-  ],
-  [
-    [
-      "The key change is in app.js.",
-    ],
-    [
-      "It adds pageOfUsers, changes handle,",
-      "changes route GET /api/users,",
-    ],
-    [
-      "and reads a new environment",
-      "variable USERS_PAGE_SIZE.",
-    ],
-  ],
-  [
     [
       "The key change is in app.js.",
     ],
@@ -135,14 +114,7 @@ exports[`English output (baseline) > api-users-pagination > drafts the same stor
 [
   [
     [
-      "This change paginates GET /api/users.",
-    ],
-    [
-      "We'll look at the response before and after,",
-    ],
-    [
-      "the code behind it, and what",
-      "to check before merging.",
+      "Now it paginates GET /api/users.",
     ],
   ],
   [
@@ -203,27 +175,11 @@ exports[`English output (baseline) > api-users-pagination > drafts the same stor
 {
   "scenes": [
     {
-      "beat": "context",
-      "eyebrow": "API change",
-      "heading": undefined,
-      "narration": "This change paginates GET /api/users.",
-      "say": "This change paginates GET /api/users.",
-      "visual": {
-        "eyebrow": "API change",
-        "kind": "title",
-        "meta": [
-          "api-users-pagination",
-          "1 file · +14 −1",
-        ],
-        "title": "Paginate GET /api/users",
-      },
-    },
-    {
       "beat": "exchange",
-      "eyebrow": "Request / response",
-      "heading": "app.js",
-      "narration": "The key change is in app.js, which updates pageOfUsers and handle.",
-      "say": "The key change is in the app script, which updates page of users and handle.",
+      "eyebrow": "Paginate GET /api/users",
+      "heading": undefined,
+      "narration": "Now it paginates GET /api/users. The key change is in app.js, which updates pageOfUsers and handle.",
+      "say": "Now it paginates GET /api/users. The key change is in the app script, which updates page of users and handle.",
       "visual": {
         "highlight": [
           0,
@@ -353,9 +309,13 @@ exports[`English output (baseline) > api-users-pagination > drafts the same stor
       "beat": "context",
       "eyebrow": "API change",
       "heading": undefined,
-      "narration": "This change paginates GET /api/users.",
-      "say": "This change paginates GET /api/users.",
+      "narration": "Now it paginates GET /api/users.",
+      "say": "Now it paginates GET /api/users.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "API change",
         "kind": "title",
         "meta": [
@@ -458,121 +418,11 @@ exports[`English output (baseline) > api-users-pagination > drafts the same stor
 {
   "scenes": [
     {
-      "beat": "context",
-      "eyebrow": "API change",
-      "heading": undefined,
-      "narration": "This change paginates GET /api/users. We'll look at the code behind it and what to check before merging.",
-      "say": "This change paginates GET /api/users. We'll look at the code behind it and what to check before merging.",
-      "visual": {
-        "eyebrow": "API change",
-        "kind": "title",
-        "meta": [
-          "api-users-pagination",
-          "1 file · +14 −1",
-        ],
-        "title": "Paginate GET /api/users",
-      },
-    },
-    {
       "beat": "exchange",
-      "eyebrow": "Request / response",
-      "heading": "app.js",
-      "narration": "The key change is in app.js. It adds pageOfUsers, changes handle, changes route GET /api/users, and reads a new environment variable USERS_PAGE_SIZE.",
-      "say": "The key change is in the app script. It adds page of users, changes handle, changes route GET /api/users, and reads a new environment variable users page size.",
-      "visual": {
-        "highlight": [
-          4,
-          5,
-          9,
-        ],
-        "kind": "code",
-        "language": "javascript",
-        "lines": [
-          {
-            "number": 2,
-            "text": "",
-            "type": "context",
-          },
-          {
-            "number": 3,
-            "text": "const PAGE_SIZE = Number(process.env.USERS_PAGE_SIZE ?? 2);",
-            "type": "add",
-          },
-          {
-            "number": 4,
-            "text": "",
-            "type": "add",
-          },
-          {
-            "number": 5,
-            "text": "/** Returns one page of users starting after \`cursor\` (a user id). */",
-            "type": "add",
-          },
-          {
-            "number": 6,
-            "text": "function pageOfUsers(cursor, limit) {",
-            "type": "add",
-          },
-          {
-            "number": 7,
-            "text": "  const start = cursor ? USERS.findIndex((u) => u.id === cursor) + 1 : 0;",
-            "type": "add",
-          },
-          {
-            "number": 8,
-            "text": "  const items = USERS.slice(start, start + limit);",
-            "type": "add",
-          },
-          {
-            "number": 9,
-            "text": "  const last = items.at(-1);",
-            "type": "add",
-          },
-          {
-            "number": 10,
-            "text": "  const hasMore = start + limit < USERS.length;",
-            "type": "add",
-          },
-          {
-            "number": 11,
-            "text": "  return { items, nextCursor: hasMore && last ? last.id : null };",
-            "type": "add",
-          },
-          {
-            "number": 12,
-            "text": "}",
-            "type": "add",
-          },
-          {
-            "number": 13,
-            "text": "",
-            "type": "add",
-          },
-          {
-            "number": 14,
-            "text": "export function handle(req, res) {",
-            "type": "context",
-          },
-          {
-            "number": 15,
-            "text": "  const url = new URL(req.url, 'http://localhost');",
-            "type": "context",
-          },
-          {
-            "number": 16,
-            "text": "  if (url.pathname === '/health') {",
-            "type": "context",
-          },
-        ],
-        "path": "app.js",
-      },
-    },
-    {
-      "beat": "implementation",
-      "eyebrow": "Handler",
-      "heading": "app.js",
-      "narration": "The key change is in app.js. It adds pageOfUsers, changes handle, changes route GET /api/users, and reads a new environment variable USERS_PAGE_SIZE.",
-      "say": "The key change is in the app script. It adds page of users, changes handle, changes route GET /api/users, and reads a new environment variable users page size.",
+      "eyebrow": "Paginate GET /api/users",
+      "heading": undefined,
+      "narration": "Now it paginates GET /api/users. The key change is in app.js. It adds pageOfUsers, changes handle, changes route GET /api/users, and reads a new environment variable USERS_PAGE_SIZE.",
+      "say": "Now it paginates GET /api/users. The key change is in the app script. It adds page of users, changes handle, changes route GET /api/users, and reads a new environment variable users page size.",
       "visual": {
         "highlight": [
           4,
@@ -722,9 +572,13 @@ exports[`English output (baseline) > api-users-pagination > drafts the same stor
       "beat": "context",
       "eyebrow": "API change",
       "heading": undefined,
-      "narration": "This change paginates GET /api/users. We'll look at the response before and after, the code behind it, and what to check before merging.",
-      "say": "This change paginates GET /api/users. We'll look at the response before and after, the code behind it, and what to check before merging.",
+      "narration": "Now it paginates GET /api/users.",
+      "say": "Now it paginates GET /api/users.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "API change",
         "kind": "title",
         "meta": [
@@ -1323,25 +1177,13 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
 [
   [
     [
-      "This change keeps",
-      "accented letters and",
+      "Now it keeps accented",
+      "letters and collapses",
     ],
     [
-      "collapses repeated",
-      "separators in slugify.",
+      "repeated separators",
+      "in slugify.",
     ],
-  ],
-  [
-    [
-      "This change keeps",
-      "accented letters and",
-    ],
-    [
-      "collapses repeated",
-      "separators in slugify.",
-    ],
-  ],
-  [
     [
       "The fix lives in slugify.js,",
       "which updates slugify.",
@@ -1370,12 +1212,12 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
 [
   [
     [
-      "This change keeps",
-      "accented letters and",
+      "Now it keeps accented",
+      "letters and collapses",
     ],
     [
-      "collapses repeated",
-      "separators in slugify.",
+      "repeated separators",
+      "in slugify.",
     ],
   ],
   [
@@ -1413,20 +1255,9 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
 [
   [
     [
-      "This change keeps accented letters and",
+      "Now it keeps accented letters and",
       "collapses repeated separators in slugify.",
     ],
-    [
-      "It touches test and src.",
-    ],
-  ],
-  [
-    [
-      "This change keeps accented letters and",
-      "collapses repeated separators in slugify.",
-    ],
-  ],
-  [
     [
       "The fix lives in slugify.js.",
     ],
@@ -1461,11 +1292,8 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
 [
   [
     [
-      "This change keeps accented letters and",
+      "Now it keeps accented letters and",
       "collapses repeated separators in slugify.",
-    ],
-    [
-      "It touches test and src.",
     ],
   ],
   [
@@ -1522,40 +1350,11 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
 {
   "scenes": [
     {
-      "beat": "context",
-      "eyebrow": "The bug",
-      "heading": undefined,
-      "narration": "This change keeps accented letters and collapses repeated separators in slugify.",
-      "say": "This change keeps accented letters and collapses repeated separators in slugify.",
-      "visual": {
-        "eyebrow": "The bug",
-        "kind": "title",
-        "meta": [
-          "bugfix-cli-slugify",
-          "2 files · +13 −1",
-        ],
-        "title": "Keep accented letters and collapse repeated separators",
-      },
-    },
-    {
-      "beat": "problem",
-      "eyebrow": "Before",
-      "heading": undefined,
-      "narration": "This change keeps accented letters and collapses repeated separators in slugify.",
-      "say": "This change keeps accented letters and collapses repeated separators in slugify.",
-      "visual": {
-        "body": "This change keeps accented letters and collapses repeated separators in slugify. It touches 2 files across test and src (+13 −1). The change is user-visible (cli).",
-        "kind": "callout",
-        "title": "Keep accented letters and collapse repeated separators",
-        "tone": "info",
-      },
-    },
-    {
       "beat": "fix",
-      "eyebrow": "The fix",
-      "heading": "src/slugify.js",
-      "narration": "The fix lives in slugify.js, which updates slugify.",
-      "say": "The fix lives in the slugify script, which updates slugify.",
+      "eyebrow": "Keep accented letters and…",
+      "heading": undefined,
+      "narration": "Now it keeps accented letters and collapses repeated separators in slugify. The fix lives in slugify.js, which updates slugify.",
+      "say": "Now it keeps accented letters and collapses repeated separators in slugify. The fix lives in the slugify script, which updates slugify.",
       "visual": {
         "highlight": [
           4,
@@ -1672,9 +1471,13 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
       "beat": "context",
       "eyebrow": "The bug",
       "heading": undefined,
-      "narration": "This change keeps accented letters and collapses repeated separators in slugify.",
-      "say": "This change keeps accented letters and collapses repeated separators in slugify.",
+      "narration": "Now it keeps accented letters and collapses repeated separators in slugify.",
+      "say": "Now it keeps accented letters and collapses repeated separators in slugify.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "The bug",
         "kind": "title",
         "meta": [
@@ -1687,7 +1490,7 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
     {
       "beat": "problem",
       "eyebrow": "Before",
-      "heading": "/",
+      "heading": "Home page",
       "narration": "Here is the behavior before and after the fix.",
       "say": "Here is the behavior before and after the fix.",
       "visual": {
@@ -1832,40 +1635,11 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
 {
   "scenes": [
     {
-      "beat": "context",
-      "eyebrow": "The bug",
-      "heading": undefined,
-      "narration": "This change keeps accented letters and collapses repeated separators in slugify. It touches test and src.",
-      "say": "This change keeps accented letters and collapses repeated separators in slugify. It touches test and src.",
-      "visual": {
-        "eyebrow": "The bug",
-        "kind": "title",
-        "meta": [
-          "bugfix-cli-slugify",
-          "2 files · +13 −1",
-        ],
-        "title": "Keep accented letters and collapse repeated separators",
-      },
-    },
-    {
-      "beat": "problem",
-      "eyebrow": "Before",
-      "heading": undefined,
-      "narration": "This change keeps accented letters and collapses repeated separators in slugify.",
-      "say": "This change keeps accented letters and collapses repeated separators in slugify.",
-      "visual": {
-        "body": "This change keeps accented letters and collapses repeated separators in slugify. It touches 2 files across test and src (+13 −1). The change is user-visible (cli).",
-        "kind": "callout",
-        "title": "Keep accented letters and collapse repeated separators",
-        "tone": "info",
-      },
-    },
-    {
       "beat": "fix",
-      "eyebrow": "The fix",
-      "heading": "src/slugify.js",
-      "narration": "The fix lives in slugify.js. It changes slugify.",
-      "say": "The fix lives in the slugify script. It changes slugify.",
+      "eyebrow": "Keep accented letters and…",
+      "heading": undefined,
+      "narration": "Now it keeps accented letters and collapses repeated separators in slugify. The fix lives in slugify.js. It changes slugify.",
+      "say": "Now it keeps accented letters and collapses repeated separators in slugify. The fix lives in the slugify script. It changes slugify.",
       "visual": {
         "highlight": [
           6,
@@ -1992,9 +1766,13 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
       "beat": "context",
       "eyebrow": "The bug",
       "heading": undefined,
-      "narration": "This change keeps accented letters and collapses repeated separators in slugify. It touches test and src.",
-      "say": "This change keeps accented letters and collapses repeated separators in slugify. It touches test and src.",
+      "narration": "Now it keeps accented letters and collapses repeated separators in slugify.",
+      "say": "Now it keeps accented letters and collapses repeated separators in slugify.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "The bug",
         "kind": "title",
         "meta": [
@@ -2007,7 +1785,7 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
     {
       "beat": "problem",
       "eyebrow": "Before",
-      "heading": "/",
+      "heading": "Home page",
       "narration": "Here is the behavior before and after the fix. On the left is the old version; on the right, the new one.",
       "say": "Here is the behavior before and after the fix. On the left is the old version; on the right, the new one.",
       "visual": {
@@ -2526,9 +2304,13 @@ exports[`English output (baseline) > drafts every template the same way > api-ch
       "beat": "context",
       "eyebrow": "API change",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "API change",
         "kind": "title",
         "meta": [
@@ -2619,9 +2401,13 @@ exports[`English output (baseline) > drafts every template the same way > api-ch
       "beat": "context",
       "eyebrow": "API change",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments. We'll look at the response before and after and the code behind it.",
-      "say": "This change shows remaining characters and blocks overlong comments. We'll look at the response before and after and the code behind it.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "API change",
         "kind": "title",
         "meta": [
@@ -2808,9 +2594,13 @@ exports[`English output (baseline) > drafts every template the same way > archit
       "beat": "context",
       "eyebrow": "Restructuring",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "Restructuring",
         "kind": "title",
         "meta": [
@@ -2818,19 +2608,6 @@ exports[`English output (baseline) > drafts every template the same way > archit
           "3 files · +30 −3",
         ],
         "title": "Show remaining characters and block overlong comments",
-      },
-    },
-    {
-      "beat": "map",
-      "eyebrow": "The shape",
-      "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
-      "visual": {
-        "body": "This change shows remaining characters and blocks overlong comments. It touches 3 files in project root (+30 −3). The change is user-visible (visual, ui, and interaction).",
-        "kind": "callout",
-        "title": "Show remaining characters and block overlong comments",
-        "tone": "info",
       },
     },
     {
@@ -2879,9 +2656,13 @@ exports[`English output (baseline) > drafts every template the same way > archit
       "beat": "context",
       "eyebrow": "Restructuring",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "Restructuring",
         "kind": "title",
         "meta": [
@@ -2889,19 +2670,6 @@ exports[`English output (baseline) > drafts every template the same way > archit
           "3 files · +30 −3",
         ],
         "title": "Show remaining characters and block overlong comments",
-      },
-    },
-    {
-      "beat": "map",
-      "eyebrow": "The shape",
-      "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
-      "visual": {
-        "body": "This change shows remaining characters and blocks overlong comments. It touches 3 files in project root (+30 −3). The change is user-visible (visual, ui, and interaction).",
-        "kind": "callout",
-        "title": "Show remaining characters and block overlong comments",
-        "tone": "info",
       },
     },
     {
@@ -3044,9 +2812,13 @@ exports[`English output (baseline) > drafts every template the same way > before
       "beat": "context",
       "eyebrow": "Visual change",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "Visual change",
         "kind": "title",
         "meta": [
@@ -3059,9 +2831,9 @@ exports[`English output (baseline) > drafts every template the same way > before
     {
       "beat": "compare",
       "eyebrow": "Before / after",
-      "heading": "/",
-      "narration": "Here's the before and after. On top is the old version; below, the new one.",
-      "say": "Here's the before and after. On top is the old version; below, the new one.",
+      "heading": "Home page",
+      "narration": "Here's the before and after of the home page.",
+      "say": "Here's the before and after of the home page.",
       "visual": {
         "after": {
           "label": "/",
@@ -3131,9 +2903,13 @@ exports[`English output (baseline) > drafts every template the same way > before
       "beat": "context",
       "eyebrow": "Visual change",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments. We'll look at the page before and after, what it looks like, and the code behind it.",
-      "say": "This change shows remaining characters and blocks overlong comments. We'll look at the page before and after, what it looks like, and the code behind it.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "Visual change",
         "kind": "title",
         "meta": [
@@ -3146,9 +2922,9 @@ exports[`English output (baseline) > drafts every template the same way > before
     {
       "beat": "compare",
       "eyebrow": "Before / after",
-      "heading": "/",
-      "narration": "Here's the before and after. On the left is the old version; on the right, the new one.",
-      "say": "Here's the before and after. On the left is the old version; on the right, the new one.",
+      "heading": "Home page",
+      "narration": "Here's the before and after of the home page. On the left is the old version; on the right, the new one.",
+      "say": "Here's the before and after of the home page. On the left is the old version; on the right, the new one.",
       "visual": {
         "after": {
           "label": "/",
@@ -3175,9 +2951,9 @@ exports[`English output (baseline) > drafts every template the same way > before
     {
       "beat": "detail",
       "eyebrow": "Up close",
-      "heading": "/",
-      "narration": "And here's the page after the change, with the changed area highlighted.",
-      "say": "And here's the page after the change, with the changed area highlighted.",
+      "heading": "Home page",
+      "narration": "And here's the home page after the change, with the changed area highlighted.",
+      "say": "And here's the home page after the change, with the changed area highlighted.",
       "visual": {
         "click": undefined,
         "device": "desktop",
@@ -3295,9 +3071,13 @@ exports[`English output (baseline) > drafts every template the same way > bug-fi
       "beat": "context",
       "eyebrow": "The bug",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "The bug",
         "kind": "title",
         "meta": [
@@ -3310,9 +3090,9 @@ exports[`English output (baseline) > drafts every template the same way > bug-fi
     {
       "beat": "problem",
       "eyebrow": "Before",
-      "heading": "/",
-      "narration": "Here's the before and after.",
-      "say": "Here's the before and after.",
+      "heading": "Home page",
+      "narration": "Here's the before and after of the home page.",
+      "say": "Here's the before and after of the home page.",
       "visual": {
         "after": {
           "label": "/",
@@ -3456,9 +3236,13 @@ exports[`English output (baseline) > drafts every template the same way > bug-fi
       "beat": "context",
       "eyebrow": "The bug",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments. We'll look at the page before and after, the code behind it, and the new flow.",
-      "say": "This change shows remaining characters and blocks overlong comments. We'll look at the page before and after, the code behind it, and the new flow.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "The bug",
         "kind": "title",
         "meta": [
@@ -3471,9 +3255,9 @@ exports[`English output (baseline) > drafts every template the same way > bug-fi
     {
       "beat": "problem",
       "eyebrow": "Before",
-      "heading": "/",
-      "narration": "Here's the before and after. On the left is the old version; on the right, the new one.",
-      "say": "Here's the before and after. On the left is the old version; on the right, the new one.",
+      "heading": "Home page",
+      "narration": "Here's the before and after of the home page. On the left is the old version; on the right, the new one.",
+      "say": "Here's the before and after of the home page. On the left is the old version; on the right, the new one.",
       "visual": {
         "after": {
           "label": "/",
@@ -3682,9 +3466,13 @@ exports[`English output (baseline) > drafts every template the same way > cli-ch
       "beat": "context",
       "eyebrow": "CLI change",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "CLI change",
         "kind": "title",
         "meta": [
@@ -3815,9 +3603,13 @@ exports[`English output (baseline) > drafts every template the same way > cli-ch
       "beat": "context",
       "eyebrow": "CLI change",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments. We'll look at the command before and after and the code behind it.",
-      "say": "This change shows remaining characters and blocks overlong comments. We'll look at the command before and after and the code behind it.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "CLI change",
         "kind": "title",
         "meta": [
@@ -3981,9 +3773,13 @@ exports[`English output (baseline) > drafts every template the same way > featur
       "beat": "context",
       "eyebrow": "New behavior",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "New behavior",
         "kind": "title",
         "meta": [
@@ -4158,9 +3954,13 @@ exports[`English output (baseline) > drafts every template the same way > featur
       "beat": "context",
       "eyebrow": "New behavior",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments. We'll look at what it looks like, the new flow, and the code behind it.",
-      "say": "This change shows remaining characters and blocks overlong comments. We'll look at what it looks like, the new flow, and the code behind it.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "New behavior",
         "kind": "title",
         "meta": [
@@ -4173,9 +3973,9 @@ exports[`English output (baseline) > drafts every template the same way > featur
     {
       "beat": "before",
       "eyebrow": "Before",
-      "heading": "/",
-      "narration": "Here's / before the change.",
-      "say": "Here's / before the change.",
+      "heading": "Home page",
+      "narration": "Here's the home page before the change.",
+      "say": "Here's the home page before the change.",
       "visual": {
         "click": undefined,
         "device": "desktop",
@@ -4378,9 +4178,13 @@ exports[`English output (baseline) > drafts every template the same way > quick-
       "beat": "context",
       "eyebrow": "The change",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "The change",
         "kind": "title",
         "meta": [
@@ -4510,9 +4314,13 @@ exports[`English output (baseline) > drafts every template the same way > quick-
       "beat": "context",
       "eyebrow": "The change",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "The change",
         "kind": "title",
         "meta": [
@@ -4659,14 +4467,12 @@ exports[`English output (baseline) > refactor-retry-helper > drafts the same sto
 [
   [
     [
-      "This change extracts backoff",
+      "Now it extracts",
+      "backoff calculation",
     ],
     [
-      "calculation from the",
-      "retry loop in http.",
+      "from the retry loop in http.",
     ],
-  ],
-  [
     [
       "The key change",
       "is in backoff.js,",
@@ -4698,11 +4504,11 @@ exports[`English output (baseline) > refactor-retry-helper > drafts the same sto
 [
   [
     [
-      "This change extracts backoff",
+      "Now it extracts",
+      "backoff calculation",
     ],
     [
-      "calculation from the",
-      "retry loop in http.",
+      "from the retry loop in http.",
     ],
   ],
   [
@@ -4737,29 +4543,20 @@ exports[`English output (baseline) > refactor-retry-helper > drafts the same sto
 [
   [
     [
-      "This change extracts backoff",
-      "calculation from the retry loop in http.",
+      "Now it extracts backoff calculation",
+      "from the retry loop in http.",
     ],
     [
-      "It touches http and test.",
+      "The key change is in backoff.js.",
     ],
     [
-      "We'll look at how the pieces fit",
-      "together and the code behind it.",
+      "It adds backoffDelay and changes withRetry.",
     ],
   ],
   [
     [
       "The change spans 2 areas,",
       "mostly http and test.",
-    ],
-  ],
-  [
-    [
-      "The key change is in backoff.js.",
-    ],
-    [
-      "It adds backoffDelay and changes withRetry.",
     ],
   ],
   [
@@ -4789,15 +4586,8 @@ exports[`English output (baseline) > refactor-retry-helper > drafts the same sto
 [
   [
     [
-      "This change extracts backoff",
-      "calculation from the retry loop in http.",
-    ],
-    [
-      "It touches http and test.",
-    ],
-    [
-      "We'll look at how the pieces fit",
-      "together and the code behind it.",
+      "Now it extracts backoff calculation",
+      "from the retry loop in http.",
     ],
   ],
   [
@@ -4841,27 +4631,11 @@ exports[`English output (baseline) > refactor-retry-helper > drafts the same sto
 {
   "scenes": [
     {
-      "beat": "context",
-      "eyebrow": "The change",
-      "heading": undefined,
-      "narration": "This change extracts backoff calculation from the retry loop in http.",
-      "say": "This change extracts backoff calculation from the retry loop in http.",
-      "visual": {
-        "eyebrow": "The change",
-        "kind": "title",
-        "meta": [
-          "refactor-retry-helper",
-          "3 files · +27 −3",
-        ],
-        "title": "Extract backoff calculation from the retry loop",
-      },
-    },
-    {
       "beat": "core",
-      "eyebrow": "The key lines",
-      "heading": "src/http/backoff.js",
-      "narration": "The key change is in backoff.js, which adds backoffDelay.",
-      "say": "The key change is in the backoff script, which adds backoff delay.",
+      "eyebrow": "Extract backoff calculation…",
+      "heading": undefined,
+      "narration": "Now it extracts backoff calculation from the retry loop in http. The key change is in backoff.js, which adds backoffDelay.",
+      "say": "Now it extracts backoff calculation from the retry loop in http. The key change is in the backoff script, which adds backoff delay.",
       "visual": {
         "highlight": [
           4,
@@ -4963,9 +4737,13 @@ exports[`English output (baseline) > refactor-retry-helper > drafts the same sto
       "beat": "context",
       "eyebrow": "The change",
       "heading": undefined,
-      "narration": "This change extracts backoff calculation from the retry loop in http.",
-      "say": "This change extracts backoff calculation from the retry loop in http.",
+      "narration": "Now it extracts backoff calculation from the retry loop in http.",
+      "say": "Now it extracts backoff calculation from the retry loop in http.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "The change",
         "kind": "title",
         "meta": [
@@ -5079,53 +4857,11 @@ exports[`English output (baseline) > refactor-retry-helper > drafts the same sto
 {
   "scenes": [
     {
-      "beat": "context",
-      "eyebrow": "The change",
-      "heading": undefined,
-      "narration": "This change extracts backoff calculation from the retry loop in http. It touches http and test. We'll look at how the pieces fit together and the code behind it.",
-      "say": "This change extracts backoff calculation from the retry loop in http. It touches http and test. We'll look at how the pieces fit together and the code behind it.",
-      "visual": {
-        "eyebrow": "The change",
-        "kind": "title",
-        "meta": [
-          "refactor-retry-helper",
-          "3 files · +27 −3",
-        ],
-        "title": "Extract backoff calculation from the retry loop",
-      },
-    },
-    {
-      "beat": "scope",
-      "eyebrow": "What changed",
-      "heading": "3 files changed",
-      "narration": "The change spans 2 areas, mostly http and test.",
-      "say": "The change spans 2 areas, mostly http and test.",
-      "visual": {
-        "areas": [
-          {
-            "additions": 12,
-            "deletions": 3,
-            "files": 2,
-            "name": "http",
-            "surface": undefined,
-          },
-          {
-            "additions": 15,
-            "deletions": 0,
-            "files": 1,
-            "name": "test",
-            "surface": "test",
-          },
-        ],
-        "kind": "change-map",
-      },
-    },
-    {
       "beat": "core",
-      "eyebrow": "The key lines",
-      "heading": "src/http/backoff.js",
-      "narration": "The key change is in backoff.js. It adds backoffDelay and changes withRetry.",
-      "say": "The key change is in the backoff script. It adds backoff delay and changes with retry.",
+      "eyebrow": "Extract backoff calculation…",
+      "heading": undefined,
+      "narration": "Now it extracts backoff calculation from the retry loop in http. The key change is in backoff.js. It adds backoffDelay and changes withRetry.",
+      "say": "Now it extracts backoff calculation from the retry loop in http. The key change is in the backoff script. It adds backoff delay and changes with retry.",
       "visual": {
         "highlight": [
           4,
@@ -5180,6 +4916,32 @@ exports[`English output (baseline) > refactor-retry-helper > drafts the same sto
       },
     },
     {
+      "beat": "scope",
+      "eyebrow": "What changed",
+      "heading": "3 files changed",
+      "narration": "The change spans 2 areas, mostly http and test.",
+      "say": "The change spans 2 areas, mostly http and test.",
+      "visual": {
+        "areas": [
+          {
+            "additions": 12,
+            "deletions": 3,
+            "files": 2,
+            "name": "http",
+            "surface": undefined,
+          },
+          {
+            "additions": 15,
+            "deletions": 0,
+            "files": 1,
+            "name": "test",
+            "surface": "test",
+          },
+        ],
+        "kind": "change-map",
+      },
+    },
+    {
       "beat": "review",
       "eyebrow": "Worth a look",
       "heading": undefined,
@@ -5227,9 +4989,13 @@ exports[`English output (baseline) > refactor-retry-helper > drafts the same sto
       "beat": "context",
       "eyebrow": "The change",
       "heading": undefined,
-      "narration": "This change extracts backoff calculation from the retry loop in http. It touches http and test. We'll look at how the pieces fit together and the code behind it.",
-      "say": "This change extracts backoff calculation from the retry loop in http. It touches http and test. We'll look at how the pieces fit together and the code behind it.",
+      "narration": "Now it extracts backoff calculation from the retry loop in http.",
+      "say": "Now it extracts backoff calculation from the retry loop in http.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "The change",
         "kind": "title",
         "meta": [
@@ -6125,23 +5891,12 @@ exports[`English output (baseline) > ui-comment-composer > drafts the same story
 [
   [
     [
-      "This change shows",
+      "Now it shows",
       "remaining characters",
     ],
     [
       "and blocks overlong comments.",
     ],
-  ],
-  [
-    [
-      "This change shows",
-      "remaining characters",
-    ],
-    [
-      "and blocks overlong comments.",
-    ],
-  ],
-  [
     [
       "The key change is in app.js,",
     ],
@@ -6172,7 +5927,7 @@ exports[`English output (baseline) > ui-comment-composer > drafts the same story
 [
   [
     [
-      "This change shows",
+      "Now it shows",
       "remaining characters",
     ],
     [
@@ -6215,17 +5970,9 @@ exports[`English output (baseline) > ui-comment-composer > drafts the same story
 [
   [
     [
-      "This change shows remaining characters",
+      "Now it shows remaining characters",
       "and blocks overlong comments.",
     ],
-  ],
-  [
-    [
-      "This change shows remaining characters",
-      "and blocks overlong comments.",
-    ],
-  ],
-  [
     [
       "The key change is in app.js.",
     ],
@@ -6256,17 +6003,13 @@ exports[`English output (baseline) > ui-comment-composer > drafts the same story
 [
   [
     [
-      "This change shows remaining characters",
+      "Now it shows remaining characters",
       "and blocks overlong comments.",
-    ],
-    [
-      "We'll look at what it looks like,",
-      "the new flow, and the code behind it.",
     ],
   ],
   [
     [
-      "Here's / before the change.",
+      "Here's the home page before the change.",
     ],
   ],
   [
@@ -6309,40 +6052,11 @@ exports[`English output (baseline) > ui-comment-composer > drafts the same story
 {
   "scenes": [
     {
-      "beat": "context",
-      "eyebrow": "New behavior",
-      "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
-      "visual": {
-        "eyebrow": "New behavior",
-        "kind": "title",
-        "meta": [
-          "ui-comment-composer",
-          "3 files · +30 −3",
-        ],
-        "title": "Show remaining characters and block overlong comments",
-      },
-    },
-    {
-      "beat": "interaction",
-      "eyebrow": "See it",
-      "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
-      "visual": {
-        "body": "This change shows remaining characters and blocks overlong comments. It touches 3 files in project root (+30 −3). The change is user-visible (visual, ui, and interaction).",
-        "kind": "callout",
-        "title": "Show remaining characters and block overlong comments",
-        "tone": "info",
-      },
-    },
-    {
       "beat": "implementation",
-      "eyebrow": "How it works",
-      "heading": "app.js",
-      "narration": "The key change is in app.js, which adds remaining and updateCounter.",
-      "say": "The key change is in the app script, which adds remaining and update counter.",
+      "eyebrow": "Show remaining characters and…",
+      "heading": undefined,
+      "narration": "Now it shows remaining characters and blocks overlong comments. The key change is in app.js, which adds remaining and updateCounter.",
+      "say": "Now it shows remaining characters and blocks overlong comments. The key change is in the app script, which adds remaining and update counter.",
       "visual": {
         "highlight": [
           0,
@@ -6457,9 +6171,13 @@ exports[`English output (baseline) > ui-comment-composer > drafts the same story
       "beat": "context",
       "eyebrow": "New behavior",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "New behavior",
         "kind": "title",
         "meta": [
@@ -6631,40 +6349,11 @@ exports[`English output (baseline) > ui-comment-composer > drafts the same story
 {
   "scenes": [
     {
-      "beat": "context",
-      "eyebrow": "New behavior",
-      "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
-      "visual": {
-        "eyebrow": "New behavior",
-        "kind": "title",
-        "meta": [
-          "ui-comment-composer",
-          "3 files · +30 −3",
-        ],
-        "title": "Show remaining characters and block overlong comments",
-      },
-    },
-    {
-      "beat": "interaction",
-      "eyebrow": "See it",
-      "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments.",
-      "say": "This change shows remaining characters and blocks overlong comments.",
-      "visual": {
-        "body": "This change shows remaining characters and blocks overlong comments. It touches 3 files in project root (+30 −3). The change is user-visible (visual, ui, and interaction).",
-        "kind": "callout",
-        "title": "Show remaining characters and block overlong comments",
-        "tone": "info",
-      },
-    },
-    {
       "beat": "implementation",
-      "eyebrow": "How it works",
-      "heading": "app.js",
-      "narration": "The key change is in app.js. It adds remaining and updateCounter.",
-      "say": "The key change is in the app script. It adds remaining and update counter.",
+      "eyebrow": "Show remaining characters and…",
+      "heading": undefined,
+      "narration": "Now it shows remaining characters and blocks overlong comments. The key change is in app.js. It adds remaining and updateCounter.",
+      "say": "Now it shows remaining characters and blocks overlong comments. The key change is in the app script. It adds remaining and update counter.",
       "visual": {
         "highlight": [
           0,
@@ -6799,9 +6488,13 @@ exports[`English output (baseline) > ui-comment-composer > drafts the same story
       "beat": "context",
       "eyebrow": "New behavior",
       "heading": undefined,
-      "narration": "This change shows remaining characters and blocks overlong comments. We'll look at what it looks like, the new flow, and the code behind it.",
-      "say": "This change shows remaining characters and blocks overlong comments. We'll look at what it looks like, the new flow, and the code behind it.",
+      "narration": "Now it shows remaining characters and blocks overlong comments.",
+      "say": "Now it shows remaining characters and blocks overlong comments.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "New behavior",
         "kind": "title",
         "meta": [
@@ -6814,9 +6507,9 @@ exports[`English output (baseline) > ui-comment-composer > drafts the same story
     {
       "beat": "before",
       "eyebrow": "Before",
-      "heading": "/",
-      "narration": "Here's / before the change.",
-      "say": "Here's / before the change.",
+      "heading": "Home page",
+      "narration": "Here's the home page before the change.",
+      "say": "Here's the home page before the change.",
       "visual": {
         "click": undefined,
         "device": "desktop",
@@ -7368,22 +7061,12 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
 [
   [
     [
-      "This change is a visual",
-      "update: refresh plan cards",
+      "A visual update:",
+      "refresh plan cards and",
     ],
     [
-      "and highlight the",
-      "popular plan in pricing.",
-    ],
-  ],
-  [
-    [
-      "This change is a visual",
-      "update: refresh plan cards",
-    ],
-    [
-      "and highlight the",
-      "popular plan in pricing.",
+      "highlight the popular",
+      "plan in pricing.",
     ],
   ],
   [
@@ -7408,21 +7091,18 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
 [
   [
     [
-      "This change is a visual",
-      "update: refresh plan cards",
+      "A visual update:",
+      "refresh plan cards and",
     ],
     [
-      "and highlight the",
-      "popular plan in pricing.",
+      "highlight the popular",
+      "plan in pricing.",
     ],
   ],
   [
     [
-      "Here's the before and after.",
-    ],
-    [
-      "On top is the old version;",
-      "below, the new one.",
+      "Here's the before and",
+      "after of the home page.",
     ],
   ],
   [
@@ -7447,27 +7127,9 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
 [
   [
     [
-      "This change is a visual",
-      "update: refresh plan cards",
+      "A visual update: refresh plan cards and",
+      "highlight the popular plan in pricing.",
     ],
-    [
-      "and highlight the popular plan in pricing.",
-    ],
-    [
-      "We'll look at the code behind it",
-      "and what to check before merging.",
-    ],
-  ],
-  [
-    [
-      "This change is a visual",
-      "update: refresh plan cards",
-    ],
-    [
-      "and highlight the popular plan in pricing.",
-    ],
-  ],
-  [
     [
       "The styles live in pricing.css.",
     ],
@@ -7498,16 +7160,14 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
 [
   [
     [
-      "This change is a visual",
-      "update: refresh plan cards",
-    ],
-    [
-      "and highlight the popular plan in pricing.",
+      "A visual update: refresh plan cards and",
+      "highlight the popular plan in pricing.",
     ],
   ],
   [
     [
-      "Here's the before and after.",
+      "Here's the before and",
+      "after of the home page.",
     ],
     [
       "On the left is the old version;",
@@ -7516,7 +7176,7 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
   ],
   [
     [
-      "And here's the page after the change,",
+      "And here's the home page after the change,",
       "with the changed area highlighted.",
     ],
   ],
@@ -7554,8 +7214,8 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
       "beat": "context",
       "eyebrow": "Visual change",
       "heading": undefined,
-      "narration": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing.",
-      "say": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing.",
+      "narration": "A visual update: refresh plan cards and highlight the popular plan in pricing.",
+      "say": "A visual update: refresh plan cards and highlight the popular plan in pricing.",
       "visual": {
         "eyebrow": "Visual change",
         "kind": "title",
@@ -7564,19 +7224,6 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
           "2 files · +15 −10",
         ],
         "title": "Refresh plan cards and highlight the popular plan",
-      },
-    },
-    {
-      "beat": "compare",
-      "eyebrow": "Before / after",
-      "heading": undefined,
-      "narration": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing.",
-      "say": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing.",
-      "visual": {
-        "body": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing. It touches 2 files in project root (+15 −10). The change is user-visible (visual and ui).",
-        "kind": "callout",
-        "title": "Refresh plan cards and highlight the popular plan",
-        "tone": "info",
       },
     },
     {
@@ -7632,9 +7279,13 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
       "beat": "context",
       "eyebrow": "Visual change",
       "heading": undefined,
-      "narration": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing.",
-      "say": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing.",
+      "narration": "A visual update: refresh plan cards and highlight the popular plan in pricing.",
+      "say": "A visual update: refresh plan cards and highlight the popular plan in pricing.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "Visual change",
         "kind": "title",
         "meta": [
@@ -7647,9 +7298,9 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
     {
       "beat": "compare",
       "eyebrow": "Before / after",
-      "heading": "/",
-      "narration": "Here's the before and after. On top is the old version; below, the new one.",
-      "say": "Here's the before and after. On top is the old version; below, the new one.",
+      "heading": "Home page",
+      "narration": "Here's the before and after of the home page.",
+      "say": "Here's the before and after of the home page.",
       "visual": {
         "after": {
           "label": "/",
@@ -7723,40 +7374,11 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
 {
   "scenes": [
     {
-      "beat": "context",
-      "eyebrow": "Visual change",
-      "heading": undefined,
-      "narration": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing. We'll look at the code behind it and what to check before merging.",
-      "say": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing. We'll look at the code behind it and what to check before merging.",
-      "visual": {
-        "eyebrow": "Visual change",
-        "kind": "title",
-        "meta": [
-          "visual-pricing-cards",
-          "2 files · +15 −10",
-        ],
-        "title": "Refresh plan cards and highlight the popular plan",
-      },
-    },
-    {
-      "beat": "compare",
-      "eyebrow": "Before / after",
-      "heading": undefined,
-      "narration": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing.",
-      "say": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing.",
-      "visual": {
-        "body": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing. It touches 2 files in project root (+15 −10). The change is user-visible (visual and ui).",
-        "kind": "callout",
-        "title": "Refresh plan cards and highlight the popular plan",
-        "tone": "info",
-      },
-    },
-    {
       "beat": "styles",
-      "eyebrow": "The styles",
-      "heading": "pricing.css",
-      "narration": "The styles live in pricing.css. Edits index.html and pricing.css.",
-      "say": "The styles live in the pricing stylesheet. Edits the index page and the pricing stylesheet.",
+      "eyebrow": "Refresh plan cards and…",
+      "heading": undefined,
+      "narration": "A visual update: refresh plan cards and highlight the popular plan in pricing. The styles live in pricing.css. Edits index.html and pricing.css.",
+      "say": "A visual update: refresh plan cards and highlight the popular plan in pricing. The styles live in the pricing stylesheet. Edits the index page and the pricing stylesheet.",
       "visual": {
         "highlight": [
           2,
@@ -7898,9 +7520,13 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
       "beat": "context",
       "eyebrow": "Visual change",
       "heading": undefined,
-      "narration": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing.",
-      "say": "This change is a visual update: refresh plan cards and highlight the popular plan in pricing.",
+      "narration": "A visual update: refresh plan cards and highlight the popular plan in pricing.",
+      "say": "A visual update: refresh plan cards and highlight the popular plan in pricing.",
       "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
         "eyebrow": "Visual change",
         "kind": "title",
         "meta": [
@@ -7913,9 +7539,9 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
     {
       "beat": "compare",
       "eyebrow": "Before / after",
-      "heading": "/",
-      "narration": "Here's the before and after. On the left is the old version; on the right, the new one.",
-      "say": "Here's the before and after. On the left is the old version; on the right, the new one.",
+      "heading": "Home page",
+      "narration": "Here's the before and after of the home page. On the left is the old version; on the right, the new one.",
+      "say": "Here's the before and after of the home page. On the left is the old version; on the right, the new one.",
       "visual": {
         "after": {
           "label": "/",
@@ -7942,9 +7568,9 @@ exports[`English output (baseline) > visual-pricing-cards > drafts the same stor
     {
       "beat": "detail",
       "eyebrow": "Up close",
-      "heading": "/",
-      "narration": "And here's the page after the change, with the changed area highlighted.",
-      "say": "And here's the page after the change, with the changed area highlighted.",
+      "heading": "Home page",
+      "narration": "And here's the home page after the change, with the changed area highlighted.",
+      "say": "And here's the home page after the change, with the changed area highlighted.",
       "visual": {
         "click": undefined,
         "device": "desktop",

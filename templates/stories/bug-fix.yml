@@ -27,7 +27,6 @@ beats:
     goal: Show the corrected behavior.
     visuals: [interaction, screenshot:after]
     expression: success
-    optional: true
   - id: review
     eyebrow: Worth a look
     eyebrows: { ko: '살펴볼 점', ja: '確認ポイント', zh: '值得一看' }

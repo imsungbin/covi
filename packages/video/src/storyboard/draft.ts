@@ -20,11 +20,13 @@ import {
   type ReviewContext,
   sentenceCase,
   t,
+  toThirdPersonClause,
   truncate,
 } from '@covi/core';
 import type { VideoSpec } from '../spec.ts';
-import { type Beat, type StoryTemplate, selectTemplate } from '../templates.ts';
+import { type Beat, heroScene, type StoryTemplate, selectTemplate } from '../templates.ts';
 import { SPEECH_RATE, segments, speechUnits } from '../text.ts';
+import { stripEmphasis } from './grammar.ts';
 import type { Scene, Storyboard, Visual } from './schema.ts';
 
 export interface DraftInput {
@@ -81,6 +83,7 @@ export function draftStoryboard(input: DraftInput): Storyboard {
     vertical: input.spec.height > input.spec.width,
     language,
     say: (key, params) => t(language, `narration.${key}`, params),
+    heroBeats: new Set(template.hero),
   };
 
   const scenes: Scene[] = [];
@@ -113,7 +116,9 @@ export function draftStoryboard(input: DraftInput): Storyboard {
       )!,
     );
   }
-  if (!short) addRoadmap(scenes, budgets[0] ?? 0, ctx);
+  openCold(scenes, budgets, ctx);
+  markHero(scenes, template);
+  dropRepeatedLead(scenes, ctx);
   return {
     schemaVersion: 1,
     language,
@@ -131,6 +136,8 @@ interface BeatContext extends DraftInput {
   language: Language;
   /** A drafted sentence in the narration language (`narration.<key>` in the catalogs). */
   say: (key: string, params?: Params) => string;
+  /** The template's payoff beats: a callout never stands in for one. */
+  heroBeats: ReadonlySet<string>;
 }
 
 function eyebrowOf(beat: Beat, language: Language): string {
@@ -146,27 +153,28 @@ function buildScene(beat: Beat, budget: number, ctx: BeatContext): Scene | undef
     if (!visual) continue;
     ctx.used.add(key);
     const narration = narrate(beat, visual, ctx, budget);
-    const text = fitWords(narration.text, budget, ctx.language);
+    const text = fitWords(stripEmphasis(narration.text), budget, ctx.language);
     return {
       beat: beat.id,
       eyebrow: eyebrowOf(beat, ctx.language),
       heading: narration.heading,
       narration: text,
       say: narration.say
-        ? fitWords(narration.say, budget + units(2.4, ctx.language), ctx.language)
+        ? fitWords(stripEmphasis(narration.say), budget + units(2.4, ctx.language), ctx.language)
         : spoken(text, ctx.language),
       visual,
       expression: expressionFor(beat, ctx),
       optional: beat.optional || undefined,
     };
   }
-  return beat.optional ? undefined : fallbackScene(beat, budget, ctx);
+  // A callout is never the payoff: a hero beat without evidence is left out instead.
+  return beat.optional || ctx.heroBeats.has(beat.id) ? undefined : fallbackScene(beat, budget, ctx);
 }
 
 function fallbackScene(beat: Beat, budget: number, ctx: BeatContext): Scene | undefined {
   if (beat.id === 'context' || beat.id === 'summary') return undefined;
   const text = fitWords(
-    stripMarkdown(firstSentence(ctx.explanation.summary, ctx.language)),
+    stripEmphasis(stripMarkdown(firstSentence(ctx.explanation.summary, ctx.language))),
     budget,
     ctx.language,
   );
@@ -552,19 +560,46 @@ interface Narration {
   heading?: string;
 }
 
+/**
+ * The opening line: what the change does, said as a statement. It is the video's hook, so it never
+ * starts like the explanation's "This change …" sentence (`intentSentence`), which it otherwise
+ * follows.
+ */
+function openingLine(context: ReviewContext, language: Language): string {
+  const { intent } = context;
+  const say = (key: string, params?: Params) => t(language, `narration.opening.${key}`, params);
+  let summary = intent.summary.trim().replace(/[.!。！]$/, '');
+  if (intent.scope && !summary.toLowerCase().includes(intent.scope.toLowerCase()))
+    summary = t(language, 'explain.sentence.scopeIn', { summary, scope: intent.scope });
+  const kind = t(language, `explain.kindPhrase.${intent.kind}`);
+  if (language !== 'en') return endSentence(language, say('kind', { kind, summary }));
+  if (isImperativeVerb(summary.split(/\s+/)[0] ?? ''))
+    return ensurePeriod(say('imperative', { clause: toThirdPersonClause(lowerFirst(summary)) }));
+  if (summary.includes(': ')) return sentenceCase(say('titled', { kind, summary }));
+  return ensurePeriod(sentenceCase(say('kind', { kind, summary: lowerFirst(summary) })));
+}
+
+/**
+ * How narration and headings name a captured page: by its path, except the root, which reads as
+ * the home page. The browser chrome keeps the path.
+ */
+function pageLabel(
+  name: string | undefined,
+  language: Language,
+  form: 'narration' | 'heading' = 'narration',
+): string | undefined {
+  if (name === undefined) return undefined;
+  if (name.trim() !== '' && name.trim() !== '/') return name;
+  return t(language, form === 'heading' ? 'narration.page.homeHeading' : 'narration.page.home');
+}
+
 function narrate(beat: Beat, visual: Visual, ctx: BeatContext, budget: number): Narration {
   const { context, review, say, language } = ctx;
   const en = language === 'en';
   const list = (items: string[]) => listOf(language, items);
   switch (visual.kind) {
-    case 'title': {
-      const lead = stripMarkdown(intentSentence(context, language));
-      const where =
-        context.areas.length > 1
-          ? say('touches', { areas: list(context.areas.slice(0, 2).map((a) => a.name)) })
-          : '';
-      return { text: lead + (ctx.short ? '' : where) };
-    }
+    case 'title':
+      return { text: stripMarkdown(openingLine(context, language)) };
     case 'change-map':
       return {
         text: say('changeMap.text', {
@@ -608,26 +643,22 @@ function narrate(beat: Beat, visual: Visual, ctx: BeatContext, budget: number): 
       };
     }
     case 'screenshot': {
-      const thePage = say('screenshot.thePage');
+      const label = pageLabel(visual.label, language) ?? say('screenshot.thePage');
+      const heading = pageLabel(visual.label, language, 'heading');
       return visual.image.path.includes('before')
-        ? {
-            text: say('screenshot.before', { label: visual.label ?? thePage }),
-            heading: visual.label,
-          }
+        ? { text: say('screenshot.before', { label }), heading }
         : {
             text: say('screenshot.after', {
-              label: visual.label === '/' ? thePage : (visual.label ?? thePage),
+              label,
               highlighted: visual.focus ? say('screenshot.highlighted') : '',
             }),
-            heading: visual.label,
+            heading,
           };
     }
     case 'before-after': {
       const order = say(visual.layout === 'stack' ? 'beforeAfter.stack' : 'beforeAfter.split');
-      const page =
-        visual.after.label && visual.after.label !== '/'
-          ? say('beforeAfter.pageOf', { page: visual.after.label })
-          : '';
+      const label = pageLabel(visual.after.label, language);
+      const page = label ? say('beforeAfter.pageOf', { page: label }) : '';
       return {
         text: joinSentences(language, [
           ctx.context.intent.kind === 'bug-fix'
@@ -635,7 +666,7 @@ function narrate(beat: Beat, visual: Visual, ctx: BeatContext, budget: number): 
             : say('beforeAfter.page', { page }),
           order,
         ]),
-        heading: visual.after.label,
+        heading: pageLabel(visual.after.label, language, 'heading'),
       };
     }
     case 'interaction': {
@@ -752,47 +783,124 @@ function narrate(beat: Beat, visual: Visual, ctx: BeatContext, budget: number): 
   }
 }
 
-/** Standard videos open with a one-line map of what is coming, taken from the scenes that follow. */
-function addRoadmap(scenes: Scene[], budget: number, ctx: BeatContext): void {
-  const [first, ...rest] = scenes;
-  if (first?.visual.kind !== 'title' || rest.length < 3) return;
-  const stops = [
-    ...new Set(rest.map((s) => roadmapStop(s.visual, ctx)).filter((x): x is string => Boolean(x))),
-  ];
-  if (stops.length < 2) return;
-  const text = ctx.say('roadmap.text', {
-    first: first.narration,
-    stops: listOf(ctx.language, stops),
-  });
-  // A little over budget is fine for one orienting sentence; a long one is not.
-  if (speechUnits(text, ctx.language) > Math.round(budget * 1.3)) return;
-  first.narration = text;
-  first.say = spoken(text, ctx.language);
+/** Visuals that are the subject itself when nothing was captured. */
+const SUBJECT = new Set<Visual['kind']>(['code', 'terminal', 'api']);
+
+/**
+ * Opens cold instead of on a title card: the title over the change's main capture; without one,
+ * the first scene showing code, a command, or a response (the payoff only when nothing else
+ * does) moves to the front with a short form of the title as its eyebrow and the opening line
+ * before its own. A change with neither keeps its title card.
+ */
+function openCold(scenes: Scene[], budgets: number[], ctx: BeatContext): void {
+  const opening = scenes[0];
+  if (opening?.visual.kind !== 'title') return;
+  const title = opening.visual.title;
+  const shot = primaryShot(ctx, 'after');
+  if (shot?.after) {
+    opening.visual = { ...opening.visual, background: { path: shot.after.path, label: shot.name } };
+    return;
+  }
+  const hero = heroScene(scenes, [...ctx.heroBeats]);
+  const subjects = scenes.flatMap((s, i) => (i > 0 && SUBJECT.has(s.visual.kind) ? [i] : []));
+  let index = subjects.find((i) => i !== hero) ?? subjects[0];
+  if (index === undefined) return;
+  // A subject showing the hero's very lines would show them twice: the hero opens, once.
+  if (
+    hero !== undefined &&
+    index !== hero &&
+    sameCode(scenes[index]!.visual, scenes[hero]!.visual)
+  ) {
+    scenes.splice(index, 1);
+    budgets.splice(index, 1);
+    index = hero > index ? hero - 1 : hero;
+  }
+  // The opening is never dropped to fit the length, so the moved scene loses `optional`.
+  const { heading: _heading, optional: _optional, ...subject } = scenes[index]!;
+  const { language } = ctx;
+  const budget = (budgets[0] ?? 0) + (budgets[index] ?? 0);
+  scenes.splice(index, 1);
+  scenes[0] = {
+    ...subject,
+    eyebrow: shortTitle(stripEmphasis(title)),
+    narration: fitWords(
+      joinSentences(language, [opening.narration, subject.narration]),
+      budget,
+      language,
+    ),
+    say: fitWords(
+      joinSentences(language, [
+        opening.say ?? spoken(opening.narration, language),
+        subject.say ?? spoken(subject.narration, language),
+      ]),
+      budget + units(2.4, language),
+      language,
+    ),
+  };
 }
 
-function roadmapStop(visual: Visual, ctx: BeatContext): string | undefined {
-  const say = (key: string) => ctx.say(`roadmap.${key}`);
-  switch (visual.kind) {
-    case 'api':
-      return say(visual.before ? 'api' : 'apiNew');
-    case 'terminal':
-      return say(visual.before ? 'terminal' : 'terminalNew');
-    case 'before-after':
-      return say('beforeAfter');
-    case 'screenshot':
-      return say('screenshot');
-    case 'interaction':
-      return say('interaction');
-    case 'code':
-      return say('code');
-    case 'diagram':
-    case 'change-map':
-      return say('structure');
-    case 'findings':
-      return say('findings');
-    default:
-      return undefined;
+/** The template's payoff, the first one present, is the video's hero; a hero is never optional. */
+function markHero(scenes: Scene[], template: StoryTemplate): void {
+  const index = heroScene(scenes, template.hero);
+  if (index === undefined) return;
+  const { optional: _optional, ...scene } = scenes[index]!;
+  scenes[index] = { ...scene, hero: true };
+}
+
+function sameCode(a: Visual, b: Visual): boolean {
+  return (
+    a.kind === 'code' &&
+    b.kind === 'code' &&
+    a.path === b.path &&
+    JSON.stringify(a.lines) === JSON.stringify(b.lines)
+  );
+}
+
+/**
+ * The opening says what the change does; no later scene says it again. A scene left with nothing
+ * else to say (a fallback callout of the summary's first sentence) goes; the hero and the summary
+ * always stay.
+ */
+function dropRepeatedLead(scenes: Scene[], ctx: BeatContext): void {
+  const { language } = ctx;
+  const opening = stripMarkdown(openingLine(ctx.context, language)).trim();
+  if (!opening || !scenes[0]?.narration.includes(opening)) return;
+  // Later scenes say it the explanation's way (a callout of the summary's first sentence).
+  const lead = stripMarkdown(intentSentence(ctx.context, language)).trim();
+  const heard = spoken(lead, language);
+  const sentences = (text: string) =>
+    segments(text, language, 'sentence')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  const without = (text: string) =>
+    joinSentences(
+      language,
+      sentences(text).filter((s) => s !== lead && s !== heard),
+    );
+  for (let i = scenes.length - 1; i > 0; i--) {
+    const scene = scenes[i]!;
+    if (!sentences(scene.narration).includes(lead)) continue;
+    const narration = without(scene.narration);
+    if (!narration) {
+      if (!scene.hero && scene.visual.kind !== 'summary') scenes.splice(i, 1);
+      continue;
+    }
+    scenes[i] = {
+      ...scene,
+      narration,
+      say: (scene.say && without(scene.say)) || spoken(narration, language),
+    };
   }
+}
+
+/** A title short enough for an eyebrow: whole words, at most `max` characters (code points). */
+function shortTitle(title: string, max = 32): string {
+  const chars = [...title];
+  if (chars.length <= max) return title;
+  const cut = chars.slice(0, max - 1).join('');
+  const space = cut.lastIndexOf(' ');
+  const words = space > 0 && [...cut.slice(0, space)].length > max / 2;
+  return `${(words ? cut.slice(0, space) : cut).replace(/[\s,;:.–-]+$/, '')}…`;
 }
 
 /** The explanation's own words for the area a file belongs to, as a sentence about that file. */

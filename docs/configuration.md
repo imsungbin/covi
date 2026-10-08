@@ -389,8 +389,8 @@ Differences Covi observes become findings in `covi review --demo`, `covi video`,
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `when` | `auto`, `always`, `never` | `auto` | Whether `covi ci` and `covi video` render a video: when Covi judges it useful, always (even when Covi would decline), or never. `covi video --force` renders despite `never`. |
-| `mode` | `short`, `standard`, `custom` | `short` | `short`: vertical 9:16 (1080×1920), about 30 seconds. `standard`: 16:9 (1920×1080), 60–120 seconds. `custom`: your size. |
-| `duration` | `auto` or duration | `auto` | Target length. `auto` uses the mode's range (short: 20–35 s, standard: 60–120 s; a custom size uses the short range unless it is landscape). A number sets the target, and quality checks accept about ±15% (at least ±2 s). |
+| `mode` | `short`, `standard`, `custom` | `short` | `short`: vertical 9:16 (1080×1920), about 30 seconds. `standard`: 16:9 (1920×1080), up to 120 seconds. `custom`: your size. |
+| `duration` | `auto` or duration | `auto` | Target length. `auto` uses the mode's range (short: 20–35 s, standard: 60–120 s; a custom size uses the short range unless it is landscape). A number sets the target with a window of about ±15% (at least ±2 s); the window's maximum is a ceiling, and Covi never pads a shorter video. |
 | `width`, `height` | integer, 240–3840 | from `mode` | Frame size. For `custom`, a missing side is filled to 16:9, and with neither set the size is 1920×1080. With `short` or `standard`, a value you set replaces that side of the preset. |
 | `fps` | integer, 10–60 | `30` | Frame rate. |
 | `narration` | boolean or object | `true` | `false` makes a captions-only video. The object form has `enabled`, `provider`, `voice`, `rate`, and `pronunciations`. |

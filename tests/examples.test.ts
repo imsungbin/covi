@@ -4,6 +4,7 @@ import {
   type Demonstration,
   explainHeuristically,
   Git,
+  intentSentence,
   loadRepositoryConfig,
   parseConfigInput,
   resolveChange,
@@ -94,7 +95,26 @@ describe('example changes', () => {
             templates,
           });
           expect(StoryboardSchema.safeParse(storyboard).success).toBe(true);
-          expect(storyboard.scenes[0]!.visual.kind).toBe('title');
+          // A cold open: without captures the subject itself (code, a run, a response) comes
+          // first; only a change with none of those keeps a title card.
+          const subjects = ['code', 'terminal', 'api'];
+          const first = storyboard.scenes[0]!.visual.kind;
+          if (storyboard.scenes.some((s) => subjects.includes(s.visual.kind)))
+            expect(subjects).toContain(first);
+          else expect(first).toBe('title');
+          expect(storyboard.scenes.filter((s) => s.hero).length).toBeLessThanOrEqual(1);
+          expect(storyboard.scenes[0]!.optional).toBeUndefined();
+          for (const s of storyboard.scenes) expect(s.narration).not.toMatch(/We'll look at/);
+          // The fitter may drop an optional scene, never the hero.
+          for (const s of storyboard.scenes.filter((s) => s.hero))
+            expect(s.optional).toBeUndefined();
+          // Nothing is said or shown twice: the opening sentence, or the same lines of code.
+          const lead = intentSentence(context);
+          for (const s of storyboard.scenes.slice(1)) expect(s.narration).not.toContain(lead);
+          const code = storyboard.scenes
+            .filter((s) => s.visual.kind === 'code')
+            .map((s) => JSON.stringify(s.visual));
+          expect(new Set(code).size).toBe(code.length);
           expect(storyboard.scenes.at(-1)!.visual.kind).toBe('summary');
           expect(storyboard.scenes.length).toBeGreaterThanOrEqual(3);
           const words = storyboard.scenes.reduce(
@@ -151,6 +171,231 @@ describe('templates', () => {
   });
 });
 
+describe('the drafted opening and hero', () => {
+  it('puts the title over the most-changed capture when a page was captured', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('visual-pricing-cards');
+    const image = (path: string) => ({ path, width: 1280, height: 800 });
+    const shot = (id: string, changedRatio: number) => ({
+      id,
+      kind: 'page' as const,
+      name: `/${id}`,
+      viewport: 'desktop' as const,
+      before: image(`demo/screenshots/${id}-before.png`),
+      after: image(`demo/screenshots/${id}-after.png`),
+      diff: { changedRatio, bounds: { x: 0, y: 0, width: 100, height: 100 } },
+    });
+    const demo: Demonstration = {
+      schemaVersion: 1,
+      shots: [shot('faq', 0.01), shot('pricing', 0.2)],
+      commands: [],
+      requests: [],
+      skipped: [],
+      findings: [],
+    };
+    const storyboard = draftStoryboard({
+      change,
+      context,
+      explanation,
+      review,
+      demo,
+      spec: resolveVideoSpec(config, { mode: 'standard' }),
+      templates: await loadTemplates(),
+    });
+    expect(StoryboardSchema.safeParse(storyboard).success).toBe(true);
+    const opening = storyboard.scenes[0]!;
+    expect(opening.visual).toMatchObject({
+      kind: 'title',
+      background: { path: 'demo/screenshots/pricing-after.png', label: '/pricing' },
+    });
+    const heroes = storyboard.scenes.filter((s) => s.hero);
+    expect(heroes.map((s) => s.beat)).toEqual(['compare']);
+    expect(heroes[0]!.optional).toBeUndefined();
+  });
+
+  it('leaves out a hero beat without evidence, and opens on the hero when it is all there is', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('bugfix-cli-slugify');
+    for (const mode of ['short', 'standard'] as const) {
+      const storyboard = draftStoryboard({
+        change,
+        context,
+        explanation,
+        review,
+        spec: resolveVideoSpec(config, { mode }),
+        templates: await loadTemplates(),
+      });
+      expect(storyboard.template).toBe('bug-fix');
+      // Nothing showed the fixed behavior, so there is no proof scene (and no callout for it).
+      expect(storyboard.scenes.some((s) => s.beat === 'proof')).toBe(false);
+      // The fix is the only scene that shows the subject: it opens the video, as its hero.
+      expect(storyboard.scenes[0]).toMatchObject({ beat: 'fix', hero: true });
+      expect(storyboard.scenes[0]!.optional).toBeUndefined();
+      expect(storyboard.scenes.filter((s) => s.hero)).toHaveLength(1);
+      // The "Before" callout only repeated the opening sentence, so it is gone with it.
+      expect(storyboard.scenes.map((s) => s.beat)).toEqual(['fix', 'review', 'summary']);
+    }
+  });
+
+  it('opens on the hero when the other subject shows the same lines, and never shows them twice', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('api-users-pagination');
+    const storyboard = draftStoryboard({
+      change,
+      context,
+      explanation,
+      review,
+      spec: resolveVideoSpec(config, { mode: 'standard' }),
+      templates: await loadTemplates(),
+    });
+    // Without a captured response, the exchange and the handler both show app.js.
+    expect(storyboard.scenes.map((s) => s.beat)).toEqual(['exchange', 'review', 'summary']);
+    expect(storyboard.scenes[0]).toMatchObject({
+      hero: true,
+      eyebrow: 'Paginate GET /api/users',
+      visual: { kind: 'code', path: 'app.js' },
+    });
+    expect(storyboard.scenes[0]!.narration).toMatch(
+      /^Now it paginates GET \/api\/users\. The key change is in app\.js/,
+    );
+  });
+
+  it('opens on the change itself, never "This change …", and calls the root page the home page', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('ui-comment-composer');
+    const image = (path: string) => ({ path, width: 1280, height: 800 });
+    const demo: Demonstration = {
+      schemaVersion: 1,
+      shots: [
+        {
+          id: 'home',
+          kind: 'page',
+          name: '/',
+          viewport: 'desktop',
+          before: image('demo/screenshots/home-before.png'),
+          after: image('demo/screenshots/home-after.png'),
+          diff: { changedRatio: 0.2, bounds: { x: 0, y: 0, width: 100, height: 100 } },
+        },
+      ],
+      commands: [],
+      requests: [],
+      skipped: [],
+      findings: [],
+    };
+    for (const mode of ['short', 'standard'] as const) {
+      const storyboard = draftStoryboard({
+        change,
+        context,
+        explanation,
+        review,
+        demo,
+        spec: resolveVideoSpec(config, { mode }),
+        templates: await loadTemplates(),
+      });
+      const [opening, ...rest] = storyboard.scenes;
+      expect(opening!.narration).not.toMatch(/^This change/);
+      expect(opening!.narration).toBe(
+        'Now it shows remaining characters and blocks overlong comments.',
+      );
+      // The browser chrome keeps the URL; what is read and heard names the page.
+      expect(opening!.visual).toMatchObject({ background: { label: '/' } });
+      for (const scene of rest) {
+        expect(scene.heading, scene.beat).not.toBe('/');
+        expect(scene.narration, scene.beat).not.toMatch(/(^|\s)\/(?=[\s.,]|$)/);
+      }
+      expect(rest.map((s) => s.narration).join(' ')).toContain('the home page');
+    }
+  });
+
+  it('shortens a long title to whole characters, never half of one', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('api-users-pagination');
+    const storyboard = draftStoryboard({
+      change,
+      context,
+      explanation: { ...explanation, headline: '𠮷'.repeat(40) },
+      review,
+      spec: resolveVideoSpec(config, { mode: 'standard' }),
+      templates: await loadTemplates(),
+    });
+    // 40 characters, 80 UTF-16 units: the cut counts characters, so no surrogate is split.
+    expect(storyboard.scenes[0]!.eyebrow).toBe(`${'𠮷'.repeat(31)}…`);
+  });
+
+  it('keeps the title card when nothing shows the subject', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('refactor-retry-helper');
+    const storyboard = draftStoryboard({
+      change: { ...change, files: [] },
+      context,
+      explanation,
+      review,
+      spec: resolveVideoSpec(config, { mode: 'standard' }),
+      templates: await loadTemplates(),
+    });
+    const opening = storyboard.scenes[0]!;
+    expect(opening.visual.kind).toBe('title');
+    expect((opening.visual as { background?: unknown }).background).toBeUndefined();
+    // The opening line is the intent alone: no list of areas, no table of contents.
+    expect(opening.narration).toBe(
+      'Now it extracts backoff calculation from the retry loop in http.',
+    );
+  });
+
+  it('never lets text from the change write [[…]] markup into a line', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('api-users-pagination');
+    const marked = (text: string) => `[[${text}]] ]] [[`;
+    const storyboard = draftStoryboard({
+      change,
+      context: { ...context, intent: { ...context.intent, summary: marked('Paginate users') } },
+      explanation: {
+        ...explanation,
+        headline: marked(explanation.headline),
+        summary: marked(explanation.summary),
+        changes: explanation.changes.map((c) => ({ ...c, description: marked(c.description) })),
+      },
+      review: {
+        ...review,
+        findings: review.findings.map((f) => ({
+          ...f,
+          title: marked(f.title),
+          explanation: marked(f.explanation),
+        })),
+      },
+      demo: {
+        schemaVersion: 1,
+        shots: [],
+        commands: [],
+        skipped: [],
+        findings: [],
+        requests: [
+          {
+            name: 'list users',
+            method: 'GET',
+            path: '/api/users',
+            changed: true,
+            before: { status: 200, body: '[]' },
+            after: { status: 200, body: '{"items":[]}' },
+            shapeChange: marked('the response changed shape'),
+          },
+        ],
+      },
+      spec: resolveVideoSpec(config, { mode: 'standard' }),
+      templates: await loadTemplates(),
+    });
+    expect(StoryboardSchema.safeParse(storyboard).success).toBe(true);
+    for (const s of storyboard.scenes) {
+      expect(s.narration, s.beat).not.toMatch(/\[\[|\]\]/);
+      expect(s.say ?? '', s.beat).not.toMatch(/\[\[|\]\]/);
+    }
+    // The cold open's eyebrow is the headline, shown without the markers; their text stays.
+    const opening = storyboard.scenes[0]!;
+    expect(opening.eyebrow).not.toMatch(/\[\[|\]\]/);
+    expect(opening.narration).toContain('Paginate users');
+  });
+});
+
 describe('standard-length narration', () => {
   it('goes deeper than a short video, using only what was observed', async () => {
     const { change, context, review, explanation, config } =
@@ -191,9 +436,17 @@ describe('standard-length narration', () => {
     expect(words(standard)).toBeGreaterThan(words(draft('short')) * 1.5);
 
     const scene = (kind: string) => standard.scenes.find((s) => s.visual.kind === kind)!;
-    expect(scene('title').narration).toContain(
-      "We'll look at the response before and after, the code behind it, and what to check before merging.",
+    // The cold open: no captures here, so the code moves to the front under a short title,
+    // and the API exchange (the template's payoff) is the hero.
+    const opening = standard.scenes[0]!;
+    expect(opening.visual.kind).toBe('code');
+    expect(opening.eyebrow).toBe('Paginate GET /api/users');
+    expect(opening.heading).toBeUndefined();
+    expect(opening.narration).toMatch(
+      /^Now it paginates GET \/api\/users\. The key change is in app\.js/,
     );
+    expect(standard.scenes.find((s) => s.hero)?.beat).toBe('exchange');
+    expect(standard.scenes.some((s) => /We'll look at/.test(s.narration))).toBe(false);
     expect(scene('api').narration).toContain(
       'The old response listed 3 entries; the new items array holds 1.',
     );

@@ -97,10 +97,21 @@ describe('QC', () => {
         { start: 1.5, end: 3, lines: ['b'] },
       ],
       scenes: [
-        { id: 's1', speech: { start: 0, end: 1, text: 'one two three four five six seven' } },
+        {
+          id: 's1',
+          start: 0,
+          end: 1,
+          visual: { kind: 'callout' },
+          speech: { start: 0, end: 1, text: 'one two three four five six seven' },
+        },
       ],
     } as unknown as Timeline;
     const status = Object.fromEntries(timingChecks(t).map((c) => [c.id, c.status]));
-    expect(status).toEqual({ 'caption-timing': 'fail', 'narration-pace': 'warn' });
+    expect(status).toEqual({
+      'caption-timing': 'fail',
+      'narration-pace': 'warn',
+      hook: 'pass',
+      'speech-share': 'pass',
+    });
   });
 });

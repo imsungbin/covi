@@ -36,6 +36,7 @@ export function stylesheet(t: Timeline, r: Regions): string {
   const eyebrow = vertical ? 26 : 21;
   const heading = vertical ? 50 : 42;
   const dot = c.name === 'dark' ? 'rgba(255,255,255,0.045)' : 'rgba(31,36,48,0.055)';
+  const mark = c.captionMark ?? c.primary;
   return `
 * { box-sizing: border-box; margin: 0; padding: 0; transition: none !important; animation: none !important; }
 html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; background: ${c.background}; }
@@ -66,6 +67,9 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
   font-size: ${r.captionFont.toFixed(2)}px; line-height: 1.26; text-align: center; letter-spacing: -0.005em;
   box-shadow: 0 ${u(8)} ${u(28)} rgba(0,0,0,0.18); }
 .caption-box .line { display: block; white-space: nowrap; }
+.caption-box .em { background-image: linear-gradient(${mark}, ${mark}); background-repeat: no-repeat;
+  background-position: 0 50%; background-size: 0% 100%; border-radius: ${u(6)};
+  -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 
 .chip { display: inline-flex; align-items: center; gap: ${u(8)}; padding: ${u(7)} ${u(16)}; border-radius: 999px; font-weight: 650;
   font-size: ${u(vertical ? 22 : 18)}; line-height: 1.1; white-space: nowrap; }
@@ -77,6 +81,7 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
 
 /* Title */
 .title-wrap { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: ${u(26)}; }
+.title-panel { display: flex; flex-direction: column; align-items: center; gap: ${u(26)}; max-width: 100%; }
 
 /* Outro */
 .outro { position: absolute; inset: 0; }
@@ -103,6 +108,11 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
 .dim { position: absolute; background: rgba(18, 21, 28, 0.42); }
 .cursor { position: absolute; width: ${u(34)}; height: ${u(34)}; z-index: 5; filter: drop-shadow(0 ${u(3)} ${u(6)} rgba(0,0,0,0.3)); }
 .ripple { position: absolute; border-radius: 50%; border: ${u(4)} solid ${c.primary}; z-index: 4; }
+
+/* Hero accent */
+.hero-accent { pointer-events: none; }
+.hero-accent .flash { position: absolute; background: #FFFFFF; opacity: 0; }
+.hero-accent .ring { position: absolute; border-radius: 50%; border: ${u(6)} solid ${c.primary}; opacity: 0; }
 
 /* Code */
 .code { position: absolute; overflow: hidden; background: ${c.codeBackground}; border-radius: ${u(20)}; box-shadow: ${c.shadow}; color: ${c.codeText}; }

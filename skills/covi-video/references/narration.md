@@ -4,14 +4,14 @@ Covi narrates like a calm senior engineer walking a teammate through a change: p
 
 ## Voice
 - **Concise.** One line per scene, one idea per line, 15 words at most. About ten words keeps a scene within five seconds.
-- **One keyword.** Build each line around the one phrase the viewer should remember, and put it where the voice lands: in English, at the end of the sentence. "The comment rolls back when the request fails" lands on the failure; "When the request fails, the comment rolls back" lands on the rollback. Pick the one you mean.
+- **One keyword.** Build each line around the one phrase the viewer should remember, and put it where the voice lands: in English, at the end of the sentence. "The comment rolls back when the request fails" lands on the failure; "When the request fails, the comment rolls back" lands on the rollback. Pick the one you mean. Mark it with `[[…]]`, at most once per line: the caption sweeps it as it is spoken.
 - **Natural.** Spoken English, contractions welcome. Read it aloud; if you stumble, rewrite it.
 - **Accurate.** Every statement matches the code, the capture, or the finding on screen at that moment. Never claim more than the evidence shows.
 - **Reviewer-oriented.** Explain why something matters to someone deciding whether to merge.
 - **No hype, with a clear line.** Facts are never exaggerated: no "always", "instantly", or "fixes every…" unless the evidence shows exactly that, and no "amazing", "game-changing", "seamless", or marketing cadence. Tone, metaphor, and structure are free: a question, a comparison, a dry aside, a callback.
 
 ## The first line
-The first line is a hook, heard over the subject itself. Three kinds work:
+The first line is a hook, heard over the subject itself within half a second. Three kinds work:
 - A question: "What happens to your comment when the request fails?"
 - A surprising fact from the evidence: "Remove one too many, and the cart says minus one."
 - The payoff: "Your comment now appears before the server answers."

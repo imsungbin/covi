@@ -11,6 +11,7 @@ import {
 import { z } from 'zod';
 import type { VideoSpec } from '../spec.ts';
 import { SPEECH_RATE, speechUnits } from '../text.ts';
+import { parseEmphasis, stripEmphasis } from './grammar.ts';
 import type { Storyboard } from './schema.ts';
 
 /** What a narration budget counts, per language (the prompt names it). */
@@ -32,6 +33,14 @@ const NarrationPatchSchema = z.strictObject({
     }),
   ),
 });
+
+/**
+ * How much one scene's line may hold: the skill's 15-word line, which English speaks in about six
+ * seconds, as six seconds of speech in other languages (Korean 26, Japanese 24, Chinese 18).
+ */
+export function lineBudget(language: Language): number {
+  return Math.round((15 / SPEECH_RATE.en) * SPEECH_RATE[language]);
+}
 
 function describeVisual(scene: Storyboard['scenes'][number]): string {
   const v = scene.visual;
@@ -71,9 +80,14 @@ export async function refineNarration(
   const skill = await loadSkill('covi-video');
   const scenesLanguage = materials.language ?? storyboard.language ?? 'en';
   const unit = UNIT_NAME[scenesLanguage];
-  const total = Math.round(materials.spec.duration.target * SPEECH_RATE[scenesLanguage] * 0.78);
+  const line = lineBudget(scenesLanguage);
   const budgetOf = (text: string) =>
-    Math.max(8, Math.round(speechUnits(text, scenesLanguage) * 1.3) + 4);
+    Math.min(line, Math.max(8, Math.round(speechUnits(text, scenesLanguage) * 1.3) + 4));
+  // The total is what the lines can hold, never more than the video's length allows.
+  const total = Math.min(
+    Math.round(materials.spec.duration.target * SPEECH_RATE[scenesLanguage] * 0.78),
+    storyboard.scenes.reduce((n, s) => n + budgetOf(s.narration), 0),
+  );
   const scenes = storyboard.scenes.map((s) => ({
     id: s.id,
     beat: s.beat,
@@ -120,8 +134,12 @@ export async function refineNarration(
     scenes: storyboard.scenes.map((s) => {
       const p = s.id ? byId.get(s.id) : undefined;
       if (!p?.narration.trim()) return s;
-      const budget = budgetOf(s.narration);
-      if (speechUnits(p.narration, scenesLanguage) > budget * 1.25) return s;
+      // A rewrite that breaks its [[…]] markup keeps the draft, and so does one past its line,
+      // unless the draft runs longer still (a cold open joins two lines).
+      if (parseEmphasis(p.narration).error) return s;
+      const units = speechUnits(stripEmphasis(p.narration), scenesLanguage);
+      const draft = speechUnits(stripEmphasis(s.narration), scenesLanguage);
+      if (units > budgetOf(s.narration) * 1.25 && units > draft) return s;
       return {
         ...s,
         narration: p.narration.trim(),

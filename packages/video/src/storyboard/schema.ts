@@ -1,5 +1,7 @@
 import { LanguageSchema } from '@covi/core';
 import { z } from 'zod';
+import type { TransitionKind } from '../timeline/types.ts';
+import { storyboardIssues } from './grammar.ts';
 
 /**
  * The storyboard is what a person, model, or agent authors: scenes with narration and a visual.
@@ -26,6 +28,15 @@ export const EXPRESSION_VALUES = [
   'success',
 ] as const;
 
+/** How a scene can enter (the transition into it). */
+export const TRANSITION_KINDS = [
+  'fade',
+  'cut',
+  'push',
+  'wipe',
+  'zoom-through',
+] as const satisfies readonly TransitionKind[];
+
 export const VisualSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('title'),
@@ -33,6 +44,9 @@ export const VisualSchema = z.discriminatedUnion('kind', [
     subtitle: z.string().optional(),
     eyebrow: z.string().optional(),
     meta: z.array(z.string()).default([]),
+    background: ImageRefSchema.optional().describe(
+      'A captured image (run-relative path) to set the title over, so the first frame already shows the subject.',
+    ),
   }),
   z.strictObject({
     kind: z.literal('change-map'),
@@ -183,7 +197,12 @@ export const SceneSchema = z.strictObject({
     .optional()
     .describe('Short section label, e.g. "Before" or "Worth a look".'),
   heading: z.string().max(90).optional(),
-  narration: z.string().max(600).describe('What Covi says. Also used for captions.'),
+  narration: z
+    .string()
+    .max(600)
+    .describe(
+      'What Covi says. Also used for captions. Mark the key phrase with [[…]] (at most one per line): the caption sweeps it as it is spoken; the voice and reports never see the brackets.',
+    ),
   say: z
     .string()
     .max(600)
@@ -195,22 +214,51 @@ export const SceneSchema = z.strictObject({
   expression: z.enum(EXPRESSION_VALUES).optional(),
   minSeconds: z.number().min(1).max(30).optional(),
   optional: z.boolean().optional().describe('May be dropped to fit the target duration.'),
+  sync: z
+    .record(z.string().regex(/^[a-z]+\d*$/), z.string().min(1).max(200))
+    .optional()
+    .describe(
+      'Pins a moment of the visual to when a phrase of `narration` is spoken: phase name → a phrase that appears exactly once in the narration. Screenshot: zoom, click. Interaction: step2…stepN, and zoom or click for the step showing then. Code: highlight, or highlight1… for each `highlight` entry. Before-after: reveal. Findings: finding1…. Terminal: output. API: after. The hero scene: hero.',
+    ),
+  transition: z
+    .enum(TRANSITION_KINDS)
+    .optional()
+    .describe(
+      'How the scene enters: fade (default), cut, push (slides left), wipe (reveals left to right), or zoom-through (the default for the hero). The first scene has none.',
+    ),
+  hero: z
+    .boolean()
+    .optional()
+    .describe(
+      'The one scene where the change clicks: it holds 0.4 s after its line, enters with zoom-through, plays the hero accent, and carries the music lift.',
+    ),
+  camera: z
+    .enum(['drift', 'static'])
+    .optional()
+    .describe(
+      'drift (default): captures drift slowly, and a visual that has finished pushes in while its line continues. static: the picture holds still.',
+    ),
 });
 
 export type Scene = z.output<typeof SceneSchema>;
 
-export const StoryboardSchema = z.strictObject({
-  schemaVersion: z.literal(1).default(1),
-  /** The language of the narration and on-screen text. Absent: detected from the narration. */
-  language: LanguageSchema.optional().describe(
-    'Language of the narration and on-screen text: en, ko, ja, or zh (Simplified Chinese). Omit it to let Covi detect the language from the narration.',
-  ),
-  title: z.string().min(1),
-  template: z.string().min(1),
-  /** True for Covi's heuristic draft; an agent or model sets false after rewriting it. */
-  draft: z.boolean().default(false),
-  scenes: z.array(SceneSchema).min(2).max(14),
-});
+export const StoryboardSchema = z
+  .strictObject({
+    schemaVersion: z.literal(1).default(1),
+    /** The language of the narration and on-screen text. Absent: detected from the narration. */
+    language: LanguageSchema.optional().describe(
+      'Language of the narration and on-screen text: en, ko, ja, or zh (Simplified Chinese). Omit it to let Covi detect the language from the narration.',
+    ),
+    title: z.string().min(1),
+    template: z.string().min(1),
+    /** True for Covi's heuristic draft; an agent or model sets false after rewriting it. */
+    draft: z.boolean().default(false),
+    scenes: z.array(SceneSchema).min(2).max(24),
+  })
+  .superRefine((storyboard, ctx) => {
+    for (const issue of storyboardIssues(storyboard))
+      ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
+  });
 
 export type Storyboard = z.output<typeof StoryboardSchema>;
 export type StoryboardInput = z.input<typeof StoryboardSchema>;

@@ -714,7 +714,13 @@ video:
 # Narration and on-screen text Covi drafts for videos (packages/video/src/storyboard/draft.ts).
 narration:
   meta: '{files} · +{additions} −{deletions}'
-  touches: ' It touches {areas}.'
+  opening:
+    imperative: Now it {clause}
+    titled: '{kind}, titled “{summary}”.'
+    kind: '{kind}: {summary}'
+  page:
+    home: the home page
+    homeHeading: Home page
   changeMap:
     text: The change spans {areas}, mostly {names}.
     heading: '{files} changed'
@@ -804,18 +810,6 @@ narration:
       risk: Risk
       question: Question
     pointLine: '{label}: {title}'
-  roadmap:
-    text: "{first} We'll look at {stops}."
-    api: the response before and after
-    apiNew: the new response
-    terminal: the command before and after
-    terminalNew: the command's output
-    beforeAfter: the page before and after
-    screenshot: what it looks like
-    interaction: the new flow
-    code: the code behind it
-    structure: how the pieces fit together
-    findings: what to check before merging
   # How a file is said aloud: "the totals module".
   file:
     phrase: the {name} {noun}
@@ -838,7 +832,7 @@ question:
     short: Short-form
     shortDescription: Vertical 9:16, about 30 seconds, concise
     standard: Standard review
-    standardDescription: 16:9, 60–120 seconds, more explanatory
+    standardDescription: 16:9, up to 120 seconds, more explanatory
     custom: Custom
     customDescription: Choose the size, length, and narration
   duration:

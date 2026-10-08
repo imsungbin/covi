@@ -52,8 +52,9 @@ import {
 } from './sound.ts';
 import type { VideoSpec } from './spec.ts';
 import { draftStoryboard } from './storyboard/draft.ts';
+import { stripEmphasis } from './storyboard/grammar.ts';
 import { refineNarration } from './storyboard/model.ts';
-import { type Storyboard, StoryboardSchema } from './storyboard/schema.ts';
+import { type Scene, type Storyboard, StoryboardSchema } from './storyboard/schema.ts';
 import { loadTemplates } from './templates.ts';
 import { buildTimeline, fitToDuration, pacingFor, storyScenes } from './timeline/build.ts';
 import type { Timeline } from './timeline/types.ts';
@@ -143,6 +144,23 @@ export interface ProduceVideoResult {
 /** `video/frames.json`, next to the video whose frames it describes. */
 const FRAMES = 'video/frames.json';
 
+/** Every run-relative image a storyboard shows, in scene order (a title's background too). */
+export function storyboardImages(storyboard: {
+  scenes: ReadonlyArray<Pick<Scene, 'visual'>>;
+}): string[] {
+  return storyboard.scenes.flatMap(({ visual: v }) =>
+    v.kind === 'screenshot'
+      ? [v.image.path]
+      : v.kind === 'before-after'
+        ? [v.before.path, v.after.path]
+        : v.kind === 'interaction'
+          ? v.steps.map((s) => s.image.path)
+          : v.kind === 'title' && v.background
+            ? [v.background.path]
+            : [],
+  );
+}
+
 export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVideoResult> {
   const { run, spec, logger } = input;
   const notes: string[] = [];
@@ -206,29 +224,18 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
 
   const missing: string[] = [];
   const imagePaths = new Set<string>();
-  for (const scene of storyboard.scenes) {
-    const v = scene.visual;
-    const paths =
-      v.kind === 'screenshot'
-        ? [v.image.path]
-        : v.kind === 'before-after'
-          ? [v.before.path, v.after.path]
-          : v.kind === 'interaction'
-            ? v.steps.map((s) => s.image.path)
-            : [];
-    for (const p of paths) {
-      let full: string;
-      try {
-        full = run.path(p);
-      } catch {
-        throw new UsageError(
-          `storyboard.json references an image outside the run directory: ${p}`,
-          'Image paths are relative to the run directory, e.g. demo/screenshots/home-desktop-after.png.',
-        );
-      }
-      imagePaths.add(p);
-      if (!(await exists(full))) missing.push(p);
+  for (const p of storyboardImages(storyboard)) {
+    let full: string;
+    try {
+      full = run.path(p);
+    } catch {
+      throw new UsageError(
+        `storyboard.json references an image outside the run directory: ${p}`,
+        'Image paths are relative to the run directory, e.g. demo/screenshots/home-desktop-after.png.',
+      );
     }
+    imagePaths.add(p);
+    if (!(await exists(full))) missing.push(p);
   }
   if (missing.length)
     throw new Error(
@@ -240,7 +247,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   // 2. Narration-first timing: synthesize and measure each take. The voice reads the scene's
   // spoken form, normalized for its language (acronyms spelled out, pronunciations applied);
   // captions keep the narration as written.
-  const said = storyboard.scenes.map((s) => (s.say ?? s.narration).trim());
+  const said = storyboard.scenes.map((s) => stripEmphasis(s.say ?? s.narration).trim());
   let speechLanguage = resolveSpeechLanguage({
     flag: input.languageSettings?.flag ?? spec.language,
     storyboard: storyboard.language,

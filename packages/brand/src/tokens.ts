@@ -78,6 +78,8 @@ export interface Theme {
   delText: string;
   captionBackground: string;
   captionText: string;
+  /** Behind a caption's marked phrase: the caption text reads on it at 4.5:1 or more. */
+  captionMark: string;
   shadow: string;
   /** Code on the code panel. */
   syntax: SyntaxColors;
@@ -111,6 +113,7 @@ export const themes: Record<ThemeName, Theme> = {
     delText: '#FF9EA1',
     captionBackground: 'rgba(31, 36, 48, 0.92)',
     captionText: palette.paper,
+    captionMark: palette.cobalt,
     shadow: '0 18px 48px rgba(31, 36, 48, 0.16), 0 2px 6px rgba(31, 36, 48, 0.08)',
     syntax: darkSurfaceSyntax,
     surfaceSyntax: lightSurfaceSyntax,
@@ -139,6 +142,7 @@ export const themes: Record<ThemeName, Theme> = {
     delText: '#FF9EA1',
     captionBackground: 'rgba(8, 10, 14, 0.9)',
     captionText: '#F8F9FB',
+    captionMark: palette.cobalt,
     shadow: '0 18px 48px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3)',
     syntax: darkSurfaceSyntax,
     surfaceSyntax: darkSurfaceSyntax,
@@ -153,6 +157,19 @@ export const typography = {
 } as const;
 
 export const motion = {
-  /** Scene-to-scene transition length in seconds (scenes overlap by this much). */
+  /** The default scene transition (a fade) in seconds; consecutive scenes overlap by it. */
   transition: 0.45,
+  /**
+   * Each scene transition's length in seconds; a cut has none. All stay under 0.625 s, so the
+   * scene before a transition ends at most 0.6 s after its line (see the video timeline).
+   */
+  transitions: { fade: 0.45, cut: 0, push: 0.5, wipe: 0.55, 'zoom-through': 0.6 },
+  /** A capture's camera drift through its scene: a slow push-in of at most 2%, eased in and out. */
+  drift: 0.02,
+  /** The push-in once a visual has finished while its line continues, so it never holds still. */
+  linger: 0.02,
+  /** The hero's camera punch. */
+  punch: 0.06,
+  /** The hero's flash: how long it lasts (s) and its peak opacity. */
+  flash: { seconds: 0.18, opacity: 0.35 },
 } as const;

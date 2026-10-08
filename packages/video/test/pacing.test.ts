@@ -1,12 +1,17 @@
+import { motion } from '@covi/brand';
 import { DEFAULT_CONFIG, parseConfigInput, resolveConfig } from '@covi/core';
 import { describe, expect, it } from 'vitest';
 import { resolveVideoSpec, type VideoRequest } from '../src/spec.ts';
-import type { Scene, Storyboard } from '../src/storyboard/schema.ts';
+import { type Scene, type Storyboard, TRANSITION_KINDS } from '../src/storyboard/schema.ts';
 import {
   buildTimeline,
+  cutStart,
   fitToDuration,
+  HERO_HOLD,
   type Layout,
+  LINE_GAP,
   layoutScenes,
+  minSecondsFor,
   OUTRO_ID,
   OUTRO_SECONDS,
   pacingFor,
@@ -62,7 +67,7 @@ const gaps = (layout: Layout) =>
 describe('pacing', () => {
   it('breathes in narrated standard reviews and keeps short-form tight', () => {
     expect(pacingFor(standard, HERO)).toEqual({
-      firstLead: 2,
+      firstLead: 0.3,
       heroBreath: 1.4,
       breath: 1.25,
       chapter: 24,
@@ -83,7 +88,9 @@ describe('pacing', () => {
       outro: OUTRO_SECONDS.short,
     });
     // A custom landscape video is a walkthrough: it breathes like a standard review.
-    expect(pacingFor(spec({ mode: 'custom', width: 1280, height: 720 }), HERO).firstLead).toBe(2);
+    expect(pacingFor(spec({ mode: 'custom', width: 1280, height: 720 }), HERO).heroBreath).toBe(
+      1.4,
+    );
     expect(pacingFor(spec({ mode: 'standard', outro: false })).outro).toBeUndefined();
     // Narration asked for but not synthesized: paced as captions only.
     expect(pacingFor(standard, HERO, false)).toEqual({ ...TIGHT, outro: OUTRO_SECONDS.standard });
@@ -104,23 +111,24 @@ describe('pacing', () => {
     }
   });
 
-  it('holds the title while the music opens, and lets the hero settle before its line', () => {
+  it('starts the hook by 0.3 s, lets the hero settle before its line, and breathes around it', () => {
     const layout = layoutScenes(story, talk, new Map(), 'en', pacingFor(standard, HERO));
     const [s1, s2, s3, s4] = layout.scenes;
-    expect(s1!.speechStart).toBe(2);
-    // The hero (the fix) settles a transition after it starts, then 1.4 s pass before its line.
+    expect(s1!.speechStart).toBe(0.3);
+    // The hero (the fix) settles as its transition ends, then 1.4 s pass before its line.
     expect(s3!.speechStart - (s3!.start + TRANSITION)).toBeCloseTo(1.4, 6);
-    // The breath before the hero is long enough for music to rise in (bookends need 1.2 s).
     expect(s3!.speechStart - s2!.speechEnd).toBeGreaterThanOrEqual(1.5);
-    // Ordinary scene changes keep their tight 0.35 s.
-    expect(s2!.speechStart - s1!.speechEnd).toBeCloseTo(0.35, 6);
-    expect(s4!.speechStart - s3!.speechEnd).toBeCloseTo(0.35, 6);
+    // The breaths after the hook and after the hero, where bookends music is heard.
+    expect(s2!.speechStart - s1!.speechEnd).toBeCloseTo(LINE_GAP + 1.25, 6);
+    expect(s4!.speechStart - s3!.speechEnd).toBeCloseTo(LINE_GAP + 1.25, 6);
+    // A breath belongs to the scene after it: the old picture leaves as at any scene change.
+    expect(s1!.end - s1!.speechEnd).toBeLessThanOrEqual(0.6);
   });
 
   it('lets the verdict land before the summary speaks', () => {
     const layout = layoutScenes(story, talk, new Map(), 'en', pacingFor(standard, HERO));
     const summary = layout.scenes.at(-1)!;
-    expect(summary.speechStart - summary.start).toBeCloseTo(0.3 + 1.25, 6);
+    expect(summary.speechStart - summary.start).toBeCloseTo(0.6 * TRANSITION + 1.25, 6);
     expect(gaps(layout).at(-1)).toBeGreaterThanOrEqual(1.5);
   });
 
@@ -143,7 +151,7 @@ describe('pacing', () => {
     }
     // A long pause the visuals already leave counts as a breath: no extra one follows it.
     const held = layoutScenes(long, speech, new Map([['s3', 3]]), 'en', pacingFor(standard, HERO));
-    expect(held.scenes[4]!.speechStart - held.scenes[4]!.start).toBeCloseTo(0.3, 6);
+    expect(held.scenes[4]!.speechStart - held.scenes[4]!.start).toBeCloseTo(0.6 * TRANSITION, 6);
   });
 
   it('ends with the outro, which enters like a scene and replaces the one-second hold', () => {
@@ -165,7 +173,7 @@ describe('pacing', () => {
     expect(layout.outro!.start + outroSettle() - last.speechEnd).toBeGreaterThan(0.84 + 0.1);
   });
 
-  it('fits the duration window with the breaths and the outro in it', () => {
+  it('never pads a video shorter than its window', () => {
     const storyboard: Storyboard = {
       schemaVersion: 1,
       title: 'x',
@@ -173,31 +181,13 @@ describe('pacing', () => {
       draft: true,
       scenes: story,
     };
-    const long = new Map([...talk].map(([id, s]) => [id, s * 2.2]));
-    const fit = fitToDuration(storyboard, long, standard, 'en', pacingFor(standard, HERO));
-    expect(fit.layout.outro).toBeDefined();
-    expect(fit.tempo).toBeGreaterThan(1);
-    const short = fitToDuration(storyboard, talk, standard, 'en', pacingFor(standard, HERO));
-    expect(short.layout.duration).toBeGreaterThanOrEqual(standard.duration.min - 0.5);
-    // Holds long enough to breathe in replace the pauses for long talk; the top-up still reaches
-    // the minimum.
-    const seven: Storyboard = {
-      ...storyboard,
-      template: 'feature-demo',
-      scenes: [
-        scene('s1', 'context', 'title'),
-        scene('s2', 'interaction', 'callout'),
-        ...['s3', 's4', 's5', 's6'].map((id) => scene(id, 'scope', 'callout')),
-        scene('s7', 'summary', 'summary'),
-      ],
-    };
-    const lines = new Map(seven.scenes.map((s) => [s.id!, 6]));
-    const paced = pacingFor(standard, ['interaction']);
-    const reached = fitToDuration(seven, lines, standard, 'en', paced);
-    expect(layoutScenes(seven.scenes, lines, new Map(), 'en', paced).duration).toBeLessThan(
-      standard.duration.min,
-    );
-    expect(reached.layout.duration).toBeGreaterThanOrEqual(standard.duration.min - 1e-6);
+    const brief = new Map(story.map((s) => [s.id!, 4]));
+    const paced = pacingFor(standard, HERO);
+    const fit = fitToDuration(storyboard, brief, standard, 'en', paced);
+    expect(fit.layout).toEqual(layoutScenes(story, brief, new Map(), 'en', paced));
+    expect(fit.layout.duration).toBeLessThan(standard.duration.min);
+    expect(fit.notes).toEqual([]);
+    expect(fit).not.toHaveProperty('extraHold');
     // fitToDuration paces by the spec when it is not told otherwise.
     expect(fitToDuration(storyboard, talk, standard).layout.outro).toBeDefined();
     const config = resolveConfig([
@@ -206,6 +196,41 @@ describe('pacing', () => {
     expect(
       fitToDuration(storyboard, talk, resolveVideoSpec(config, { mode: 'standard' })).layout.outro,
     ).toBeUndefined();
+  });
+
+  it('trims only past the window’s maximum, and never drops the hero', () => {
+    // The hero is the last optional scene: only the guard keeps it.
+    const scenes = story.map((s, i) =>
+      i === 1 ? { ...s, optional: true } : i === 3 ? { ...s, optional: true, hero: true } : s,
+    );
+    const storyboard: Storyboard = {
+      schemaVersion: 1,
+      title: 'x',
+      template: 'bug-fix',
+      draft: true,
+      scenes,
+    };
+    const long = new Map([...talk].map(([id, s]) => [id, s * 2.4]));
+    const fit = fitToDuration(storyboard, long, standard, 'en', pacingFor(standard, HERO));
+    expect(fit.scenes.map((s) => s.id)).toEqual(['s1', 's3', 's4', 's5']);
+    expect(fit.notes[0]).toMatch(/Dropped optional scene "problem"/);
+    expect(fit.layout.duration).toBeLessThanOrEqual(standard.duration.max);
+  });
+
+  it('never drops the scene playing the template’s hero beat when none is marked', () => {
+    // bug-fix's hero is its proof, else its fix: here the fix (s3), the last optional scene.
+    const scenes = story.map((s, i) => (i === 1 || i === 2 ? { ...s, optional: true } : s));
+    const storyboard: Storyboard = {
+      schemaVersion: 1,
+      title: 'x',
+      template: 'bug-fix',
+      draft: true,
+      scenes,
+    };
+    const long = new Map([...talk].map(([id, s]) => [id, s * 2.4]));
+    const fit = fitToDuration(storyboard, long, standard, 'en', pacingFor(standard, HERO));
+    expect(fit.scenes.map((s) => s.id)).toEqual(['s1', 's3', 's4', 's5']);
+    expect(fit.notes[0]).toMatch(/Dropped optional scene "problem"/);
   });
 });
 
@@ -249,5 +274,97 @@ describe('the outro in the timeline', () => {
     const timeline = build(story.slice(0, 4), 'needs-changes');
     expect(timeline.scenes.at(-1)!.visual).toEqual({ kind: 'outro', verdict: 'needs-changes' });
     expect(build(story.slice(0, 4)).scenes.at(-1)!.visual).toEqual({ kind: 'outro' });
+  });
+});
+
+describe('the timing grammar', () => {
+  const three = (middle: Partial<Scene> = {}) => [
+    scene('s1', 'a', 'callout'),
+    scene('s2', 'b', 'callout', middle),
+    scene('s3', 'c', 'callout'),
+  ];
+  const lines = new Map([
+    ['s1', 3],
+    ['s2', 3],
+    ['s3', 3],
+  ]);
+
+  it('starts a transition at max(line end − 0.5·d, next line − 0.6·d), whatever its kind', () => {
+    for (const kind of TRANSITION_KINDS) {
+      const [a, b] = layoutScenes(three({ transition: kind }), lines).scenes;
+      const d = motion.transitions[kind];
+      expect(b!.start, kind).toBeCloseTo(
+        Math.max(a!.speechEnd - 0.5 * d, b!.speechStart - 0.6 * d),
+        3,
+      );
+      expect(b!.start, kind).toBeCloseTo(cutStart(a!.speechEnd, a!.speechEnd + LINE_GAP, d), 3);
+      expect(b!.speechStart - a!.speechEnd, kind).toBeCloseTo(LINE_GAP, 3);
+      expect(a!.end, kind).toBeCloseTo(b!.start + d, 3);
+      // So no scene outstays its line by more than 0.6 s.
+      expect(a!.end - a!.speechEnd, kind).toBeLessThanOrEqual(0.6 + 1e-9);
+    }
+  });
+
+  it('cuts on the first word of the next line', () => {
+    const [, b] = layoutScenes(three({ transition: 'cut' }), lines).scenes;
+    expect(b!.start).toBe(b!.speechStart);
+  });
+
+  it('lets the hero in with zoom-through and holds it 0.4 s after its line', () => {
+    const [a, b, c] = layoutScenes(three({ hero: true }), lines).scenes;
+    const d = motion.transitions['zoom-through'];
+    expect(b!.start).toBeCloseTo(Math.max(a!.speechEnd - 0.5 * d, b!.speechStart - 0.6 * d), 3);
+    expect(c!.speechStart - b!.speechEnd).toBeCloseTo(LINE_GAP + HERO_HOLD, 3);
+    const plain = layoutScenes(three(), lines).scenes;
+    expect(plain[2]!.speechStart - plain[1]!.speechEnd).toBeCloseTo(LINE_GAP, 3);
+  });
+
+  it('holds a hero that comes first, or last before the outro', () => {
+    const first = layoutScenes(
+      [scene('s1', 'a', 'callout', { hero: true }), scene('s2', 'b', 'callout')],
+      lines,
+    ).scenes;
+    expect(first[0]!.start).toBe(0);
+    expect(first[1]!.speechStart - first[0]!.speechEnd).toBeCloseTo(LINE_GAP + HERO_HOLD, 3);
+    const last = layoutScenes(
+      [scene('s1', 'a', 'callout'), scene('s2', 'b', 'callout', { hero: true })],
+      lines,
+      new Map(),
+      'en',
+      pacingFor(standard),
+    ).scenes;
+    expect(last[1]!.end - last[1]!.speechEnd).toBeCloseTo(0.8 + HERO_HOLD, 3);
+  });
+
+  it('keeps a visual up for its minimum, and starts the next line after it', () => {
+    const [, b, c] = layoutScenes(
+      three({ minSeconds: 6 }),
+      new Map([
+        ['s1', 3],
+        ['s2', 1],
+        ['s3', 3],
+      ]),
+    ).scenes;
+    expect(b!.end - b!.start).toBeCloseTo(6, 3);
+    expect(c!.speechStart - c!.start).toBeCloseTo(0.6 * TRANSITION, 3);
+  });
+
+  it('starts the hook by 0.3 s in every kind of video', () => {
+    for (const mode of ['short', 'standard'] as const) {
+      const paced = pacingFor(spec({ mode }), HERO);
+      expect(
+        layoutScenes(story, talk, new Map(), 'en', paced).scenes[0]!.speechStart,
+      ).toBeLessThanOrEqual(0.3);
+    }
+  });
+
+  it('gives the visuals the shorter minimums that 2–5 s scenes need', () => {
+    const line = { type: 'add', text: 'x' } as const;
+    const v = (visual: unknown) => minSecondsFor(visual as Scene['visual']);
+    expect(v({ kind: 'title', title: 'T', meta: [] })).toBe(1.5);
+    expect(v({ kind: 'code', path: 'a', lines: Array(40).fill(line), highlight: [] })).toBe(2);
+    expect(v({ kind: 'before-after' })).toBe(2.5);
+    expect(v({ kind: 'interaction', steps: [{}, {}, {}] })).toBeCloseTo(3.6, 9);
+    expect(v({ kind: 'findings', findings: [{}, {}] })).toBeCloseTo(2.8, 9);
   });
 });

@@ -1,11 +1,13 @@
 import { type Expression, foxPose, foxSvg } from '@covi/brand';
 import { verdictEntrance } from '../../timeline/cues.ts';
-import type { TimelineVisual } from '../../timeline/types.ts';
+import type { ImageAsset, TimelineVisual } from '../../timeline/types.ts';
 import { clamp, easeOutBack, easeOutCubic, lerp, rise, seg, spring } from '../anim.ts';
 import { el, fitText } from '../dom.ts';
+import { Frame } from './frame.ts';
 import {
   type Component,
   type ComponentContext,
+  entered,
   type LargeFox,
   overflows,
   rectOf,
@@ -26,9 +28,11 @@ export function title(v: V<'title'>, ctx: ComponentContext, expression: Expressi
   const foxSize = Math.min(box.width, box.height) * (vertical ? 0.42 : 0.4);
   const fox = ctx.timeline.mascot ? el('div', '', wrap) : undefined;
   if (fox) Object.assign(fox.style, { width: `${foxSize}px`, height: `${foxSize}px` });
-  const eyebrow = v.eyebrow ? el('span', 'chip soft', wrap, v.eyebrow) : undefined;
+  // The text the camera pushes in on, as one panel; the fox beside it stays put.
+  const panel = el('div', 'title-panel', wrap);
+  const eyebrow = v.eyebrow ? el('span', 'chip soft', panel, v.eyebrow) : undefined;
   if (eyebrow) eyebrow.style.fontSize = `${ctx.u(vertical ? 26 : 22)}px`;
-  const heading = el('div', 'title-text', wrap, v.title);
+  const heading = el('div', 'title-text', panel, v.title);
   const maxHeight = box.height * (vertical ? 0.3 : 0.28);
   heading.style.maxWidth = `${box.width * (vertical ? 1 : 0.86)}px`;
   fitText(heading, {
@@ -37,9 +41,9 @@ export function title(v: V<'title'>, ctx: ComponentContext, expression: Expressi
     maxHeight,
     maxWidth: box.width,
   });
-  const sub = v.subtitle ? el('div', 'title-sub', wrap, v.subtitle) : undefined;
+  const sub = v.subtitle ? el('div', 'title-sub', panel, v.subtitle) : undefined;
   if (sub) sub.style.fontSize = `${ctx.u(vertical ? 32 : 28)}px`;
-  const meta = el('div', 'title-meta', wrap);
+  const meta = el('div', 'title-meta', panel);
   const chips = v.meta.map((m) => {
     const c = el('span', 'chip muted mono', meta, m);
     c.style.fontSize = `${ctx.u(vertical ? 22 : 19)}px`;
@@ -65,18 +69,45 @@ export function title(v: V<'title'>, ctx: ComponentContext, expression: Expressi
     update(clock) {
       const { t } = clock;
       if (fox) {
-        const s = spring(t, 1.6, 5.5);
+        const s = clock.open ? 1 : spring(t, 1.6, 5.5);
         fox.style.transform = `scale(${lerp(0.82, 1, clamp(s, 0, 1.08)).toFixed(4)})`;
-        fox.style.opacity = String(easeOutCubic(seg(t, 0, 0.35)).toFixed(3));
+        fox.style.opacity = String(easeOutCubic(entered(clock, 0, 0.35)).toFixed(3));
         fox.innerHTML = foxSvg({ ...pose(clock), size: foxSize, theme: ctx.timeline.theme.name });
       }
-      if (eyebrow) rise(eyebrow, seg(t, 0.15, 0.55), ctx.u(14));
-      rise(heading, seg(t, 0.25, 0.75), ctx.u(22));
-      if (sub) rise(sub, seg(t, 0.4, 0.9), ctx.u(16));
+      if (eyebrow) rise(eyebrow, entered(clock, 0.15, 0.55), ctx.u(14));
+      rise(heading, entered(clock, 0.25, 0.75), ctx.u(22));
+      if (sub) rise(sub, entered(clock, 0.4, 0.9), ctx.u(16));
       for (const [i, c] of chips.entries())
-        rise(c, seg(t, 0.5 + i * 0.08, 0.9 + i * 0.08), ctx.u(12));
+        rise(c, entered(clock, 0.5 + i * 0.08, 0.9 + i * 0.08), ctx.u(12));
+    },
+    // The text pushes in; the fox stays where the outro may pick it up.
+    camera(push) {
+      panel.style.transform = push > 1e-6 ? `scale(${(1 + push).toFixed(5)})` : '';
     },
     report: () => [{ role: 'text', rect: rectOf(heading), overflow: overflows(heading) }],
+  };
+}
+
+/**
+ * A title over a capture, for a cold open: the capture fills the media region (in browser chrome
+ * when it is a landscape page), and the stage draws the title in the scene header. With no
+ * `camera` of its own, the stage's camera drifts the media layer across the capture, as on a
+ * screenshot; there is no large fox to keep still.
+ */
+export function titleOver(
+  v: V<'title'> & { background: ImageAsset },
+  ctx: ComponentContext,
+): Component {
+  const frame = new Frame(ctx.root, ctx.regions.media, v.background, {
+    chrome: v.background.width >= v.background.height,
+    url: v.background.label,
+    u: ctx.u,
+  });
+  return {
+    update(clock) {
+      rise(frame.root, entered(clock, 0, 0.55), ctx.u(28));
+    },
+    report: () => [{ role: 'media', rect: rectOf(frame.root) }],
   };
 }
 
@@ -234,6 +265,12 @@ export function summary(v: V<'summary'>, ctx: ComponentContext): Component {
         rise(p, seg(t, 0.6 + i * 0.15, 1 + i * 0.15), ctx.u(12));
       const count = easeOutCubic(seg(t, 0.6, 1.6));
       for (const s of statValues) s.node.textContent = `${s.prefix}${Math.round(s.value * count)}`;
+    },
+    // The panel pushes in; the fox stays where the outro takes it over. `rise` rewrote the
+    // panel's transform in `update`, which the stage calls first, so the scale never accumulates.
+    camera(push) {
+      if (push > 1e-6)
+        panel.style.transform = `${panel.style.transform} scale(${(1 + push).toFixed(5)})`;
     },
     report: () => [{ role: 'text', rect: rectOf(panel), overflow: overflows(panel) }],
   };

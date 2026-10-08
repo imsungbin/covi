@@ -45,6 +45,12 @@ describe('story templates', () => {
     expect(Object.fromEntries([...templates].map(([id, t]) => [id, t.hero]))).toEqual(HERO);
   });
 
+  it('never make a hero beat optional', async () => {
+    for (const t of (await loadTemplates()).values())
+      for (const id of t.hero)
+        expect(t.beats.find((b) => b.id === id)!.optional, `${t.id}: ${id}`).toBe(false);
+  });
+
   it('reject a hero that is not one of their beats', async () => {
     await expect(loadTemplates(templateDir('[context]'))).resolves.toBeDefined();
     await expect(loadTemplates(templateDir('[proof]'))).rejects.toThrow(
@@ -59,5 +65,11 @@ describe('story templates', () => {
     expect(heroScene(scenes.slice(0, 2), ['proof', 'fix'])).toBe(1);
     expect(heroScene(scenes, ['interaction'])).toBeUndefined();
     expect(heroScene(scenes, undefined)).toBeUndefined();
+  });
+
+  it('prefer the scene marked as the hero over the hero list', () => {
+    const scenes = [{ beat: 'context' }, { beat: 'fix' }, { beat: 'review', hero: true }];
+    expect(heroScene(scenes, ['fix'])).toBe(2);
+    expect(heroScene(scenes, undefined)).toBe(2);
   });
 });

@@ -702,7 +702,13 @@ video:
 
 narration:
   meta: '{files} · +{additions} −{deletions}'
-  touches: '涉及{areas}。'
+  opening:
+    imperative: '现在{clause}'
+    titled: '{kind}，标题为“{summary}”。'
+    kind: '{kind}：{summary}'
+  page:
+    home: 首页
+    homeHeading: 首页
   changeMap:
     text: '这个变更涉及{areas}，主要是{names}。'
     heading: '改动了{files}'
@@ -790,18 +796,6 @@ narration:
       risk: 风险
       question: 疑问
     pointLine: '{label}：{title}'
-  roadmap:
-    text: '{first}接下来依次看看{stops}。'
-    api: 变更前后的响应
-    apiNew: 新的响应
-    terminal: 变更前后的命令
-    terminalNew: 命令的输出
-    beforeAfter: 变更前后的页面
-    screenshot: 实际的样子
-    interaction: 新的流程
-    code: 背后的代码
-    structure: 各部分如何配合
-    findings: 合并前需要检查的地方
   file:
     phrase: '{name} {noun}'
     module: 模块
@@ -822,7 +816,7 @@ question:
     short: 短视频
     shortDescription: '竖屏 9:16，约 30 秒，简洁'
     standard: 标准审查
-    standardDescription: '16:9，60–120 秒，讲解更详细'
+    standardDescription: '16:9，最长 120 秒，讲解更详细'
     custom: 自定义
     customDescription: 选择尺寸、长度和旁白
   duration:

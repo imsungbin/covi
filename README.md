@@ -48,7 +48,7 @@ Every workflow follows one loop: **Understand → Explain → Demonstrate (when 
 A review video is one way to deliver the result. Videos come in three modes, with narration, captions, and Covi's fox as the narrator, and end with Covi's outro, where the fox signs off with the logo and the verdict. Quiet music plays with the narration (the Covi theme, or a score composed for the change), with subtle sound effects for clicks, reveals, findings, and the verdict; all of it is synthesized, so it is license-clean and exactly as long as the video:
 
 - Short: vertical 9:16, about 30 seconds.
-- Standard: 16:9, 60–120 seconds.
+- Standard: 16:9, up to 120 seconds.
 - Custom: any size.
 
 Covi declines to make a video when nothing is worth seeing, as with an internal refactor.

@@ -6,6 +6,7 @@ import { computeRegions } from './runtime/layout.ts';
 import { type AudioRecord, musicLibrary } from './sound.ts';
 import type { VideoSpec } from './spec.ts';
 import { CAPTION_SPEED_LIMIT, captionCharacters, PACE_LIMIT, speechUnits } from './text.ts';
+import { storyScenes } from './timeline/build.ts';
 import type { LayoutReport, Rect, Timeline } from './timeline/types.ts';
 
 export type QcStatus = 'pass' | 'warn' | 'fail';
@@ -126,6 +127,185 @@ function worst(statuses: readonly QcStatus[]): QcStatus {
 /** Music a viewer should hear outside the logo: at least 3 s, or 5% of the video when that is more. */
 export function audibleMusicWanted(duration: number): number {
   return Math.max(3, 0.05 * duration);
+}
+
+/**
+ * The duration window is an upper bound: Covi never pads a video to fill it, so a short video
+ * passes. It warns past the maximum, fails past 1.5× it, and warns under the window only when
+ * someone asked for that length.
+ */
+export function durationCheck(seconds: number, window: VideoSpec['duration']): QcCheck {
+  const { min, max, target } = window;
+  if (seconds > max + 0.5)
+    return {
+      id: 'duration',
+      status: seconds > max * 1.5 ? 'fail' : 'warn',
+      message: `${seconds.toFixed(1)}s is longer than the ${Math.round(max)}s maximum.`,
+    };
+  if (!window.auto && seconds < min - 0.5)
+    return {
+      id: 'duration',
+      status: 'warn',
+      message: `${seconds.toFixed(1)}s is shorter than the ${Math.round(target)}s asked for (${Math.round(min)}–${Math.round(max)}s). Covi does not pad a video: give it more to say.`,
+    };
+  return {
+    id: 'duration',
+    status: 'pass',
+    message: `${seconds.toFixed(1)}s (up to ${Math.round(max)}s; target ${Math.round(target)}s).`,
+  };
+}
+
+/** How long the picture may freeze under narration before the scene reads as a slide (s). */
+export const STILL_SECONDS = 1.5;
+/** ffmpeg freezedetect's noise tolerance: −60 dB, its default. A 2% drift is never frozen. */
+export const STILL_NOISE = 0.001;
+
+/** A stretch of video whose media region did not change. */
+export interface Freeze {
+  start: number;
+  end: number;
+}
+
+/** ffmpeg `freezedetect` output → frozen stretches; one still frozen at the end runs to `duration`. */
+export function parseFreezes(stderr: string, duration: number): Freeze[] {
+  const freezes: Freeze[] = [];
+  let open: number | undefined;
+  for (const m of stderr.matchAll(/lavfi\.freezedetect\.freeze_(start|end):\s*(-?[\d.]+)/g)) {
+    const t = Number(m[2]);
+    if (m[1] === 'start') open = t;
+    else if (open !== undefined) {
+      freezes.push({ start: open, end: t });
+      open = undefined;
+    }
+  }
+  if (open !== undefined) freezes.push({ start: open, end: duration });
+  return freezes;
+}
+
+/** The media region as an ffmpeg crop (`w:h:x:y`), on even pixels for 4:2:0 video. */
+export function mediaCrop(timeline: Pick<Timeline, 'width' | 'height' | 'orientation'>): string {
+  const m = computeRegions(timeline).media;
+  const even = (n: number) => Math.max(0, Math.floor(n / 2) * 2);
+  const x = even(m.x);
+  const y = even(m.y);
+  const w = even(Math.min(m.width, timeline.width - x));
+  const h = even(Math.min(m.height, timeline.height - y));
+  return `${w}:${h}:${x}:${y}`;
+}
+
+/**
+ * The picture keeps moving while the narration speaks: a freeze of the media region that covers
+ * 1.5 s or more of the lines (summed over the lines it spans) is a still, named by its scene.
+ */
+export function stillCheck(
+  timeline: Pick<Timeline, 'scenes'>,
+  freezes: readonly Freeze[],
+): QcCheck {
+  const stills: Array<{ scene: string; seconds: number; at: number }> = [];
+  for (const f of freezes) {
+    let spoken = 0;
+    let scene: string | undefined;
+    for (const s of storyScenes(timeline.scenes)) {
+      if (!s.speech) continue;
+      const overlap = Math.min(f.end, s.speech.end) - Math.max(f.start, s.speech.start);
+      if (overlap <= 0) continue;
+      spoken += overlap;
+      scene ??= s.id;
+    }
+    if (scene && spoken >= STILL_SECONDS - 1e-6)
+      stills.push({ scene, seconds: spoken, at: f.start });
+  }
+  if (!stills.length)
+    return {
+      id: 'still',
+      status: 'pass',
+      message: 'The picture keeps moving while the narration speaks.',
+    };
+  return {
+    id: 'still',
+    status: 'warn',
+    message: `The picture holds still while the narration continues in ${stills
+      .slice(0, 3)
+      .map((s) => `${s.scene} (${s.seconds.toFixed(1)} s from ${s.at.toFixed(1)} s)`)
+      .join(
+        ', ',
+      )}${stills.length > 3 ? ', …' : ''}. Split the scene, sync its visual to the line, or let the camera drift.`,
+  };
+}
+
+/**
+ * Runs `freezedetect` on the media region of the rendered video and checks it. The filter needs
+ * ffmpeg 4.2 or newer; when it cannot run, the gate is skipped with a warning, so a diagnostic
+ * never fails the render.
+ */
+export async function measureStill(
+  media: Pick<Media, 'analyze'>,
+  video: string,
+  timeline: Pick<Timeline, 'scenes' | 'width' | 'height' | 'orientation'>,
+  duration: number,
+): Promise<QcCheck> {
+  let frozen: string;
+  try {
+    frozen = await media.analyze([
+      ...['-i', video, '-an'],
+      ...['-vf', `crop=${mediaCrop(timeline)},freezedetect=n=${STILL_NOISE}:d=${STILL_SECONDS}`],
+      ...['-f', 'null', '-'],
+    ]);
+  } catch (error) {
+    return {
+      id: 'still',
+      status: 'warn',
+      message: `Could not measure still pictures (ffmpeg 4.2 or newer has freezedetect): ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+  return stillCheck(timeline, parseFreezes(frozen, duration));
+}
+
+/** The first line is heard within half a second: the hook comes first. */
+export const HOOK_SECONDS = 0.5;
+
+export function hookCheck(timeline: Pick<Timeline, 'scenes'>): QcCheck {
+  const first = storyScenes(timeline.scenes).find((s) => s.speech)?.speech;
+  if (!first) return { id: 'hook', status: 'pass', message: 'No narration.' };
+  return first.start <= HOOK_SECONDS + 1e-6
+    ? {
+        id: 'hook',
+        status: 'pass',
+        message: `The first line starts at ${first.start.toFixed(2)} s.`,
+      }
+    : {
+        id: 'hook',
+        status: 'warn',
+        message: `The first line starts at ${first.start.toFixed(2)} s; the hook should be heard by ${HOOK_SECONDS} s.`,
+      };
+}
+
+/** Narration should fill most of the story: below this share the pictures wait on silence. */
+export const SPEECH_SHARE = 0.7;
+
+export function speechShareCheck(timeline: Pick<Timeline, 'scenes'>): QcCheck {
+  const story = storyScenes(timeline.scenes);
+  const end = story.at(-1)?.end ?? 0;
+  const spoken = story.reduce(
+    (n, s) => n + (s.speech ? Math.max(0, s.speech.end - s.speech.start) : 0),
+    0,
+  );
+  if (spoken <= 0 || end <= 0)
+    return { id: 'speech-share', status: 'pass', message: 'No narration.' };
+  const share = `${Math.round((100 * spoken) / end)}%`;
+  return spoken / end < SPEECH_SHARE - 1e-9
+    ? {
+        id: 'speech-share',
+        status: 'warn',
+        message: `Narration fills ${share} of the story before the outro (70% wanted): the pictures wait on silence. Cut holds, or give quiet scenes a line.`,
+      }
+    : {
+        id: 'speech-share',
+        status: 'pass',
+        message: `Narration fills ${share} of the story before the outro.`,
+      };
 }
 
 /**
@@ -424,7 +604,8 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
 
 /**
  * Timing checks on the timeline itself: caption reading speed and narration pace, in the units
- * and limits of the video's language. Pace counts the text the voice was given when it is known.
+ * and limits of the video's language, then the hook and the speech share. Pace counts the text
+ * the voice was given when it is known.
  */
 export function timingChecks(timeline: Timeline, speech?: SpeechRecord): QcCheck[] {
   const checks: QcCheck[] = [];
@@ -474,6 +655,7 @@ export function timingChecks(timeline: Timeline, speech?: SpeechRecord): QcCheck
         }
       : { id: 'narration-pace', status: 'pass', message: 'Narration pace is natural.' },
   );
+  checks.push(hookCheck(timeline), speechShareCheck(timeline));
   return checks;
 }
 
@@ -576,20 +758,7 @@ export async function runQc(input: QcInput): Promise<QcReport> {
         },
   );
 
-  const { min, max } = spec.duration;
-  const d = probe.duration;
-  if (d >= min - 0.5 && d <= max + 0.5)
-    checks.push({
-      id: 'duration',
-      status: 'pass',
-      message: `${d.toFixed(1)}s (target ${Math.round(spec.duration.target)}s).`,
-    });
-  else
-    checks.push({
-      id: 'duration',
-      status: d > max * 1.5 || d < min * 0.5 ? 'fail' : 'warn',
-      message: `${d.toFixed(1)}s is outside ${Math.round(min)}–${Math.round(max)}s.`,
-    });
+  checks.push(durationCheck(probe.duration, spec.duration));
 
   const audioMeasure: AudioMeasure = { stream: Boolean(probe.audioCodec) };
   if (probe.audioCodec) {
@@ -644,6 +813,7 @@ export async function runQc(input: QcInput): Promise<QcReport> {
         }
       : { id: 'black-frames', status: 'pass', message: 'No black frames.' },
   );
+  checks.push(await measureStill(media, video, input.timeline, probe.duration));
 
   checks.push(
     ...layoutChecks(input.timeline, input.layouts),

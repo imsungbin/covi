@@ -80,7 +80,7 @@ Inputs that mirror a Covi setting default to empty. Empty means the setting come
 | `command` | `review` | `review` runs Covi on the pull request. `publish` posts the comment for a run made earlier (see [Pull requests from forks](#pull-requests-from-forks)). |
 | `fail-on` | empty (`review.failOn`, else `none`) | Fail the job on confirmed or likely findings at or above this severity: `none`, `low`, `medium`, or `high`. |
 | `video` | empty (`video.when`, else `auto`) | `auto` renders a video only when the change is worth seeing. The other values are `always` and `never`. |
-| `video-mode` | empty (`video.mode`, else `short`) | `short` (9:16, about 30 s), `standard` (16:9, 60–120 s), or `custom`. Passed as `--mode`. |
+| `video-mode` | empty (`video.mode`, else `short`) | `short` (9:16, about 30 s), `standard` (16:9, up to 120 s), or `custom`. Passed as `--mode`. |
 | `duration` | empty (`video.duration`, else `auto`) | Target video length, for example `30s` or `1m30s`, or `auto`. |
 | `narration` | empty (`video.narration`, else on) | `true` or `false`: narrate the video. |
 | `captions` | empty (`video.captions`, else on) | `true` or `false`: burn captions into the video. |

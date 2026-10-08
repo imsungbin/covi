@@ -74,13 +74,15 @@ export async function loadTemplates(
 }
 
 /**
- * The index of the hero scene: the first scene whose beat is in the hero list, taking the list in
- * order (a bug fix's proof when it was captured, else its fix).
+ * The index of the hero scene: the scene marked `hero`, else the first scene whose beat is in
+ * the hero list, taking the list in order (a bug fix's proof when it was captured, else its fix).
  */
 export function heroScene(
-  scenes: ReadonlyArray<{ beat: string }>,
+  scenes: ReadonlyArray<{ beat: string; hero?: boolean }>,
   hero: readonly string[] | undefined,
 ): number | undefined {
+  const marked = scenes.findIndex((s) => s.hero);
+  if (marked !== -1) return marked;
   for (const beat of hero ?? []) {
     const index = scenes.findIndex((s) => s.beat === beat);
     if (index !== -1) return index;

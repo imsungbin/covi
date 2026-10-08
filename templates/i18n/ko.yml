@@ -703,7 +703,13 @@ video:
 
 narration:
   meta: '{files} · +{additions} −{deletions}'
-  touches: ' {areas}에 걸친 변경입니다.'
+  opening:
+    imperative: '이제 {clause}'
+    titled: '{kind}입니다. 제목은 “{summary}”입니다.'
+    kind: '{kind}입니다: {summary}'
+  page:
+    home: 홈 페이지
+    homeHeading: 홈 페이지
   changeMap:
     text: '변경은 {areas}에 걸쳐 있고, 주로 {names}입니다.'
     heading: '{files} 변경'
@@ -791,18 +797,6 @@ narration:
       risk: 위험
       question: 질문
     pointLine: '{label}: {title}'
-  roadmap:
-    text: '{first} {stops}{을/를} 차례로 살펴보겠습니다.'
-    api: 변경 전후의 응답
-    apiNew: 새 응답
-    terminal: 변경 전후의 명령
-    terminalNew: 명령의 출력
-    beforeAfter: 변경 전후의 페이지
-    screenshot: 실제 화면
-    interaction: 새 흐름
-    code: 그 뒤의 코드
-    structure: 각 부분이 맞물리는 방식
-    findings: 머지 전에 확인할 점
   file:
     phrase: '{name} {noun}'
     module: 모듈
@@ -823,7 +817,7 @@ question:
     short: 숏폼
     shortDescription: '세로 9:16, 약 30초, 간결하게'
     standard: 표준 리뷰
-    standardDescription: '16:9, 60–120초, 더 자세히'
+    standardDescription: '16:9, 최대 120초, 더 자세히'
     custom: 직접 지정
     customDescription: 크기, 길이, 내레이션을 고릅니다
   duration:

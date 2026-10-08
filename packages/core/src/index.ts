@@ -70,6 +70,7 @@ export {
   type ProviderChoice,
   ProviderError,
 } from './intelligence/provider.ts';
+export * from './model/behavior.ts';
 export * from './model/change.ts';
 export * from './model/context.ts';
 export * from './model/demo.ts';
@@ -96,6 +97,7 @@ export {
 } from './resources.ts';
 export { type BuiltReview, buildReview, runRules, summarizeFindings } from './review/engine.ts';
 export { RULES, type Rule, type RuleContext } from './review/rules/index.ts';
+export * from './run/paths.ts';
 export * from './run/run.ts';
 export { childEnv } from './security/env.ts';
 export { findSecrets, isSecretEnv, mask, Redactor, SECRET_PATTERNS } from './security/redact.ts';

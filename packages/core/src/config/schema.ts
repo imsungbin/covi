@@ -199,6 +199,12 @@ export const ConfigInputSchema = z.strictObject({
       commands: z.array(DemoCommandSchema).optional(),
       requests: z.array(DemoRequestSchema).optional(),
       viewports: z.array(z.enum(VIEWPORTS)).optional(),
+      record: z
+        .boolean()
+        .optional()
+        .describe(
+          'Record every browser flow at base and head (MP4 with ffmpeg, else WebM). Default true.',
+        ),
     })
     .optional(),
   video: z
@@ -303,6 +309,8 @@ export interface CoviConfig {
     commands: DemoCommand[];
     requests: DemoRequest[];
     viewports: Array<(typeof VIEWPORTS)[number]>;
+    /** Record browser flows; recording only happens when a browser runs. */
+    record: boolean;
   };
   video: {
     when: 'auto' | 'always' | 'never';
@@ -333,7 +341,7 @@ export const DEFAULT_CONFIG: CoviConfig = {
   review: { failOn: 'none', maxFindings: 10, focus: [], disableRules: [], runTests: false },
   test: { timeout: 600 },
   app: { readyPath: '/', timeout: 120, env: {}, passEnv: [] },
-  demo: { pages: [], flows: [], commands: [], requests: [], viewports: ['desktop'] },
+  demo: { pages: [], flows: [], commands: [], requests: [], viewports: ['desktop'], record: true },
   video: {
     when: 'auto',
     mode: 'short',

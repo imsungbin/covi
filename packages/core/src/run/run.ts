@@ -1,4 +1,4 @@
-import { copyFile, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { ResolvedConfig } from '../config/resolve.ts';
 import type { ResolvedLanguage } from '../i18n/language.ts';
@@ -185,6 +185,12 @@ export class Run {
       id = base;
       for (let n = 2; await exists(join(runsRoot, id)); n++) id = `${base}-${n}`;
       dir = join(runsRoot, id);
+      // Nothing is at the path, yet something is: a link to nowhere, which mkdir would follow.
+      if (await lstat(dir).catch(() => undefined))
+        throw new EnvironmentError(
+          `${dir} is a symbolic link that leads nowhere; Covi does not create a run through it.`,
+          'Delete it, or choose where runs go with --out <dir> or COVI_OUTPUT_DIR.',
+        );
       if (options.keep) await pruneRuns(runsRoot, options.keep - 1);
     }
     await ensureDir(dir);
@@ -209,7 +215,8 @@ export class Run {
     };
     const run = new Run(id, dir, manifest, options.redactor ?? Redactor.fromProcess());
     await run.save();
-    if (!options.dir) await writeFile(join(dirname(dir), 'LATEST'), `${id}\n`);
+    // Renamed into place, so a link planted at LATEST is replaced rather than written through.
+    if (!options.dir) await writeFileAtomic(join(dirname(dir), 'LATEST'), `${id}\n`);
     return run;
   }
 
@@ -429,9 +436,10 @@ export function runsRootFor(root: string, runsDir?: string): string {
  */
 export async function ensureSelfIgnored(dir: string): Promise<void> {
   const file = join(dir, '.gitignore');
-  if (await exists(file)) return;
-  await ensureDir(dir);
-  await writeFile(file, '# Created by Covi: everything here is generated.\n*\n');
+  // A link (even one that leads nowhere) is replaced by the rename, never written through.
+  const info = await lstat(file).catch(() => undefined);
+  if (info && !info.isSymbolicLink()) return;
+  await writeFileAtomic(file, '# Created by Covi: everything here is generated.\n*\n');
 }
 
 export interface RunSummary {

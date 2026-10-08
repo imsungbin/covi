@@ -21,6 +21,19 @@ export {
   type EvidenceSources,
   evidenceFiles,
 } from './evidence/build.ts';
+export {
+  citationProblems,
+  citeChanges,
+  type EvidenceIndex,
+  type GroundableFinding,
+  type Grounded,
+  groundFinding,
+  hunksAt,
+  hunksOf,
+  indexEvidence,
+  ungroundedStatements,
+  unknownCitations,
+} from './evidence/cite.ts';
 export { evidenceId, evidencePart } from './evidence/ids.ts';
 export {
   type ExecResult,

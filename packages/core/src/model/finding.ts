@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Language } from '../i18n/language.ts';
 import { LanguageSchema } from '../i18n/schema.ts';
 import { shortHash } from '../util/hash.ts';
+import { EvidenceIdsSchema } from './evidence.ts';
 
 /**
  * Findings distinguish how sure Covi is (certainty) from how much it matters (severity).
@@ -62,6 +63,9 @@ export const FindingSchema = z.strictObject({
     .describe(
       'Concrete support: quoted code, observed behavior, or references. No evidence, no finding.',
     ),
+  evidenceIds: EvidenceIdsSchema.optional().describe(
+    "Ids from the run's evidence.json that support the finding (`covi evidence --run <id>`). A diff hunk is `diff-hunk:<path>:<start>`, <start> being the + start of its @@ header. Confirmed and likely findings cite at least one.",
+  ),
   explanation: z.string().min(1).describe('Why it matters to the reviewer.'),
   suggestion: z.string().optional(),
   source: z.strictObject({ kind: z.enum(FINDING_SOURCES), id: z.string().optional() }).optional(),
@@ -77,6 +81,7 @@ export interface Finding {
   category: FindingCategory;
   location?: { path: string; line?: number; endLine?: number };
   evidence: string;
+  evidenceIds?: string[];
   explanation: string;
   suggestion?: string;
   source: { kind: (typeof FINDING_SOURCES)[number]; id?: string };
@@ -87,9 +92,17 @@ export const DismissalSchema = z.strictObject({
   reason: z.string().min(3),
 });
 
-/** Shape of an agent- or model-authored `findings.json`. */
-export const FindingsFileSchema = z.strictObject({
-  schemaVersion: z.literal(1).default(1),
+/**
+ * Shape of a `findings.json` before its evidence rule: what a model returns (Covi grounds a
+ * model's findings itself) and what both versions share.
+ */
+export const FindingsFileBaseSchema = z.strictObject({
+  schemaVersion: z
+    .union([z.literal(1), z.literal(2)])
+    .default(2)
+    .describe(
+      '2: confirmed and likely findings cite evidence ids. Files written as version 1 are still read, without that rule.',
+    ),
   language: LanguageSchema.optional().describe(
     'The language the findings are written in: en, ko, ja, or zh (Simplified Chinese).',
   ),
@@ -101,7 +114,22 @@ export const FindingsFileSchema = z.strictObject({
   notVerified: z.array(z.string()).default([]),
 });
 
-export type FindingsFile = z.output<typeof FindingsFileSchema>;
+/**
+ * Shape of an agent-authored `findings.json`. In version 2, a confirmed or likely finding cites
+ * evidence.
+ */
+export const FindingsFileSchema = FindingsFileBaseSchema.superRefine((file, ctx) => {
+  if (file.schemaVersion < 2) return;
+  for (const [i, finding] of file.findings.entries())
+    if (isBlockingCandidate(finding) && !finding.evidenceIds?.length)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['findings', i, 'evidenceIds'],
+        message: `a ${finding.certainty} finding cites at least one evidence id (\`covi evidence --run <id>\` lists them); without evidence, report it as a risk or a question`,
+      });
+});
+
+export type FindingsFile = z.output<typeof FindingsFileBaseSchema>;
 
 export type Verdict = 'looks-good' | 'needs-attention' | 'needs-changes';
 

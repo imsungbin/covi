@@ -118,6 +118,9 @@ describe('covi CLI', () => {
         },
       }),
     );
+    // A hunk's id comes straight from the diff: its file and the + start of its @@ header.
+    const patch = readFileSync(join(analyzed.runDir, 'diff.patch'), 'utf8');
+    const start = /\+\+\+ b\/app\.js\n@@ -\d+(?:,\d+)? \+(\d+)/.exec(patch)![1];
     writeFileSync(
       join(analyzed.runDir, 'findings.json'),
       JSON.stringify({
@@ -129,6 +132,7 @@ describe('covi CLI', () => {
             category: 'api-compatibility',
             location: { path: 'app.js', line: 24 },
             evidence: 'res.end(JSON.stringify(pageOfUsers(cursor, limit)))',
+            evidenceIds: [`diff-hunk:app.js:${start}`],
             explanation: 'Existing clients iterate the array.',
           },
         ],

@@ -284,7 +284,7 @@ export async function reviewSession(
     wantTests && !testsNote ? await run.stage('tests', () => runTests(session)) : undefined;
   const explanation = model?.explanation ?? explainHeuristically(context, language);
   const findingsFile: FindingsFile = model?.findings ?? {
-    schemaVersion: 1,
+    schemaVersion: 2,
     findings: [],
     dismissed: [],
     checked: [],
@@ -1003,7 +1003,7 @@ export async function reportWorkflow(session: Session): Promise<WorkflowResult> 
       session,
       built,
       explanation,
-      authored ?? { schemaVersion: 1, findings: [], dismissed: [], checked: [], notVerified: [] },
+      authored ?? { schemaVersion: 2, findings: [], dismissed: [], checked: [], notVerified: [] },
     ),
   );
   finishReview(session, result, { review: built.review });

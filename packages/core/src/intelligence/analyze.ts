@@ -4,7 +4,7 @@ import { LANGUAGE_NAME, type Language } from '../i18n/language.ts';
 import type { CodeChange } from '../model/change.ts';
 import type { ReviewContext } from '../model/context.ts';
 import { type Explanation, ExplanationSchema } from '../model/explanation.ts';
-import { type Finding, type FindingsFile, FindingsFileSchema } from '../model/finding.ts';
+import { type Finding, type FindingsFile, FindingsFileBaseSchema } from '../model/finding.ts';
 import { renderBrief } from '../report/brief.ts';
 import { loadSkill, methodologyOf } from '../resources.ts';
 import type { Redactor } from '../security/redact.ts';
@@ -14,7 +14,7 @@ import type { ModelProvider, ProviderChoice } from './provider.ts';
 
 export const ModelAnalysisSchema = z.strictObject({
   explanation: ExplanationSchema,
-  review: FindingsFileSchema,
+  review: FindingsFileBaseSchema,
 });
 
 export function createProvider(

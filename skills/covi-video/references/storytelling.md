@@ -15,7 +15,7 @@ When a change leaves two to four things to check, let them structure the video. 
 
 1. "There are three places this could break." (the hook, over the riskiest lines or the change map)
 2. One scene per place, with the eyebrows "1 of 3", "2 of 3", and "3 of 3".
-3. "All three hold up. One question left: what about offline?" (the return, then a bonus question if there is one)
+3. "All three hold up. The review left one question: what does undo restore?" (the return, then a bonus question only if the review raised it as a `question` finding)
 
 Use it only when the change hands you the list. A video with one thing to check needs no map.
 
@@ -67,4 +67,4 @@ Only for large restructurings with nothing to click.
 ## Pacing
 - Short-form (9:16, 20–35 s): six to nine scenes, one idea each, the review note always included.
 - Standard (16:9, 60–120 s): ten to fourteen scenes, with room for before states, implementation detail, and a second finding. A storyboard holds at most 14 scenes, so a long standard review lets its scenes run a little past five seconds.
-- Covi holds each visual long enough to read it, whatever the line, so an interaction of three or more steps, or a findings card with four or more findings, runs past five seconds. That is fine: its steps or findings keep it moving. Still, split the steps of a long interaction across scenes when you can.
+- Covi holds each visual long enough to read it, whatever the line, so an interaction of three or more steps runs past five seconds. That is fine: its steps keep it moving. Still, split the steps of a long interaction across scenes when you can.

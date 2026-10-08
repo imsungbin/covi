@@ -52,7 +52,9 @@ Music never moves frames: changing only the music or the effects (`covi render -
 
 1. Is the opening frame legible and intriguing with the sound off? The poster and the first tile show the subject, readable at a glance, not a title card.
 2. Is the hero visibly the biggest moment? Its tile is the one you would pick as the thumbnail.
-3. Does any scene hold a still picture while the narration continues? In `video/timeline.json`, a scene running past five seconds (`end` minus `start`; the hero may run a little longer, and so may the scenes of a long standard review and a scene held at Covi's minimum for its visual, such as an interaction of three or more steps or a findings card with four or more findings), or a screenshot, interaction step, or before-after with no `focus` or `click` under a long line (more than about ten words), is one: split the scene, give it a `focus` or `click` to follow, or, when Covi extended the holds to reach the video's minimum length, give it more to say rather than less.
+3. Does any scene hold a still picture while the narration continues?
+   - A still is a scene in `video/timeline.json` running well past five seconds (`end` minus `start`) that is not the hero, a scene of a long standard review, or an interaction of three or more steps held at Covi's minimum; or a screenshot, interaction step, or before-after with no `focus` or `click` under a line of more than about ten words.
+   - Split it, or give it a `focus` or `click` to follow. When Covi extended the holds to reach the video's minimum length (the log line "Extended visual holds…" on stderr, or a scene in `video/timeline.json` much longer than its speech), give it more to say, not less.
 4. Would this look at home in a SaaS dashboard? If most tiles are cards (titles, callouts, diagrams, summaries) rather than the product, its code, or its output, it would: trade cards for captured evidence.
 
 If any answer is wrong, or a scene is wrong, crowded, or not grounded in evidence, fix the storyboard, not the renderer, and render again with `covi render --run <id> --json`: it renders `video/storyboard.json` as you left it (`--storyboard <file>` renders one kept elsewhere) and reuses the voice of unchanged lines.
@@ -69,7 +71,7 @@ For narration in Korean, Japanese, or Chinese, also read `video/speech.json`: it
 
 **Name the hero.** Every video has one moment where the change clicks: the bug reproducing, the key lines side by side with the thing they fix, the after state landing. That scene is the hero. Covi finds it by beat: it walks the template's `hero` list in order (`covi templates show <id>`) and takes the first scene playing one of those beats, and the music lifts there. So give the hero scene the first beat of that list as its `beat`, whatever it shows (viewers read the `eyebrow`, not the beat); give no earlier scene that beat; and never mark it `optional`. Then make it the biggest moment: the strongest capture, and the line that pays off the hook.
 
-**Let the list be the map.** When there are two to four things to check, promise them up front ("three places to look"), visit each in turn (numbered eyebrows such as "1 of 3" help the viewer keep count), and come back to strike them off. A bonus question at the end is fine. Use it when the change hands you such a list; it is a narrative device, not a template.
+**Let the list be the map.** When there are two to four things to check, promise them up front ("three places to look"), visit each in turn (numbered eyebrows such as "1 of 3" help the viewer keep count), and come back to strike them off. A bonus question at the end is fine when the review raised it (a `question` finding); a findings card shows only the run's findings, so record a new question with `covi-review` first. Use it when the change hands you such a list; it is a narrative device, not a template.
 
 **Storyboard rules** (`covi schema storyboard`):
 

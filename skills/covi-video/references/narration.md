@@ -27,7 +27,7 @@ Never "This change shows…", "In this video…", or a table of contents ("We'll
 - Hook: "Your comment now appears before the server answers."
 - Behavior: "Before this change, you waited for a spinner."
 - Evidence: "On the left, a plain array. On the right, a paginated object."
-- The map: "Three places to look." Later: "That's all three. One question left."
+- The map: "Three places to look." Later: "That's all three. The review left one question: can a retry post it twice?"
 - Review note: "One thing worth reviewing is the rollback when the request fails."
 - Clean result: "Nothing blocking. Start with the cart reducer."
 - Wrap: "Cover the rollback with a test, then merge."

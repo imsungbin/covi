@@ -105,8 +105,10 @@ describe('URL redaction', () => {
       '/',
       '/items.json',
       '/search?q=tokens&page=2',
-      '/kb?keyboard=us&monkey=1',
+      '/items?id=7&page=2&q=keys',
+      '/kb?keyboard=us&tokenizer=1',
       '/docs#section-2',
+      '/#/items',
       '/a?flag',
       '/a?=x',
     ])
@@ -118,5 +120,27 @@ describe('URL redaction', () => {
       r.redactUrls('GET /a?token=abc123456 failed; see https://x.test/cb#code=zz9 (retry)'),
     ).toBe('GET /a?token=[REDACTED] failed; see https://x.test/cb#code=[REDACTED] (retry)');
     expect(r.redactUrls('Could not load items: HTTP 404')).toBe('Could not load items: HTTP 404');
+  });
+
+  it('masks camelCase and run-together credential names', () => {
+    expect(r.redactUrl('/a?authToken=t1&privateKey=k1&csrftoken=c1&X-Auth=a1&page=2')).toBe(
+      '/a?authToken=[REDACTED]&privateKey=[REDACTED]&csrftoken=[REDACTED]&X-Auth=[REDACTED]&page=2',
+    );
+  });
+
+  it('masks the query inside a hash-router fragment', () => {
+    expect(r.redactUrl('/#/login?token=abc&next=%2Fhome')).toBe(
+      '/#/login?token=[REDACTED]&next=%2Fhome',
+    );
+    expect(r.redactUrl('https://x.test/#!/cb?code=zz9')).toBe(
+      'https://x.test/#!/cb?code=[REDACTED]',
+    );
+  });
+
+  it('stays fast on hostile text', () => {
+    const hostile = '/-'.repeat(100_000);
+    const started = performance.now();
+    expect(r.redactUrls(hostile)).toBe(hostile);
+    expect(performance.now() - started).toBeLessThan(250);
   });
 });

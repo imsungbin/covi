@@ -100,15 +100,22 @@ const URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^/\s:@]+):([^/\s@]+)@/gi;
 
 /**
  * Query and fragment parameters whose values are credentials (`?token=…`, `#access_token=…`,
- * `X-Amz-Signature=…`). The name must match whole, after an optional prefix such as `x-api-`,
- * so `keyboard` or `monkey` stay readable.
+ * `X-Amz-Signature=…`). A name counts when it ends with a credential word in any style
+ * (`authToken`, `csrftoken`, `X-Auth`, `api_key`, `userSid`). That also masks names like
+ * `monkey` or `barcode`; for untrusted apps that is the safe side.
  */
 const SECRET_PARAM =
-  /^(?:[a-z0-9]+[_-])*(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|api[_-]?key|apikey|key|secret|client[_-]?secret|password|passwd|pwd|auth|authorization|session|session[_-]?id|sessionid|sid|sig|signature|credentials?|code|jwt|otp)$/i;
+  /(?:token|key|secret|session|session[_-]?id|sid|signature|sig|password|passwd|pwd|auth|authorization|code|credentials?|jwt|otp)$/i;
 
-/** URLs inside free text: absolute ones, and paths that carry a query or a fragment. */
+/**
+ * URLs inside free text: absolute ones, and paths that carry a query or a fragment. Console text
+ * comes from the app under review with no length limit, so a match may only start where no
+ * earlier failed attempt has already scanned: a scheme at the start of its run of scheme
+ * characters, a path at the start of the text or after whitespace or a quote. That keeps the
+ * scan linear; the cost is that a path glued to other text (`url=/a?token=…`) is not found.
+ */
 const URL_IN_TEXT =
-  /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+|(?<![\w./])\/[^\s"'<>`?#]*[?#][^\s"'<>`]+/gi;
+  /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+|(?<![^\s"'<>`])\/[^\s"'<>`?#]*[?#][^\s"'<>`]+/gi;
 
 function decodeName(name: string): string {
   try {
@@ -130,6 +137,14 @@ function maskPairs(text: string): string {
     .join('&');
 }
 
+function maskFragment(fragment: string): string {
+  // Hash routers (`#/login?token=…`, `#!/cb?code=…`) carry a query inside the fragment.
+  const queryAt = fragment.indexOf('?');
+  if (queryAt < 0 || !(fragment.startsWith('/') || fragment.startsWith('!')))
+    return maskPairs(fragment);
+  return `${fragment.slice(0, queryAt)}?${maskPairs(fragment.slice(queryAt + 1))}`;
+}
+
 /** Masks the values of credential-shaped parameters in a URL's query and fragment. */
 function maskSecretParams(url: string): string {
   const hashAt = url.indexOf('#');
@@ -138,7 +153,7 @@ function maskSecretParams(url: string): string {
   const queryAt = beforeHash.indexOf('?');
   const path = queryAt < 0 ? beforeHash : beforeHash.slice(0, queryAt);
   const query = queryAt < 0 ? undefined : beforeHash.slice(queryAt + 1);
-  return `${path}${query === undefined ? '' : `?${maskPairs(query)}`}${fragment === undefined ? '' : `#${maskPairs(fragment)}`}`;
+  return `${path}${query === undefined ? '' : `?${maskPairs(query)}`}${fragment === undefined ? '' : `#${maskFragment(fragment)}`}`;
 }
 
 /** Environment variable names that hold credentials. */

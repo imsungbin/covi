@@ -187,13 +187,61 @@ describe('TraceCollector', () => {
 
   it('masks and clips the error of a failed scenario and its open step', () => {
     const { trace } = collector();
-    trace.beginStep({ id: 's1', action: 'click', target: '#go' });
-    const error = `Failed with ghp_${'A1b2C3d4E5'.repeat(4)} ${'x'.repeat(600)}`;
+    trace.beginStep({ id: 's1', action: 'goto', target: '/login' });
+    const token = `ghp_${'A1b2C3d4E5'.repeat(4)}`;
+    const error = `page.goto: net::ERR_ABORTED at ${ORIGIN}/login?token=abc123 (${token}) ${'x'.repeat(600)}`;
     const result = trace.finish({ error });
     for (const text of [result.error, result.steps[0]!.error]) {
-      expect(text).toMatch(/^Failed with ghp_\[REDACTED\] x+…$/);
+      expect(text).toMatch(
+        /^page\.goto: net::ERR_ABORTED at \/login\?token=\[REDACTED\] \(ghp_\[REDACTED\]\) x+…$/,
+      );
       expect(text).toHaveLength(TRACE_LIMITS.text);
     }
+  });
+
+  it('masks secrets in app URLs in console text before making those URLs relative', () => {
+    const { trace } = collector();
+    trace.console({
+      level: 'error',
+      text: `TypeError: boom\n    at load (${ORIGIN}/app.js?token=abcdef123456:4:9)`,
+    });
+    trace.console({ level: 'log', text: `Signed out, redirect=${ORIGIN}/reset?token=abc123` });
+    const [frame, redirect] = trace.finish().console;
+    expect(frame!.text).toContain('at load (/app.js?token=[REDACTED]');
+    expect(frame!.text).not.toContain('abcdef123456');
+    expect(redirect!.text).toBe('Signed out, redirect=/reset?token=[REDACTED]');
+  });
+
+  it('keeps URLs on other origins absolute, including one the app origin is a prefix of', () => {
+    const { trace } = collector();
+    trace.console({
+      level: 'log',
+      text: 'Mirror at http://127.0.0.1:50000/x and https://cdn.test/a.js',
+    });
+    trace.request({}, { method: 'GET', url: 'http://127.0.0.1:50000/x', type: 'fetch' });
+    trace.request({}, { method: 'GET', url: 'https://cdn.test/lib.js?v=2', type: 'script' });
+    const result = trace.finish();
+    expect(result.console[0]!.text).toBe(
+      'Mirror at http://127.0.0.1:50000/x and https://cdn.test/a.js',
+    );
+    expect(result.requests.map((r) => r.url)).toEqual([
+      'http://127.0.0.1:50000/x',
+      'https://cdn.test/lib.js?v=2',
+    ]);
+  });
+
+  it('stops the clock with the recording, so a step closed later never outlasts the trace', () => {
+    const { trace, at } = collector();
+    trace.start();
+    trace.beginStep({ id: 's1', action: 'click', target: '#slow' });
+    at(300);
+    trace.stop();
+    at(5000);
+    trace.console({ level: 'log', text: 'after the page closed' });
+    const result = trace.finish({ error: 'Timeout 5000ms exceeded' });
+    expect(result.durationMs).toBe(300);
+    expect(result.steps[0]).toMatchObject({ status: 'failed', durationMs: 300 });
+    expect(result.console[0]!.tMs).toBe(300);
   });
 
   it('closes an open step as failed when the scenario failed, and ignores late events', () => {

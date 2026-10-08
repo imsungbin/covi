@@ -15,6 +15,10 @@ import { mergeRegions } from './regions.ts';
 
 /** Bounds on one trace: a page can make thousands of requests or log in a loop. */
 export const TRACE_LIMITS = { requests: 300, console: 200, text: 500, url: 500 } as const;
+/** Page titles and network failure codes are one line, not a message. */
+const SHORT_TEXT_LIMIT = 200;
+/** The page picks a request's method, and run files are redacted whole when written. */
+const METHOD_LIMIT = 32;
 
 export interface TraceMeta {
   id: string;
@@ -95,9 +99,12 @@ export class TraceCollector {
     this.t0 = this.now();
   }
 
-  /** Stops the clock: the page, and its recording, ended. */
+  /**
+   * Stops the clock: the page, and its recording, ended. What happens later, such as `finish`
+   * closing the step that failed, is timed at this point so nothing outlasts the recording.
+   */
   stop(): void {
-    this.stoppedAt ??= this.elapsed();
+    this.stoppedAt ??= this.now() - this.t0;
   }
 
   beginStep(step: { id: string; action: string; target?: string; label?: string }): void {
@@ -139,18 +146,15 @@ export class TraceCollector {
   }
 
   request(handle: object, init: { method: string; url: string; type: string }): void {
-    if (this.finished) return;
-    const url = this.url(init.url);
-    if (url === undefined) return;
+    if (this.finished || LOCAL_URL.test(init.url)) return;
     const id = `n${++this.requestCount}`;
     if (this.requests.length >= TRACE_LIMITS.requests) return;
     const startedAt = this.elapsed();
     const entry: TraceRequest = {
       id,
       ...(this.open ? { step: this.open.step.id } : {}),
-      // The page picks the method, and run files are redacted whole when written: keep it short.
-      method: truncate(init.method, 32).toUpperCase(),
-      url,
+      method: truncate(init.method, METHOD_LIMIT).toUpperCase(),
+      url: this.url(init.url),
       type: init.type,
       startMs: Math.round(startedAt),
     };
@@ -164,7 +168,7 @@ export class TraceCollector {
     if (!pending) return;
     this.pending.delete(handle);
     if (done.status !== undefined) pending.entry.status = done.status;
-    if (done.failure) pending.entry.failure = truncate(done.failure, 200);
+    if (done.failure) pending.entry.failure = truncate(done.failure, SHORT_TEXT_LIMIT);
     pending.entry.durationMs = Math.round(done.durationMs ?? this.elapsed() - pending.startedAt);
   }
 
@@ -177,16 +181,15 @@ export class TraceCollector {
     if (this.finished) return;
     const id = `c${++this.consoleCount}`;
     if (this.messages.length >= TRACE_LIMITS.console) return;
-    const where = message.location?.url ? this.url(message.location.url) : undefined;
+    const at = message.location;
+    const where = at?.url && !LOCAL_URL.test(at.url) ? this.url(at.url) : undefined;
     this.messages.push({
       id,
       ...(this.open ? { step: this.open.step.id } : {}),
       level: LEVELS[message.level] ?? 'log',
       source: message.source ?? 'console',
-      text: this.text(message.text.split(this.origin).join(''), TRACE_LIMITS.text),
-      ...(where && message.location
-        ? { location: `${where}:${message.location.line + 1}:${message.location.column + 1}` }
-        : {}),
+      text: this.text(message.text, TRACE_LIMITS.text),
+      ...(where && at ? { location: `${where}:${at.line + 1}:${at.column + 1}` } : {}),
       tMs: Math.round(this.elapsed()),
     });
   }
@@ -198,9 +201,9 @@ export class TraceCollector {
     const trace: Trace = {
       schemaVersion: 1,
       ...this.meta,
-      ...(extra.title ? { title: this.text(extra.title, 200) } : {}),
+      ...(extra.title ? { title: this.text(extra.title, SHORT_TEXT_LIMIT) } : {}),
       ...(extra.recording ? { recording: extra.recording } : {}),
-      durationMs: Math.round(this.stoppedAt ?? this.elapsed()),
+      durationMs: Math.round(this.elapsed()),
       steps: this.steps,
       requests: this.requests,
       console: this.messages,
@@ -222,18 +225,24 @@ export class TraceCollector {
     return trace;
   }
 
-  /** Free text from the page or the browser (messages, errors, titles), with its URLs masked. */
+  /**
+   * Free text from the page or the browser (messages, errors, titles): URLs masked, and app URLs
+   * made relative. Masking comes first: the redactor finds a bare path only at the start of the
+   * text or after a space or quote, so a URL made relative inside `(…)` or after `=` would keep
+   * its secrets.
+   */
   private text(raw: string, max: number): string {
-    return redactBounded(raw, max, (text) => this.redactor.redactUrls(text));
+    return redactBounded(raw, max, (text) =>
+      this.redactor.redactUrls(text).split(`${this.origin}/`).join('/'),
+    );
   }
 
   private elapsed(): number {
-    return this.now() - this.t0;
+    return this.stoppedAt ?? this.now() - this.t0;
   }
 
-  /** App-relative and redacted, or undefined for URLs that never cross the network. */
-  private url(raw: string): string | undefined {
-    if (LOCAL_URL.test(raw)) return undefined;
+  /** App-relative and redacted. */
+  private url(raw: string): string {
     const local =
       raw === this.origin
         ? '/'

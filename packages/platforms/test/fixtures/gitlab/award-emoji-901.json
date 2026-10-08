@@ -1,0 +1,6 @@
+[
+  { "id": 1, "name": "thumbsup", "user": { "id": 5 } },
+  { "id": 2, "name": "thumbsup", "user": { "id": 6 } },
+  { "id": 3, "name": "thumbsdown", "user": { "id": 7 } },
+  { "id": 4, "name": "tada", "user": { "id": 8 } }
+]

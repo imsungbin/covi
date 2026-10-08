@@ -255,6 +255,7 @@ function explicitConfig(cmd: Command): ParsedConfigInput {
   if (explicitSource(cmd, 'outro')) set('video', 'outro', o.outro);
   if (explicitSource(cmd, 'comment')) set('publish', 'comment', o.comment);
   if (explicitSource(cmd, 'annotations')) set('publish', 'annotations', o.annotations);
+  if (explicitSource(cmd, 'anchors')) set('publish', 'anchors', o.anchors);
   if (explicitSource(cmd, 'record')) set('demo', 'record', o.record);
   return parseConfigInput(raw, 'command-line options');
 }
@@ -877,6 +878,11 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
     )
     .option('--comment', 'post or update the summary comment')
     .option('--no-comment', 'do not post a comment (e.g. when publishing in a later step)')
+    .option(
+      '--anchors',
+      'also post confirmed and likely findings as inline comments people can react to (GitHub)',
+    )
+    .option('--no-anchors', 'do not post finding anchors')
     .option('--run-tests', 'run test.command')
     .option('--out <dir>', 'write the run to this exact directory')
     .action(async (o: { platform: string; out?: string }, cmd: Command) => {
@@ -920,6 +926,12 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
     .option('--expect-head <sha>', 'refuse to publish unless the run reviewed this head commit')
     .option('--artifact-url <url>', 'link to the uploaded run artifacts')
     .option('--video-url <url>', 'link to the video')
+    .option(
+      '--anchors',
+      'also post confirmed and likely findings as inline comments people can react to (GitHub)',
+    )
+    .option('--no-anchors', 'do not post finding anchors')
+    .option('--no-rating', 'leave "Was this useful? 👍 👎" out of the comment')
     .action(
       async (
         o: {
@@ -929,6 +941,8 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
           expectHead?: string;
           artifactUrl?: string;
           videoUrl?: string;
+          anchors?: boolean;
+          rating: boolean;
         },
         cmd: Command,
       ) => {
@@ -952,10 +966,23 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
           );
         }
         const config = run.manifest.config?.values as
-          | { publish?: { video?: 'link' | 'upload' | 'none' } }
+          | {
+              publish?: {
+                video?: 'link' | 'upload' | 'none';
+                anchors?: boolean;
+                rating?: boolean;
+                botLogin?: string;
+              };
+            }
           | undefined;
+        // An artifact's run.json is the fork's to write (workflow_run): how the privileged token
+        // comments, and whose comments it takes for its own, comes only from flags then.
+        const own = expected ? undefined : config?.publish;
         const outcome = await publishRun(run, platform, process.env, {
           videoMode: config?.publish?.video ?? 'link',
+          anchors: explicitSource(cmd, 'anchors') ? o.anchors : (own?.anchors ?? false),
+          rating: explicitSource(cmd, 'rating') ? o.rating : (own?.rating ?? true),
+          botLogin: own?.botLogin,
           number: o.number ? Number(o.number) : undefined,
           artifactUrl: o.artifactUrl,
           videoUrl: o.videoUrl,

@@ -35,8 +35,10 @@ import {
   isBlockingCandidate,
   LANGUAGE_NAME,
   type Language,
+  type Ledger,
   loadEvidence,
   loadSubjectSnapshot,
+  mergeLedger,
   normalizeFinding,
   type ParsedConfigInput,
   ProviderError,
@@ -1206,11 +1208,17 @@ export async function summarizeWorkflow(
   return result;
 }
 
-/** Re-renders the PR/MR comment from validated artifacts, never from free-form Markdown in the run. */
+/**
+ * Re-renders the PR/MR comment from validated artifacts, never from free-form Markdown in the
+ * run. `previous` is the ledger of the comment this one replaces: the new review is folded into
+ * it, so the comment keeps what Covi reported push by push. `merge: false` keeps `previous` as it
+ * is, for a review that came from an untrusted artifact.
+ */
 export async function commentFromRun(
   run: Session['run'],
   links: Parameters<typeof renderComment>[3],
-): Promise<{ body: string; review: Review; context: ReviewContext }> {
+  extras: { previous?: Ledger; rating?: boolean; merge?: boolean } = {},
+): Promise<{ body: string; review: Review; context: ReviewContext; language: Language }> {
   const review = parseOrThrow(
     ReviewFileSchema,
     await run.readJson('review.json'),
@@ -1231,10 +1239,22 @@ export async function commentFromRun(
         (text) => run.redactor.redact(text),
       )
     : undefined;
+  const head = run.manifest.change?.head.sha;
+  // A run id or head that a ledger cannot hold (a hand-made run) means no ledger, not no comment.
+  const ledger =
+    extras.merge === false
+      ? extras.previous
+      : head
+        ? mergeLedger(extras.previous, { runId: run.id, head, findings: review.findings })
+        : undefined;
   return {
-    body: renderComment(review, explanation, context, links, language, evidence),
+    body: renderComment(review, explanation, context, links, language, evidence, {
+      ledger,
+      rating: extras.rating,
+    }),
     review,
     context,
+    language,
   };
 }
 

@@ -252,6 +252,8 @@ export class Run {
     if (!(await exists(manifestPath)))
       throw new UsageError(`No Covi run at ${dir}`, 'List runs with `covi runs`.');
     const manifest = await readJson<RunManifest>(manifestPath);
+    // run.json may come from a downloaded artifact: a record that does not fit is no record.
+    manifest.publish = PublishRecordSchema.safeParse(manifest.publish).data;
     return new Run(manifest.runId, dir, manifest, options.redactor ?? Redactor.fromProcess());
   }
 

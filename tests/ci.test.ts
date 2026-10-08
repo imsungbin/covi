@@ -1,104 +1,19 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Run } from '@covi/core';
+import { COMMENT_MARKER, type PublishRecord, parseLedger, Run, renderLedger } from '@covi/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { covi, coviAsync } from './helpers/cli.ts';
 import { canUseBrowser } from './helpers/env.ts';
-import { GIT_ENV } from './helpers/repo.ts';
-
-interface Recorded {
-  method: string;
-  url: string;
-  body: string;
-  headers: Record<string, string | string[] | undefined>;
-}
-
-/** A local stand-in for the GitHub and GitLab REST APIs. */
-function mockApi(): Promise<{
-  url: string;
-  calls: Recorded[];
-  server: Server;
-  comments: Array<{ id: number; body: string }>;
-  pulls: Array<{ number: number; owner: string; branch: string; sha: string }>;
-}> {
-  const calls: Recorded[] = [];
-  const comments: Array<{ id: number; body: string }> = [];
-  const pulls: Array<{ number: number; owner: string; branch: string; sha: string }> = [];
-  const server = createServer((req, res) => {
-    let body = '';
-    req.on('data', (c) => {
-      body += c;
-    });
-    req.on('end', () => {
-      calls.push({ method: req.method!, url: req.url!, body, headers: req.headers });
-      const json = (status: number, value: unknown) =>
-        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(value));
-      const url = new URL(req.url!, 'http://api');
-      const pull = /^\/repos\/acme\/shop\/pulls(?:\/(\d+))?$/.exec(url.pathname);
-      if (req.method === 'GET' && pull) {
-        const shape = (p: (typeof pulls)[number]) => ({ number: p.number, head: { sha: p.sha } });
-        if (pull[1]) {
-          const found = pulls.find((p) => p.number === Number(pull[1]));
-          return found ? json(200, shape(found)) : json(404, { message: 'not found' });
-        }
-        const head = url.searchParams.get('head');
-        return json(
-          200,
-          pulls.filter((p) => !head || head === `${p.owner}:${p.branch}`).map(shape),
-        );
-      }
-      // The token's own user on GitLab. GitHub's workflow token has none; it posts as a bot.
-      if (req.method === 'GET' && url.pathname === '/api/v4/user')
-        return json(200, { id: 50, username: 'project_5_bot' });
-      if (req.method === 'GET' && url.pathname === '/user')
-        return json(403, { message: 'Resource not accessible by integration' });
-      if (req.method === 'GET' && /\/(comments|notes)/.test(req.url!))
-        return json(
-          200,
-          comments.map((c) => ({
-            ...c,
-            html_url: `https://example.test/c/${c.id}`,
-            system: false,
-            user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
-            author: { id: 50, username: 'project_5_bot' },
-          })),
-        );
-      if (req.method === 'POST' && /\/(comments|notes)/.test(req.url!)) {
-        const id = comments.length + 1;
-        comments.push({ id, body: (JSON.parse(body) as { body: string }).body });
-        return json(201, { id, html_url: `https://example.test/c/${id}` });
-      }
-      if (
-        (req.method === 'PATCH' || req.method === 'PUT') &&
-        /\/(comments|notes)\/\d+/.test(req.url!)
-      ) {
-        const id = Number(/(\d+)$/.exec(req.url!)![1]);
-        comments[id - 1]!.body = (JSON.parse(body) as { body: string }).body;
-        return json(200, { id, html_url: `https://example.test/c/${id}` });
-      }
-      json(404, { message: 'not found' });
-    });
-  });
-  return new Promise((resolve) =>
-    server.listen(0, '127.0.0.1', () =>
-      resolve({
-        url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
-        calls,
-        server,
-        comments,
-        pulls,
-      }),
-    ),
-  );
-}
+import {
+  githubEnv as githubEnvFor,
+  type MockApi,
+  mockApi,
+  prRepo as prRepoFor,
+} from './helpers/mock-api.ts';
 
 const dirs: string[] = [];
-let api: Awaited<ReturnType<typeof mockApi>>;
+let api: MockApi;
 beforeAll(async () => {
   api = await mockApi();
 });
@@ -107,55 +22,41 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-const examples = await listExamples();
 const browser = await canUseBrowser();
-async function prRepo(name: string) {
-  const dir = await materializeExample(examples.find((e) => e.name === name)!);
-  dirs.push(dir);
-  const git = (...args: string[]) =>
-    execFileSync('git', args, { cwd: dir, env: GIT_ENV, encoding: 'utf8' }).trim();
-  return { dir, base: git('rev-parse', 'main'), head: git('rev-parse', 'HEAD'), git };
-}
+const prRepo = (name: string) => prRepoFor(name, dirs);
+const githubEnv = (repo: { base: string; head: string }, extra: NodeJS.ProcessEnv = {}) =>
+  githubEnvFor(api.url, repo, extra, dirs);
 
-function githubEnv(repo: { base: string; head: string }, extra: NodeJS.ProcessEnv = {}) {
-  const work = mkdtempSync(join(tmpdir(), 'covi-gha-'));
+/** The privileged `workflow_run` after a fork's review of `head`: GitHub omits fork pull requests. */
+function workflowRun(head: string) {
+  const work = mkdtempSync(join(tmpdir(), 'covi-wfr-'));
   dirs.push(work);
   const event = join(work, 'event.json');
   writeFileSync(
     event,
     JSON.stringify({
-      pull_request: {
-        number: 7,
-        title: 'style(pricing): refresh plan cards and highlight the popular plan',
-        body: 'Adds a popular badge. @everyone <script>alert(1)</script>',
-        html_url: 'https://github.example/acme/shop/pull/7',
-        base: { sha: repo.base, ref: 'main', repo: { full_name: 'acme/shop' } },
-        head: { sha: repo.head, ref: 'design/pricing-refresh', repo: { full_name: 'acme/shop' } },
+      workflow_run: {
+        event: 'pull_request',
+        head_sha: head,
+        head_branch: 'design/pricing-refresh',
+        head_repository: { owner: { login: 'forker' }, full_name: 'forker/shop' },
+        html_url: 'https://github.example/acme/shop/actions/runs/1001',
+        pull_requests: [],
       },
     }),
   );
-  const output = join(work, 'output');
-  const summary = join(work, 'summary.md');
-  writeFileSync(output, '');
-  writeFileSync(summary, '');
-  return {
-    env: {
-      CI: 'true',
-      GITHUB_ACTIONS: 'true',
-      GITHUB_EVENT_NAME: 'pull_request',
-      GITHUB_EVENT_PATH: event,
-      GITHUB_REPOSITORY: 'acme/shop',
-      GITHUB_RUN_ID: '1001',
-      GITHUB_SERVER_URL: 'https://github.example',
-      GITHUB_API_URL: api.url,
-      GITHUB_OUTPUT: output,
-      GITHUB_STEP_SUMMARY: summary,
-      ...extra,
-    },
-    output,
-    summary,
-    out: join(work, 'run'),
+  const env = {
+    CI: 'true',
+    GITHUB_ACTIONS: 'true',
+    GITHUB_EVENT_NAME: 'workflow_run',
+    GITHUB_EVENT_PATH: event,
+    GITHUB_REPOSITORY: 'acme/shop',
+    GITHUB_RUN_ID: '2002',
+    GITHUB_SERVER_URL: 'https://github.example',
+    GITHUB_API_URL: api.url,
+    GITHUB_TOKEN: 'write-token',
   };
+  return { event, env };
 }
 
 describe('GitHub Actions', () => {
@@ -340,33 +241,7 @@ describe('GitHub Actions', () => {
       env: review.env,
     });
     // 2. The privileged workflow_run: GitHub omits fork pull requests from the payload.
-    const work = mkdtempSync(join(tmpdir(), 'covi-wfr-'));
-    dirs.push(work);
-    const event = join(work, 'event.json');
-    writeFileSync(
-      event,
-      JSON.stringify({
-        workflow_run: {
-          event: 'pull_request',
-          head_sha: repo.head,
-          head_branch: 'design/pricing-refresh',
-          head_repository: { owner: { login: 'forker' }, full_name: 'forker/shop' },
-          html_url: 'https://github.example/acme/shop/actions/runs/1001',
-          pull_requests: [],
-        },
-      }),
-    );
-    const env = {
-      CI: 'true',
-      GITHUB_ACTIONS: 'true',
-      GITHUB_EVENT_NAME: 'workflow_run',
-      GITHUB_EVENT_PATH: event,
-      GITHUB_REPOSITORY: 'acme/shop',
-      GITHUB_RUN_ID: '2002',
-      GITHUB_SERVER_URL: 'https://github.example',
-      GITHUB_API_URL: api.url,
-      GITHUB_TOKEN: 'write-token',
-    };
+    const { event, env } = workflowRun(repo.head);
     api.comments.length = 0; // a pull request without an earlier Covi comment
     api.pulls.length = 0;
     api.pulls.push(
@@ -550,6 +425,243 @@ describe('GitHub Actions', () => {
       { env: other.env },
     );
     expect(relaxed.code).toBe(0);
+  });
+
+  it('carries the outcome ledger across pushes and records where it published', async () => {
+    // Earlier tests left marker comments; this one needs a pull request of its own.
+    api.comments.splice(0);
+    const repo = await prRepo('visual-pricing-cards');
+    // Anyone can paste the marker and a ledger: only Covi's own comment carries history.
+    const forged = renderLedger({
+      v: 1,
+      run: '20260101-000000-ci-0000000',
+      head: '0000000',
+      findings: [
+        { k: 'f'.repeat(12), c: 'confirmed', a: 'f'.repeat(8), f: '0000000', l: '0000000' },
+      ],
+    });
+    api.comments.push({
+      id: 1,
+      body: `${COMMENT_MARKER}\npasted\n${forged}`,
+      user: { login: 'mallory', id: 666, type: 'User' },
+      author: { id: 666, username: 'mallory' },
+      created_at: '2026-10-01T08:00:00Z',
+      reactions: { '+1': 0, '-1': 0 },
+    });
+    const gh = githubEnv(repo, { GITHUB_TOKEN: 'test-token' });
+    covi(['ci', '--repo', repo.dir, '--out', gh.out, '--video', 'never', '--no-comment'], {
+      env: gh.env,
+    });
+    const first = await coviAsync(['publish', '--repo', repo.dir, '--run', gh.out, '--json'], {
+      env: gh.env,
+    });
+    expect(first.code).toBe(0);
+    const manifest = JSON.parse(readFileSync(join(gh.out, 'run.json'), 'utf8')) as {
+      runId: string;
+      publish: PublishRecord;
+    };
+    expect(manifest.publish).toMatchObject({
+      platform: 'github',
+      repository: 'acme/shop',
+      number: 7,
+    });
+    expect(manifest.publish.comment.id).not.toBe('1');
+    expect(api.comments[0]!.body).toContain(forged);
+    const comment = api.comments.find((c) => String(c.id) === manifest.publish.comment.id)!;
+    expect(comment.body).toContain('Was this useful? 👍 👎 (react to this comment)');
+    const ledger = parseLedger(comment.body)!;
+    expect(ledger).toMatchObject({ run: manifest.runId, head: repo.head.slice(0, 7) });
+    expect(ledger.findings.map((e) => e.k)).not.toContain('f'.repeat(12));
+    // The focus outline rule's likely finding, at least.
+    expect(ledger.findings.some((e) => e.c === 'likely')).toBe(true);
+
+    // A push: the next run's comment keeps the history, so first sightings stay put.
+    repo.git('commit', '--allow-empty', '-qm', 'chore: nudge');
+    const pushed = githubEnv(
+      { base: repo.base, head: repo.git('rev-parse', 'HEAD') },
+      { GITHUB_TOKEN: 'test-token' },
+    );
+    covi(['ci', '--repo', repo.dir, '--out', pushed.out, '--video', 'never', '--no-comment'], {
+      env: pushed.env,
+    });
+    await coviAsync(['publish', '--repo', repo.dir, '--run', pushed.out, '--json'], {
+      env: pushed.env,
+    });
+    const next = parseLedger(comment.body)!;
+    expect(next.head).not.toBe(ledger.head);
+    expect(next.findings.map((e) => [e.k, e.f])).toEqual(ledger.findings.map((e) => [e.k, e.f]));
+    api.comments.splice(0);
+  });
+
+  it('posts finding anchors once, and only when asked to', async () => {
+    api.comments.splice(0);
+    api.reviewComments.splice(0);
+    const repo = await prRepo('visual-pricing-cards');
+    const gh = githubEnv(repo, { GITHUB_TOKEN: 'test-token' });
+    covi(['ci', '--repo', repo.dir, '--out', gh.out, '--video', 'never', '--no-comment'], {
+      env: gh.env,
+    });
+    await coviAsync(['publish', '--repo', repo.dir, '--run', gh.out, '--json'], { env: gh.env });
+    expect(api.reviewComments).toHaveLength(0);
+
+    const asked = githubEnv(repo, { GITHUB_TOKEN: 'test-token' });
+    covi(
+      [
+        'ci',
+        '--repo',
+        repo.dir,
+        '--out',
+        asked.out,
+        '--video',
+        'never',
+        '--no-comment',
+        '--anchors',
+      ],
+      { env: asked.env },
+    );
+    const first = await coviAsync(['publish', '--repo', repo.dir, '--run', asked.out, '--json'], {
+      env: asked.env,
+    });
+    const anchors = (first.json() as { data: { publish: { anchors: { posted: unknown[] } } } }).data
+      .publish.anchors;
+    expect(anchors.posted.length).toBeGreaterThan(0);
+    expect(api.reviewComments).toHaveLength(anchors.posted.length);
+    expect(api.reviewComments[0]).toMatchObject({ commit_id: repo.head, side: 'RIGHT' });
+    expect(api.reviewComments[0]!.body).toMatch(/^<!-- covi:finding [0-9a-f]{12} -->/);
+    await coviAsync(['publish', '--repo', repo.dir, '--run', asked.out, '--json'], {
+      env: asked.env,
+    });
+    expect(api.reviewComments).toHaveLength(anchors.posted.length);
+    api.comments.splice(0);
+    api.reviewComments.splice(0);
+  });
+
+  it("recognizes its comment by the base revision's bot login", async () => {
+    const repo = await prRepo('visual-pricing-cards');
+    repo.git('checkout', '-q', 'main');
+    writeFileSync(
+      join(repo.dir, '.covi/config.yml'),
+      'app:\n  static: .\npublish:\n  botLogin: covi-app[bot]\n',
+    );
+    repo.git('commit', '-qam', 'chore: Covi comments as its own app');
+    repo.git('checkout', '-q', 'design/pricing-refresh');
+    repo.git('rebase', '-q', 'main');
+    api.comments.splice(0);
+    api.comments.push({
+      id: 1,
+      body: `${COMMENT_MARKER}\nan earlier review`,
+      user: { login: 'covi-app[bot]', id: 77, type: 'Bot' },
+      author: { id: 77, username: 'covi-app' },
+      created_at: '2026-10-01T08:00:00Z',
+      reactions: { '+1': 0, '-1': 0 },
+    });
+    const gh = githubEnv(
+      { base: repo.git('rev-parse', 'main'), head: repo.git('rev-parse', 'HEAD') },
+      { GITHUB_TOKEN: 'app-token' },
+    );
+    const status = (result: { json: () => unknown }) =>
+      (result.json() as { data: { publish: { status: string; id: string } } }).data.publish;
+    const ci = await coviAsync(
+      [
+        'ci',
+        '--repo',
+        repo.dir,
+        '--out',
+        gh.out,
+        '--video',
+        'never',
+        '--no-annotations',
+        '--comment',
+        '--json',
+      ],
+      { env: gh.env },
+    );
+    expect(status(ci)).toMatchObject({ status: 'updated', id: '1' });
+    const published = await coviAsync(['publish', '--repo', repo.dir, '--run', gh.out, '--json'], {
+      env: gh.env,
+    });
+    expect(status(published)).toMatchObject({ status: 'updated', id: '1' });
+    expect(api.comments).toHaveLength(1);
+    api.comments.splice(0);
+  });
+
+  it('takes nothing but the review from a workflow_run artifact: no ledger, no anchors, no bot', async () => {
+    const repo = await prRepo('visual-pricing-cards');
+    const review = githubEnv(repo);
+    covi(['ci', '--repo', repo.dir, '--out', review.out, '--video', 'never', '--no-comment'], {
+      env: review.env,
+    });
+    // The fork controls everything in its artifact, run.json's configuration included.
+    const manifestPath = join(review.out, 'run.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      config: { values: { publish: Record<string, unknown> } };
+    };
+    Object.assign(manifest.config.values.publish, {
+      anchors: true,
+      rating: false,
+      botLogin: 'evil[bot]',
+    });
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    const { env } = workflowRun(repo.head);
+    api.comments.splice(0);
+    api.reviewComments.splice(0);
+    api.pulls.splice(0);
+    api.pulls.push({
+      number: 7,
+      owner: 'forker',
+      branch: 'design/pricing-refresh',
+      sha: repo.head,
+    });
+    api.comments.push({
+      id: 1,
+      body: `${COMMENT_MARKER}\nwhat evil[bot] says`,
+      user: { login: 'evil[bot]', id: 13, type: 'Bot' },
+      author: { id: 13, username: 'evil' },
+      created_at: '2026-10-01T08:00:00Z',
+      reactions: { '+1': 0, '-1': 0 },
+    });
+    const publish = async (...flags: string[]) =>
+      (
+        (
+          await coviAsync(
+            ['publish', '--repo', repo.dir, '--run', review.out, '--json', ...flags],
+            {
+              env,
+            },
+          )
+        ).json() as { data: { publish: { status: string; id: string; anchors?: unknown } } }
+      ).data.publish;
+
+    const first = await publish();
+    expect(first).toMatchObject({ status: 'created', id: '2' });
+    expect(first.anchors).toBeUndefined();
+    expect(api.comments[0]!.body).toBe(`${COMMENT_MARKER}\nwhat evil[bot] says`);
+    const body = api.comments[1]!.body;
+    // The collector skips a change without a ledger; an artifact's review must not write one.
+    expect(parseLedger(body)).toBeUndefined();
+    expect(body).not.toContain('covi:ledger');
+    expect(body).toContain('Was this useful? 👍 👎 (react to this comment)');
+    expect(api.reviewComments).toHaveLength(0);
+
+    // The workflow's own flags still apply.
+    const flagged = await publish('--anchors', '--no-rating');
+    expect(flagged).toMatchObject({ status: 'updated', id: '2' });
+    expect(api.reviewComments.length).toBeGreaterThan(0);
+    expect(api.comments[1]!.body).not.toContain('Was this useful?');
+    expect(api.comments[1]!.body).not.toContain('covi:ledger');
+
+    // What a trusted run (a branch in this repository) wrote stays exactly as it was.
+    const trusted = renderLedger({
+      v: 1,
+      run: '20261001-090000-ci-abcdef1',
+      head: 'abcdef1',
+      findings: [{ k: 'a'.repeat(12), c: 'likely', a: 'a'.repeat(8), f: 'abcdef1', l: 'abcdef1' }],
+    });
+    api.comments[1]!.body += `\n${trusted}`;
+    expect(await publish()).toMatchObject({ status: 'updated', id: '2' });
+    expect(api.comments[1]!.body.trimEnd().endsWith(trusted)).toBe(true);
+    api.comments.splice(0);
+    api.reviewComments.splice(0);
   });
 });
 

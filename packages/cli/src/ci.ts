@@ -1,6 +1,7 @@
 import { relative } from 'node:path';
 import { demonstrate, RecordingUnavailableError } from '@covi/capture';
 import {
+  anchorsFor,
   type CommentLinks,
   type CoviConfig,
   DEMO_PATHS,
@@ -12,6 +13,7 @@ import {
   type Logger,
   loadSubjectSnapshot,
   type ParsedConfigInput,
+  parseLedger,
   type Review,
   type ReviewContext,
   type Run,
@@ -190,6 +192,9 @@ export async function ciWorkflow(options: CiOptions): Promise<WorkflowResult> {
   if (options.publish ?? config.publish.comment) {
     const outcomePublish = await publishRun(run, platform, options.env, {
       videoMode: config.publish.video,
+      anchors: config.publish.anchors,
+      rating: config.publish.rating,
+      botLogin: config.publish.botLogin,
     });
     result.data = { publish: outcomePublish };
     if (outcomePublish.status === 'failed')
@@ -285,6 +290,12 @@ export interface PublishOptions {
   number?: number;
   artifactUrl?: string;
   videoUrl?: string;
+  /** Post confirmed and likely findings as inline comments people can react to (`publish.anchors`). */
+  anchors?: boolean;
+  /** End the comment with "Was this useful? 👍 👎" (`publish.rating`, on by default). */
+  rating?: boolean;
+  /** `publish.botLogin`: the bot a GitHub token without a user of its own comments as. */
+  botLogin?: string;
   fetch?: FetchLike;
 }
 
@@ -316,7 +327,11 @@ export async function publishRun(
     if (!target.number) return { status: 'skipped', reason: target.reason };
     number = target.number;
   }
-  const { publisher, reason } = createPublisher(platform, env, { number, fetch: options.fetch });
+  const { publisher, reason } = createPublisher(platform, env, {
+    number,
+    fetch: options.fetch,
+    botLogin: options.botLogin,
+  });
   if (!publisher) return { status: 'skipped', reason };
   const links: CommentLinks = {
     run: platform.links.run ?? platform.links.job,
@@ -337,6 +352,32 @@ export async function publishRun(
       links.video = { url: `${links.files}${relative(run.dir, run.path(video.path))}`, seconds };
     if (!links.video && links.artifacts) links.video = { url: links.artifacts, seconds };
   }
-  const { body } = await commentFromRun(run, links);
-  return publisher.upsertComment(body);
+  // The comment this one replaces holds the ledger so far. If the lookup fails here,
+  // upsertComment looks again and reports the failure.
+  const existing = await publisher.findComment().catch(() => undefined);
+  const previous = existing ? parseLedger(existing.body) : undefined;
+  // A workflow_run publishes a fork's artifact, and the collector believes Covi's comment: the
+  // fork's review must not write its history. The ledger an earlier trusted run left stays as it was.
+  const { body, review, language } = await commentFromRun(run, links, {
+    previous,
+    rating: options.rating ?? true,
+    merge: !platform.expectedHead,
+  });
+  const outcome = await publisher.upsertComment(body, existing);
+  if (outcome.status !== 'created' && outcome.status !== 'updated') return outcome;
+  const head = run.manifest.change?.head.sha;
+  if (options.anchors && head) {
+    if (publisher.postAnchors)
+      outcome.anchors = await publisher.postAnchors(anchorsFor(review.findings, language), head);
+    else run.warn(`Finding anchors are not posted on ${publisher.platform} yet.`);
+  }
+  if (outcome.id)
+    await run.setPublish({
+      platform: publisher.platform,
+      repository: publisher.target.repository,
+      number: publisher.target.number,
+      comment: { id: outcome.id, url: outcome.url },
+      at: new Date().toISOString(),
+    });
+  return outcome;
 }

@@ -190,7 +190,7 @@ describe('Run', () => {
     expect((await listRuns(root))[0]!.publish?.number).toBe(7);
   });
 
-  it('drops a publish record that does not fit its schema when listing runs', async () => {
+  it('drops a publish record that does not fit its schema when listing or opening runs', async () => {
     root = mkdtempSync(join(tmpdir(), 'covi-run-'));
     const run = await Run.create(options());
     const record = {
@@ -214,6 +214,7 @@ describe('Run', () => {
       const [listed] = await listRuns(root);
       expect(listed!.id).toBe(run.id);
       expect(listed!.publish).toBeUndefined();
+      expect((await Run.open(run.id, { root })).manifest.publish).toBeUndefined();
     }
     // A GitLab project known only by its id still counts.
     await run.setPublish({ ...record, platform: 'gitlab', repository: '5' });
@@ -221,6 +222,7 @@ describe('Run', () => {
       platform: 'gitlab',
       repository: '5',
     });
+    expect((await Run.open(run.id, { root })).manifest.publish?.repository).toBe('5');
   });
 });
 

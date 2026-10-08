@@ -61,4 +61,17 @@ export {
   runRelative,
   writeBehaviorDiff,
 } from './scenarios.ts';
+export {
+  focusShots,
+  frameWindow,
+  inImage,
+  type SubjectCaptures,
+  type SubjectFlowRun,
+  type SubjectFrame,
+  type SubjectPage,
+  subjectFocus,
+  subjectImages,
+  subjectObservation,
+  subjectPageImage,
+} from './subject.ts';
 export { TRACE_LIMITS, TraceCollector, type TraceMeta, type TraceOptions } from './trace.ts';

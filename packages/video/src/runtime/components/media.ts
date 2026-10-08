@@ -3,6 +3,8 @@ import {
   apiPanels,
   beforeAfterTiming,
   codeHighlights,
+  edgeEntrance,
+  edgeLabelEntrance,
   findingEntrance,
   HIGHLIGHT_SWEEP,
   interactionTiming,
@@ -960,6 +962,7 @@ export function diagram(v: V<'diagram'>, ctx: ComponentContext): Component {
   const nodeW = (box.width - gapX * (perRow - 1)) / perRow;
   const nodeH = Math.min(ctx.u(170), (box.height - gapY * (rowsCount - 1)) / rowsCount);
   const totalH = rowsCount * nodeH + (rowsCount - 1) * gapY;
+  const vertical = ctx.timeline.orientation === 'vertical';
   const positions = new Map<string, Rect>();
   const svgLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   Object.assign(svgLayer.style, {
@@ -990,49 +993,66 @@ export function diagram(v: V<'diagram'>, ctx: ComponentContext): Component {
       height: `${rect.height}px`,
     });
     const label = el('div', 'nlabel mono', node, n.label);
-    label.style.fontSize = `${ctx.u(ctx.timeline.orientation === 'vertical' ? 28 : 24)}px`;
+    label.style.fontSize = `${ctx.u(vertical ? 28 : 24)}px`;
     if (n.detail) el('div', 'ndetail mono', node, n.detail).style.fontSize = `${ctx.u(19)}px`;
     return node;
   });
-  const edges = v.edges
-    .filter((e) => positions.has(e.from) && positions.has(e.to))
-    .map((e) => {
-      const a = positions.get(e.from)!;
-      const b = positions.get(e.to)!;
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      const [x1, y1, x2, y2] = [
-        a.x + a.width / 2,
-        a.y + a.height / 2,
-        b.x + b.width / 2,
-        b.y + b.height / 2,
-      ];
-      line.setAttribute('x1', String(x1));
-      line.setAttribute('y1', String(y1));
-      line.setAttribute('x2', String(x2));
-      line.setAttribute('y2', String(y2));
-      line.setAttribute('stroke', ctx.timeline.theme.primary);
-      line.setAttribute('stroke-width', String(ctx.u(4)));
-      line.setAttribute('stroke-linecap', 'round');
-      const length = Math.hypot(x2 - x1, y2 - y1);
-      line.setAttribute('stroke-dasharray', String(length));
-      svgLayer.appendChild(line);
-      return { line, length };
-    });
+  // An edge keeps its index in `v.edges` even after one that names a missing node, so its timing
+  // matches settledAt's (see edgeEntrance).
+  const edges = v.edges.flatMap((e, index) => {
+    const a = positions.get(e.from);
+    const b = positions.get(e.to);
+    if (!a || !b) return [];
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    const [x1, y1, x2, y2] = [
+      a.x + a.width / 2,
+      a.y + a.height / 2,
+      b.x + b.width / 2,
+      b.y + b.height / 2,
+    ];
+    line.setAttribute('x1', String(x1));
+    line.setAttribute('y1', String(y1));
+    line.setAttribute('x2', String(x2));
+    line.setAttribute('y2', String(y2));
+    line.setAttribute('stroke', ctx.timeline.theme.primary);
+    line.setAttribute('stroke-width', String(ctx.u(4)));
+    line.setAttribute('stroke-linecap', 'round');
+    const length = Math.hypot(x2 - x1, y2 - y1);
+    line.setAttribute('stroke-dasharray', String(length));
+    svgLayer.appendChild(line);
+    // The label sits on the line's midpoint, between the two nodes, above them.
+    const label = e.label ? el('div', 'edge-label', ctx.root, e.label) : undefined;
+    if (label) {
+      Object.assign(label.style, {
+        fontSize: `${ctx.u(vertical ? 20 : 18)}px`,
+        maxWidth: `${Math.max(gapX, nodeW * 0.6)}px`,
+        zIndex: '2',
+      });
+      label.style.left = `${(x1 + x2) / 2 - label.offsetWidth / 2}px`;
+      label.style.top = `${(y1 + y2) / 2 - label.offsetHeight / 2}px`;
+    }
+    return [{ line, length, label, index }];
+  });
   svgLayer.style.zIndex = '0';
   for (const n of nodes) n.style.zIndex = '1';
   return {
     update(clock) {
       for (const [i, n] of nodes.entries())
         rise(n, entered(clock, 0.1 + i * 0.1, 0.5 + i * 0.1), ctx.u(18));
-      for (const [i, { line, length }] of edges.entries()) {
+      for (const { line, length, label, index } of edges) {
         line.setAttribute(
           'stroke-dashoffset',
-          String(length * (1 - easeOutCubic(entered(clock, 0.8 + i * 0.12, 1.5 + i * 0.12)))),
+          String(length * (1 - easeOutCubic(entered(clock, ...edgeEntrance(index))))),
         );
+        if (label) fade(label, entered(clock, ...edgeLabelEntrance(index)));
       }
     },
-    report: () =>
-      nodes.map((n) => ({ role: 'text' as const, rect: rectOf(n), overflow: overflows(n) })),
+    report: () => [
+      ...nodes.map((n) => ({ role: 'text' as const, rect: rectOf(n), overflow: overflows(n) })),
+      ...edges.flatMap(({ label }) =>
+        label ? [{ role: 'text' as const, rect: rectOf(label), overflow: overflows(label) }] : [],
+      ),
+    ],
     target: () => {
       const changed = v.nodes.findIndex((n) => n.changed);
       return changed >= 0 ? rectOf(nodes[changed]!) : undefined;

@@ -200,5 +200,7 @@ ${languageRules(t)}
 .node.changed { border-color: ${c.primary}; background: ${c.primarySoft}; }
 .node .nlabel { font-weight: 700; line-height: 1.15; word-break: break-word; }
 .node .ndetail { color: ${c.textMuted}; }
+.edge-label { position: absolute; padding: ${u(5)} ${u(12)}; border-radius: 999px; background: ${c.surface}; border: 1px solid ${c.line};
+  color: ${c.textMuted}; font-weight: 620; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 `;
 }

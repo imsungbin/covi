@@ -34,6 +34,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../../packages/cli/src/examples.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import {
+  edgeEntrance,
+  edgeLabelEntrance,
   interactionTiming,
   morphTiming,
   screenshotMarks,
@@ -946,6 +948,128 @@ describe.skipIf(!available)('rendering', () => {
       expect(first!.start).toBeCloseTo(duration * 0.22, 6);
       const onFirst = await frameState(look, frameAt('s2', first!.pan[1] - 0.05));
       expect(onFirst).toMatchObject({ gloss: 'Total', shown: 1 });
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('labels diagram edges on their midpoints, and reports a label that does not fit', async () => {
+    const browser = await chromium.launch();
+    try {
+      const long = 'validates every quantity before it ever reaches the cart total';
+      const { timeline, frameAt, look, report, errors } = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'architecture',
+          narration: 'The button calls the cart, and the cart checks the quantity.',
+          visual: {
+            kind: 'diagram',
+            nodes: [
+              { id: 'button', label: 'Minus button' },
+              { id: 'cart', label: 'cart.js', changed: true },
+              { id: 'check', label: 'clamp()' },
+            ],
+            edges: [
+              { from: 'button', to: 'cart', label: 'calls' },
+              { from: 'cart', to: 'check', label: long },
+            ],
+          },
+        },
+        storyboard.scenes[2]!,
+      ]);
+      type Box = { x: number; y: number; width: number; height: number };
+      const labels = (seconds: number) =>
+        look<{ text: string; opacity: number; box: Box }[]>(
+          frameAt('s2', seconds),
+          's2',
+          `return [...scene.querySelectorAll('.edge-label')].map((l) => {
+             const r = l.getBoundingClientRect();
+             return { text: l.textContent, opacity: Number.parseFloat(l.style.opacity || '0'),
+               box: { x: r.x, y: r.y, width: r.width, height: r.height } };
+           });`,
+        );
+      const nodes = () =>
+        look<Box[]>(
+          frameAt('s2', 2.5),
+          's2',
+          `return [...scene.querySelectorAll('.node')].map((n) => {
+             const r = n.getBoundingClientRect();
+             return { x: r.x, y: r.y, width: r.width, height: r.height };
+           });`,
+        );
+      // Not yet: the first label waits for its line.
+      const early = await labels(edgeLabelEntrance(0)[0] - 0.2);
+      expect(early.map((l) => l.opacity)).toEqual([0, 0]);
+      // Settled: both shown, the first centered between its two nodes.
+      const settled = await labels(2.5);
+      expect(settled.map((l) => [l.text, l.opacity])).toEqual([
+        ['calls', 1],
+        [long, 1],
+      ]);
+      const [a, b] = await nodes();
+      const mid = (r: Box) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+      expect(mid(settled[0]!.box).x).toBeCloseTo((mid(a!).x + mid(b!).x) / 2, 0);
+      expect(mid(settled[0]!.box).y).toBeCloseTo((mid(a!).y + mid(b!).y) / 2, 0);
+      // The long label is clipped: QC says so, naming the scene.
+      const layout = await report();
+      const text = layout.items.filter((i) => i.role === 'text' && i.rect.height < 40);
+      expect(text.some((i) => i.overflow)).toBe(true);
+      const fits = layoutChecks(timeline, [layout]).find((c) => c.id === 'text-fits')!;
+      expect(fits).toMatchObject({ status: 'warn' });
+      expect(fits.message).toMatch(/s2/);
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('times an edge by its place in the list, also after an edge it cannot draw', async () => {
+    const browser = await chromium.launch();
+    try {
+      const { frameAt, look, errors } = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'architecture',
+          narration: 'The button calls the cart, and the cart checks the quantity.',
+          visual: {
+            kind: 'diagram',
+            nodes: [
+              { id: 'button', label: 'Minus button' },
+              { id: 'cart', label: 'cart.js', changed: true },
+            ],
+            edges: [
+              { from: 'button', to: 'gone', label: 'lost' },
+              { from: 'button', to: 'cart', label: 'calls' },
+            ],
+          },
+        },
+        storyboard.scenes[2]!,
+      ]);
+      const at = (seconds: number) =>
+        look<{ labels: [string, number][]; drawn: number[] }>(
+          frameAt('s2', seconds),
+          's2',
+          `return {
+             labels: [...scene.querySelectorAll('.edge-label')].map((l) =>
+               [l.textContent, Number.parseFloat(l.style.opacity || '0')]),
+             drawn: [...scene.querySelectorAll('line')].map((l) =>
+               1 - Number(l.getAttribute('stroke-dashoffset')) / Number(l.getAttribute('stroke-dasharray'))),
+           };`,
+        );
+      // The drawn edge is the second entry: its line and label wait for the second slot, as
+      // settledAt counts them, not the first.
+      const [lineStart] = edgeEntrance(1);
+      const beforeLine = await at((edgeEntrance(0)[0] + lineStart) / 2);
+      expect(beforeLine.drawn).toEqual([0]);
+      const [labelStart] = edgeLabelEntrance(1);
+      const beforeLabel = await at((edgeLabelEntrance(0)[0] + labelStart) / 2);
+      expect(beforeLabel.labels).toEqual([['calls', 0]]);
+      const settled = await at(edgeLabelEntrance(1)[1] + 0.1);
+      expect(settled.labels).toEqual([['calls', 1]]);
+      expect(settled.drawn[0]).toBeCloseTo(1, 6);
       expect(errors).toEqual([]);
     } finally {
       await browser.close();

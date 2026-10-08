@@ -1,6 +1,6 @@
 {
   "name": "@covi/video",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Review videos: story selection, storyboards, narration, captions, browser-based composition, rendering, and quality checks.",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@covi/audio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Sound for Covi videos: a deterministic synthesizer, music scores and their fitting, sound-effect recipes, and the narration-first mix.",
   "type": "module",

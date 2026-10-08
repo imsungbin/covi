@@ -31,7 +31,12 @@ export const SUBJECT_LIMITS = {
 export const SUBJECT_KEY = /^[a-z0-9][a-z0-9-]{0,47}$/;
 /** `subject:<screen>#<element>`, e.g. `subject:checkout#place-order`. */
 export const SUBJECT_REF = /^subject:([a-z0-9][a-z0-9-]{0,47})#([a-z0-9][a-z0-9-]{0,47})$/;
-const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+/**
+ * What one line of page text must not hold: C0 and C1 controls (terminal escapes among them), the
+ * Unicode line and paragraph separators, and the bidi overrides and isolates that reorder text.
+ */
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
+const APP_ORIGIN = 'http://app.invalid';
 
 export function parseSubjectRef(ref: string): { screen: string; element: string } | undefined {
   const match = SUBJECT_REF.exec(ref);
@@ -57,17 +62,33 @@ export function uniqueKey(base: string, taken: ReadonlySet<string>): string {
 }
 
 /**
- * A screen's identity: the app path without query, fragment, or trailing slash. An absolute URL
- * keeps only its path: the model never names another origin.
+ * A path on the app: one leading slash and no backslash (URL parsers read `/\host` as `//host`),
+ * and it still resolves on the app's own origin.
  */
-export function screenPath(url: string): string {
+function isAppPath(path: string): boolean {
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return false;
+  try {
+    return new URL(path, APP_ORIGIN).origin === APP_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A screen's identity: the app path without query, fragment, repeated slashes, or trailing slash.
+ * An absolute URL keeps only its path: the model never names another origin. Undefined when no
+ * path the model can keep remains (an unparseable URL, or a path over the length cap), so the
+ * caller drops the screen rather than failing the whole model.
+ */
+export function screenPath(url: string): string | undefined {
   let path: string;
   try {
-    path = new URL(url, 'http://app.invalid').pathname;
+    path = new URL(url, APP_ORIGIN).pathname;
   } catch {
-    return '/';
+    return undefined;
   }
-  return path.replace(/\/+$/, '') || '/';
+  path = path.replace(/\/{2,}/g, '/').replace(/\/+$/, '') || '/';
+  return path.length <= SUBJECT_LIMITS.path && isAppPath(path) ? path : undefined;
 }
 
 /** A screen's key from its path: `/` is `home`. */
@@ -80,12 +101,18 @@ const line = (max: number) =>
     .string()
     .min(1)
     .max(max)
-    .refine((v) => !CONTROL.test(v), 'one line, without control characters');
+    .refine((v) => !CONTROL.test(v), 'one line, without control or bidi characters');
 const Key = z.string().regex(SUBJECT_KEY, 'lowercase letters, digits, and dashes');
 const Revision = z.string().regex(/^[0-9a-f]{7,40}$/, 'a commit SHA');
 const AppPath = line(SUBJECT_LIMITS.path).refine(
-  (v) => v.startsWith('/') && !v.startsWith('//'),
-  'a path on the app, starting with one /',
+  isAppPath,
+  'a path on the app: one leading /, no backslash',
+);
+/** A file inside the run: relative, no `..`, no backslash. */
+const RunPath = line(SUBJECT_LIMITS.path).refine(
+  (v) =>
+    !v.startsWith('/') && !/^[a-z]:/i.test(v) && !v.includes('\\') && !v.split('/').includes('..'),
+  'a path inside the run: relative, without .. or backslashes',
 );
 const Viewport = z.enum(VIEWPORTS);
 const Pixels = z.number().int().min(0).max(100_000);
@@ -130,16 +157,32 @@ export const SubjectScreenSchema = z.strictObject({
   seen: Revision,
 });
 
+/** The step fields that hold a selector: capped like an element's selector. */
+const STEP_SELECTORS = new Set([
+  'click',
+  'fill',
+  'selector',
+  'hover',
+  'select',
+  'check',
+  'scroll',
+  'focus',
+  'wait',
+]);
+
 /** A flow step as the model keeps it: single-line values, and `goto` stays on the app. */
 const SubjectStepSchema = FlowStepSchema.refine(
   (step) =>
-    Object.values(step).every(
-      (v) => typeof v !== 'string' || (v.length <= SUBJECT_LIMITS.value && !CONTROL.test(v)),
+    Object.entries(step).every(
+      ([field, v]) =>
+        typeof v !== 'string' ||
+        (v.length <= (STEP_SELECTORS.has(field) ? SUBJECT_LIMITS.selector : SUBJECT_LIMITS.value) &&
+          !CONTROL.test(v)),
     ),
-  'step values are single lines of at most 500 characters',
+  'step values are single lines: selectors of at most 300 characters, other values 500',
 ).refine(
-  (step) => !('goto' in step) || (step.goto.startsWith('/') && !step.goto.startsWith('//')),
-  'goto stays on the app: a path starting with one /',
+  (step) => !('goto' in step) || isAppPath(step.goto),
+  'goto stays on the app: one leading /, no backslash',
 );
 
 export const SubjectFlowSchema = z.strictObject({
@@ -220,7 +263,7 @@ export type SubjectCommand = z.output<typeof SubjectCommandSchema>;
 
 /** Where each element is in one head capture, in that image's pixels. */
 export const SubjectImageSchema = z.strictObject({
-  path: line(SUBJECT_LIMITS.path),
+  path: RunPath,
   screen: Key,
   viewport: Viewport,
   elements: z

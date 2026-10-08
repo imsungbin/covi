@@ -134,10 +134,12 @@ export async function refineNarration(
     scenes: storyboard.scenes.map((s) => {
       const p = s.id ? byId.get(s.id) : undefined;
       if (!p?.narration.trim()) return s;
-      // A rewrite that breaks its [[…]] markup, or runs past its line, keeps the draft.
+      // A rewrite that breaks its [[…]] markup keeps the draft, and so does one past its line,
+      // unless the draft runs longer still (a cold open joins two lines).
       if (parseEmphasis(p.narration).error) return s;
-      const budget = budgetOf(s.narration);
-      if (speechUnits(stripEmphasis(p.narration), scenesLanguage) > budget * 1.25) return s;
+      const units = speechUnits(stripEmphasis(p.narration), scenesLanguage);
+      const draft = speechUnits(stripEmphasis(s.narration), scenesLanguage);
+      if (units > budgetOf(s.narration) * 1.25 && units > draft) return s;
       return {
         ...s,
         narration: p.narration.trim(),

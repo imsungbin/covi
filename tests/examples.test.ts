@@ -108,6 +108,13 @@ describe('example changes', () => {
           // The fitter may drop an optional scene, never the hero.
           for (const s of storyboard.scenes.filter((s) => s.hero))
             expect(s.optional).toBeUndefined();
+          // Nothing is said or shown twice: the opening sentence, or the same lines of code.
+          const lead = intentSentence(context);
+          for (const s of storyboard.scenes.slice(1)) expect(s.narration).not.toContain(lead);
+          const code = storyboard.scenes
+            .filter((s) => s.visual.kind === 'code')
+            .map((s) => JSON.stringify(s.visual));
+          expect(new Set(code).size).toBe(code.length);
           expect(storyboard.scenes.at(-1)!.visual.kind).toBe('summary');
           expect(storyboard.scenes.length).toBeGreaterThanOrEqual(3);
           const words = storyboard.scenes.reduce(
@@ -225,7 +232,47 @@ describe('the drafted opening and hero', () => {
       expect(storyboard.scenes[0]).toMatchObject({ beat: 'fix', hero: true });
       expect(storyboard.scenes[0]!.optional).toBeUndefined();
       expect(storyboard.scenes.filter((s) => s.hero)).toHaveLength(1);
+      // The "Before" callout only repeated the opening sentence, so it is gone with it.
+      expect(storyboard.scenes.map((s) => s.beat)).toEqual(['fix', 'review', 'summary']);
     }
+  });
+
+  it('opens on the hero when the other subject shows the same lines, and never shows them twice', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('api-users-pagination');
+    const storyboard = draftStoryboard({
+      change,
+      context,
+      explanation,
+      review,
+      spec: resolveVideoSpec(config, { mode: 'standard' }),
+      templates: await loadTemplates(),
+    });
+    // Without a captured response, the exchange and the handler both show app.js.
+    expect(storyboard.scenes.map((s) => s.beat)).toEqual(['exchange', 'review', 'summary']);
+    expect(storyboard.scenes[0]).toMatchObject({
+      hero: true,
+      eyebrow: 'Paginate GET /api/users',
+      visual: { kind: 'code', path: 'app.js' },
+    });
+    expect(storyboard.scenes[0]!.narration).toMatch(
+      /^This change paginates GET \/api\/users\. The key change is in app\.js/,
+    );
+  });
+
+  it('shortens a long title to whole characters, never half of one', async () => {
+    const { change, context, review, explanation, config } =
+      await analyzeExample('api-users-pagination');
+    const storyboard = draftStoryboard({
+      change,
+      context,
+      explanation: { ...explanation, headline: '𠮷'.repeat(40) },
+      review,
+      spec: resolveVideoSpec(config, { mode: 'standard' }),
+      templates: await loadTemplates(),
+    });
+    // 40 characters, 80 UTF-16 units: the cut counts characters, so no surrogate is split.
+    expect(storyboard.scenes[0]!.eyebrow).toBe(`${'𠮷'.repeat(31)}…`);
   });
 
   it('keeps the title card when nothing shows the subject', async () => {
@@ -293,6 +340,10 @@ describe('the drafted opening and hero', () => {
       expect(s.narration, s.beat).not.toMatch(/\[\[|\]\]/);
       expect(s.say ?? '', s.beat).not.toMatch(/\[\[|\]\]/);
     }
+    // The cold open's eyebrow is the headline, shown without the markers; their text stays.
+    const opening = storyboard.scenes[0]!;
+    expect(opening.eyebrow).not.toMatch(/\[\[|\]\]/);
+    expect(opening.narration).toContain('Paginate users');
   });
 });
 

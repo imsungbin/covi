@@ -85,19 +85,6 @@ exports[`English output (baseline) > api-users-pagination > drafts the same stor
   ],
   [
     [
-      "The key change is in app.js.",
-    ],
-    [
-      "It adds pageOfUsers, changes handle,",
-      "changes route GET /api/users,",
-    ],
-    [
-      "and reads a new environment",
-      "variable USERS_PAGE_SIZE.",
-    ],
-  ],
-  [
-    [
       "Two things worth a look.",
     ],
     [
@@ -431,105 +418,11 @@ exports[`English output (baseline) > api-users-pagination > drafts the same stor
 {
   "scenes": [
     {
-      "beat": "implementation",
+      "beat": "exchange",
       "eyebrow": "Paginate GET /api/users",
       "heading": undefined,
       "narration": "This change paginates GET /api/users. The key change is in app.js. It adds pageOfUsers, changes handle, changes route GET /api/users, and reads a new environment variable USERS_PAGE_SIZE.",
       "say": "This change paginates GET /api/users. The key change is in the app script. It adds page of users, changes handle, changes route GET /api/users, and reads a new environment variable users page size.",
-      "visual": {
-        "highlight": [
-          4,
-          5,
-          9,
-        ],
-        "kind": "code",
-        "language": "javascript",
-        "lines": [
-          {
-            "number": 2,
-            "text": "",
-            "type": "context",
-          },
-          {
-            "number": 3,
-            "text": "const PAGE_SIZE = Number(process.env.USERS_PAGE_SIZE ?? 2);",
-            "type": "add",
-          },
-          {
-            "number": 4,
-            "text": "",
-            "type": "add",
-          },
-          {
-            "number": 5,
-            "text": "/** Returns one page of users starting after \`cursor\` (a user id). */",
-            "type": "add",
-          },
-          {
-            "number": 6,
-            "text": "function pageOfUsers(cursor, limit) {",
-            "type": "add",
-          },
-          {
-            "number": 7,
-            "text": "  const start = cursor ? USERS.findIndex((u) => u.id === cursor) + 1 : 0;",
-            "type": "add",
-          },
-          {
-            "number": 8,
-            "text": "  const items = USERS.slice(start, start + limit);",
-            "type": "add",
-          },
-          {
-            "number": 9,
-            "text": "  const last = items.at(-1);",
-            "type": "add",
-          },
-          {
-            "number": 10,
-            "text": "  const hasMore = start + limit < USERS.length;",
-            "type": "add",
-          },
-          {
-            "number": 11,
-            "text": "  return { items, nextCursor: hasMore && last ? last.id : null };",
-            "type": "add",
-          },
-          {
-            "number": 12,
-            "text": "}",
-            "type": "add",
-          },
-          {
-            "number": 13,
-            "text": "",
-            "type": "add",
-          },
-          {
-            "number": 14,
-            "text": "export function handle(req, res) {",
-            "type": "context",
-          },
-          {
-            "number": 15,
-            "text": "  const url = new URL(req.url, 'http://localhost');",
-            "type": "context",
-          },
-          {
-            "number": 16,
-            "text": "  if (url.pathname === '/health') {",
-            "type": "context",
-          },
-        ],
-        "path": "app.js",
-      },
-    },
-    {
-      "beat": "exchange",
-      "eyebrow": "Request / response",
-      "heading": "app.js",
-      "narration": "The key change is in app.js. It adds pageOfUsers, changes handle, changes route GET /api/users, and reads a new environment variable USERS_PAGE_SIZE.",
-      "say": "The key change is in the app script. It adds page of users, changes handle, changes route GET /api/users, and reads a new environment variable users page size.",
       "visual": {
         "highlight": [
           4,
@@ -1298,16 +1191,6 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
   ],
   [
     [
-      "This change keeps",
-      "accented letters and",
-    ],
-    [
-      "collapses repeated",
-      "separators in slugify.",
-    ],
-  ],
-  [
-    [
       "Covi didn't find",
       "blocking issues.",
     ],
@@ -1380,12 +1263,6 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
     ],
     [
       "It changes slugify.",
-    ],
-  ],
-  [
-    [
-      "This change keeps accented letters and",
-      "collapses repeated separators in slugify.",
     ],
   ],
   [
@@ -1544,19 +1421,6 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
           },
         ],
         "path": "src/slugify.js",
-      },
-    },
-    {
-      "beat": "problem",
-      "eyebrow": "Before",
-      "heading": undefined,
-      "narration": "This change keeps accented letters and collapses repeated separators in slugify.",
-      "say": "This change keeps accented letters and collapses repeated separators in slugify.",
-      "visual": {
-        "body": "This change keeps accented letters and collapses repeated separators in slugify. It touches 2 files across test and src (+13 −1). The change is user-visible (cli).",
-        "kind": "callout",
-        "title": "Keep accented letters and collapse repeated separators",
-        "tone": "info",
       },
     },
     {
@@ -1852,19 +1716,6 @@ exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyb
           },
         ],
         "path": "src/slugify.js",
-      },
-    },
-    {
-      "beat": "problem",
-      "eyebrow": "Before",
-      "heading": undefined,
-      "narration": "This change keeps accented letters and collapses repeated separators in slugify.",
-      "say": "This change keeps accented letters and collapses repeated separators in slugify.",
-      "visual": {
-        "body": "This change keeps accented letters and collapses repeated separators in slugify. It touches 2 files across test and src (+13 −1). The change is user-visible (cli).",
-        "kind": "callout",
-        "title": "Keep accented letters and collapse repeated separators",
-        "tone": "info",
       },
     },
     {

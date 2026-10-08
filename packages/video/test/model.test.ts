@@ -54,18 +54,21 @@ describe('narration refinement', () => {
     expect(Number(/total narration budget about (\d+) words/.exec(prompt)![1])).toBe(90);
   });
 
-  it('keeps the draft for a line over its budget or with broken [[…]] markup', async () => {
+  it('keeps the draft for broken [[…]] markup, or a line over budget and longer than the draft', async () => {
     const provider = stub(() => ({
       scenes: [
         { id: 's1', narration: 'The fix [[clamps]] the quantity at zero.' },
+        // Over its 15-word line, but shorter than the 30-word draft it replaces.
         { id: 's2', narration: words(25) },
         { id: 's3', narration: 'Two [[marks]] in [[one]] line.' },
         { id: 's4', narration: 'An [[unclosed mark.' },
+        { id: 's5', narration: words(35) },
       ],
     }));
     const refined = await refineNarration(provider, storyboard, materials);
     expect(refined.scenes[0]!.narration).toBe('The fix [[clamps]] the quantity at zero.');
-    for (const i of [1, 2, 3])
+    expect(refined.scenes[1]!.narration).toBe(words(25));
+    for (const i of [2, 3, 4])
       expect(refined.scenes[i]!.narration).toBe(storyboard.scenes[i]!.narration);
   });
 });

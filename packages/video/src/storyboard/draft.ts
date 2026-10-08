@@ -117,6 +117,7 @@ export function draftStoryboard(input: DraftInput): Storyboard {
   }
   openCold(scenes, budgets, ctx);
   markHero(scenes, template);
+  dropRepeatedLead(scenes, ctx);
   return {
     schemaVersion: 1,
     language,
@@ -772,8 +773,18 @@ function openCold(scenes: Scene[], budgets: number[], ctx: BeatContext): void {
   }
   const hero = heroScene(scenes, [...ctx.heroBeats]);
   const subjects = scenes.flatMap((s, i) => (i > 0 && SUBJECT.has(s.visual.kind) ? [i] : []));
-  const index = subjects.find((i) => i !== hero) ?? subjects[0];
+  let index = subjects.find((i) => i !== hero) ?? subjects[0];
   if (index === undefined) return;
+  // A subject showing the hero's very lines would show them twice: the hero opens, once.
+  if (
+    hero !== undefined &&
+    index !== hero &&
+    sameCode(scenes[index]!.visual, scenes[hero]!.visual)
+  ) {
+    scenes.splice(index, 1);
+    budgets.splice(index, 1);
+    index = hero > index ? hero - 1 : hero;
+  }
   // The opening is never dropped to fit the length, so the moved scene loses `optional`.
   const { heading: _heading, optional: _optional, ...subject } = scenes[index]!;
   const { language } = ctx;
@@ -781,7 +792,7 @@ function openCold(scenes: Scene[], budgets: number[], ctx: BeatContext): void {
   scenes.splice(index, 1);
   scenes[0] = {
     ...subject,
-    eyebrow: shortTitle(title),
+    eyebrow: shortTitle(stripEmphasis(title)),
     narration: fitWords(
       joinSentences(language, [opening.narration, subject.narration]),
       budget,
@@ -806,12 +817,58 @@ function markHero(scenes: Scene[], template: StoryTemplate): void {
   scenes[index] = { ...scene, hero: true };
 }
 
-/** A title short enough for an eyebrow: whole words, at most `max` characters. */
+function sameCode(a: Visual, b: Visual): boolean {
+  return (
+    a.kind === 'code' &&
+    b.kind === 'code' &&
+    a.path === b.path &&
+    JSON.stringify(a.lines) === JSON.stringify(b.lines)
+  );
+}
+
+/**
+ * The opening says what the change does; no later scene says it again. A scene left with nothing
+ * else to say (a fallback callout of the summary's first sentence) goes; the hero and the summary
+ * always stay.
+ */
+function dropRepeatedLead(scenes: Scene[], ctx: BeatContext): void {
+  const { language } = ctx;
+  const lead = stripMarkdown(intentSentence(ctx.context, language)).trim();
+  if (!lead || !scenes[0]?.narration.includes(lead)) return;
+  const heard = spoken(lead, language);
+  const sentences = (text: string) =>
+    segments(text, language, 'sentence')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  const without = (text: string) =>
+    joinSentences(
+      language,
+      sentences(text).filter((s) => s !== lead && s !== heard),
+    );
+  for (let i = scenes.length - 1; i > 0; i--) {
+    const scene = scenes[i]!;
+    if (!sentences(scene.narration).includes(lead)) continue;
+    const narration = without(scene.narration);
+    if (!narration) {
+      if (!scene.hero && scene.visual.kind !== 'summary') scenes.splice(i, 1);
+      continue;
+    }
+    scenes[i] = {
+      ...scene,
+      narration,
+      say: (scene.say && without(scene.say)) || spoken(narration, language),
+    };
+  }
+}
+
+/** A title short enough for an eyebrow: whole words, at most `max` characters (code points). */
 function shortTitle(title: string, max = 32): string {
-  if (title.length <= max) return title;
-  const cut = title.slice(0, max - 1);
+  const chars = [...title];
+  if (chars.length <= max) return title;
+  const cut = chars.slice(0, max - 1).join('');
   const space = cut.lastIndexOf(' ');
-  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.–-]+$/, '')}…`;
+  const words = space > 0 && [...cut.slice(0, space)].length > max / 2;
+  return `${(words ? cut.slice(0, space) : cut).replace(/[\s,;:.–-]+$/, '')}…`;
 }
 
 /** The explanation's own words for the area a file belongs to, as a sentence about that file. */

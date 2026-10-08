@@ -4,13 +4,18 @@
 # - pull_request (opened, every push, reopened, ready for review): reviews the newest commit and
 #   updates the one Covi comment. Drafts too: this is for the author, while the work is in
 #   progress. A newer push cancels the review still running for an older one. Branches in this
-#   repository only: a fork's pull request gets a read-only token (see fork-safe-comment.yml).
-# - pull_request_target (closed): collects the outcome (merged or closed, reverted later, 👍/👎 on
-#   the comment and on each finding) into the Actions cache. It runs in the base branch's context,
-#   so every later review can restore it. It reads the pull request through the API only: it
-#   checks out the base commit (for the base's .covi/config.yml and the report), never the pull
-#   request's code, and runs nothing from it. Pull requests from forks are not collected, so
-#   outsiders cannot feed what later reviews read.
+#   repository only: a fork's pull request gets a read-only token, so this job skips it (see
+#   fork-safe-comment.yml).
+# - pull_request_target (closed): collects the outcome so far (merged or closed, 👍/👎 and replies
+#   on the comment and on each finding) into the Actions cache. It runs in the base branch's
+#   context, so every later review can restore it. It reads the pull request through the API
+#   only: it checks out the base commit (for the base's .covi/config.yml and the report), never
+#   the pull request's code, and runs nothing from it. Pull requests from forks are not
+#   collected, so outsiders cannot feed what later reviews read.
+#
+# A revert that lands after the pull request closed is not seen at close time. To count it, also
+# run `covi outcomes collect --platform github --recent 50` on a schedule on the default branch,
+# saving .covi/outcomes into the same cache (key covi-outcomes-<run id>).
 name: Covi (author)
 
 on:
@@ -29,7 +34,9 @@ concurrency:
 
 jobs:
   review:
-    if: github.event_name == 'pull_request'
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

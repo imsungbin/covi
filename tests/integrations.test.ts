@@ -74,12 +74,30 @@ describe('GitHub Action', () => {
     expect(flags.size).toBeGreaterThan(5);
     for (const flag of flags)
       expect(ciFlags.has(flag) || publishFlags.has(flag), `${flag} is not a covi flag`).toBe(true);
-    for (const m of text.matchAll(/outcomes (collect|report)([^\n]*)/g))
-      for (const flag of m[2]!.match(/--[a-z-]+/g) ?? [])
-        expect(
-          (m[1] === 'collect' ? collectFlags : reportFlags).has(flag),
-          `${flag} is not a covi outcomes ${m[1]} flag`,
-        ).toBe(true);
+    // Each line of an outcomes step that builds Covi's arguments, global flags such as a
+    // prepended --config included.
+    for (const step of action.runs.steps.filter((s) => s.run?.includes('outcomes collect')))
+      for (const line of step.run!.split('\n').filter((l) => /\$COVI_BIN|args=/.test(l))) {
+        const command = line.includes('outcomes report') ? 'report' : 'collect';
+        for (const flag of line.match(/--[a-z-]+/g) ?? [])
+          expect(
+            (command === 'collect' ? collectFlags : reportFlags).has(flag),
+            `${flag} is not a covi outcomes ${command} flag`,
+          ).toBe(true);
+      }
+  });
+
+  it('passes finding-anchors as a flag to the review and to publishing an earlier run', () => {
+    for (const name of ['Review', 'Publish comment for an earlier run']) {
+      const step = action.runs.steps.find((s) => s.name === name)!;
+      expect(step.env, name).toMatchObject({ FINDING_ANCHORS: '${{ inputs.finding-anchors }}' });
+      expect(step.run, name).toContain(
+        'if [ "$FINDING_ANCHORS" = "true" ]; then args+=(--anchors); fi',
+      );
+      expect(step.run, name).toContain(
+        'if [ "$FINDING_ANCHORS" = "false" ]; then args+=(--no-anchors); fi',
+      );
+    }
   });
 
   it('gives the token only to the steps that comment or read outcomes', () => {
@@ -144,8 +162,9 @@ describe('GitHub Action', () => {
       "inputs.outcomes == 'true' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository",
     );
     expect(collect.run).toContain('outcomes collect --platform github');
-    expect(collect.run).toContain(
-      'outcomes report --repository "$REPOSITORY" >> "$GITHUB_STEP_SUMMARY"',
+    // Best effort: a failed report must not stop Save from keeping what was just collected.
+    expect(collect.run).toMatch(
+      /outcomes report --repository "\$REPOSITORY" >> "\$GITHUB_STEP_SUMMARY" \|\|\s+echo "::warning::/,
     );
     // The report reads git to ignore committed outcomes: it runs only in a checkout.
     expect(collect.run).toContain('git rev-parse --is-inside-work-tree');
@@ -163,12 +182,19 @@ describe('GitHub Action', () => {
         "!(inputs.outcomes == 'true' && github.event.action == 'closed')",
       );
     expect(action.inputs.outcomes!.default).toBe('false');
+    // Collecting at close time cannot see a revert that lands later.
+    expect(action.inputs.outcomes!.description).not.toMatch(/\breverted\b/);
+    expect(action.inputs.outcomes!.description).toContain('--recent');
   });
 
   it("ships an author-side workflow: a review on every push, outcomes on close without the pull request's code", () => {
-    const author = parse(
-      readFileSync(join(root, 'integrations/github-action/examples/author-side.yml'), 'utf8'),
-    ) as {
+    const authorText = readFileSync(
+      join(root, 'integrations/github-action/examples/author-side.yml'),
+      'utf8',
+    );
+    expect(authorText).not.toContain('reverted later');
+    expect(authorText).toContain('--recent');
+    const author = parse(authorText) as {
       on: Record<string, { types: string[] }>;
       permissions: Record<string, string>;
       concurrency: { 'cancel-in-progress': boolean };
@@ -186,7 +212,9 @@ describe('GitHub Action', () => {
     expect(author.permissions).toEqual({ contents: 'read', 'pull-requests': 'write' });
     expect(author.concurrency['cancel-in-progress']).toBe(true);
     const review = author.jobs.review!;
-    expect(review.if).toBe("github.event_name == 'pull_request'");
+    expect(review.if).toBe(
+      "github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository",
+    );
     const coviStep = (job: (typeof author.jobs)[string]) =>
       job.steps.find((s) => s.uses?.includes('integrations/github-action'))!;
     expect(coviStep(review).with).toMatchObject({ outcomes: true, 'finding-anchors': true });
@@ -356,23 +384,57 @@ describe('GitLab outcomes component', () => {
   ];
   const job = jobDoc['covi-outcomes']!;
   const reviewText = readFileSync(join(root, 'integrations/gitlab-ci/covi.yml'), 'utf8');
-  const review = (parseAllDocuments(reviewText)[1]!.toJS() as Record<string, { cache: Cache }>)[
-    'covi-review'
-  ]!;
+  const review = (
+    parseAllDocuments(reviewText)[1]!.toJS() as Record<
+      string,
+      {
+        cache: Cache;
+        rules: Array<{ if: string; variables?: Record<string, string> }>;
+        variables: Record<string, string>;
+        before_script: string[];
+      }
+    >
+  )['covi-review']!;
+  const protectedRef = '$CI_COMMIT_REF_PROTECTED == "true"';
 
-  it('runs on a schedule on the default branch and shares its cache with the review job, which only pulls it', () => {
+  it('runs on a schedule on the protected default branch and fills the protected cache', () => {
     expect(JSON.stringify(job.rules)).toContain('schedule');
     expect(JSON.stringify(job.rules)).not.toContain('merge_request_event');
-    for (const rule of job.rules)
+    for (const rule of job.rules) {
       expect(rule.if).toContain('$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH');
-    // The cache stays protected: only protected branches write what reviews trust.
-    expect(review.cache).toEqual({
+      expect(rule.if).toContain(protectedRef);
+    }
+    expect(job.cache).toEqual({
       key: 'covi-outcomes',
       paths: ['.covi/outcomes/'],
-      policy: 'pull',
+      policy: 'pull-push',
     });
-    expect(job.cache).toEqual({ ...review.cache, policy: 'pull-push' });
+    // GitLab keeps protected and non-protected caches apart unless told otherwise.
     expect(`${text}\n${reviewText}`).not.toMatch(/^\s*unprotect:/m);
+    expect(text).toMatch(/masked, protected/);
+  });
+
+  it('restores outcomes in a review only on a protected ref, and never lets them shape an unprotected checkout', () => {
+    // Any branch's pipeline can write the non-protected cache: an unprotected review must not pull it.
+    expect(review.cache).toEqual({
+      key: job.cache.key,
+      paths: job.cache.paths,
+      policy: '$COVI_OUTCOMES_CACHE',
+    });
+    expect(review.variables.COVI_OUTCOMES_CACHE).toBe('push');
+    const pulling = review.rules.filter((r) => r.variables?.COVI_OUTCOMES_CACHE);
+    expect(pulling).toHaveLength(1);
+    expect(pulling[0]!.variables!.COVI_OUTCOMES_CACHE).toBe('pull');
+    expect(pulling[0]!.if).toContain(protectedRef);
+    // And whatever a cache extracted is gone before Covi is installed or run.
+    const guard = review.before_script.findIndex((l) =>
+      l.includes('if [ "$CI_COMMIT_REF_PROTECTED" != "true" ]'),
+    );
+    expect(guard).toBeGreaterThanOrEqual(0);
+    expect(review.before_script[guard]).toContain('rm -rf .covi/outcomes');
+    expect(review.before_script[guard]).toContain('git reset -q --hard');
+    const firstCovi = review.before_script.findIndex((l) => /COVI_PACKAGE|COVI_BIN/.test(l));
+    expect(guard).toBeLessThan(firstCovi);
   });
 
   it('declares inputs with defaults, uses each one, and passes only flags the CLI accepts', () => {
@@ -382,7 +444,10 @@ describe('GitLab outcomes component', () => {
     }
     for (const m of text.matchAll(/\$\[\[ inputs\.([\w-]+) \]\]/g))
       expect(specDoc.spec.inputs, m[1]).toHaveProperty(m[1]!);
-    expect(job.script.join('\n')).toContain('outcomes report --repository "$CI_PROJECT_PATH"');
+    // Best effort: a failed report must not fail the job, or the cache keeps nothing.
+    expect(job.script.join('\n')).toContain(
+      'outcomes report --repository "$CI_PROJECT_PATH" || echo',
+    );
     for (const line of job.script) {
       const flags = line.includes('outcomes collect') ? collectFlags : reportFlags;
       for (const flag of line.match(/--[a-z-]+/g) ?? [])

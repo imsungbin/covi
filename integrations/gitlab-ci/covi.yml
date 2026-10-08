@@ -62,9 +62,14 @@ covi-review:
   stage: "$[[ inputs.stage ]]"
   image: "$[[ inputs.image ]]"
   rules:
+    # Only a protected ref restores the outcomes cache (see cache below).
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_COMMIT_REF_PROTECTED == "true"
+      variables:
+        COVI_OUTCOMES_CACHE: pull
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   variables:
     GIT_DEPTH: "0"
+    COVI_OUTCOMES_CACHE: push
     COVI_PROJECT: "$[[ inputs.covi-project ]]"
     COVI_REF: "$[[ inputs.covi-ref ]]"
     COVI_PACKAGE: "$[[ inputs.covi-package ]]"
@@ -77,14 +82,16 @@ covi-review:
     COVI_INPUT_COMMENT: "$[[ inputs.comment ]]"
     COVI_INPUT_PROVIDER: "$[[ inputs.provider ]]"
   # Outcomes collected by covi-outcomes.yml, when it is included: the brief then shows how past
-  # findings held up. Reviews only pull it; without that job the cache is empty and nothing changes.
-  # The cache stays protected, so only pipelines on protected branches (where the scheduled job
-  # writes it) see it: an unprotected one could be written by any branch's pipeline.
+  # findings held up. Without that job the cache is empty and nothing changes.
+  # GitLab keeps a protected and a non-protected cache per key. Only the protected one is written
+  # by covi-outcomes alone; any branch's pipeline can write the non-protected one. So a pipeline on
+  # a protected ref pulls the cache, and one on an unprotected ref (most merge requests) restores
+  # nothing: its policy is push, and a review writes no outcomes, so nothing is uploaded either.
   cache:
     key: covi-outcomes
     paths:
       - .covi/outcomes/
-    policy: pull
+    policy: $COVI_OUTCOMES_CACHE
   before_script:
     - |
       missing=""
@@ -96,6 +103,12 @@ covi-review:
       if [ -n "$missing" ]; then
         # shellcheck disable=SC2086 # $missing is a list of package names
         apt-get update -qq && apt-get install -y -qq --no-install-recommends $missing >/dev/null
+      fi
+    - |
+      # Belt and braces: on an unprotected ref no cache may shape the checkout Covi reviews and runs.
+      if [ "$CI_COMMIT_REF_PROTECTED" != "true" ]; then
+        rm -rf .covi/outcomes
+        git reset -q --hard
       fi
     - |
       if [ -n "$COVI_PACKAGE" ]; then

@@ -3,10 +3,12 @@
 # that covi-review restores, so later reviews see how past findings held up.
 #
 # GitLab runs no pipeline when a merge request closes, so collection runs on a schedule on the
-# default branch: Build > Pipeline schedules > New schedule (daily is plenty). The cache is
-# protected, as GitLab makes it by default: reviews on protected branches restore it, and merge
+# protected default branch: Build > Pipeline schedules > New schedule (daily is plenty). The cache
+# is protected, as GitLab makes it by default: reviews on protected branches restore it, and merge
 # requests from unprotected branches review without it.
-# It needs COVI_GITLAB_TOKEN with the read_api scope; CI_JOB_TOKEN cannot read notes or award emoji.
+# It needs COVI_GITLAB_TOKEN with the read_api scope (CI_JOB_TOKEN cannot read notes or award
+# emoji). Add it as a masked, protected CI/CD variable: this job runs only on a protected branch,
+# and protection keeps the token out of every other branch's pipeline.
 #
 # Include it next to covi.yml:
 #   include:
@@ -40,11 +42,11 @@ spec:
 covi-outcomes:
   stage: "$[[ inputs.stage ]]"
   image: "$[[ inputs.image ]]"
-  # The default branch only: it is the checkout Covi reads its configuration from here, and the
-  # protected cache reviews trust.
+  # The protected default branch only: it is the checkout Covi reads its configuration from here,
+  # and only a protected ref reads and writes the protected cache reviews trust.
   rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
   variables:
     GIT_DEPTH: "1"
     COVI_PROJECT: "$[[ inputs.covi-project ]]"
@@ -74,4 +76,5 @@ covi-outcomes:
       fi
   script:
     - '"$COVI_BIN" outcomes collect --platform gitlab --recent "$COVI_INPUT_RECENT"'
-    - '"$COVI_BIN" outcomes report --repository "$CI_PROJECT_PATH"'
+    # Best effort: a failed report must not fail the job, or the cache keeps nothing just collected.
+    - '"$COVI_BIN" outcomes report --repository "$CI_PROJECT_PATH" || echo "Covi could not report the outcomes."'

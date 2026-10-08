@@ -48,7 +48,7 @@ inputs:
     description: "true or false: also post each confirmed or likely finding as an inline review comment people can react to with 👍 or 👎 (at most 10 per run, once per finding). Empty: publish.anchors, else off."
     default: ""
   outcomes:
-    description: "true: learn how reviews held up. On a closed pull request from this repository the action collects the outcome (merged, closed, reverted, reactions) instead of reviewing, and keeps it in the Actions cache; on other events it restores that cache first, so the review sees how past findings held up. Use pull_request_target for the closed event (see examples/author-side.yml)."
+    description: "true: learn how reviews held up. On a closed pull request from this repository the action collects the outcome (merged or closed, reactions and replies so far) instead of reviewing, and keeps it in the Actions cache. A revert that lands after the close is seen only by a later covi outcomes collect --recent, for example on a schedule; on other events it restores that cache first, so the review sees how past findings held up. Use pull_request_target for the closed event (see examples/author-side.yml)."
     default: "false"
   anthropic-api-key:
     description: "Optional. Enables model-written explanations, findings, and narration."
@@ -196,7 +196,8 @@ runs:
           # The report needs a checkout (the base, under pull_request_target) to tell collected
           # outcomes from committed ones; without one it is left out.
           if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-            "$COVI_BIN" outcomes report --repository "$REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
+            "$COVI_BIN" outcomes report --repository "$REPOSITORY" >> "$GITHUB_STEP_SUMMARY" ||
+              echo "::warning::Covi could not report the outcomes."
           fi
         else
           echo "::warning::Covi could not collect this pull request's outcome."
@@ -289,11 +290,15 @@ runs:
         RUN_DIR: ${{ inputs.run-dir }}
         PR_NUMBER: ${{ inputs.pr-number }}
         EXPECT_HEAD: ${{ inputs.expect-head }}
+        FINDING_ANCHORS: ${{ inputs.finding-anchors }}
       run: |
         # The pull request and the expected head come from the workflow_run event unless given here.
         args=(publish --platform github --run "$RUN_DIR")
         if [ -n "$PR_NUMBER" ]; then args+=(--number "$PR_NUMBER"); fi
         if [ -n "$EXPECT_HEAD" ]; then args+=(--expect-head "$EXPECT_HEAD"); fi
+        # From this input only: the run directory may come from an untrusted artifact.
+        if [ "$FINDING_ANCHORS" = "true" ]; then args+=(--anchors); fi
+        if [ "$FINDING_ANCHORS" = "false" ]; then args+=(--no-anchors); fi
         "$COVI_BIN" "${args[@]}"
 
     - name: Enforce the review gate

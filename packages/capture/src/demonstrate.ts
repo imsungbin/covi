@@ -9,6 +9,7 @@ import {
   type DemoRecording,
   type DemoRequestResult,
   type DemoShot,
+  type DemoSubject,
   type DemoTraceRef,
   demoPath,
   type ExecutionPolicy,
@@ -16,19 +17,31 @@ import {
   execShell,
   type FindingInput,
   findingId,
+  hasObservations,
   type Language,
   type Logger,
+  mergeSubjectWithOutcomes,
   type Params,
+  type Rect,
   type ReviewContext,
   type Run,
+  type SubjectHandle,
+  saveSubject,
   type Trace,
   t,
   writeEvidence,
+  writeSubjectSnapshot,
 } from '@covi/core';
 import { type Browser, chromium } from 'playwright';
 import { type RunningApp, startApp } from './app.ts';
 import type { ScenarioObservation, StepPixels } from './behavior.ts';
-import { capturePage, type PageCapture, VIEWPORT_PRESETS, type ViewportName } from './browser.ts';
+import {
+  capturePage,
+  type PageCapture,
+  stepId,
+  VIEWPORT_PRESETS,
+  type ViewportName,
+} from './browser.ts';
 import { checkoutRevision, tempWorkspace } from './checkout.ts';
 import { flowScenario, pageScenario, uniqueIds } from './ids.ts';
 import { comparePngs, cropPng } from './pixels.ts';
@@ -45,6 +58,7 @@ import {
   runRelative,
   writeBehaviorDiff,
 } from './scenarios.ts';
+import { focusShots, type SubjectCaptures, subjectImages, subjectObservation } from './subject.ts';
 import { TraceCollector } from './trace.ts';
 
 /**
@@ -79,6 +93,11 @@ export interface DemonstrateInput {
   recording?: { enabled: boolean; required: boolean };
   /** Finds ffmpeg for converting recordings to MP4; without it, recordings stay WebM. */
   locateFfmpeg?: () => Promise<string | undefined>;
+  /**
+   * The subject model this run reads and updates: flows it replays when the plan names none, focus
+   * for page captures taken at head only, and what this run saw at head. Absent: none of that.
+   */
+  subject?: SubjectHandle;
 }
 
 type Revision = 'base' | 'head';
@@ -108,7 +127,9 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
   const hint = say('trustHint');
   const policy: ExecutionPolicy = input.execution ?? { allowed: true, withheld: [] };
   const withheld = new Set(policy.withheld.map((c) => c.key));
-  const plan = planDemo(context, config, input.plan);
+  // Covi does not drive a site it did not start (an app given by URL) with flows nobody asked for.
+  const external = !config.app.start && config.app.url !== undefined;
+  const plan = planDemo(context, config, input.plan, external ? undefined : input.subject?.model);
   const recording = input.recording ?? { enabled: config.demo.record, required: false };
   let ffmpeg: Promise<string | undefined> | undefined;
   const locateFfmpeg = () => {
@@ -195,6 +216,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
   const flowIds = uniqueIds(plan.flows.map((f) => flowScenario(f.name)));
   const flows = new Map<number, Partial<Record<Revision, ObservedFlow>>>();
   const notes: RecordingNote[] = [];
+  const windows = new Map<string, Rect>();
 
   try {
     if (wantsBrowser && mode)
@@ -318,7 +340,9 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
                 ...titled(language, 'flow-failure', 'capture.finding.flow.title', {
                   name: flow.name,
                 }),
-                certainty: 'likely',
+                // A flow replayed from the subject model was not asked for in this change: what
+                // broke is worth a look, not a gate.
+                certainty: plan.proposed.includes(flow.name) ? 'risk' : 'likely',
                 severity: 'medium',
                 category: 'regression',
                 evidence: observed.outcome.error,
@@ -388,7 +412,14 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
     }
 
     const pixels = new Map<string, StepPixels>();
-    const pageShots = await assemblePageShots(run, pages, result.findings, language, pixels);
+    const pageShots = await assemblePageShots(
+      run,
+      pages,
+      result.findings,
+      language,
+      pixels,
+      windows,
+    );
     const observations = [...pageTraces].map(([id, seen]): ScenarioObservation => {
       const load = pixels.get(id);
       return {
@@ -469,6 +500,24 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
     await workspace.dispose();
   }
 
+  if (input.subject)
+    result.subject = await keepSubject(
+      run,
+      input.subject,
+      () =>
+        headCaptures({
+          run,
+          revision: change.head.sha.slice(0, 12),
+          plan,
+          pages,
+          windows,
+          flows,
+          result,
+          prefer: input.prefer,
+        }),
+      plan.proposed,
+      result.shots,
+    );
   await run.writeJson(DEMO_PATHS.captures, result, 'capture');
   for (const shot of result.shots) {
     for (const image of [shot.before, shot.after])
@@ -487,6 +536,7 @@ async function assemblePageShots(
   findings: FindingInput[],
   language: Language,
   pixels: Map<string, StepPixels>,
+  windows: Map<string, Rect>,
 ): Promise<DemoShot[]> {
   const shots: DemoShot[] = [];
   for (const [key, captures] of pages) {
@@ -572,6 +622,8 @@ async function assemblePageShots(
         });
       }
     }
+    // Where the crop sits in the full capture: the subject model places elements in it.
+    windows.set(id, crop);
     for (const revision of ['base', 'head'] as const) {
       const capture = captures[revision];
       if (!capture) continue;
@@ -695,4 +747,102 @@ function compareCommands(
     }
   }
   return out;
+}
+
+/** What the head revision showed in this run, redacted like every artifact, for the subject model. */
+function headCaptures(input: {
+  run: Run;
+  revision: string;
+  plan: ReturnType<typeof planDemo>;
+  pages: Map<string, Partial<Record<Revision, PageCapture>>>;
+  windows: Map<string, Rect>;
+  flows: Map<number, Partial<Record<Revision, ObservedFlow>>>;
+  result: Demonstration;
+  prefer?: ViewportName;
+}): SubjectCaptures {
+  const { run, plan } = input;
+  const pages = [...input.pages].flatMap(([key, captures]) => {
+    const [path, viewport] = key.split('|') as [string, ViewportName];
+    const id = pageScenario(path, viewport);
+    const head = captures.head;
+    const window = input.windows.get(id);
+    return head?.scan && window
+      ? [{ id, ...(head.title ? { title: head.title } : {}), viewport, scan: head.scan, window }]
+      : [];
+  });
+  // Head only: the model describes head, and a base frame is never indexed.
+  const flows = plan.flows.flatMap((flow, index) => {
+    const head = input.flows.get(index)?.head;
+    if (!head) return [];
+    return [
+      {
+        flow,
+        viewport: flowViewport(flow, plan.viewports, input.prefer),
+        labels: flow.steps.map((_, i) => head.trace.steps.find((s) => s.id === stepId(i))?.label),
+        passed: !head.outcome.error,
+        secret: Boolean(head.outcome.secret),
+        frames: head.outcome.frames.flatMap((f) =>
+          f.scan ? [{ image: runRelative(run, f.file), scan: f.scan }] : [],
+        ),
+      },
+    ];
+  });
+  return run.redactor.redactDeep({
+    revision: input.revision,
+    pages,
+    flows,
+    requests: input.result.requests,
+    commands: input.result.commands,
+  });
+}
+
+/**
+ * Gives the subject model what this run saw. Page captures taken at head only get the model's
+ * focus, judged against the model as the run found it. The merged model and the image index
+ * become this run's `demo/subject.json`, and the store takes the observation when it may be
+ * written. The model is never worth a demonstration: whatever goes wrong here is a warning.
+ */
+async function keepSubject(
+  run: Run,
+  handle: SubjectHandle,
+  observe: () => SubjectCaptures,
+  proposed: string[],
+  shots: DemoShot[],
+): Promise<DemoSubject> {
+  const summary: DemoSubject = {
+    store: handle.source.store,
+    proposed,
+    focused: [],
+    flows: [],
+    saved: false,
+  };
+  try {
+    const captures = observe();
+    summary.focused = focusShots(handle.model, captures.pages, shots);
+    const observation = subjectObservation(captures, handle.model);
+    if (!hasObservations(observation)) return summary;
+    const merged = mergeSubjectWithOutcomes(handle.model, observation, {
+      expireAfter: handle.source.expireAfter,
+    });
+    summary.flows = merged.flows;
+    await writeSubjectSnapshot(run, {
+      schemaVersion: 1,
+      store: handle.source.store,
+      revision: captures.revision,
+      model: merged.model,
+      images: subjectImages(merged.model, captures),
+    });
+    summary.path = DEMO_PATHS.subject;
+    if (handle.writable)
+      summary.saved =
+        (await saveSubject(handle.source, observation, {
+          redactor: run.redactor,
+          warn: (message) => run.warn(message),
+        })) === 'saved';
+  } catch (error) {
+    run.warn(
+      `Could not keep what this run saw in the subject model: ${(error as Error).message.split('\n')[0]}`,
+    );
+  }
+  return summary;
 }

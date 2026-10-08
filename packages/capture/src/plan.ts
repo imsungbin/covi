@@ -6,6 +6,8 @@ import {
   FlowSchema,
   parseOrThrow,
   type ReviewContext,
+  type Subject,
+  screenPath,
   VIEWPORTS,
 } from '@covi/core';
 import { z } from 'zod';
@@ -30,7 +32,8 @@ export function planDemo(
   context: ReviewContext,
   config: CoviConfig,
   authored?: unknown,
-): DemoPlan & { viewports: Viewport[] } {
+  subject?: Subject,
+): DemoPlan & { viewports: Viewport[]; proposed: string[] } {
   const plan = authored
     ? parseOrThrow(
         DemoPlanSchema,
@@ -61,14 +64,50 @@ export function planDemo(
   const commands = [...plan.commands, ...config.demo.commands].filter(
     (c) => !commandNames.has(c.name) && commandNames.add(c.name),
   );
+  const captured = pages.slice(0, MAX_PAGES);
+  const viewports = plan.viewports ?? config.demo.viewports;
+  // Flows named anywhere, even an empty list in the plan, are followed as written; otherwise the
+  // flows that passed before on the pages this run captures are replayed, step for step.
+  const named =
+    flows.length > 0 || (typeof authored === 'object' && authored !== null && 'flows' in authored);
+  const proposed = !named && subject ? proposeFlows(subject, captured, viewports) : [];
   return {
-    pages: pages.slice(0, MAX_PAGES),
-    flows,
+    pages: captured,
+    flows: [...flows, ...proposed],
     commands,
     requests: requests.slice(0, MAX_REQUESTS),
-    viewports: plan.viewports ?? config.demo.viewports,
+    viewports,
     notes: plan.notes,
+    proposed: proposed.map((f) => f.name),
   };
+}
+
+/** At most this many flows are replayed from the subject model in one run. */
+export const MAX_PROPOSED_FLOWS = 2;
+
+/**
+ * Flows from the subject model worth replaying for these pages: ones that passed within the
+ * model's revisions and start on a planned page, most recently passed first. The steps are the
+ * ones that passed, never new ones: Covi does not invent interactions, and the model holds no
+ * commands to propose.
+ */
+export function proposeFlows(
+  subject: Subject,
+  pages: readonly string[],
+  viewports: readonly Viewport[],
+): Flow[] {
+  const planned = new Set(pages.map(screenPath));
+  const age = (revision: string) => subject.revisions.indexOf(revision);
+  return subject.flows
+    .filter((f) => planned.has(screenPath(f.path)) && age(f.passed) >= 0)
+    .sort((a, b) => age(a.passed) - age(b.passed) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+    .slice(0, MAX_PROPOSED_FLOWS)
+    .map((f) => ({
+      name: f.name,
+      path: f.path,
+      steps: f.steps.map((s) => s.action),
+      ...(viewports.includes(f.viewport) ? { viewports: [f.viewport] } : {}),
+    }));
 }
 
 /**

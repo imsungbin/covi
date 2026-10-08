@@ -250,6 +250,8 @@ export type Identity = { user: number | null };
 
 /** The bot a workflow token comments as. */
 const DEFAULT_BOT_LOGIN = 'github-actions[bot]';
+/** A GitHub App's bot login, the only shape named back in a warning. */
+const BOT_LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\[bot\]$/;
 
 /**
  * Whether Covi wrote a comment. Anyone can paste the marker, and other apps can quote it, so only
@@ -268,6 +270,8 @@ export class GitHubPublisher implements Publisher {
   private readonly options: GitHubPublisherOptions;
   private readonly client: GitHubClient;
   private me?: Identity;
+  /** Another bot whose comment starts with the marker, when none of Covi's own was found. */
+  private otherBot?: string;
 
   constructor(options: GitHubPublisherOptions) {
     this.options = options;
@@ -316,6 +320,7 @@ export class GitHubPublisher implements Publisher {
     const { repository, number } = this.options;
     type Listed = { id: number; body?: string; html_url: string; user?: Author };
     const marked: Listed[] = [];
+    this.otherBot = undefined;
     for (let page = 1; page <= 10; page++) {
       const response = await this.request(
         'GET',
@@ -330,7 +335,15 @@ export class GitHubPublisher implements Publisher {
       if (comments.length < 100) break;
     }
     const own = await this.own(marked);
-    return own ? { id: String(own.id), body: own.body ?? '', url: own.html_url } : null;
+    if (own) return { id: String(own.id), body: own.body ?? '', url: own.html_url };
+    // An app token left at the default bot login cannot claim the comments its app posted. It
+    // trusts none of them (another app can post the marker too), but it can say what to set.
+    if (this.me?.user === null)
+      this.otherBot = marked
+        .filter((c) => c.user?.type === 'Bot' && c.body?.startsWith(COMMENT_MARKER))
+        .map((c) => c.user?.login)
+        .find((login): login is string => typeof login === 'string' && BOT_LOGIN.test(login));
+    return null;
   }
 
   async upsertComment(body: string, existing?: ExistingComment | null): Promise<PublishOutcome> {
@@ -343,10 +356,18 @@ export class GitHubPublisher implements Publisher {
       const response = await this.request(found ? 'PATCH' : 'POST', path, { body });
       if (!response.ok) return failure(response, found ? 'update the comment' : 'create a comment');
       const json = await this.json<{ id?: number; html_url?: string }>(response, path);
+      const bot = this.options.botLogin ?? DEFAULT_BOT_LOGIN;
       return {
         status: found ? 'updated' : 'created',
         id: json.id !== undefined ? String(json.id) : found?.id,
         url: json.html_url,
+        ...(!found && this.otherBot
+          ? {
+              warnings: [
+                `Covi's earlier comment here was posted by ${this.otherBot}, not ${bot}, so this token cannot update it and posted a new one. If Covi runs as that GitHub App, set \`publish.botLogin: ${this.otherBot}\` in .covi/config.yml.`,
+              ],
+            }
+          : {}),
       };
     } catch (error) {
       return { status: 'failed', reason: (error as Error).message };

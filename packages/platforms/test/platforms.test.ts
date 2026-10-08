@@ -454,6 +454,57 @@ describe('GitHub', () => {
     expect(await publisherWith(named.fetch).findComment()).toBeNull();
   });
 
+  it('names the botLogin to set when an app token finds Covi comments by another bot', async () => {
+    // An app token (it cannot read /user) left at the default bot: Covi's earlier comments were
+    // posted as the app, so it comments anew and says how to update the old one instead.
+    const api = fixtureFetch({
+      [comments]: {
+        json: [
+          {
+            id: 111,
+            body: `> ${COMMENT_MARKER}\n> Quoted back by another app.`,
+            user: { login: 'some-app[bot]', id: 900, type: 'Bot' },
+          },
+          {
+            id: 113,
+            body: `${COMMENT_MARKER}\nPosted by Covi's own app.`,
+            user: { login: 'my-covi-app[bot]', id: 901, type: 'Bot' },
+          },
+        ],
+      },
+      [whoami]: { status: 403, fixture: 'github/user-forbidden.json' },
+      'POST https://api.github.com/repos/acme/shop/issues/7/comments': {
+        status: 201,
+        json: { id: 114 },
+      },
+    });
+    const outcome = await publisherWith(api.fetch).upsertComment(`${COMMENT_MARKER}\nnew`);
+    expect(outcome).toMatchObject({ status: 'created', id: '114' });
+    expect(outcome.warnings).toEqual([
+      "Covi's earlier comment here was posted by my-covi-app[bot], not github-actions[bot], so this token cannot update it and posted a new one. If Covi runs as that GitHub App, set `publish.botLogin: my-covi-app[bot]` in .covi/config.yml.",
+    ]);
+    // Only a comment that starts with the marker looks like Covi's; a quote names no bot.
+    const quoted = fixtureFetch({
+      [comments]: {
+        json: [
+          {
+            id: 111,
+            body: `> ${COMMENT_MARKER}`,
+            user: { login: 'some-app[bot]', id: 900, type: 'Bot' },
+          },
+        ],
+      },
+      [whoami]: { status: 403, fixture: 'github/user-forbidden.json' },
+      'POST https://api.github.com/repos/acme/shop/issues/7/comments': {
+        status: 201,
+        json: { id: 114 },
+      },
+    });
+    expect(
+      (await publisherWith(quoted.fetch).upsertComment(`${COMMENT_MARKER}\nnew`)).warnings,
+    ).toBeUndefined();
+  });
+
   it('fails the publish when /user fails for a moment, and asks again next time', async () => {
     const api = fixtureFetch(
       {

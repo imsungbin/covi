@@ -42,6 +42,8 @@ export interface PublishOutcome {
   id?: string;
   /** What happened to the finding anchors, when they were asked for. */
   anchors?: AnchorsOutcome;
+  /** What the person running Covi should know, such as a setting that would have found its comment. */
+  warnings?: string[];
 }
 
 /** Covi's comment as the platform has it. */

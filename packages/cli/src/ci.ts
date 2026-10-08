@@ -372,6 +372,7 @@ export async function publishRun(
     merge: !platform.expectedHead,
   });
   const outcome = await publisher.upsertComment(body, existing);
+  for (const warning of outcome.warnings ?? []) run.warn(warning);
   if (outcome.status !== 'created' && outcome.status !== 'updated') return outcome;
   const head = run.manifest.change?.head.sha;
   if (options.anchors && head) {

@@ -206,6 +206,8 @@ The comment is rebuilt from the run's schema-validated `review.json` and `explan
 - links to the artifact and the workflow run
 - a last line, *Was this useful? 👍 👎*, whose reactions `covi outcomes` counts (`publish.rating: false` leaves it out)
 
+**Upgrading with a GitHub App token.** Earlier versions edited the first marker comment whoever wrote it. Covi now edits only its own, so if `github-token` is an app's installation token (for example from `actions/create-github-app-token`), set `publish.botLogin` to that app's bot, such as `my-covi-app[bot]`, in the base branch's `.covi/config.yml`. Until then Covi posts a new comment on each push and warns with the exact value to set.
+
 The comment also ends with a hidden ledger, `<!-- covi:ledger v1 … -->`. It records which findings Covi reported on each push, as hashes and certainties with no text. When a finding disappears after a push, `covi outcomes` can tell that it was addressed.
 
 GitHub has no API for attaching a video to a comment, so the video link points at the uploaded artifact, which reviewers download as a zip. To link a video hosted elsewhere, run `covi publish --video-url <url>` yourself.

@@ -180,11 +180,19 @@ export class GitHubCollector implements OutcomeCollector {
     if (state === 'merged' && pull.merge_commit_sha && pull.merged_at && pull.base?.ref) {
       // From the merge forward: a revert usually follows soon, and a later collect must still
       // see that stretch however many commits land after it.
-      const { items: commits, truncated } = await this.api.getOldestFirst<Commit>(
+      const {
+        items: commits,
+        truncated,
+        newestOnly,
+      } = await this.api.getOldestFirst<Commit>(
         `/repos/${repo}/commits?sha=${encodeURIComponent(pull.base.ref)}&since=${encodeURIComponent(pull.merged_at)}&per_page=100`,
         COMMIT_PAGES,
       );
-      if (truncated)
+      if (newestOnly)
+        note(
+          'commits since the merge: GitHub linked no last page, so only the newest page was read and a revert nearer the merge is missed',
+        );
+      else if (truncated)
         note(
           `commits since the merge: more than ${COMMIT_PAGES} pages; read the ${COMMIT_PAGES - 1} nearest the merge and the newest, so a revert in between is missed`,
         );

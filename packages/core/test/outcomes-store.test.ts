@@ -113,6 +113,32 @@ describe('outcome store', () => {
     expect((await readOutcomes(root)).map((o) => o.change.number)).toEqual([7]);
   });
 
+  it('keeps only as many outcome files as it reads, dropping the oldest when it writes', async () => {
+    const root = tempDir();
+    const dir = join(root, '.covi/outcomes');
+    // As many as Covi reads, from older runs, and a stray file that is not an outcome.
+    mkdirSync(dir, { recursive: true });
+    const runId = (i: number) =>
+      `20261001-${String(Math.floor(i / 60)).padStart(4, '0')}${String(i % 60).padStart(2, '0')}-ci-aaaaaaa`;
+    for (let i = 0; i < OUTCOME_LIMITS.files; i++)
+      writeFileSync(
+        join(dir, `${runId(i)}.json`),
+        JSON.stringify(outcomeFile({ number: 100 + i, runId: runId(i) })),
+      );
+    writeFileSync(join(dir, 'notes.json'), '{}');
+    await writeOutcome(
+      root,
+      outcomeFile({ number: 7, runId: '20261009-120001-ci-aaaaaaa' }),
+      new Redactor(),
+    );
+    const names = readdirSync(dir).filter((n) => n.endsWith('.json'));
+    expect(names).toHaveLength(OUTCOME_LIMITS.files + 1);
+    expect(names).toContain('20261009-120001-ci-aaaaaaa.json');
+    expect(names).toContain('notes.json');
+    expect(names).not.toContain(`${runId(0)}.json`);
+    expect(names).toContain(`${runId(1)}.json`);
+  });
+
   it('ignores committed outcomes whatever the case of their path', async () => {
     repo = createRepo({ 'README.md': 'shop\n' });
     // A case-insensitive file system (macOS, Windows) reads .COVI/outcomes as .covi/outcomes.

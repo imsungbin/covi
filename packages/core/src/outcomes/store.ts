@@ -34,6 +34,14 @@ async function linkOnTheWay(root: string): Promise<string | undefined> {
   return undefined;
 }
 
+/** Names of outcome files (`<run-id>.json`), newest first. */
+async function outcomeNames(dir: string): Promise<string[]> {
+  return (await readdir(dir).catch(() => [] as string[]))
+    .filter((name) => name.endsWith('.json') && RUN_ID_PATTERN.test(name.slice(0, -5)))
+    .sort()
+    .reverse();
+}
+
 interface Listed {
   file: string;
   outcome: OutcomeFile;
@@ -47,11 +55,7 @@ async function listOutcomes(
   dir: string,
   options: { limit?: number; warn?: (message: string) => void } = {},
 ): Promise<Listed[]> {
-  const names = (await readdir(dir).catch(() => [] as string[]))
-    .filter((name) => name.endsWith('.json') && RUN_ID_PATTERN.test(name.slice(0, -5)))
-    .sort()
-    .reverse()
-    .slice(0, options.limit);
+  const names = (await outcomeNames(dir)).slice(0, options.limit);
   const out: Listed[] = [];
   for (const file of names) {
     const path = join(dir, file);
@@ -77,7 +81,8 @@ async function listOutcomes(
 
 /**
  * Writes one change's outcome as `<run-id>.json`, redacted, and removes any older file for the
- * same change: the comment moves to a newer run with every push.
+ * same change (the comment moves to a newer run with every push) and any file beyond the newest
+ * `OUTCOME_LIMITS.files`.
  */
 export async function writeOutcome(
   root: string,
@@ -101,6 +106,9 @@ export async function writeOutcome(
   for (const other of await listOutcomes(dir))
     if (other.file !== name && changeKey(other.outcome) === changeKey(valid))
       await rm(join(dir, other.file), { force: true });
+  // Reads take only the newest files; the rest would only grow the CI cache that carries them.
+  for (const old of (await outcomeNames(dir)).slice(OUTCOME_LIMITS.files))
+    await rm(join(dir, old), { force: true });
   return path;
 }
 

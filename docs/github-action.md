@@ -295,6 +295,7 @@ Who can feed what later reviews read:
 Limits:
 
 - **Reverts after the close.** The close-time collection sees only what happened by then. To count a revert that lands later, run `covi outcomes collect --platform github --recent 50` on a schedule on the default branch, between restoring and saving the cache; the example's header shows how.
+- **Cache eviction.** GitHub evicts a cache entry nobody has used for 7 days, so a repository with no pull request activity for a week can lose its outcome history; the next collections start it again. A scheduled collect, which restores and saves the cache, keeps it in use. Covi keeps the newest 200 outcome files, as many as a review reads.
 - **Races.** The cache holds what was collected in this repository. If two pull requests close at the same moment, one outcome can be lost; the same scheduled collect fills it in again.
 - **Failures only warn.** A collection or report that fails logs a warning and doesn't fail the job.
 

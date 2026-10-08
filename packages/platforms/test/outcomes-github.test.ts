@@ -211,6 +211,21 @@ describe('GitHubCollector', () => {
     expect(signals.notes).toEqual([
       'commits since the merge: more than 3 pages; read the 2 nearest the merge and the newest, so a revert in between is missed',
     ]);
+    // GitHub linked only forward: the newest page alone was read, and the note says so.
+    const forward = fixtureFetch(
+      {
+        [`GET ${API}/pulls/7`]: { fixture: 'github/pull-7-merged.json' },
+        [`GET ${API}/issues/7/comments?per_page=100`]: {
+          fixture: 'github/issue-comments-7-own.json',
+        },
+        ...personalToken,
+        [`GET ${since}`]: { json: [commit(9)], headers: { link: link({ next: 2 }) } },
+      },
+      replace,
+    );
+    expect((await collector(forward.fetch).collect(7, { commentId: '402' })).notes).toEqual([
+      'commits since the merge: GitHub linked no last page, so only the newest page was read and a revert nearer the merge is missed',
+    ]);
   });
 
   it('notes a listing cut at its page limit instead of skipping it silently', async () => {

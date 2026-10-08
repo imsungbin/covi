@@ -28,6 +28,8 @@ export interface MockComment {
   reactions: Rollup;
 }
 export interface MockReviewComment extends MockComment {
+  /** The pull request it belongs to (not part of GitHub's shape: the mock lists by it). */
+  pull: number;
   path?: string;
   line?: number;
   commit_id?: string;
@@ -57,6 +59,8 @@ export interface MockApi {
   commits: Array<{ sha: string; message: string }>;
   /** Paths that answer with GitHub's primary rate limit (reset 2026-01-01T00:00:00Z). */
   limited: Set<string>;
+  /** Paths that answer 502 to the next request, then recover. */
+  failOnce: Set<string>;
 }
 
 /** GitHub's workflow token has no user of its own: it posts as this bot. */
@@ -74,6 +78,7 @@ export function mockApi(): Promise<MockApi> {
     pulls: [] as MockPull[],
     commits: [] as Array<{ sha: string; message: string }>,
     limited: new Set<string>(),
+    failOnce: new Set<string>(),
   };
   const server = createServer((req, res) => {
     let body = '';
@@ -93,6 +98,7 @@ export function mockApi(): Promise<MockApi> {
           { message: 'API rate limit exceeded' },
           { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1767225600' },
         );
+      if (state.failOnce.delete(url.pathname)) return json(502, { message: 'Bad Gateway' });
       // The token's own user on GitLab. GitHub's workflow token has none; it posts as a bot.
       if (req.method === 'GET' && url.pathname === '/api/v4/user') return json(200, GITLAB_BOT);
       if (req.method === 'GET' && url.pathname === '/api/v4/users/50')
@@ -100,7 +106,11 @@ export function mockApi(): Promise<MockApi> {
       if (req.method === 'GET' && url.pathname === '/user')
         return json(403, { message: 'Resource not accessible by integration' });
       const review = /^\/repos\/acme\/shop\/pulls\/(\d+)\/comments$/.exec(url.pathname);
-      if (review && req.method === 'GET') return json(200, state.reviewComments);
+      if (review && req.method === 'GET')
+        return json(
+          200,
+          state.reviewComments.filter((c) => c.pull === Number(review[1])),
+        );
       if (review && req.method === 'POST') {
         const input = JSON.parse(body) as Pick<
           MockReviewComment,
@@ -108,6 +118,7 @@ export function mockApi(): Promise<MockApi> {
         >;
         const comment: MockReviewComment = {
           ...input,
+          pull: Number(review[1]),
           id: 500 + state.reviewComments.length,
           user: BOT,
           author: GITLAB_BOT,
@@ -178,7 +189,9 @@ export function mockApi(): Promise<MockApi> {
         /\/(comments|notes)\/\d+$/.test(url.pathname)
       ) {
         const id = Number(/(\d+)$/.exec(url.pathname)![1]);
-        state.comments.find((c) => c.id === id)!.body = (JSON.parse(body) as { body: string }).body;
+        const comment = state.comments.find((c) => c.id === id);
+        if (!comment) return json(404, { message: 'not found' });
+        comment.body = (JSON.parse(body) as { body: string }).body;
         return json(200, { id, html_url: `https://example.test/c/${id}` });
       }
       json(404, { message: 'not found' });

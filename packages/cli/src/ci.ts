@@ -352,9 +352,17 @@ export async function publishRun(
       links.video = { url: `${links.files}${relative(run.dir, run.path(video.path))}`, seconds };
     if (!links.video && links.artifacts) links.video = { url: links.artifacts, seconds };
   }
-  // The comment this one replaces holds the ledger so far. If the lookup fails here,
-  // upsertComment looks again and reports the failure.
-  const existing = await publisher.findComment().catch(() => undefined);
+  // The comment this one replaces holds the ledger so far. Writing without having read it would
+  // overwrite that history, so a failed lookup posts nothing; the next run comments.
+  let existing: Awaited<ReturnType<typeof publisher.findComment>>;
+  try {
+    existing = await publisher.findComment();
+  } catch (error) {
+    return {
+      status: 'failed',
+      reason: `could not read the existing comment: ${(error as Error).message}`,
+    };
+  }
   const previous = existing ? parseLedger(existing.body) : undefined;
   // A workflow_run publishes a fork's artifact, and the collector believes Covi's comment: the
   // fork's review must not write its history. The ledger an earlier trusted run left stays as it was.

@@ -490,6 +490,21 @@ describe('GitHub Actions', () => {
     const next = parseLedger(comment.body)!;
     expect(next.head).not.toBe(ledger.head);
     expect(next.findings.map((e) => [e.k, e.f])).toEqual(ledger.findings.map((e) => [e.k, e.f]));
+
+    // A lookup that fails must not write over the history it could not read.
+    const kept = comment.body;
+    api.failOnce.add('/repos/acme/shop/issues/7/comments');
+    const failed = await coviAsync(['publish', '--repo', repo.dir, '--run', pushed.out, '--json'], {
+      env: pushed.env,
+    });
+    expect(
+      (failed.json() as { data: { publish: { status: string; reason: string } } }).data.publish,
+    ).toMatchObject({
+      status: 'failed',
+      reason: expect.stringMatching(/could not read the existing comment/),
+    });
+    expect(api.failOnce.size).toBe(0);
+    expect(comment.body).toBe(kept);
     api.comments.splice(0);
   });
 
@@ -536,17 +551,18 @@ describe('GitHub Actions', () => {
     api.reviewComments.splice(0);
   });
 
-  it("recognizes its comment by the base revision's bot login", async () => {
+  it("follows the base revision's publish settings: bot login, anchors, rating", async () => {
     const repo = await prRepo('visual-pricing-cards');
     repo.git('checkout', '-q', 'main');
     writeFileSync(
       join(repo.dir, '.covi/config.yml'),
-      'app:\n  static: .\npublish:\n  botLogin: covi-app[bot]\n',
+      'app:\n  static: .\npublish:\n  botLogin: covi-app[bot]\n  anchors: true\n  rating: false\n',
     );
     repo.git('commit', '-qam', 'chore: Covi comments as its own app');
     repo.git('checkout', '-q', 'design/pricing-refresh');
     repo.git('rebase', '-q', 'main');
     api.comments.splice(0);
+    api.reviewComments.splice(0);
     api.comments.push({
       id: 1,
       body: `${COMMENT_MARKER}\nan earlier review`,
@@ -555,34 +571,48 @@ describe('GitHub Actions', () => {
       created_at: '2026-10-01T08:00:00Z',
       reactions: { '+1': 0, '-1': 0 },
     });
-    const gh = githubEnv(
-      { base: repo.git('rev-parse', 'main'), head: repo.git('rev-parse', 'HEAD') },
-      { GITHUB_TOKEN: 'app-token' },
-    );
+    const shas = { base: repo.git('rev-parse', 'main'), head: repo.git('rev-parse', 'HEAD') };
     const status = (result: { json: () => unknown }) =>
-      (result.json() as { data: { publish: { status: string; id: string } } }).data.publish;
-    const ci = await coviAsync(
-      [
-        'ci',
-        '--repo',
-        repo.dir,
-        '--out',
-        gh.out,
-        '--video',
-        'never',
-        '--no-annotations',
-        '--comment',
-        '--json',
-      ],
-      { env: gh.env },
-    );
+      (
+        result.json() as {
+          data: { publish: { status: string; id: string; anchors?: { posted: unknown[] } } };
+        }
+      ).data.publish;
+    const ciArgs = (out: string, ...flags: string[]) => [
+      'ci',
+      '--repo',
+      repo.dir,
+      '--out',
+      out,
+      '--video',
+      'never',
+      '--no-annotations',
+      '--json',
+      ...flags,
+    ];
+
+    // The flag wins over the base revision's anchors: true.
+    const gh = githubEnv(shas, { GITHUB_TOKEN: 'app-token' });
+    const ci = await coviAsync(ciArgs(gh.out, '--comment', '--no-anchors'), { env: gh.env });
     expect(status(ci)).toMatchObject({ status: 'updated', id: '1' });
-    const published = await coviAsync(['publish', '--repo', repo.dir, '--run', gh.out, '--json'], {
-      env: gh.env,
-    });
+    expect(status(ci).anchors).toBeUndefined();
+    expect(api.reviewComments).toHaveLength(0);
+    expect(api.comments[0]!.body).not.toContain('Was this useful?');
+
+    // A later `covi publish` of a trusted run follows the settings run.json recorded.
+    const later = githubEnv(shas, { GITHUB_TOKEN: 'app-token' });
+    await coviAsync(ciArgs(later.out, '--no-comment'), { env: later.env });
+    const published = await coviAsync(
+      ['publish', '--repo', repo.dir, '--run', later.out, '--json'],
+      { env: later.env },
+    );
     expect(status(published)).toMatchObject({ status: 'updated', id: '1' });
+    expect(status(published).anchors!.posted.length).toBeGreaterThan(0);
+    expect(api.reviewComments.length).toBeGreaterThan(0);
+    expect(api.comments[0]!.body).not.toContain('Was this useful?');
     expect(api.comments).toHaveLength(1);
     api.comments.splice(0);
+    api.reviewComments.splice(0);
   });
 
   it('takes nothing but the review from a workflow_run artifact: no ledger, no anchors, no bot', async () => {

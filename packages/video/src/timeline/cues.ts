@@ -99,10 +99,11 @@ export interface MarkTiming {
 
 /**
  * When each mark takes the camera, between `from` and `to` (a screenshot's scene or an
- * interaction step's slot): at its pinned moment (a pin outside the window is no pin), else spread
- * from 22% to 80% of the time; marks between pinned ones share the time between them. The first
- * mark zooms in over 26% of the time, as a single focus does; each later one pans over at most
- * 0.6 s. No move runs past the next mark's start, and marks never run backwards.
+ * interaction step's slot): at its pinned moment (a pin outside the window is no pin), else the
+ * k-th of n (from 0) at 22% + 58%·k/n of the time, the first at 22% and every one before 80%;
+ * marks between pinned ones share the time between them. The first mark zooms in over 26% of the
+ * time, as a single focus does; each later one pans over at most 0.6 s. No move runs past the next
+ * mark's start, and marks never run backwards.
  */
 export function markTiming(
   from: number,
@@ -166,7 +167,12 @@ export function screenshotMarks(
   );
   const first = timing[0]!;
   const last = timing.at(-1)!;
-  const at = phases.click ?? Math.max(duration * 0.62, last.pan[1] + duration * 0.15);
+  // A last mark pinned late would carry the default click past the scene's end, where it would be
+  // heard over the next scene and never seen.
+  const at = Math.min(
+    duration,
+    phases.click ?? Math.max(duration * 0.62, last.pan[1] + duration * 0.15),
+  );
   return {
     marks: timing,
     spot: [first.start + (first.pan[1] - first.start) * 0.3, first.pan[1]],
@@ -366,14 +372,19 @@ export function morphTiming(
   };
 }
 
-/** When each highlighted line of a code visual lights up, a morph's after its typing. */
+/**
+ * When each highlighted line of a code visual lights up, a morph's after its typing, but early
+ * enough to sweep in before the scene ends (a late morph ends with the scene).
+ */
 export function codeHighlights(
   visual: Pick<CodeVisual, 'lines' | 'highlight' | 'groups' | 'mode'>,
   duration: number,
   phases: Phases = {},
 ): Map<number, number> {
   const from =
-    visual.mode === 'morph' ? morphTiming(duration, visual.lines, phases).end + 0.1 : undefined;
+    visual.mode === 'morph'
+      ? Math.min(morphTiming(duration, visual.lines, phases).end + 0.1, duration - HIGHLIGHT_SWEEP)
+      : undefined;
   return highlightStarts(duration, visual.highlight, phases, visual.groups, from);
 }
 

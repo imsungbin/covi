@@ -4,6 +4,7 @@ import {
   codeHighlights,
   edgeEntrance,
   edgeLabelEntrance,
+  HIGHLIGHT_SWEEP,
   highlightStarts,
   interactionTiming,
   markTiming,
@@ -88,6 +89,12 @@ describe('a code morph', () => {
     expect(codeHighlights(morph, 4).get(1)).toBeCloseTo(1.8, 9);
     expect(codeHighlights(morph, 4, { highlight: 2.2 }).get(1)).toBeCloseTo(2.2, 9);
   });
+
+  it('lights the highlights within the scene after a late morph', () => {
+    // The morph ends with the scene, so its highlights sweep in over the scene's last moment.
+    expect(codeHighlights(morph, 4, { morph: 3.6 }).get(1)).toBeCloseTo(4 - HIGHLIGHT_SWEEP, 9);
+    expect(settledAt(morph, 4, { morph: 3.6 })).toBeCloseTo(4, 9);
+  });
 });
 
 describe('highlight groups', () => {
@@ -123,7 +130,7 @@ describe('highlight groups', () => {
 });
 
 describe('marks', () => {
-  it('spread from 22% to 80% of the time, the first zooming as a focus does', () => {
+  it('spread from 22% of the time, all starting before 80%, the first zooming as a focus does', () => {
     const one = markTiming(0, 4, [undefined]);
     expect(one[0]!.start).toBeCloseTo(0.88, 9);
     close(one[0]!.pan, [0.88, 1.92]);
@@ -304,5 +311,14 @@ describe('settling and sounds', () => {
       ['click', 's', 5.24],
       ['click', 'i', 13.04],
     ]);
+  });
+
+  it('press a click within the scene, even after a late last mark', () => {
+    const late = screenshotMarks(4, marks2, { mark2: 3.5 });
+    expect(late.press[0]).toBeLessThanOrEqual(4);
+    expect(late.move[1]).toBeLessThanOrEqual(4);
+    const [cue] = buildCues([{ ...scene('s', 2, 6, shot(true)), phases: { mark2: 3.5 } }]);
+    expect(cue!.t).toBeLessThanOrEqual(6);
+    expect(settledAt(shot(true), 4, { mark2: 3.5 })).toBeLessThanOrEqual(4);
   });
 });

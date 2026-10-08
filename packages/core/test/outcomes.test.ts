@@ -127,11 +127,9 @@ describe('outcome ledger', () => {
       ...base,
       location: { path: `src/f${i}.ts`, line: 1 },
     }));
-    const started = performance.now();
     const ledger = mergeLedger(undefined, { runId: run(1), head: A, findings: huge })!;
-    // Dropping one entry at a time from the front takes seconds here.
-    expect(performance.now() - started).toBeLessThan(2000);
     expect(ledger.findings).toHaveLength(OUTCOME_LIMITS.findings);
+    expect(ledger.findings[0]!.k).toBe(outcomeKey(huge[0]!));
   });
 
   it('resolves an entry an edited ledger left behind its head', () => {

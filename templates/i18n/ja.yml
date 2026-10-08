@@ -864,3 +864,11 @@ question:
       continuous: '{what}。ナレーションの下で静かに流れ、間で少し大きくなります'
       throughout: '{what}。動画全体に流れます'
       byMode: '{what}。ショート動画ではナレーションの下で静かに、標準レビューではナレーションの間に流れます'
+
+outcomes:
+  empty: まだ結果がありません。Covi が変更にコメントしたあと、`covi outcomes collect` でその結果を集めてください。
+  repository: '{repository}:'
+  changes: { other: 'レビューした変更 {count} 件: マージ {merged} 件(うち後で取り消し {reverted} 件)、マージせずクローズ {closed} 件、オープン中 {open} 件。' }
+  rating: 'Covi のコメントへの反応: 👍 {up} · 👎 {down}。'
+  precision: '{certainty}: {labeled} 件中 {right} 件が妥当でした({percent}%)。シグナルなし {unlabeled} 件。'
+  noSignal: { other: '{certainty}: {count} 件を報告、まだシグナルなし。' }

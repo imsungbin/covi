@@ -881,3 +881,11 @@ question:
       continuous: '{what}. A quiet bed under the narration that rises in the pauses'
       throughout: '{what}. Plays under the whole video'
       byMode: '{what}. Quietly under short-form narration; around the narration in standard reviews'
+
+outcomes:
+  empty: No outcomes yet. Once Covi has commented on a change, `covi outcomes collect` gathers what became of it.
+  repository: '{repository}:'
+  changes: { one: '{count} reviewed change: {merged} merged ({reverted} reverted later), {closed} closed unmerged, {open} still open.', other: '{count} reviewed changes: {merged} merged ({reverted} reverted later), {closed} closed unmerged, {open} still open.' }
+  rating: 'Covi''s comments: 👍 {up} · 👎 {down}.'
+  precision: '{certainty}: {right} of {labeled} held up ({percent}%); {unlabeled} without a signal.'
+  noSignal: { one: '{certainty}: {count} reported, no signal yet.', other: '{certainty}: {count} reported, no signal yet.' }

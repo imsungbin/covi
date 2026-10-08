@@ -125,8 +125,15 @@ export interface ChangeSignals {
   state: OutcomeState;
   closedAt?: string;
   revertedBy?: { sha: string; url?: string };
+  /** Who opened the change: the platform's user id, as reactions name their users. */
+  author: string;
   /** Covi's summary comment, when the change has one. */
   comment?: { id: string; url?: string; body: string; up: number; down: number; replies: number };
-  /** Inline anchor comments Covi posted, one per finding key. */
-  anchors: Array<{ key: string; id: string; up: number; down: number; replies: number }>;
+  /** Inline anchor comments Covi posted, one per finding key, with each 👍 or 👎 and who gave it. */
+  anchors: Array<{
+    key: string;
+    id: string;
+    reactions: Array<{ user: string; vote: 'up' | 'down' }>;
+    replies: number;
+  }>;
 }

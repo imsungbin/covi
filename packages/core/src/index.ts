@@ -104,6 +104,7 @@ export * from './model/explanation.ts';
 export * from './model/finding.ts';
 export * from './model/subject.ts';
 export * from './model/outcome.ts';
+export { type BuiltOutcome, buildOutcome } from './outcomes/build.ts';
 // The ledger's `areaKey` stays out: `understand/areas.ts` exports one by that name.
 export {
   anchorKeyOf,
@@ -113,6 +114,19 @@ export {
   parseLedger,
   renderLedger,
 } from './outcomes/ledger.ts';
+export {
+  CALIBRATION_MIN_LABELED,
+  type Calibration,
+  type CertaintyStats,
+  calibrationOf,
+  type Label,
+  type LabelSignal,
+  labelFinding,
+  type OutcomeReport,
+  outcomeReport,
+  type RepositoryOutcomes,
+  summarizeOutcomes,
+} from './outcomes/precision.ts';
 export { renderBrief } from './report/brief.ts';
 export { COMMENT_MARKER, type CommentLinks, renderComment, safeUrl } from './report/comment.ts';
 export { renderDiffDigest, renderFileDiff, renderHunk } from './report/digest.ts';

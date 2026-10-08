@@ -1,0 +1,74 @@
+import { type ChangeSignals, type OutcomeFile, OutcomeFileSchema } from '../model/outcome.ts';
+import { parseLedger } from './ledger.ts';
+
+export type BuiltOutcome =
+  | { outcome: OutcomeFile; skipped?: undefined }
+  | { outcome?: undefined; skipped: string };
+
+const defined = <T extends object>(value: T): T =>
+  Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
+
+/**
+ * Votes on a finding's anchor, without the change author's: they would rather their code ship, so
+ * their vote on a finding about it says more about that wish than about the finding.
+ */
+function thumbsOf(anchor: ChangeSignals['anchors'][number], author: string) {
+  const votes = anchor.reactions.filter((r) => r.user !== author);
+  return {
+    up: votes.filter((r) => r.vote === 'up').length,
+    down: votes.filter((r) => r.vote === 'down').length,
+  };
+}
+
+/**
+ * One change's outcome: the ledger in Covi's comment says what Covi reported, push by push; the
+ * platform's signals say what became of the change, the comment, and each finding's anchor.
+ */
+export function buildOutcome(signals: ChangeSignals, collectedAt: string): BuiltOutcome {
+  if (!signals.comment) return { skipped: 'Covi has not commented on it' };
+  const ledger = parseLedger(signals.comment.body);
+  if (!ledger)
+    return {
+      skipped:
+        "Covi's comment carries no outcome ledger (it was posted before Covi tracked outcomes, or edited)",
+    };
+  const anchors = new Map(signals.anchors.map((a) => [a.key, a]));
+  const candidate = {
+    schemaVersion: 1,
+    runId: ledger.run,
+    collectedAt,
+    head: ledger.head,
+    change: defined({
+      platform: signals.platform,
+      repository: signals.repository,
+      number: signals.number,
+      url: signals.url,
+      state: signals.state,
+      closedAt: signals.closedAt,
+      revertedBy: signals.revertedBy ? defined(signals.revertedBy) : undefined,
+    }),
+    comment: defined({
+      id: signals.comment.id,
+      url: signals.comment.url,
+      rating: { up: signals.comment.up, down: signals.comment.down },
+      replies: signals.comment.replies,
+    }),
+    findings: ledger.findings.map((e) => {
+      const anchor = anchors.get(e.k);
+      return {
+        key: e.k,
+        certainty: e.c,
+        firstHead: e.f,
+        lastHead: e.l,
+        fate: e.x === 'a' ? 'addressed' : e.x === 's' ? 'superseded' : 'present',
+        ...(anchor ? { thumbs: thumbsOf(anchor, signals.author), replies: anchor.replies } : {}),
+      };
+    }),
+  };
+  const parsed = OutcomeFileSchema.safeParse(candidate);
+  if (parsed.success) return { outcome: parsed.data };
+  const issue = parsed.error.issues[0];
+  return {
+    skipped: `its outcome does not fit the schema (${issue?.path.join('.')}: ${issue?.message})`,
+  };
+}

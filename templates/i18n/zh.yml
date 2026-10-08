@@ -864,3 +864,11 @@ question:
       continuous: '{what}；在旁白下方轻轻铺底，停顿时稍稍抬起'
       throughout: '{what}；贯穿整个视频'
       byMode: '{what}；短视频中在旁白下方轻轻铺底，标准审查中出现在旁白之间'
+
+outcomes:
+  empty: 还没有结果。Covi 在变更上发表评论后，用 `covi outcomes collect` 收集后续结果。
+  repository: '{repository}:'
+  changes: { other: '已评审 {count} 个变更：合并 {merged} 个（其中后来回滚 {reverted} 个），未合并关闭 {closed} 个，仍开放 {open} 个。' }
+  rating: 'Covi 评论的反馈：👍 {up} · 👎 {down}。'
+  precision: '{certainty}：{labeled} 个中有 {right} 个成立（{percent}%）；{unlabeled} 个没有信号。'
+  noSignal: { other: '{certainty}：报告 {count} 个，暂无信号。' }

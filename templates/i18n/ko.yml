@@ -865,3 +865,11 @@ question:
       continuous: '{what}. 내레이션 밑에 잔잔하게 깔리고 쉬는 틈에 커짐'
       throughout: '{what}. 영상 전체에 깔림'
       byMode: '{what}. 숏폼은 내레이션 밑에 잔잔하게, 일반 리뷰는 내레이션 사이에 들림'
+
+outcomes:
+  empty: 아직 수집한 결과가 없습니다. Covi가 변경에 댓글을 단 뒤 `covi outcomes collect`로 그 결과를 모으세요.
+  repository: '{repository}:'
+  changes: { other: '리뷰한 변경 {count}건: 머지 {merged}건(이후 되돌림 {reverted}건), 머지 없이 닫힘 {closed}건, 아직 열림 {open}건.' }
+  rating: 'Covi 댓글 반응: 👍 {up} · 👎 {down}.'
+  precision: '{certainty}: {labeled}건 중 {right}건이 맞았습니다({percent}%). 신호 없음 {unlabeled}건.'
+  noSignal: { other: '{certainty}: {count}건 보고, 아직 신호 없음.' }

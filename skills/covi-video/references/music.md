@@ -6,7 +6,7 @@ Covi's videos carry quiet music: the Covi theme by default, or a score written f
 - The voice is the product. While someone speaks, keep 300 Hz–3 kHz light: no lead melody, pads voiced low, sparse figures, bass and percussion outside the voice's band (a shaker or hat above it is fine).
 - Movement belongs in the gaps and the lift. Keep the loops calm and repetitive; save the busier figure, the brighter instrument, and the fuller drums for the hero section.
 - Density matters more than level. Covi brings the music to the voice's loudness and then places it: 20 dB under speech in short-form videos (a quiet bed throughout, swelling in gaps), and effectively off under speech in standard reviews (unless `--music-placement continuous` asks for a bed there too).
-- In a narrated standard review, what the viewer hears is mostly the breaths Covi leaves around the narration: the first 2 s (the intro, or the first loop, over the title card), about 1.5–2 s before the hero's line (the hero section's first bar, lifting clear of speech), the pauses before the verdict and after long stretches of talk, and the outro. Make the intro, the hero's first bar, and the ending say something on their own.
+- In a narrated standard review, what the viewer hears is mostly the breaths Covi leaves around the narration: the first 2 s (the intro, or the first loop, over the opening scene), about 1.5–2 s before the hero's line (the hero section's first bar, lifting clear of speech), the pauses before the verdict and after long stretches of talk, and the outro. Make the intro, the hero's first bar, and the ending say something on their own.
 - If the music is noticeable while someone talks, it is too busy.
 
 ## Mood by kind of change

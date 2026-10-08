@@ -77,6 +77,7 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
 
 /* Title */
 .title-wrap { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: ${u(26)}; }
+.title-panel { display: flex; flex-direction: column; align-items: center; gap: ${u(26)}; max-width: 100%; }
 
 /* Outro */
 .outro { position: absolute; inset: 0; }
@@ -103,6 +104,11 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
 .dim { position: absolute; background: rgba(18, 21, 28, 0.42); }
 .cursor { position: absolute; width: ${u(34)}; height: ${u(34)}; z-index: 5; filter: drop-shadow(0 ${u(3)} ${u(6)} rgba(0,0,0,0.3)); }
 .ripple { position: absolute; border-radius: 50%; border: ${u(4)} solid ${c.primary}; z-index: 4; }
+
+/* Hero accent */
+.hero-accent { pointer-events: none; }
+.hero-accent .flash { position: absolute; background: #FFFFFF; opacity: 0; }
+.hero-accent .ring { position: absolute; border-radius: 50%; border: ${u(6)} solid ${c.primary}; opacity: 0; }
 
 /* Code */
 .code { position: absolute; overflow: hidden; background: ${c.codeBackground}; border-radius: ${u(20)}; box-shadow: ${c.shadow}; color: ${c.codeText}; }

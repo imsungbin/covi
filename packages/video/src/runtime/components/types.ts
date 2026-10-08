@@ -58,6 +58,11 @@ export interface Component {
    * so the fox it takes over never fades.
    */
   entrance?: boolean;
+  /**
+   * Applies the camera's push-in itself (cards whose large fox the outro may take over, so the
+   * fox must stay put); without it the stage scales the scene's media layer.
+   */
+  camera?(push: number): void;
 }
 
 export function rectOf(node: Element): Rect {

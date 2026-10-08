@@ -1,6 +1,13 @@
 import { blendPoses, type FoxOptions, foxPose, foxSvg, type Pose } from '@covi/brand';
-import type { LayoutReport, Rect, Timeline, TimelineScene } from '../timeline/types.ts';
-import { clamp, easeInOutCubic, easeOutCubic, seeded, seg, spring } from './anim.ts';
+import {
+  HERO_PHASE,
+  type LayoutReport,
+  type Rect,
+  type Timeline,
+  type TimelineScene,
+} from '../timeline/types.ts';
+import { clamp, easeInOutCubic, easeOutCubic, lerp, seeded, seg, spring } from './anim.ts';
+import { type CameraPlan, cameraPlan, cameraPush, heroAccent } from './camera.ts';
 import { summary, title } from './components/cards.ts';
 import {
   api,
@@ -15,7 +22,12 @@ import {
   terminal,
 } from './components/media.ts';
 import { outro } from './components/outro.ts';
-import { type Component, type ComponentContext, rectOf } from './components/types.ts';
+import {
+  type Component,
+  type ComponentContext,
+  rectOf,
+  type SceneClock,
+} from './components/types.ts';
 import { el, fitText, place } from './dom.ts';
 import { computeRegions, type Regions } from './layout.ts';
 import {
@@ -28,13 +40,20 @@ import {
   union,
 } from './narrator.ts';
 import { stylesheet } from './styles.ts';
+import { entering, leaving, REST, sceneStyle, transitionOf } from './transitions.ts';
 
 interface MountedScene {
   scene: TimelineScene;
   index: number;
   root: HTMLDivElement;
+  /** The camera layer: what the scene shows, pushed in by the camera. The header is not in it. */
+  media: HTMLDivElement;
   header?: HTMLDivElement;
   component: Component;
+  /** How the camera moves here; undefined: it does not (the outro). */
+  camera?: CameraPlan;
+  /** The clock of the frame drawn last, for the hero accent's ring. */
+  clock?: SceneClock;
   /** The header's text as laid out (stage pixels): the narrator's tail stays off it. */
   headerText: Rect[];
   /** When the next scene takes over this scene's large fox (it is hidden from then on). */
@@ -136,6 +155,8 @@ export class Stage {
   private lastFrame = 0;
   /** The narrator's pose and placement in the last frame drawn, for the layout report. */
   private drawn?: { fox: FoxOptions; placement: NarratorPlacement };
+  /** The hero's flash and ring, when a scene is the hero. */
+  private accent?: { flash: HTMLDivElement; ring: HTMLDivElement; hero: MountedScene };
 
   constructor(root: HTMLElement, timeline: Timeline) {
     this.root = root;
@@ -179,6 +200,9 @@ export class Stage {
     for (const [index, scene] of t.scenes.entries()) {
       const root = el('div', 'scene', this.root);
       root.dataset.scene = scene.id;
+      const media = el('div', 'layer', root);
+      const center = { x: r.media.x + r.media.width / 2, y: r.media.y + r.media.height / 2 };
+      media.style.transformOrigin = `${center.x.toFixed(2)}px ${center.y.toFixed(2)}px`;
       // The outro takes over the large fox of the card before it (the summary's, usually).
       const before = this.scenes.at(-1);
       const handoff =
@@ -190,7 +214,7 @@ export class Stage {
         timeline: t,
         regions: r,
         u,
-        root,
+        root: media,
         phases: scene.phases ?? {},
         ...(handoff ? { previousFox: handoff } : {}),
       };
@@ -213,7 +237,30 @@ export class Stage {
         }
         headerText.push(...textBoxes(eyebrow, true));
       }
-      this.scenes.push({ scene, index, root, header, component, headerText });
+      this.scenes.push({
+        scene,
+        index,
+        root,
+        media,
+        header,
+        component,
+        headerText,
+        camera: cameraPlan(scene),
+      });
+    }
+
+    // The hero's flash and ring: over the scenes, under the narrator and the captions, and only
+    // inside the media region, so they never cover the header or the captions.
+    const hero = this.scenes.find(
+      (m) => m.scene.hero && m.scene.phases?.[HERO_PHASE] !== undefined,
+    );
+    if (hero) {
+      const layer = el('div', 'layer hero-accent', this.root);
+      const m = r.media;
+      layer.style.clipPath = `inset(${m.y}px ${t.width - m.x - m.width}px ${t.height - m.y - m.height}px ${m.x}px)`;
+      const flash = el('div', 'flash', layer);
+      place(flash, m);
+      this.accent = { flash, ring: el('div', 'ring', layer), hero };
     }
 
     this.narrator = el('div', 'narrator', this.root);
@@ -337,23 +384,46 @@ export class Stage {
         return;
       }
       m.root.style.display = 'block';
+      const unit = this.regions.unit;
+      const enterWith = transitionOf(scene, t);
+      const next = this.scenes[i + 1]?.scene;
+      const leaveWith = next ? transitionOf(next, t) : undefined;
       const enter =
         first || m.component.entrance === false
-          ? 1
-          : easeOutCubic(seg(time, scene.start, scene.start + t.transition));
-      const exit = last ? 0 : easeInOutCubic(seg(time, scene.end - t.transition, scene.end));
-      const presence = Math.min(enter, 1 - exit);
-      m.root.style.opacity = presence.toFixed(4);
-      m.root.style.transform = `translateY(${((1 - enter) * 26 * this.regions.unit - exit * 14 * this.regions.unit).toFixed(2)}px)`;
+          ? REST
+          : entering(
+              enterWith.kind,
+              seg(time, scene.start, scene.start + enterWith.seconds),
+              unit,
+              t.width,
+            );
+      const leave =
+        last || !leaveWith
+          ? REST
+          : leaving(
+              leaveWith.kind,
+              seg(time, scene.end - leaveWith.seconds, scene.end),
+              unit,
+              t.width,
+            );
+      const look = sceneStyle(enter, leave);
+      m.root.style.opacity = look.opacity;
+      m.root.style.transform = look.transform;
+      m.root.style.clipPath = look.clipPath;
       const local = time - scene.start;
       const duration = scene.end - scene.start;
-      m.component.update({
+      const clock: SceneClock = {
         t: local,
         duration,
         p: clamp(local / duration),
         frame,
         fox: { mouth, blink },
-      });
+      };
+      m.clock = clock;
+      m.component.update(clock);
+      const push = m.camera ? cameraPush(local, m.camera) : 0;
+      if (m.component.camera) m.component.camera(push);
+      else m.media.style.transform = push > 1e-6 ? `scale(${(1 + push).toFixed(5)})` : '';
       if (m.component.fox && m.foxTaken !== undefined)
         m.component.fox.element.style.visibility = time >= m.foxTaken - 1e-6 ? 'hidden' : 'visible';
       if (m.header) {
@@ -367,6 +437,25 @@ export class Stage {
         }
       }
     });
+
+    if (this.accent) {
+      const { flash, ring, hero } = this.accent;
+      const accent = heroAccent(time - (hero.scene.start + hero.scene.phases![HERO_PHASE]!));
+      flash.style.opacity = accent.flash.toFixed(3);
+      if (accent.ringOpacity > 0.001 && hero.root.style.display === 'block' && hero.clock) {
+        // The ring opens around what the hero highlights, else the middle of the media region.
+        const media = this.regions.media;
+        const box = hero.component.target?.(hero.clock) ?? media;
+        const size = lerp(0.12, 0.7, accent.ring) * Math.min(media.width, media.height);
+        place(ring, {
+          x: box.x + box.width / 2 - size / 2,
+          y: box.y + box.height / 2 - size / 2,
+          width: size,
+          height: size,
+        });
+        ring.style.opacity = accent.ringOpacity.toFixed(3);
+      } else ring.style.opacity = '0';
+    }
 
     // Narrator: present in scenes that do not feature the fox themselves.
     const narrated = this.scenes.filter(
@@ -384,7 +473,13 @@ export class Stage {
         pose = blendPoses(
           this.poseFor(previous, time, frame, mouth, blink),
           pose,
-          easeInOutCubic(seg(time, current.scene.start, current.scene.start + t.transition)),
+          easeInOutCubic(
+            seg(
+              time,
+              current.scene.start,
+              current.scene.start + transitionOf(current.scene, t).seconds,
+            ),
+          ),
         );
       // The narrator springs in when it appears, not between scenes it narrates in a row.
       const appears = !this.scenes[current.index - 1]?.scene.narrator;
@@ -430,9 +525,12 @@ export class Stage {
     });
     const outroScene = t.scenes.find((s) => s.visual.kind === 'outro');
     this.progressBar.style.opacity = outroScene
-      ? (1 - easeInOutCubic(seg(time, outroScene.start, outroScene.start + t.transition))).toFixed(
-          3,
-        )
+      ? (
+          1 -
+          easeInOutCubic(
+            seg(time, outroScene.start, outroScene.start + transitionOf(outroScene, t).seconds),
+          )
+        ).toFixed(3)
       : '1';
   }
 

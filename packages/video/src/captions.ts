@@ -1,4 +1,5 @@
 import { formatTimestamp, type Language } from '@covi/core';
+import type { PhraseSpan } from './storyboard/grammar.ts';
 import { displayWidth, isCjk, segments } from './text.ts';
 import type { CaptionCue } from './timeline/types.ts';
 
@@ -178,43 +179,101 @@ function balance(words: string[], maxChars: number, layout: Layout): [string, st
   return best;
 }
 
-/** Times cues within each speech window in proportion to their length, honoring a minimum duration. */
-export function buildCaptions(
-  windows: Array<{ text: string; start: number; end: number }>,
+/** One speech window's cues, timed, with each cue's characters (whitespace removed) in order. */
+interface TimedWindow {
+  cues: CaptionCue[];
+  chars: string[][];
+}
+
+const denseChars = (text: string) => [...text.replace(/\s/g, '')];
+
+/** What one character weighs in a cue's timing, the way a whole cue is weighed. */
+function charWeight(language: Language): (char: string) => number {
+  return language === 'en' ? (char) => char.length : displayWidth;
+}
+
+/** Times a window's cues in proportion to their length, honoring a minimum duration. */
+function timeWindow(
+  w: { text: string; start: number; end: number },
   options: CaptionOptions,
-): CaptionCue[] {
-  const out: CaptionCue[] = [];
+): TimedWindow | undefined {
   const language = options.language ?? 'en';
   const weigh = (lines: string[]) =>
     language === 'en'
       ? lines.join(' ').replace(/\s/g, '').length
       : displayWidth(lines.join('').replace(/\s/g, ''));
-  for (const w of windows) {
-    const chunks = chunkCaption(w.text, options);
-    if (chunks.length === 0 || w.end <= w.start) continue;
-    const weights = chunks.map((c) => Math.max(4, weigh(c)));
-    const total = weights.reduce((a, b) => a + b, 0);
-    const span = w.end - w.start;
-    let durations = weights.map((wt) => (span * wt) / total);
-    // Borrow time for cues that would flash by too quickly.
-    const short = durations.filter((d) => d < options.minDuration).length;
-    if (short && span >= options.minDuration * chunks.length) {
-      const deficit = durations.reduce((n, d) => n + Math.max(0, options.minDuration - d), 0);
-      const pool = durations.reduce((n, d) => n + Math.max(0, d - options.minDuration), 0);
-      durations = durations.map((d) =>
-        d < options.minDuration
-          ? options.minDuration
-          : d - ((d - options.minDuration) / pool) * deficit,
-      );
-    }
-    let t = w.start;
-    chunks.forEach((lines, i) => {
-      const end = i === chunks.length - 1 ? w.end : t + durations[i]!;
-      out.push({ start: round(t), end: round(end), lines });
-      t = end;
-    });
+  const chunks = chunkCaption(w.text, options);
+  if (chunks.length === 0 || w.end <= w.start) return undefined;
+  const weights = chunks.map((c) => Math.max(4, weigh(c)));
+  const total = weights.reduce((a, b) => a + b, 0);
+  const span = w.end - w.start;
+  let durations = weights.map((wt) => (span * wt) / total);
+  // Borrow time for cues that would flash by too quickly.
+  const short = durations.filter((d) => d < options.minDuration).length;
+  if (short && span >= options.minDuration * chunks.length) {
+    const deficit = durations.reduce((n, d) => n + Math.max(0, options.minDuration - d), 0);
+    const pool = durations.reduce((n, d) => n + Math.max(0, d - options.minDuration), 0);
+    durations = durations.map((d) =>
+      d < options.minDuration
+        ? options.minDuration
+        : d - ((d - options.minDuration) / pool) * deficit,
+    );
   }
-  return out;
+  const cues: CaptionCue[] = [];
+  let t = w.start;
+  chunks.forEach((lines, i) => {
+    const end = i === chunks.length - 1 ? w.end : t + durations[i]!;
+    cues.push({ start: round(t), end: round(end), lines });
+    t = end;
+  });
+  return { cues, chars: chunks.map((lines) => denseChars(lines.join(''))) };
+}
+
+/**
+ * When a window reaches its character `j` (whitespace removed; `j` equal to the count is its
+ * end): the start of the cue holding it, plus that cue's share by the weight before it.
+ */
+function spokenAt(timed: TimedWindow, j: number, weight: (char: string) => number): number {
+  let from = 0;
+  for (const [k, chars] of timed.chars.entries()) {
+    if (j < from + chars.length || k === timed.chars.length - 1) {
+      const cue = timed.cues[k]!;
+      const local = Math.max(0, Math.min(chars.length, j - from));
+      const total = chars.reduce((n, c) => n + weight(c), 0);
+      const before = chars.slice(0, local).reduce((n, c) => n + weight(c), 0);
+      return cue.start + (cue.end - cue.start) * (total > 0 ? before / total : 0);
+    }
+    from += chars.length;
+  }
+  return timed.cues.at(-1)?.end ?? 0;
+}
+
+/** Times cues within each speech window in proportion to their length, honoring a minimum duration. */
+export function buildCaptions(
+  windows: Array<{ text: string; start: number; end: number }>,
+  options: CaptionOptions,
+): CaptionCue[] {
+  return windows.flatMap((w) => timeWindow(w, options)?.cues ?? []);
+}
+
+/**
+ * When a phrase of a line is spoken, from its first character to just past its last, by the
+ * text-weighted split the captions use: each cue gets its share of the window, and inside a cue
+ * the phrase starts after the weight of the text before it. `span` is what `findPhrase` returns.
+ * Undefined when the window has no time, the line no text, or the phrase was not found.
+ */
+export function phraseTime(
+  w: { text: string; start: number; end: number },
+  span: PhraseSpan,
+  options: CaptionOptions,
+): { start: number; end: number } | undefined {
+  const timed = timeWindow(w, options);
+  if (!timed || span.index < 0) return undefined;
+  const weight = charWeight(options.language ?? 'en');
+  return {
+    start: round(spokenAt(timed, span.index, weight)),
+    end: round(spokenAt(timed, span.index + span.length, weight)),
+  };
 }
 
 function round(n: number): number {

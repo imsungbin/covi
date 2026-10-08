@@ -90,13 +90,17 @@ export interface PageCapture {
   scan?: PageScan;
 }
 
-/** Screenshots a page (full height, capped) and collects console and page errors. */
+/**
+ * Screenshots a page (full height, capped) and collects console and page errors. With `scan`, it
+ * also scans the page's elements for the subject model, which only head captures feed.
+ */
 export async function capturePage(
   browser: Browser,
   url: string,
   viewport: ViewportName,
   file: string,
   trace?: TraceCollector,
+  options: { scan?: boolean } = {},
 ): Promise<PageCapture> {
   const { context, page } = await openContext(browser, viewport);
   const v = VIEWPORT_PRESETS[viewport];
@@ -125,7 +129,7 @@ export async function capturePage(
       clip: { x: 0, y: 0, width: v.width, height },
     });
     trace?.frame(file);
-    const scan = await scanPage(page);
+    const scan = options.scan ? await scanPage(page) : undefined;
     // The capture is the page's full height (capped), not only the viewport.
     trace?.endStep({
       mutations: await collectMutations(page, v.deviceScaleFactor, { width: v.width, height }),
@@ -224,6 +228,8 @@ export interface FlowOptions {
   /** Record the flow as WebM into this directory (Playwright picks the file name). */
   recordDir?: string;
   trace?: TraceCollector;
+  /** Scan each frame's elements for the subject model. */
+  scan?: boolean;
 }
 
 export interface FlowRun {
@@ -325,7 +331,7 @@ export async function runFlow(
     }
     const file = fileFor(frames.length);
     await page.screenshot({ path: file });
-    const scan = await scanPage(page);
+    const scan = options.scan ? await scanPage(page) : undefined;
     frames.push({ file, label, step: current, click, focus, ...(scan ? { scan } : {}) });
     trace?.frame(file, box);
   };

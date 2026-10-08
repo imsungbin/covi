@@ -223,21 +223,30 @@ export function subjectImages(
 }
 
 /**
- * A focus for a page capture no pixel diff located: the elements new since the model last saw
- * this screen at this viewport. Undefined when the model never saw it there, nothing is new, more
- * than three things are, or the region would cover more than half the picture.
+ * A focus for a page capture no pixel diff located: the elements new at `revision` on this screen
+ * at this viewport. New is judged against what the model knew before this revision, not before
+ * this run, so a second run at the same commit (`covi demo`, then `covi video`) focuses the same
+ * way. Undefined when the model first saw the screen there at this revision or never, nothing is
+ * new, more than three things are, or the region would cover more than half the picture.
  */
 export function subjectFocus(
   before: Subject,
   page: SubjectPage,
   size: { width: number; height: number },
+  revision: string,
 ): Rect | undefined {
   const path = screenPath(page.scan.path);
   const known = path ? before.screens.find((s) => s.path === path) : undefined;
-  if (!known?.viewports.some((v) => v.name === page.viewport)) return undefined;
+  const view = known?.viewports.find((v) => v.name === page.viewport);
+  if (!known || !view || view.since === revision) return undefined;
   // Known means seen at this viewport: a menu only mobile shows is new there, whatever desktop had.
   const selectors = new Set(
-    known.elements.filter((e) => e.boxes[page.viewport]).map((e) => e.selector),
+    known.elements
+      .filter((e) => {
+        const box = e.boxes[page.viewport];
+        return box && box.since !== revision;
+      })
+      .map((e) => e.selector),
   );
   const added = page.scan.elements.filter((e) => !selectors.has(e.selector));
   if (!added.length || added.length > MAX_FOCUS_ELEMENTS) return undefined;
@@ -266,12 +275,17 @@ export function subjectFocus(
  * pixel diff, or the lack of one, already says where the change is, and the model would point at
  * elements this change did not touch.
  */
-export function focusShots(before: Subject, pages: SubjectPage[], shots: DemoShot[]): string[] {
+export function focusShots(
+  before: Subject,
+  pages: SubjectPage[],
+  shots: DemoShot[],
+  revision: string,
+): string[] {
   const focused: string[] = [];
   for (const shot of shots) {
     if (shot.kind !== 'page' || shot.before || shot.diff || shot.focus || !shot.after) continue;
     const page = pages.find((p) => p.id === shot.id);
-    const focus = page && subjectFocus(before, page, shot.after);
+    const focus = page && subjectFocus(before, page, shot.after, revision);
     if (!focus) continue;
     shot.focus = focus;
     focused.push(shot.id);

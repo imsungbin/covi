@@ -183,11 +183,21 @@ describe('scans in the browser', () => {
       writeFileSync(join(dir, 'index.html'), ACCOUNT);
       server = await serveStatic(dir);
       browser = await chromium.launch();
+      const unscanned = await capturePage(
+        browser,
+        `${server.url}/`,
+        'desktop',
+        join(dir, 'plain.png'),
+      );
+      // Only a capture that feeds the subject model scans.
+      expect(unscanned.scan).toBeUndefined();
       const capture = await capturePage(
         browser,
         `${server.url}/`,
         'desktop',
         join(dir, 'page.png'),
+        undefined,
+        { scan: true },
       );
       const scan = capture.scan!;
       expect(scan.path).toBe('/');
@@ -250,6 +260,7 @@ describe('scans in the browser', () => {
         },
         'desktop',
         (i) => join(dir!, `f-${i}.png`),
+        { scan: true },
       );
       expect(outcome.error).toBeUndefined();
       expect(outcome.secret).toBe(true);
@@ -264,6 +275,9 @@ describe('scans in the browser', () => {
         (i) => join(dir!, `g-${i}.png`),
       );
       expect(plain.secret).toBeUndefined();
+      // A flow that does not feed the subject model scans nothing, and still notes secrets.
+      expect(plain.frames.length).toBeGreaterThan(0);
+      expect(plain.frames.every((f) => f.scan === undefined)).toBe(true);
     },
   );
 
@@ -275,8 +289,13 @@ describe('scans in the browser', () => {
       server = await serveStatic(dir);
       browser = await chromium.launch();
       const run = (name: string, steps: Parameters<typeof runFlow>[2]['steps']) =>
-        runFlow(browser!, server!.url, { name, path: '/', steps }, 'desktop', (i) =>
-          join(dir!, `${name}-${i}.png`),
+        runFlow(
+          browser!,
+          server!.url,
+          { name, path: '/', steps },
+          'desktop',
+          (i) => join(dir!, `${name}-${i}.png`),
+          { scan: true },
         );
       const pressed = await run('press', [{ press: 'Digit1', selector: '#code' }]);
       expect(pressed.error).toBeUndefined();
@@ -349,6 +368,7 @@ describe('scans in the browser', () => {
         },
         'desktop',
         (i) => join(dir!, `w-${i}.png`),
+        { scan: true },
       );
       expect(outcome.error).toBeUndefined();
       const scan = outcome.frames.at(-1)!.scan!;

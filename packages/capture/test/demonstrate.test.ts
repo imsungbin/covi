@@ -35,7 +35,7 @@ import {
   which,
 } from '@covi/core';
 import { chromium } from 'playwright';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BEHAVIOR_APP,
   BEHAVIOR_CONFIG,
@@ -49,6 +49,19 @@ import { demonstrate } from '../src/demonstrate.ts';
 import { flowScenario, uniqueIds } from '../src/ids.ts';
 import { RecordingUnavailableError } from '../src/recording.ts';
 import { observeFlow, recordingStatus } from '../src/scenarios.ts';
+
+// Counts element scans, which only head captures that feed a subject model should pay for.
+const scans = vi.hoisted(() => ({ count: 0 }));
+vi.mock('../src/elements.ts', async (original) => {
+  const actual = await original<typeof import('../src/elements.ts')>();
+  return {
+    ...actual,
+    scanPage: (...args: Parameters<typeof actual.scanPage>) => {
+      scans.count++;
+      return actual.scanPage(...args);
+    },
+  };
+});
 
 const browser = await canUseBrowser();
 let repo: TempRepo | undefined;
@@ -546,9 +559,10 @@ describe.skipIf(!browser)('the subject model', () => {
           ),
         },
       ]).config;
+      // ...at the base commit: what is new is judged against what the model knew before head.
       const first = await demonstrate({
         run,
-        change,
+        change: { ...change, head: { ...change.head, sha: change.base.sha } },
         context,
         config: before,
         logger: silentLogger,
@@ -580,6 +594,19 @@ describe.skipIf(!browser)('the subject model', () => {
       );
       const captures = json<Demonstration>(again, 'demo/captures.json');
       expect(captures.shots.find((s) => s.id === 'home-desktop')!.focus).toEqual(shot.focus);
+      // The second run saved the Retry button; a third at the same commit (`covi video` after
+      // `covi demo`) still sees it as new at head, and focuses the same way.
+      const third = await demonstrate({
+        run: await nextRun(),
+        change,
+        context,
+        config,
+        logger: silentLogger,
+        subject: await open(config),
+        recording: off,
+      });
+      expect(third.subject?.focused).toEqual(['home-desktop']);
+      expect(third.shots.find((s) => s.id === 'home-desktop')!.focus).toEqual(shot.focus);
     } finally {
       await baseServer.close();
       rmSync(base, { recursive: true, force: true });
@@ -698,11 +725,42 @@ describe.skipIf(!browser)('the subject model', () => {
     ).rejects.toBeInstanceOf(RecordingUnavailableError);
   });
 
+  it('scans only what head shows, and only for a model', async () => {
+    const { config, change, context, run } = await setup(() => ({
+      app: { static: '.' },
+      demo: { viewports: ['desktop'], pages: ['/'] },
+    }));
+    scans.count = 0;
+    const result = await demonstrate({
+      run,
+      change,
+      context,
+      config,
+      logger: silentLogger,
+      plan: { flows: BEHAVIOR_FLOWS },
+      subject: await open(config),
+      recording: off,
+    });
+    expect(result.traces?.map((t) => t.id).sort()).toEqual([
+      'flow-load-items-base',
+      'flow-load-items-head',
+      'home-desktop-base',
+      'home-desktop-head',
+    ]);
+    const frames = await readdir(run.path('demo/screenshots'));
+    const headFrames = frames.filter((f) => /^flow-load-items-\d+\.png$/.test(f)).length;
+    expect(headFrames).toBeGreaterThan(0);
+    expect(frames.some((f) => /^flow-load-items-\d+-base\.png$/.test(f))).toBe(true);
+    // The head page and each head frame; nothing at base.
+    expect(scans.count).toBe(1 + headFrames);
+  });
+
   it('demonstrates as before without a subject model', async () => {
     const { config, change, context, run } = await setup(() => ({
       app: { static: '.' },
       demo: { viewports: ['desktop'], pages: ['/'] },
     }));
+    scans.count = 0;
     const result = await demonstrate({
       run,
       change,
@@ -712,6 +770,7 @@ describe.skipIf(!browser)('the subject model', () => {
       recording: off,
     });
     expect(result.subject).toBeUndefined();
+    expect(scans.count).toBe(0);
     expect(existsSync(run.path('demo/subject.json'))).toBe(false);
     expect(existsSync(join(repo!.root, SUBJECT_PATHS.repo))).toBe(false);
   });

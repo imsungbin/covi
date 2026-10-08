@@ -82,6 +82,8 @@ const SELECTOR_WORDS = new Set([
   'type',
   'text',
 ]);
+type Viewport = (typeof VIEWPORTS)[number];
+
 const CONTROLS = new RegExp(`${SUBJECT_CONTROL.source}+`, 'g');
 
 export function emptySubject(): Subject {
@@ -186,13 +188,20 @@ function oneLine(text: string | undefined, max: number): string | undefined {
 /** Page geometry is page input too: whole pixels within the schema's range, whatever it reported. */
 const pixels = (n: number) =>
   Number.isFinite(n) ? Math.min(100_000, Math.max(0, Math.round(n))) : 0;
-const boxOf = (r: Rect, seen: string) => ({
+const boxOf = (r: Rect, seen: string, since: string | undefined) => ({
   x: pixels(r.x),
   y: pixels(r.y),
   width: Math.max(1, pixels(r.width)),
   height: Math.max(1, pixels(r.height)),
   seen,
+  ...(since ? { since } : {}),
 });
+/**
+ * When an entry was first seen: kept once given, and given only to a new entry. An entry Covi
+ * wrote before it recorded this has none, and counts as seen before any revision a run is at.
+ */
+const sinceOf = (prior: { since?: string } | undefined, revision: string) =>
+  prior ? prior.since : revision;
 const byKey = <T extends { key: string }>(a: T, b: T) =>
   a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 const keepsSelector = (selector: string) =>
@@ -218,12 +227,17 @@ function upsertScreen(model: Subject, seen: ObservedScreen, revision: string): v
   const title = oneLine(seen.title, SUBJECT_LIMITS.label);
   if (title) screen.title = title;
   // One entry per viewport, in preset order; its size is the one seen last.
+  const known = screen.viewports;
+  const since = sinceOf(
+    known.find((k) => k.name === seen.viewport),
+    revision,
+  );
   const size = {
     name: seen.viewport,
     width: Math.max(1, pixels(seen.size.width)),
     height: Math.max(1, pixels(seen.size.height)),
+    ...(since ? { since } : {}),
   };
-  const known = screen.viewports;
   screen.viewports = VIEWPORTS.flatMap((v) =>
     v === seen.viewport ? [size] : known.filter((k) => k.name === v),
   );
@@ -254,7 +268,11 @@ function upsertScreen(model: Subject, seen: ObservedScreen, revision: string): v
     else delete entry.label;
     if (el.secret) entry.secret = true;
     else delete entry.secret;
-    entry.boxes[seen.viewport] = boxOf(el.box, revision);
+    entry.boxes[seen.viewport] = boxOf(
+      el.box,
+      revision,
+      sinceOf(entry.boxes[seen.viewport], revision),
+    );
     observed.add(entry);
   }
   // What the screen shows now comes first, so the element cap keeps it over what it used to show.
@@ -377,13 +395,98 @@ function bound(model: Subject): Subject {
     const dropped = out.screens.length > 0 ? out.screens.pop() : out.flows.pop();
     size -= Buffer.byteLength(JSON.stringify(dropped, null, 2));
   }
+  return sorted(out);
+}
+
+function sorted(model: Subject): Subject {
   return {
-    ...out,
-    screens: out.screens.map((s) => ({ ...s, elements: [...s.elements].sort(byKey) })).sort(byKey),
-    flows: [...out.flows].sort(byKey),
-    commands: [...out.commands].sort(byKey),
+    ...model,
+    screens: model.screens
+      .map((s) => ({ ...s, elements: [...s.elements].sort(byKey) }))
+      .sort(byKey),
+    flows: [...model.flows].sort(byKey),
+    commands: [...model.commands].sort(byKey),
   };
 }
+
+/**
+ * Puts back the stamp an entry had while it is younger than `half` the model's revisions, so an
+ * entry seen again is restamped only every half window: a run that sees what the model already
+ * holds writes the same bytes, and an entry still expires between half and all of `expireAfter`
+ * revisions after it was last seen. Entries are matched to `before` by identity, as the merge
+ * upserts them.
+ */
+function settle(model: Subject, before: Subject, half: number): Subject {
+  const stamp = (now: string, prior: string | undefined) => {
+    const age = prior === undefined ? -1 : model.revisions.indexOf(prior);
+    return prior !== undefined && age >= 0 && age < half ? prior : now;
+  };
+  const screens = new Map(before.screens.map((s) => [s.path, s]));
+  const flows = new Map(before.flows.map((f) => [f.name, f]));
+  const commands = new Map(before.commands.map((c) => [`${c.kind} ${c.name}`, c]));
+  return {
+    ...model,
+    screens: model.screens.map((screen) => {
+      const prior = screens.get(screen.path);
+      const elements = new Map(prior?.elements.map((e) => [e.selector, e]));
+      return {
+        ...screen,
+        seen: stamp(screen.seen, prior?.seen),
+        elements: screen.elements.map((element) => {
+          const was = elements.get(element.selector);
+          return {
+            ...element,
+            seen: stamp(element.seen, was?.seen),
+            boxes: Object.fromEntries(
+              Object.entries(element.boxes).map(([viewport, box]) => [
+                viewport,
+                box && { ...box, seen: stamp(box.seen, was?.boxes[viewport as Viewport]?.seen) },
+              ]),
+            ),
+          };
+        }),
+      };
+    }),
+    flows: model.flows.map((f) => ({ ...f, passed: stamp(f.passed, flows.get(f.name)?.passed) })),
+    commands: model.commands.map((c) => ({
+      ...c,
+      seen: stamp(c.seen, commands.get(`${c.kind} ${c.name}`)?.seen),
+    })),
+  };
+}
+
+/**
+ * Whether the run saw something the model holds going away: an element missing from a screen it
+ * scanned at a viewport where the model placed it, or a kept flow that failed or would no longer
+ * be kept. Such a run records its revision even when nothing else changed, so what is gone ages
+ * out; a screen or flow the run did not look at says nothing either way.
+ */
+function losesSight(model: Subject, observation: SubjectObservation, flows: FlowMerge[]): boolean {
+  const shown = new Map<string, Set<string>>();
+  for (const screen of observation.screens) {
+    const path = screenPath(screen.path);
+    if (!path) continue;
+    const at = `${path} ${screen.viewport}`;
+    const selectors = shown.get(at) ?? new Set<string>();
+    for (const element of screen.elements) selectors.add(element.selector);
+    shown.set(at, selectors);
+  }
+  const missing = model.screens.some((screen) =>
+    VIEWPORTS.some((viewport) => {
+      const selectors = shown.get(`${screen.path} ${viewport}`);
+      return (
+        selectors && screen.elements.some((e) => e.boxes[viewport] && !selectors.has(e.selector))
+      );
+    }),
+  );
+  return (
+    missing ||
+    flows.some((f) => f.outcome !== 'kept' && model.flows.some((kept) => kept.name === f.name))
+  );
+}
+
+/** Everything but `revisions`, in the order the merge writes it. */
+const entriesOf = (model: Subject) => JSON.stringify({ ...sorted(model), revisions: [] });
 
 /**
  * Merges what one run saw at head into the model: entries are upserted by identity (screen path,
@@ -415,8 +518,18 @@ export function mergeSubjectWithOutcomes(
     return { ...(name ? { name } : {}), outcome: upsertFlow(model, flow, observation.revision) };
   });
   for (const command of observation.commands) upsertCommand(model, command, observation.revision);
+  // Stamps are settled after the caps, which keep what this run saw by its fresh stamps.
+  const next = settle(bound(expire(model)), current, Math.ceil(keep / 2));
   // Checked like everything Covi writes: a model its own loader would reject is never returned.
-  return { model: SubjectSchema.parse(bound(expire(model))), flows };
+  const checked = SubjectSchema.parse(next);
+  // A run that changes nothing records nothing, not even its revision: the committed file stays
+  // byte for byte, and concurrent branches do not conflict over a model neither changed.
+  if (
+    !losesSight(current, observation, flows) &&
+    entriesOf(checked) === entriesOf(SubjectSchema.parse(current))
+  )
+    return { model: current, flows };
+  return { model: checked, flows };
 }
 
 /** `mergeSubjectWithOutcomes` for callers that need only the model. */

@@ -122,12 +122,16 @@ export const SubjectRefSchema = z
   .string()
   .regex(SUBJECT_REF, 'subject:<screen>#<element>, e.g. subject:checkout#place-order');
 
+/** First seen: what was new at a revision stays new to every run at that revision. */
+const Since = Revision.optional().describe('The revision it was first seen at.');
+
 const BoxSchema = z.strictObject({
   x: Pixels,
   y: Pixels,
   width: Size,
   height: Size,
   seen: Revision,
+  since: Since,
 });
 
 export const SubjectElementSchema = z.strictObject({
@@ -146,7 +150,12 @@ export const SubjectElementSchema = z.strictObject({
 });
 
 /** A viewport a screen was seen at, and its size then in CSS pixels. */
-export const SubjectViewportSchema = z.strictObject({ name: Viewport, width: Size, height: Size });
+export const SubjectViewportSchema = z.strictObject({
+  name: Viewport,
+  width: Size,
+  height: Size,
+  since: Since,
+});
 
 export const SubjectScreenSchema = z.strictObject({
   key: Key,

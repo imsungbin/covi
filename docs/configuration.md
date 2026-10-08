@@ -391,9 +391,11 @@ The subject model is what Covi has seen of the software: the screens it captured
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `store` | `repo`, `runs`, `off` | `repo` | `repo` keeps the model in `.covi/subject/subject.json`. It is small and meant to be committed, so everyone's runs share it. `runs` keeps it as `subject.json` in the runs directory, never committed. `off` neither reads nor writes one. In CI, `repo` is read from the base revision, like configuration, and never written: the run's `demo/subject.json` holds what it saw. A `runs` store is read and written in CI too, unless the change committed that file or reaches it through a symbolic link; then it is set aside with a warning. |
-| `expireAfter` | integer, 1–100 | `20` | Forget a screen, element, flow, or scenario not seen in this many revisions. A revision is a distinct commit at which a demonstration updated the model. Running again at the same commit does not count. |
+| `expireAfter` | integer, 1–100 | `20` | Forget a screen, element, flow, or scenario not seen in this many revisions. A revision is a distinct commit at which a demonstration updated the model. Running again at the same commit does not count, and neither does a run that changed nothing. An entry seen again is restamped only every half window, so it is forgotten between half and all of this many revisions after it was last seen. |
 
 **Replayed flows.** When neither the plan nor `demo.flows` names a flow, Covi replays up to two flows from the model that passed within its revisions and start on a page this run captures, the most recently passed first, with exactly the steps that passed. It replays them only on an app it starts or serves, never on one reached through `app.url` alone. A replayed flow that fails at head is a `risk` finding, so it never fails a gate. A plan with `"flows": []` turns replays off for one run; `subject.store: off` turns them off for good.
+
+**A committed model.** A run that saw nothing new leaves `.covi/subject/subject.json` byte for byte as it was, but branches that each changed it can still conflict over it. Take either side, or delete the file: the next run rebuilds it. Until then, Covi warns and plans without it ([Artifacts](artifacts.md#the-subject-model)).
 
 ```yaml
 subject:

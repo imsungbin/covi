@@ -21,6 +21,8 @@ import {
 } from '../src/subject.ts';
 
 const REV = '000000000001';
+/** The revision a later run demonstrates. */
+const NEXT = '000000000002';
 const el = (selector: string, key: string, box: Rect): ScannedElement => ({
   selector,
   key,
@@ -321,22 +323,42 @@ describe('subject observations', () => {
     const retry = el('#retry', 'retry', { x: 120, y: 40, width: 60, height: 30 });
 
     it('focuses a page capture on what is new since the model last saw the screen', () => {
-      expect(subjectFocus(before, page([load, retry]), size)).toEqual({
+      expect(subjectFocus(before, page([load, retry]), size, NEXT)).toEqual({
         x: 108,
         y: 28,
         width: 84,
         height: 54,
       });
       // Never seen at this viewport, nothing new, a redesign, or too large a region: no focus.
-      expect(subjectFocus(before, page([load, retry], 'mobile'), size)).toBeUndefined();
-      expect(subjectFocus(before, page([load]), size)).toBeUndefined();
+      expect(subjectFocus(before, page([load, retry], 'mobile'), size, NEXT)).toBeUndefined();
+      expect(subjectFocus(before, page([load]), size, NEXT)).toBeUndefined();
       const redesign = [1, 2, 3, 4].map((i) =>
         el(`#n${i}`, `n${i}`, { x: i * 10, y: 0, width: 5, height: 5 }),
       );
-      expect(subjectFocus(before, page([load, ...redesign]), size)).toBeUndefined();
+      expect(subjectFocus(before, page([load, ...redesign]), size, NEXT)).toBeUndefined();
       const hero = el('#hero', 'hero', { x: 0, y: 0, width: 1280, height: 700 });
-      expect(subjectFocus(before, page([load, hero]), size)).toBeUndefined();
-      expect(subjectFocus(emptySubject(), page([load, retry]), size)).toBeUndefined();
+      expect(subjectFocus(before, page([load, hero]), size, NEXT)).toBeUndefined();
+      expect(subjectFocus(emptySubject(), page([load, retry]), size, NEXT)).toBeUndefined();
+    });
+
+    it('focuses every run at a revision on what was new at it', () => {
+      const observed = (revision: string) => ({
+        revision,
+        screens: [{ path: '/', viewport: 'desktop' as const, size, elements: [load, retry] }],
+        flows: [],
+        commands: [],
+      });
+      const focus = { x: 108, y: 28, width: 84, height: 54 };
+      // `covi demo`, then `covi video` at the same commit: the first run saved the retry button.
+      const first = subjectFocus(before, page([load, retry]), size, NEXT);
+      const saved = mergeSubject(before, observed(NEXT), { expireAfter: 20 });
+      expect(first).toEqual(focus);
+      expect(subjectFocus(saved, page([load, retry]), size, NEXT)).toEqual(focus);
+      // At the next commit, it is no longer new.
+      expect(subjectFocus(saved, page([load, retry]), size, '000000000003')).toBeUndefined();
+      // A screen first seen at this revision is as unknown to a second run as to the first.
+      const fresh = mergeSubject(emptySubject(), observed(NEXT), { expireAfter: 20 });
+      expect(subjectFocus(fresh, page([load, retry]), size, NEXT)).toBeUndefined();
     });
 
     it('counts an element as known only at the viewports it was seen at', () => {
@@ -364,13 +386,13 @@ describe('subject observations', () => {
         window: { x: 0, y: 0, width: 780, height: 1688 },
       };
       // The menu was on desktop only: on mobile it is new. Scale 2, padded by 24 image px.
-      expect(subjectFocus(both, mobile, { width: 780, height: 1688 })).toEqual({
+      expect(subjectFocus(both, mobile, { width: 780, height: 1688 }, NEXT)).toEqual({
         x: 576,
         y: 0,
         width: 128,
         height: 124,
       });
-      expect(subjectFocus(both, page([load, menu]), size)).toBeUndefined();
+      expect(subjectFocus(both, page([load, menu]), size, NEXT)).toBeUndefined();
     });
 
     it('focuses only head-only page shots, as an app.url run takes them', () => {
@@ -386,7 +408,7 @@ describe('subject observations', () => {
       const pages = [page([load, retry])];
       // The app ran at head only: no base image, so no pixel diff could locate the change.
       const headOnly = shot();
-      expect(focusShots(before, pages, [headOnly])).toEqual(['home-desktop']);
+      expect(focusShots(before, pages, [headOnly], NEXT)).toEqual(['home-desktop']);
       expect(headOnly.focus).toEqual({ x: 108, y: 28, width: 84, height: 54 });
       // Base and head were compared: a diff, or the lack of one, is the answer, not the model.
       const base = { path: demoPath.pageCrop('home-desktop', 'before'), ...size };
@@ -401,7 +423,7 @@ describe('subject observations', () => {
       const step = shot({ kind: 'flow-step', id: 'flow-load-items-s1' });
       const other = shot({ id: 'pricing-desktop' });
       const skipped = [compared, withBase, diffed, located, step, other];
-      expect(focusShots(before, pages, skipped)).toEqual([]);
+      expect(focusShots(before, pages, skipped, NEXT)).toEqual([]);
       for (const s of [compared, withBase, diffed]) expect(s.focus).toBeUndefined();
       expect(located.focus).toEqual({ x: 1, y: 1, width: 5, height: 5 });
       expect(step.focus).toBeUndefined();

@@ -69,7 +69,7 @@ describe('mergeSubject', () => {
         key: 'home',
         path: '/',
         title: 'Items',
-        viewports: [{ name: 'desktop', width: 1280, height: 800 }],
+        viewports: [{ name: 'desktop', width: 1280, height: 800, since: rev(1) }],
       }),
     ]);
     expect(model.screens[0]!.elements).toEqual([
@@ -78,11 +78,12 @@ describe('mergeSubject', () => {
         selector: '#load',
         role: 'button',
         label: 'Load',
-        boxes: { desktop: { x: 40, y: 120, width: 60, height: 30, seen: rev(1) } },
+        boxes: { desktop: { x: 40, y: 120, width: 60, height: 30, seen: rev(1), since: rev(1) } },
         seen: rev(1),
       },
     ]);
-    // Same selector, new label and key hint: still the same element, so its key stays.
+    // Same selector, new label and key hint: still the same element, so its key stays, and its
+    // stamp too: one revision old is younger than half the window.
     model = mergeSubject(
       model,
       at(2, {
@@ -92,7 +93,7 @@ describe('mergeSubject', () => {
     );
     expect(model.screens).toHaveLength(1);
     expect(model.screens[0]!.elements.map((e) => [e.key, e.label, e.seen])).toEqual([
-      ['load', 'Fetch', rev(2)],
+      ['load', 'Fetch', rev(1)],
     ]);
   });
 
@@ -120,12 +121,12 @@ describe('mergeSubject', () => {
       OPTS,
     );
     expect(model.screens[0]!.viewports).toEqual([
-      { name: 'desktop', width: 1440, height: 900 },
-      { name: 'mobile', width: 390, height: 844 },
+      { name: 'desktop', width: 1440, height: 900, since: rev(1) },
+      { name: 'mobile', width: 390, height: 844, since: rev(1) },
     ]);
     expect(model.screens[0]!.elements[0]!.boxes).toEqual({
-      desktop: { x: 50, y: 131, width: 60, height: 30, seen: rev(2) },
-      mobile: { x: 20, y: 300, width: 120, height: 60, seen: rev(1) },
+      desktop: { x: 50, y: 131, width: 60, height: 30, seen: rev(1), since: rev(1) },
+      mobile: { x: 20, y: 300, width: 120, height: 60, seen: rev(1), since: rev(1) },
     });
   });
 
@@ -178,7 +179,9 @@ describe('mergeSubject', () => {
       expect.objectContaining({ key: 'load', label: 'Load [31mnow' }),
       expect.objectContaining({
         key: 'nan',
-        boxes: { desktop: { x: 0, y: 0, width: 1, height: 100_000, seen: rev(1) } },
+        boxes: {
+          desktop: { x: 0, y: 0, width: 1, height: 100_000, seen: rev(1), since: rev(1) },
+        },
       }),
     ]);
     expect(model.screens[0]!.elements[0]!.role).toBeUndefined();
@@ -202,6 +205,112 @@ describe('mergeSubject', () => {
     expect(model.revisions).toEqual([rev(4), rev(3), rev(2)]);
     expect(model.screens.map((s) => s.key)).toEqual(['home']);
     expect(model.screens[0]!.elements).toEqual([]);
+  });
+
+  it('writes the same bytes at the next commit when nothing changed', () => {
+    const file = (model: unknown) => `${JSON.stringify(model, null, 2)}\n`;
+    const observed = (n: number) =>
+      at(n, {
+        screens: [home([load]), home([load], 'mobile')],
+        flows: [flow],
+        commands: [{ kind: 'cli', name: 'Help', exitCode: 0 }],
+      });
+    const first = mergeSubject(emptySubject(), observed(1), { expireAfter: 20 });
+    let model = first;
+    // Stamps younger than half the window stay, and a run that changes nothing records nothing.
+    for (let n = 2; n <= 6; n++) model = mergeSubject(model, observed(n), { expireAfter: 20 });
+    expect(file(model)).toBe(file(first));
+    // A real change is written, and records its revision; what did not change keeps its stamp.
+    const moved = { ...load, box: { ...load.box, y: 140 } };
+    model = mergeSubject(
+      model,
+      { ...observed(7), screens: [home([moved]), home([load], 'mobile')] },
+      { expireAfter: 20 },
+    );
+    expect(model.revisions).toEqual([rev(7), rev(1)]);
+    expect(model.screens[0]!.elements[0]!.boxes.desktop).toMatchObject({ y: 140 });
+    expect(model.flows[0]!.passed).toBe(rev(1));
+  });
+
+  it('refreshes a stamp once it is half the window old, so what is still seen never expires', () => {
+    const opts = { expireAfter: 4 };
+    const pricing = page('/pricing', [{ ...load, selector: '#buy', key: 'buy' }]);
+    let model = mergeSubject(emptySubject(), at(1, { screens: [home([load]), pricing] }), opts);
+    // Each commit moves the Load button, so each records its revision.
+    const moved = (n: number) => home([{ ...load, box: { ...load.box, y: 100 + n } }]);
+    model = mergeSubject(model, at(2, { screens: [moved(2), pricing] }), opts);
+    expect(model.screens.find((s) => s.key === 'pricing')!.seen).toBe(rev(1));
+    model = mergeSubject(model, at(3, { screens: [moved(3), pricing] }), opts);
+    // Two of four revisions old: refreshed.
+    expect(model.screens.find((s) => s.key === 'pricing')!.seen).toBe(rev(3));
+    for (const n of [4, 5, 6, 7])
+      model = mergeSubject(model, at(n, { screens: [moved(n), pricing] }), opts);
+    expect(model.revisions).toEqual([rev(7), rev(6), rev(5), rev(4)]);
+    expect(model.screens.map((s) => s.key)).toEqual(['home', 'pricing']);
+    expect(model.screens[1]!.elements.map((e) => e.key)).toEqual(['buy']);
+  });
+
+  it('keeps aging an element a screen no longer shows until it is forgotten', () => {
+    const retry = { ...load, selector: '#retry', key: 'retry' };
+    let model = mergeSubject(emptySubject(), at(1, { screens: [home([load, retry])] }), OPTS);
+    // Nothing else changes, yet each run that sees the screen without the button counts.
+    for (const n of [2, 3]) {
+      model = mergeSubject(model, at(n, { screens: [home([load])] }), OPTS);
+      expect(model.screens[0]!.elements.map((e) => e.key)).toEqual(['load', 'retry']);
+    }
+    model = mergeSubject(model, at(4, { screens: [home([load])] }), OPTS);
+    expect(model.screens[0]!.elements.map((e) => e.key)).toEqual(['load']);
+    // Only the viewport that lost it counts: another viewport not showing it changes nothing.
+    const mobileOnly = mergeSubject(
+      emptySubject(),
+      at(1, { screens: [home([load, retry]), home([load], 'mobile')] }),
+      OPTS,
+    );
+    expect(mergeSubject(mobileOnly, at(2, { screens: [home([load], 'mobile')] }), OPTS)).toBe(
+      mobileOnly,
+    );
+  });
+
+  it('forgets a flow and a scenario not seen in expireAfter revisions', () => {
+    let model = mergeSubject(
+      emptySubject(),
+      at(1, { flows: [flow], commands: [{ kind: 'http', name: 'Users', status: 200 }] }),
+      OPTS,
+    );
+    const moved = (n: number) => home([{ ...load, box: { ...load.box, y: n } }]);
+    for (const n of [2, 3]) model = mergeSubject(model, at(n, { screens: [moved(n)] }), OPTS);
+    expect(model.flows.map((f) => f.key)).toEqual(['load-items']);
+    expect(model.commands.map((c) => c.key)).toEqual(['users']);
+    model = mergeSubject(model, at(4, { screens: [moved(4)] }), OPTS);
+    expect(model.flows).toEqual([]);
+    expect(model.commands).toEqual([]);
+  });
+
+  it('forgets a replayed flow that keeps failing, even when nothing else changes', () => {
+    let model = mergeSubject(emptySubject(), at(1, { flows: [flow] }), OPTS);
+    const failing = { ...flow, passed: false };
+    for (const n of [2, 3]) {
+      model = mergeSubject(model, at(n, { flows: [failing] }), OPTS);
+      expect(model.flows.map((f) => f.passed)).toEqual([rev(1)]);
+    }
+    model = mergeSubject(model, at(4, { flows: [failing] }), OPTS);
+    expect(model.flows).toEqual([]);
+    // A flow the model never kept failing is no news.
+    const other = mergeSubject(emptySubject(), at(1, { screens: [home([load])] }), OPTS);
+    expect(mergeSubject(other, at(2, { flows: [failing] }), OPTS)).toBe(other);
+  });
+
+  it('records when each box and viewport was first seen, and keeps it', () => {
+    let model = mergeSubject(emptySubject(), at(1, { screens: [home([load])] }), OPTS);
+    const moved = { ...load, box: { ...load.box, y: 200 } };
+    model = mergeSubject(model, at(2, { screens: [home([moved]), home([load], 'mobile')] }), OPTS);
+    const screen = model.screens[0]!;
+    expect(screen.viewports.map((v) => [v.name, v.since])).toEqual([
+      ['desktop', rev(1)],
+      ['mobile', rev(2)],
+    ]);
+    expect(screen.elements[0]!.boxes.desktop).toMatchObject({ y: 200, since: rev(1) });
+    expect(screen.elements[0]!.boxes.mobile).toMatchObject({ since: rev(2) });
   });
 
   it('forgets a box its viewport has not seen in expireAfter revisions', () => {

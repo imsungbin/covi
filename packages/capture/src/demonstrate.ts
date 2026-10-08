@@ -226,6 +226,8 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
     if (wantsBrowser && mode)
       browser = await launchBrowser(recordingRequired && plan.flows.some(asked));
     for (const revision of revisions) {
+      // Only head feeds the subject model: base, and a run without a model, scan nothing.
+      const scan = revision === 'head' && input.subject !== undefined;
       const needsCheckout = mode === 'static' || mode === 'command' || commandsToRun.length > 0;
       const checkout = needsCheckout
         ? await checkoutRevision(change, revision, workspace.dir)
@@ -294,6 +296,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
                   viewport,
                   file,
                   collector,
+                  { scan },
                 );
                 pages.set(key, { ...pages.get(key), [revision]: capture });
                 collector.stop();
@@ -322,6 +325,7 @@ export async function demonstrate(input: DemonstrateInput): Promise<Demonstratio
               viewport,
               revision,
               record: recording.enabled,
+              scan,
               ffmpeg: locateFfmpeg,
             });
             flows.set(index, { ...flows.get(index), [revision]: observed });
@@ -821,7 +825,7 @@ async function keepSubject(
   };
   try {
     const captures = observe();
-    summary.focused = focusShots(handle.model, captures.pages, shots);
+    summary.focused = focusShots(handle.model, captures.pages, shots, captures.revision);
     const observation = subjectObservation(captures, handle.model);
     if (!hasObservations(observation)) return summary;
     const merged = mergeSubjectWithOutcomes(handle.model, observation, {

@@ -193,6 +193,21 @@ describe('subject stores', () => {
     ).toBeUndefined();
   });
 
+  it('leaves the committed file byte for byte when the next commit shows nothing new', async () => {
+    const { root, runsRoot } = setup();
+    const handle = await openSubject({ root, runsRoot, config: config(), warn: () => {} });
+    const file = join(root, SUBJECT_PATHS.repo);
+    expect(await saveSubject(handle!.source, seen('/'), quiet)).toBe('saved');
+    const first = readFileSync(file, 'utf8');
+    expect(await saveSubject(handle!.source, seen('/', '000000000002'), quiet)).toBe('saved');
+    expect(readFileSync(file, 'utf8')).toBe(first);
+    // Something new is written, with its revision.
+    expect(await saveSubject(handle!.source, seen('/pricing', '000000000003'), quiet)).toBe(
+      'saved',
+    );
+    expect(JSON.parse(readFileSync(file, 'utf8')).revisions).toEqual(['000000000003', REV]);
+  });
+
   it('ignores a subject model it cannot trust, and leaves it as it was', async () => {
     const { root, runsRoot } = setup();
     const file = join(root, SUBJECT_PATHS.repo);
@@ -247,6 +262,33 @@ describe('subject stores', () => {
       expect(await saveSubject(handle!.source, seen('/'), quiet), what).toBe('skipped');
       expect(readFileSync(file, 'utf8'), what).toBe(text);
     }
+  });
+
+  it('says how to resolve a model left with merge conflict markers, and leaves it as it was', async () => {
+    const { root, runsRoot } = setup();
+    repo!.commit('Remember the home screen', { [SUBJECT_PATHS.repo]: modelJson('/') });
+    repo!.git('checkout', '-q', '-b', 'other');
+    repo!.commit('Remember pricing', { [SUBJECT_PATHS.repo]: modelJson('/pricing') });
+    repo!.git('checkout', '-q', 'main');
+    repo!.commit('Remember admin', { [SUBJECT_PATHS.repo]: modelJson('/admin') });
+    expect(() => repo!.git('merge', '-q', 'other')).toThrow();
+    const file = join(root, SUBJECT_PATHS.repo);
+    const conflicted = readFileSync(file, 'utf8');
+    expect(conflicted).toMatch(/^<<<<<<< /m);
+    const warnings: string[] = [];
+    const handle = await openSubject({
+      root,
+      runsRoot,
+      config: config(),
+      warn: (m) => warnings.push(m),
+    });
+    expect(handle!.model).toEqual(emptySubject());
+    expect(handle!.writable).toBe(false);
+    expect(warnings).toEqual([
+      `${file} has merge conflict markers; Covi planned without it and will not overwrite it. Take either side, or delete the file: Covi rebuilds it.`,
+    ]);
+    expect(await saveSubject(handle!.source, seen('/'), quiet)).toBe('skipped');
+    expect(readFileSync(file, 'utf8')).toBe(conflicted);
   });
 
   it('refuses a model reached through a symbolic link, and writes nothing through one', async () => {

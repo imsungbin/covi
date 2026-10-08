@@ -213,14 +213,20 @@ export async function loadSubject(
   const { from } = source;
   const read =
     from.kind === 'file' ? await readStoreFile(from) : await readAtRevision(from, options.git);
-  const setAside = (why: string) => {
+  const setAside = (why: string, fix = 'Fix or delete the file.') => {
     options.warn(
-      `${labelOf(from)} ${why}; Covi planned without it and will not overwrite it. Fix or delete the file.`,
+      `${labelOf(from)} ${why}; Covi planned without it and will not overwrite it. ${fix}`,
     );
     return { model: emptySubject(), status: 'invalid' as const };
   };
   if ('missing' in read) return { model: emptySubject(), status: 'empty' };
   if ('refused' in read) return setAside(read.refused);
+  // Two branches that each changed the committed model conflict; either side is a whole model.
+  if (/^(<{7}|>{7}) /m.test(read.text))
+    return setAside(
+      'has merge conflict markers',
+      'Take either side, or delete the file: Covi rebuilds it.',
+    );
   let raw: unknown;
   try {
     raw = JSON.parse(read.text);

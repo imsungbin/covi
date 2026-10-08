@@ -18,7 +18,7 @@ import {
 } from '../src/index.ts';
 import { artifactFileBase } from '../src/links.ts';
 import type { PlatformContext } from '../src/types.ts';
-import { fixtureFetch } from './fixtures.ts';
+import { fixtureFetch, type Reply } from './fixtures.ts';
 
 let dir: string | undefined;
 afterEach(() => {
@@ -136,6 +136,10 @@ describe('GitHub', () => {
   it('creates the comment once, then updates it in place', async () => {
     let stored: Array<{ id: number; body: string; html_url: string; user: object }> = [];
     const api = fakeApi({
+      'GET https://api.github.com/user': () => [
+        403,
+        { message: 'Resource not accessible by integration' },
+      ],
       'GET https://api.github.com/repos/acme/shop/issues/7/comments': () => [200, stored],
       'POST https://api.github.com/repos/acme/shop/issues/7/comments': (b) => {
         stored = [
@@ -165,7 +169,7 @@ describe('GitHub', () => {
     expect(await publisher.upsertComment(`${COMMENT_MARKER}\nsecond`)).toMatchObject({
       status: 'updated',
     });
-    expect(api.calls.map((c) => c.method)).toEqual(['GET', 'POST', 'GET', 'PATCH']);
+    expect(api.calls.map((c) => c.method)).toEqual(['GET', 'POST', 'GET', 'GET', 'PATCH']);
     expect(api.calls[1]!.headers.authorization).toBe('Bearer t');
   });
 
@@ -211,6 +215,10 @@ describe('GitHub', () => {
   });
   it("prefers the bot's comment over a pasted marker, and returns the comment's id", async () => {
     const api = fakeApi({
+      'GET https://api.github.com/user': () => [
+        403,
+        { message: 'Resource not accessible by integration' },
+      ],
       'GET https://api.github.com/repos/acme/shop/issues/7/comments': () => [
         200,
         [
@@ -248,7 +256,7 @@ describe('GitHub', () => {
       url: 'https://x/6',
     });
     // Given the comment it found, upsertComment does not list the comments again.
-    expect(api.calls.map((c) => c.method)).toEqual(['GET', 'PATCH']);
+    expect(api.calls.map((c) => c.method)).toEqual(['GET', 'GET', 'PATCH']);
   });
 
   const comments =
@@ -303,9 +311,19 @@ describe('GitHub', () => {
   it('posts each anchor once, and skips a line GitHub does not show in the diff', async () => {
     const posted: unknown[] = [];
     const api = fakeApi({
+      'GET https://api.github.com/user': () => [
+        403,
+        { message: 'Resource not accessible by integration' },
+      ],
       'GET https://api.github.com/repos/acme/shop/pulls/7/comments': () => [
         200,
-        [{ id: 1, body: `${anchorMarker('aaaaaaaaaaaa')}\nold`, user: { type: 'Bot' } }],
+        [
+          {
+            id: 1,
+            body: `${anchorMarker('aaaaaaaaaaaa')}\nold`,
+            user: { login: 'github-actions[bot]', type: 'Bot' },
+          },
+        ],
       ],
       'POST https://api.github.com/repos/acme/shop/pulls/7/comments': (b) => {
         posted.push(b);
@@ -343,7 +361,7 @@ describe('GitHub', () => {
     });
   });
 
-  it("does not count a person's pasted anchor marker as Covi's anchor", async () => {
+  it("does not count a person's or another app's anchor marker as Covi's anchor", async () => {
     const review = 'https://api.github.com/repos/acme/shop/pulls/7/comments';
     const api = fixtureFetch(
       {
@@ -354,20 +372,130 @@ describe('GitHub', () => {
       {
         '{{ANCHOR_A}}': anchorMarker('aaaaaaaaaaaa'),
         '{{ANCHOR_B}}': anchorMarker('bbbbbbbbbbbb'),
+        '{{ANCHOR_C}}': anchorMarker('cccccccccccc'),
       },
     );
     const outcome = await publisherWith(api.fetch).postAnchors(
       [
         { key: 'aaaaaaaaaaaa', path: 'src/a.ts', line: 3, body: 'a' },
         { key: 'bbbbbbbbbbbb', path: 'src/b.ts', line: 4, body: 'b' },
+        { key: 'cccccccccccc', path: 'src/c.ts', line: 5, body: 'c' },
       ],
       'f'.repeat(40),
     );
     expect(outcome).toEqual({
-      posted: [{ key: 'bbbbbbbbbbbb', id: '203' }],
+      posted: [
+        { key: 'bbbbbbbbbbbb', id: '203' },
+        { key: 'cccccccccccc', id: '203' },
+      ],
       existing: 1,
       skipped: [],
     });
+  });
+  it("accepts a bot's comment only when the token has no user, and only Covi's bot by login", async () => {
+    const routes = (user: Reply) =>
+      fixtureFetch(
+        {
+          [comments]: { fixture: 'github/issue-comments-foreign-bot.json' },
+          [whoami]: user,
+          'POST https://api.github.com/repos/acme/shop/issues/7/comments': {
+            status: 201,
+            json: { id: 114 },
+          },
+        },
+        { '{{MARKER}}': COMMENT_MARKER },
+      );
+    const forbidden = { status: 403, fixture: 'github/user-forbidden.json' };
+    // The workflow token posts as github-actions[bot]; another app quoting the marker is not Covi.
+    expect((await publisherWith(routes(forbidden).fetch).findComment())?.id).toBe('112');
+    const app = new GitHubPublisher({
+      token: 't',
+      repository: 'acme/shop',
+      number: 7,
+      botLogin: 'covi-app[bot]',
+      fetch: routes(forbidden).fetch,
+    });
+    expect((await app.findComment())?.id).toBe('113');
+    // A token whose bot is none of these finds nothing and posts its own comment.
+    const stranger = routes(forbidden);
+    const other = new GitHubPublisher({
+      token: 't',
+      repository: 'acme/shop',
+      number: 7,
+      botLogin: 'other-app[bot]',
+      fetch: stranger.fetch,
+    });
+    expect(await other.upsertComment(`${COMMENT_MARKER}\nnew`)).toMatchObject({
+      status: 'created',
+      id: '114',
+    });
+    expect(stranger.calls.map((c) => c.method)).toEqual(['GET', 'GET', 'POST']);
+    // A token that names its user trusts only that user's comments, never a bot's.
+    const named = routes({ fixture: 'github/user.json' });
+    expect(await publisherWith(named.fetch).findComment()).toBeNull();
+  });
+
+  it('fails the publish when /user fails for a moment, and asks again next time', async () => {
+    const api = fixtureFetch(
+      {
+        [comments]: { fixture: 'github/issue-comments-foreign-bot.json' },
+        [whoami]: [
+          { status: 502, json: { message: 'Bad gateway' } },
+          { status: 403, fixture: 'github/user-forbidden.json' },
+        ],
+        'PATCH https://api.github.com/repos/acme/shop/issues/comments/112': {
+          json: { id: 112, html_url: 'https://github.com/acme/shop/pull/7#issuecomment-112' },
+        },
+      },
+      { '{{MARKER}}': COMMENT_MARKER },
+    );
+    const publisher = publisherWith(api.fetch);
+    const failed = await publisher.upsertComment(`${COMMENT_MARKER}\nnew`);
+    expect(failed).toMatchObject({ status: 'failed' });
+    expect(failed.reason).toMatch(/HTTP 502 for \/user/);
+    expect(api.calls.map((c) => c.method)).toEqual(['GET', 'GET']);
+    expect(await publisher.upsertComment(`${COMMENT_MARKER}\nnew`)).toMatchObject({
+      status: 'updated',
+      id: '112',
+    });
+  });
+
+  it('never follows a redirect, and names the request when a body is not JSON', async () => {
+    const moved = fixtureFetch({
+      [comments]: { status: 302, headers: { location: 'https://evil.example/steal' } },
+    });
+    const outcome = await publisherWith(moved.fetch).upsertComment(`${COMMENT_MARKER}\nnew`);
+    expect(outcome).toMatchObject({ status: 'failed' });
+    expect(outcome.reason).toMatch(/HTTP 302/);
+    expect(moved.calls.map((c) => [new URL(c.url).origin, c.redirect])).toEqual([
+      ['https://api.github.com', 'manual'],
+    ]);
+    const cut = fixtureFetch({ [comments]: { fixture: 'github/truncated.txt' } });
+    const broken = await publisherWith(cut.fetch).upsertComment(`${COMMENT_MARKER}\nnew`);
+    expect(broken.reason).toBe(
+      'GitHub sent a body that is not JSON for /repos/acme/shop/issues/7/comments',
+    );
+  });
+
+  it('posts at most 10 anchors in one run', async () => {
+    const review = 'https://api.github.com/repos/acme/shop/pulls/7/comments';
+    const api = fixtureFetch({
+      [`GET ${review}?per_page=100&page=1`]: { json: [] },
+      [`POST ${review}`]: { status: 201, json: { id: 1 } },
+    });
+    const drafts = Array.from({ length: 12 }, (_, i) => ({
+      key: i.toString(16).padStart(12, '0'),
+      path: 'src/a.ts',
+      line: i + 1,
+      body: `anchor ${i}`,
+    }));
+    const outcome = await publisherWith(api.fetch).postAnchors(drafts, 'f'.repeat(40));
+    expect(outcome.posted).toHaveLength(10);
+    expect(outcome.skipped).toEqual([
+      { key: '00000000000a', reason: 'only 10 anchors are posted per run' },
+      { key: '00000000000b', reason: 'only 10 anchors are posted per run' },
+    ]);
+    expect(api.calls.filter((c) => c.method === 'POST')).toHaveLength(10);
   });
 });
 
@@ -486,6 +614,44 @@ describe('GitLab', () => {
       { '{{MARKER}}': COMMENT_MARKER },
     );
     expect(await publisher(unknown.fetch).findComment()).toBeNull();
+  });
+
+  it('fails when /user fails for a moment, and never follows a redirect', async () => {
+    const notes =
+      'GET https://gitlab.example/api/v4/projects/5/merge_requests/12/notes?per_page=100&page=1&sort=desc&order_by=created_at';
+    const api = fixtureFetch(
+      {
+        [notes]: { fixture: 'gitlab/notes.json' },
+        'GET https://gitlab.example/api/v4/user': [
+          { status: 500, json: { message: '500 Internal Server Error' } },
+          { fixture: 'gitlab/user.json' },
+        ],
+      },
+      { '{{MARKER}}': COMMENT_MARKER },
+    );
+    const publisher = new GitLabPublisher({
+      apiUrl: mrEnv.CI_API_V4_URL,
+      projectId: '5',
+      iid: 12,
+      token: 'glpat',
+      fetch: api.fetch,
+    });
+    await expect(publisher.findComment()).rejects.toThrow(/HTTP 500 for \/api\/v4\/user/);
+    expect((await publisher.findComment())?.id).toBe('30');
+
+    const moved = fixtureFetch({
+      [notes]: { status: 302, headers: { location: 'https://evil.example/steal' } },
+    });
+    const outcome = await new GitLabPublisher({
+      apiUrl: mrEnv.CI_API_V4_URL,
+      projectId: '5',
+      iid: 12,
+      token: 'glpat',
+      fetch: moved.fetch,
+    }).upsertComment(`${COMMENT_MARKER} one`);
+    expect(outcome).toMatchObject({ status: 'failed' });
+    expect(moved.calls).toHaveLength(1);
+    expect([...api.calls, ...moved.calls].every((c) => c.redirect === 'manual')).toBe(true);
   });
 
   it('produces Code Quality and dotenv reports', () => {

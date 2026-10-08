@@ -477,6 +477,7 @@ Used by `covi ci` and `covi publish`.
 | `comment` | boolean | `true` | Post or update one summary comment on the pull or merge request. |
 | `annotations` | boolean | `true` | Annotate findings inline: workflow annotations in GitHub Actions, the Code Quality report in GitLab CI (written empty when `false`). |
 | `video` | `link`, `upload`, `none` | `link` | How the comment refers to the video. `link` links to it: the job artifact file on GitLab, otherwise the uploaded artifacts. `upload` uploads the MP4 where the platform supports it (GitLab) for inline playback, and links elsewhere. `none` leaves the video out. |
+| `botLogin` | `name[bot]` | `github-actions[bot]` | The GitHub App bot Covi comments as when its token has no user of its own (the workflow token, or an app token). Covi takes a comment or a finding anchor as its own only when that bot wrote it, or, for a token with a user, when that user did. |
 
 ## Environment variables
 

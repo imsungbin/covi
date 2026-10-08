@@ -162,6 +162,7 @@ describe('configuration', () => {
       video: 'link',
       anchors: false,
       rating: true,
+      botLogin: 'github-actions[bot]',
     });
     const { config } = resolveConfig([
       {
@@ -174,6 +175,14 @@ describe('configuration', () => {
     ]);
     expect(config.publish).toMatchObject({ anchors: true, rating: false });
     expect(config.review.calibration).toBe(false);
+  });
+
+  it('takes a GitHub App bot login for publish.botLogin, and nothing else', () => {
+    expect(
+      parseConfigInput({ publish: { botLogin: 'covi-app[bot]' } }, 't').publish?.botLogin,
+    ).toBe('covi-app[bot]');
+    for (const botLogin of ['octocat', 'some app[bot]', '[bot]', 'x[bot] '])
+      expect(() => parseConfigInput({ publish: { botLogin } }, 't')).toThrow(/publish\.botLogin/);
   });
 });
 

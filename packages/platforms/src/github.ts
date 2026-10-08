@@ -6,8 +6,10 @@ import {
   type Finding,
   isBlockingCandidate,
   type Language,
+  MAX_ANCHORS,
   t,
 } from '@covi/core';
+import { PlatformHttpError, readJson } from './http.ts';
 import type {
   AnchorsOutcome,
   ExistingComment,
@@ -151,6 +153,8 @@ export class GitHubClient {
         ...(body ? { 'content-type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
+      // Never follow a redirect: the token belongs to this API alone.
+      redirect: 'manual',
       signal: AbortSignal.timeout(30_000),
     });
   }
@@ -200,10 +204,18 @@ export async function resolvePullRequest(
 export interface GitHubPublisherOptions extends GitHubClientOptions {
   repository: string;
   number: number;
+  /**
+   * The bot a token without a user of its own comments as (`publish.botLogin`): the workflow
+   * token's `github-actions[bot]` unless Covi runs as another GitHub App.
+   */
+  botLogin?: string;
 }
 
 /** Who wrote a comment, as GitHub lists it. */
-type Author = { id?: number; type?: string } | null | undefined;
+type Author = { id?: number; login?: string; type?: string } | null | undefined;
+
+/** The token's own user id, or `null` for a token that has no user (a workflow or app token). */
+type Identity = { user: number | null };
 
 /** Creates or updates Covi's single summary comment on a pull request (issue comments API). */
 export class GitHubPublisher implements Publisher {
@@ -211,7 +223,7 @@ export class GitHubPublisher implements Publisher {
   readonly target: { repository: string; number: number };
   private readonly options: GitHubPublisherOptions;
   private readonly client: GitHubClient;
-  private me?: Promise<number | undefined>;
+  private me?: Identity;
 
   constructor(options: GitHubPublisherOptions) {
     this.options = options;
@@ -223,28 +235,43 @@ export class GitHubPublisher implements Publisher {
     return this.client.request(method, path, body);
   }
 
+  /** Reads a JSON body, bounded, naming the path (without its query) if it is not JSON. */
+  private json<T>(response: Response, path: string): Promise<T> {
+    return readJson<T>(response, 'GitHub', path.split('?')[0]!);
+  }
+
   /**
-   * The token's own user id, asked once. A workflow or app token cannot read `/user` (it posts as
-   * a bot), so it has none.
+   * Who the token is, asked once. A workflow or app token cannot read `/user` (401/403); any other
+   * failure throws and is asked again next time, so a passing outage cannot pass for "no user".
    */
-  private whoami(): Promise<number | undefined> {
-    this.me ??= this.request('GET', '/user')
-      .then(async (response) =>
-        response.ok ? ((await response.json()) as { id?: number }).id : undefined,
-      )
-      .catch(() => undefined);
+  private async whoami(): Promise<Identity> {
+    if (this.me) return this.me;
+    const response = await this.request('GET', '/user');
+    if (response.status === 401 || response.status === 403) {
+      await response.body?.cancel();
+      this.me = { user: null };
+    } else if (!response.ok) {
+      await response.body?.cancel();
+      throw new PlatformHttpError('GitHub', response.status, '/user');
+    } else {
+      const { id } = await this.json<{ id?: unknown }>(response, '/user');
+      if (typeof id !== 'number') throw new Error('GitHub sent no user id for /user');
+      this.me = { user: id };
+    }
     return this.me;
   }
 
   /**
-   * The first comment Covi wrote: a bot's (the workflow token comments as github-actions[bot]),
-   * else the token's own user's. Anyone can paste the marker, so a person's comment never counts.
+   * The first comment Covi wrote. Anyone can paste the marker, and other apps can quote it, so
+   * only the token's own user counts; a token with no user (it comments as a bot) trusts only its
+   * bot's login.
    */
   private async own<T extends { user?: Author }>(comments: readonly T[]): Promise<T | undefined> {
-    const bot = comments.find((c) => c.user?.type === 'Bot');
-    if (bot || !comments.length) return bot;
-    const me = await this.whoami();
-    return me === undefined ? undefined : comments.find((c) => c.user?.id === me);
+    if (!comments.length) return undefined;
+    const { user } = await this.whoami();
+    if (user !== null) return comments.find((c) => c.user?.id === user);
+    const bot = this.options.botLogin ?? 'github-actions[bot]';
+    return comments.find((c) => c.user?.type === 'Bot' && c.user.login === bot);
   }
 
   async findComment(): Promise<ExistingComment | null> {
@@ -257,7 +284,10 @@ export class GitHubPublisher implements Publisher {
         `/repos/${repository}/issues/${number}/comments?per_page=100&page=${page}`,
       );
       if (!response.ok) throw new Error((await failure(response, 'list comments')).reason);
-      const comments = (await response.json()) as Listed[];
+      const comments = await this.json<Listed[]>(
+        response,
+        `/repos/${repository}/issues/${number}/comments`,
+      );
       marked.push(...comments.filter((c) => c.body?.includes(COMMENT_MARKER)));
       if (comments.length < 100) break;
     }
@@ -269,11 +299,12 @@ export class GitHubPublisher implements Publisher {
     const { repository, number } = this.options;
     try {
       const found = existing === undefined ? await this.findComment() : existing;
-      const response = found
-        ? await this.request('PATCH', `/repos/${repository}/issues/comments/${found.id}`, { body })
-        : await this.request('POST', `/repos/${repository}/issues/${number}/comments`, { body });
+      const path = found
+        ? `/repos/${repository}/issues/comments/${found.id}`
+        : `/repos/${repository}/issues/${number}/comments`;
+      const response = await this.request(found ? 'PATCH' : 'POST', path, { body });
       if (!response.ok) return failure(response, found ? 'update the comment' : 'create a comment');
-      const json = (await response.json()) as { id?: number; html_url?: string };
+      const json = await this.json<{ id?: number; html_url?: string }>(response, path);
       return {
         status: found ? 'updated' : 'created',
         id: json.id !== undefined ? String(json.id) : found?.id,
@@ -297,7 +328,10 @@ export class GitHubPublisher implements Publisher {
         );
         if (!response.ok)
           throw new Error(`could not list review comments (HTTP ${response.status})`);
-        const comments = (await response.json()) as Array<{ body?: string; user?: Author }>;
+        const comments = await this.json<Array<{ body?: string; user?: Author }>>(
+          response,
+          `/repos/${repository}/pulls/${number}/comments`,
+        );
         for (const c of comments) {
           const key = anchorKeyOf(c.body ?? '');
           if (key) marked.push({ key, user: c.user });
@@ -308,7 +342,15 @@ export class GitHubPublisher implements Publisher {
       const have = new Set<string>();
       for (const key of new Set(marked.map((m) => m.key)))
         if (await this.own(marked.filter((m) => m.key === key))) have.add(key);
-      for (const anchor of anchors) {
+      for (const [index, anchor] of anchors.entries()) {
+        // Each anchor is a notification; Decision 3 allows a run this many.
+        if (index >= MAX_ANCHORS) {
+          outcome.skipped.push({
+            key: anchor.key,
+            reason: `only ${MAX_ANCHORS} anchors are posted per run`,
+          });
+          continue;
+        }
         // An anchor stays once posted: its reactions are what outcomes count.
         if (have.has(anchor.key)) {
           outcome.existing++;
@@ -326,7 +368,10 @@ export class GitHubPublisher implements Publisher {
           },
         );
         if (response.ok) {
-          const json = (await response.json()) as { id: number };
+          const json = await this.json<{ id: number }>(
+            response,
+            `/repos/${repository}/pulls/${number}/comments`,
+          );
           outcome.posted.push({ key: anchor.key, id: String(json.id) });
         } else
           outcome.skipped.push({

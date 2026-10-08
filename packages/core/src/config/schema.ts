@@ -285,6 +285,13 @@ export const ConfigInputSchema = z.strictObject({
       video: z.enum(['link', 'upload', 'none']).optional(),
       anchors: z.boolean().optional(),
       rating: z.boolean().optional(),
+      botLogin: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\[bot\]$/)
+        .optional()
+        .describe(
+          "The GitHub App bot Covi comments as when its token has no user (`name[bot]`). Only this bot's comments and anchors count as Covi's.",
+        ),
     })
     .optional(),
 });
@@ -368,6 +375,8 @@ export interface CoviConfig {
     video: 'link' | 'upload' | 'none';
     anchors: boolean;
     rating: boolean;
+    /** The bot a GitHub token without a user comments as; only its comments count as Covi's. */
+    botLogin: string;
   };
 }
 
@@ -402,5 +411,12 @@ export const DEFAULT_CONFIG: CoviConfig = {
     outro: true,
   },
   output: { dir: '.covi/runs', keep: 20 },
-  publish: { comment: true, annotations: true, video: 'link', anchors: false, rating: true },
+  publish: {
+    comment: true,
+    annotations: true,
+    video: 'link',
+    anchors: false,
+    rating: true,
+    botLogin: 'github-actions[bot]',
+  },
 };

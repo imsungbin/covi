@@ -126,6 +126,58 @@ describe('ApiClient', () => {
     await expect(client(api.fetch).get('/forbidden')).rejects.toMatchObject({ status: 403 });
   });
 
+  it('follows a redirect only once and only under the API base, never handing the token on', async () => {
+    const api = fixtureFetch({
+      'GET https://api.github.com/repos/acme/old/pulls': {
+        status: 301,
+        headers: { location: '/repositories/9/pulls' },
+      },
+      'GET https://api.github.com/repositories/9/pulls': { json: [1] },
+      'GET https://api.github.com/moved': {
+        status: 302,
+        headers: { location: 'https://evil.example/steal' },
+      },
+      'GET https://api.github.com/loop': { status: 302, headers: { location: '/loop2' } },
+      'GET https://api.github.com/loop2': { status: 302, headers: { location: '/loop' } },
+    });
+    const c = client(api.fetch);
+    expect((await c.get('/repos/acme/old/pulls')).data).toEqual([1]);
+    await expect(c.get('/moved')).rejects.toMatchObject({ name: 'PlatformHttpError', status: 302 });
+    await expect(c.get('/loop')).rejects.toMatchObject({ status: 302 });
+    expect(api.calls.map((call) => call.url)).toEqual([
+      'https://api.github.com/repos/acme/old/pulls',
+      'https://api.github.com/repositories/9/pulls',
+      'https://api.github.com/moved',
+      'https://api.github.com/loop',
+      'https://api.github.com/loop2',
+    ]);
+    // fetch itself must not follow: it would forward a custom token header (GitLab's) anywhere.
+    expect(api.calls.every((call) => call.redirect === 'manual')).toBe(true);
+  });
+
+  it('stops a Link cycle at the page limit', async () => {
+    const page = 'https://api.github.com/repos/a/b/pulls?page=1';
+    const api = fixtureFetch({
+      [`GET ${page}`]: { json: [1], headers: { link: `<${page}>; rel="next"` } },
+    });
+    expect(await client(api.fetch).getAll('/repos/a/b/pulls?page=1')).toHaveLength(10);
+    expect(api.calls).toHaveLength(10);
+    expect(await client(api.fetch).getAll('/repos/a/b/pulls?page=1', 3)).toEqual([1, 1, 1]);
+    expect(api.calls).toHaveLength(13);
+  });
+
+  it('names the request, not the token, when a body is empty or not JSON', async () => {
+    const api = fixtureFetch({
+      'GET https://api.github.com/empty': { fixture: 'empty.txt' },
+      'GET https://api.github.com/cut?token=secret': { fixture: 'github/truncated.txt' },
+    });
+    const c = client(api.fetch);
+    await expect(c.get('/empty')).rejects.toThrow('GitHub sent a body that is not JSON for /empty');
+    const error = await c.get('/cut?token=secret').catch((e: Error) => e);
+    expect(String(error)).toMatch(/not JSON for \/cut$/);
+    expect(String(error)).not.toContain('secret');
+  });
+
   it('refuses a response larger than its size bound', async () => {
     const api = fixtureFetch({
       'GET https://api.github.com/big': { json: [{ body: 'x'.repeat(500) }] },

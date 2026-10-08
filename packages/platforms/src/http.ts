@@ -88,10 +88,14 @@ export class ApiClient {
   }
 
   async get<T>(pathOrUrl: string): Promise<{ data: T; next?: string }> {
-    const url = this.url(pathOrUrl);
-    const response = await this.send(url, false);
+    const { response, url } = await this.send(this.url(pathOrUrl));
     return {
-      data: JSON.parse(await this.read(response, url)) as T,
+      data: await readJson<T>(
+        response,
+        this.options.platform,
+        new URL(url).pathname,
+        this.options.maxBytes,
+      ),
       next: this.nextLink(response.headers.get('link')),
     };
   }
@@ -122,55 +126,84 @@ export class ApiClient {
     }
   }
 
-  private async send(url: string, retried: boolean): Promise<Response> {
+  /**
+   * One request, with at most one wait for a short rate limit and one redirect. fetch never
+   * follows a redirect itself: it would carry a custom token header (GitLab's) to any host.
+   */
+  private async send(
+    url: string,
+    attempt = { retried: false, redirected: false },
+  ): Promise<{ response: Response; url: string }> {
     this.options.budget.take();
     const fetchImpl = this.options.fetch ?? ((u, init) => fetch(u, init));
     const response = await fetchImpl(url, {
       headers: { ...this.options.headers },
+      redirect: 'manual',
       signal: AbortSignal.timeout(30_000),
     });
+    const fail = async () => {
+      await response.body?.cancel();
+      return new PlatformHttpError(this.options.platform, response.status, new URL(url).pathname);
+    };
     const limit = rateLimit(response);
     if (limit) {
       await response.body?.cancel();
-      if (!retried && limit.waitMs !== undefined && limit.waitMs <= MAX_WAIT_MS) {
+      if (!attempt.retried && limit.waitMs !== undefined && limit.waitMs <= MAX_WAIT_MS) {
         await (this.options.sleep ?? delay)(limit.waitMs);
-        return this.send(url, true);
+        return this.send(url, { ...attempt, retried: true });
       }
       throw new RateLimitedError(this.options.platform, limit.resetAt);
     }
-    if (!response.ok) {
+    if (response.status >= 300 && response.status < 400) {
+      // A moved repository redirects within the API (GitHub's /repositories/<id>); nothing else.
+      const location = response.headers.get('location');
+      let next: string | undefined;
+      try {
+        next = location && !attempt.redirected ? this.url(new URL(location, url).href) : undefined;
+      } catch {
+        next = undefined;
+      }
+      if (!next) throw await fail();
       await response.body?.cancel();
-      throw new PlatformHttpError(this.options.platform, response.status, new URL(url).pathname);
+      return this.send(next, { ...attempt, redirected: true });
     }
-    return response;
+    if (!response.ok) throw await fail();
+    return { response, url };
   }
+}
 
-  /** The body as text, refused once it passes the size bound, before it is all in memory. */
-  private async read(response: Response, url: string): Promise<string> {
-    const max = this.options.maxBytes ?? MAX_RESPONSE_BYTES;
-    const tooLarge = () =>
-      new Error(
-        `${this.options.platform} sent more than ${max} bytes for ${new URL(url).pathname}`,
-      );
-    if (Number(response.headers.get('content-length')) > max) {
-      await response.body?.cancel();
+/**
+ * A response body parsed as JSON, refused once it passes the size bound (before it is all in
+ * memory) or when it is not JSON. Errors name the request's path (no query), never its headers.
+ */
+export async function readJson<T>(
+  response: Response,
+  platform: PlatformName,
+  path: string,
+  maxBytes = MAX_RESPONSE_BYTES,
+): Promise<T> {
+  const tooLarge = () => new Error(`${platform} sent more than ${maxBytes} bytes for ${path}`);
+  if (Number(response.headers.get('content-length')) > maxBytes) {
+    await response.body?.cancel();
+    throw tooLarge();
+  }
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = response.body?.getReader();
+  for (;;) {
+    const chunk = await reader?.read();
+    if (!chunk || chunk.done) break;
+    size += chunk.value.byteLength;
+    if (size > maxBytes) {
+      await reader?.cancel();
       throw tooLarge();
     }
-    if (!response.body) return '';
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    const reader = response.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > max) {
-        await reader.cancel();
-        throw tooLarge();
-      }
-      chunks.push(value);
-    }
-    return Buffer.concat(chunks).toString('utf8');
+    chunks.push(chunk.value);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as T;
+  } catch {
+    throw new Error(`${platform} sent a body that is not JSON for ${path}`);
   }
 }
 

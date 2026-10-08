@@ -1,0 +1,20 @@
+[
+  {
+    "id": 111,
+    "body": "> {{MARKER}}\n> Quoted back by another app.",
+    "html_url": "https://github.com/acme/shop/pull/7#issuecomment-111",
+    "user": { "login": "some-app[bot]", "id": 900, "type": "Bot" }
+  },
+  {
+    "id": 112,
+    "body": "{{MARKER}}\nPosted by a workflow token.",
+    "html_url": "https://github.com/acme/shop/pull/7#issuecomment-112",
+    "user": { "login": "github-actions[bot]", "id": 41898282, "type": "Bot" }
+  },
+  {
+    "id": 113,
+    "body": "{{MARKER}}\nPosted by Covi's own app.",
+    "html_url": "https://github.com/acme/shop/pull/7#issuecomment-113",
+    "user": { "login": "covi-app[bot]", "id": 901, "type": "Bot" }
+  }
+]

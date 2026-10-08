@@ -24,6 +24,8 @@ export function fixtureFetch(
     url: string;
     headers: Record<string, string>;
     body?: unknown;
+    /** How the caller asked fetch to treat a redirect; the fake never follows one. */
+    redirect?: RequestRedirect;
   }> = [];
   const queues = new Map(
     Object.entries(routes).map(([key, reply]) => [
@@ -38,6 +40,7 @@ export function fixtureFetch(
       url,
       headers: (init.headers ?? {}) as Record<string, string>,
       body: typeof init.body === 'string' ? JSON.parse(init.body) : undefined,
+      redirect: init.redirect,
     });
     const queue = queues.get(`${method} ${url}`);
     if (!queue?.length) throw new Error(`Unexpected request: ${method} ${url}`);

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { COMMENT_MARKER, type Finding, isBlockingCandidate, shortHash } from '@covi/core';
+import { PlatformHttpError, readJson } from './http.ts';
 import type {
   ExistingComment,
   FetchLike,
@@ -83,12 +84,15 @@ export class GitLabPublisher implements Publisher {
   readonly target: { repository: string; number: number };
   private readonly options: GitLabPublisherOptions;
   private readonly fetch: FetchLike;
-  private me?: Promise<number | undefined>;
+  /** The token's own user id, or `null` when the token cannot say (it gets 401/403). */
+  private me?: { user: number | null };
 
   constructor(options: GitLabPublisherOptions) {
     this.options = options;
     this.target = { repository: options.projectPath ?? options.projectId, number: options.iid };
-    this.fetch = options.fetch ?? ((url, init) => fetch(url, init));
+    const fetchImpl: FetchLike = options.fetch ?? ((url, init) => fetch(url, init));
+    // Never follow a redirect: fetch would carry PRIVATE-TOKEN along to any host.
+    this.fetch = (url, init) => fetchImpl(url, { ...init, redirect: 'manual' });
   }
 
   private headers(json: boolean): Record<string, string> {
@@ -102,17 +106,30 @@ export class GitLabPublisher implements Publisher {
     return `${this.options.apiUrl}/projects/${encodeURIComponent(this.options.projectId)}${path}`;
   }
 
-  /** The token's own user id, asked once (a project access token has its own bot user). */
-  private whoami(): Promise<number | undefined> {
-    this.me ??= this.fetch(`${this.options.apiUrl}/user`, {
+  /**
+   * Who the token is, asked once (a project access token has its own bot user). Failures other
+   * than 401/403 throw and are asked again next time, so an outage cannot pass for "no user".
+   */
+  private async whoami(): Promise<number | null> {
+    if (this.me) return this.me.user;
+    const url = `${this.options.apiUrl}/user`;
+    const response = await this.fetch(url, {
       headers: this.headers(false),
       signal: AbortSignal.timeout(30_000),
-    })
-      .then(async (response) =>
-        response.ok ? ((await response.json()) as { id?: number }).id : undefined,
-      )
-      .catch(() => undefined);
-    return this.me;
+    });
+    if (response.status === 401 || response.status === 403) {
+      await response.body?.cancel();
+      this.me = { user: null };
+      return null;
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new PlatformHttpError('GitLab', response.status, new URL(url).pathname);
+    }
+    const { id } = await readJson<{ id?: unknown }>(response, 'GitLab', new URL(url).pathname);
+    if (typeof id !== 'number') throw new Error('GitLab sent no user id for /user');
+    this.me = { user: id };
+    return id;
   }
 
   /**
@@ -130,13 +147,13 @@ export class GitLabPublisher implements Publisher {
       );
       if (!response.ok)
         throw new Error((await failure(response, 'list merge request notes')).reason);
-      const list = (await response.json()) as Listed[];
+      const list = await readJson<Listed[]>(response, 'GitLab', new URL(this.url(notes)).pathname);
       marked.push(...list.filter((n) => !n.system && n.body?.includes(COMMENT_MARKER)));
       if (list.length < 100) break;
     }
     if (!marked.length) return null;
     const me = await this.whoami();
-    const own = me === undefined ? undefined : marked.find((n) => n.author?.id === me);
+    const own = me === null ? undefined : marked.find((n) => n.author?.id === me);
     return own ? { id: String(own.id), body: own.body ?? '' } : null;
   }
 
@@ -158,7 +175,11 @@ export class GitLabPublisher implements Publisher {
             signal: AbortSignal.timeout(30_000),
           });
       if (!response.ok) return failure(response, found ? 'update the note' : 'create a note');
-      const json = (await response.json().catch(() => ({}))) as { id?: number };
+      const json = await readJson<{ id?: number }>(
+        response,
+        'GitLab',
+        new URL(this.url(notes)).pathname,
+      ).catch(() => ({}) as { id?: number });
       return {
         status: found ? 'updated' : 'created',
         id: json.id !== undefined ? String(json.id) : found?.id,

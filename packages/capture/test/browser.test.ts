@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { ExitCode, Redactor, type StaticServer, serveStatic } from '@covi/core';
@@ -49,6 +49,65 @@ const FLOW = {
   steps: [{ click: '#add', note: 'Add an item' }, { wait: 300 }],
 };
 
+const FLOW_META = {
+  id: 'flow-add-one-head',
+  scenario: 'flow-add-one',
+  kind: 'flow',
+  name: 'Add one',
+  revision: 'head',
+  viewport: 'desktop',
+  path: '/',
+} as const;
+
+/**
+ * A trace whose clock can jump ahead after the run: if the run stopped the clock, the jump does
+ * not show up in the trace's duration.
+ */
+function stoppableTrace(origin: string) {
+  let skew = 0;
+  const trace = new TraceCollector(FLOW_META, {
+    origin,
+    redactor: new Redactor(),
+    relative: (f) => (dir ? relative(dir, f) : f),
+    now: () => performance.now() + skew,
+  });
+  return {
+    trace,
+    jump: () => {
+      skew = 60_000;
+    },
+  };
+}
+
+/**
+ * A stand-in for ffmpeg: logs its arguments, writes its last one (the MP4) as ffmpeg would, then
+ * runs `exit`, the shell that decides how it ends.
+ */
+function fakeFfmpeg(at: string, exit: string): { path: string; calls: () => string[] } {
+  const path = join(at, 'ffmpeg');
+  const log = join(at, 'ffmpeg.log');
+  writeFileSync(
+    path,
+    `#!/bin/sh\necho "$*" >> '${log}'\nfor arg in "$@"; do last=$arg; done\nprintf mp4 > "$last"\n${exit}\n`,
+  );
+  chmodSync(path, 0o755);
+  return {
+    path,
+    calls: () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : []),
+  };
+}
+
+/** Recording targets next to a raw WebM, as the demonstration names them. */
+function rawRecording() {
+  dir = mkdtempSync(join(tmpdir(), 'covi-rec-'));
+  const raw = join(dir, 'page@1.webm');
+  writeFileSync(raw, 'webm bytes');
+  return {
+    raw,
+    targets: { mp4: join(dir, 'flow-x-head.mp4'), webm: join(dir, 'flow-x-head.webm') },
+  };
+}
+
 describe('contextOptions', () => {
   it('records at the viewport in CSS pixels, only when asked', () => {
     expect(contextOptions('desktop').recordVideo).toBeUndefined();
@@ -86,10 +145,116 @@ describe('finalizeRecording', () => {
     expect(existsSync(targets.mp4)).toBe(false);
   });
 
+  describe.skipIf(process.platform === 'win32')('with ffmpeg', () => {
+    it('converts the WebM to MP4 and removes the raw file', async () => {
+      const { raw, targets } = rawRecording();
+      const ffmpeg = fakeFfmpeg(dir!, 'exit 0');
+      expect(await finalizeRecording(raw, targets, ffmpeg.path)).toEqual({
+        file: targets.mp4,
+        format: 'mp4',
+      });
+      expect(existsSync(targets.mp4)).toBe(true);
+      expect(existsSync(raw)).toBe(false);
+      expect(ffmpeg.calls()).toHaveLength(1);
+    });
+
+    it('falls back to mpeg4 when this ffmpeg has no libx264', async () => {
+      const { raw, targets } = rawRecording();
+      const ffmpeg = fakeFfmpeg(dir!, 'case "$*" in *libx264*) exit 1 ;; esac\nexit 0');
+      expect(await finalizeRecording(raw, targets, ffmpeg.path)).toEqual({
+        file: targets.mp4,
+        format: 'mp4',
+      });
+      const calls = ffmpeg.calls();
+      expect(calls).toHaveLength(2);
+      expect(calls[0]).toContain('libx264');
+      expect(calls[1]).toContain('mpeg4');
+    });
+
+    it('keeps the WebM, removes the partial MP4, and says why, when every encoder fails', async () => {
+      const { raw, targets } = rawRecording();
+      const ffmpeg = fakeFfmpeg(dir!, "echo 'bad input' >&2\nexit 1");
+      expect(await finalizeRecording(raw, targets, ffmpeg.path)).toEqual({
+        file: targets.webm,
+        format: 'webm',
+        cause: 'convert-failed',
+        detail: 'bad input',
+      });
+      expect(existsSync(targets.webm)).toBe(true);
+      expect(existsSync(targets.mp4)).toBe(false);
+      expect(existsSync(raw)).toBe(false);
+      expect(ffmpeg.calls()).toHaveLength(2);
+    });
+  });
+
   it('fails with the environment exit code when recording was required', () => {
     const error = new RecordingUnavailableError('Chromium is not installed');
     expect(error.exitCode).toBe(ExitCode.environment);
     expect(error.message).toBe('Flows cannot be recorded: Chromium is not installed');
+  });
+});
+
+describe('when a page cannot open or be watched', () => {
+  const refused = () => Promise.reject(new Error('No page today'));
+
+  it('closes every context it made', async () => {
+    let closed = 0;
+    const noPages = {
+      newContext: async () => ({
+        newPage: refused,
+        close: async () => {
+          closed++;
+        },
+      }),
+    } as unknown as Browser;
+    const flow = runFlow(noPages, 'http://127.0.0.1:9', FLOW, 'desktop', (i) => `f-${i}.png`, {
+      recordDir: '/nonexistent/rec',
+    });
+    await expect(flow).rejects.toThrow('No page today');
+    // The recorded context, then the unrecorded one.
+    expect(closed).toBe(2);
+    await expect(
+      capturePage(noPages, 'http://127.0.0.1:9/', 'desktop', '/nonexistent/p.png'),
+    ).rejects.toThrow('No page today');
+    expect(closed).toBe(3);
+  });
+
+  it('closes the context and stops the trace when the page cannot be observed', async () => {
+    let closed = 0;
+    const page = {
+      video: () => null,
+      on: () => undefined,
+      addInitScript: () => Promise.reject(new Error('Init script refused')),
+    };
+    const unobservable = {
+      newContext: async () => ({
+        newPage: async () => page,
+        close: async () => {
+          closed++;
+        },
+      }),
+    } as unknown as Browser;
+    const flowTrace = stoppableTrace('http://127.0.0.1:9');
+    const outcome = await runFlow(
+      unobservable,
+      'http://127.0.0.1:9',
+      FLOW,
+      'desktop',
+      (i) => `f-${i}.png`,
+      { trace: flowTrace.trace },
+    );
+    flowTrace.jump();
+    expect(outcome.error).toBe('Init script refused');
+    expect(closed).toBe(1);
+    expect(flowTrace.trace.finish().durationMs).toBeLessThan(60_000);
+
+    const pageTrace = stoppableTrace('http://127.0.0.1:9');
+    await expect(
+      capturePage(unobservable, 'http://127.0.0.1:9/', 'desktop', 'p.png', pageTrace.trace),
+    ).rejects.toThrow('Init script refused');
+    pageTrace.jump();
+    expect(closed).toBe(2);
+    expect(pageTrace.trace.finish().durationMs).toBeLessThan(60_000);
   });
 });
 
@@ -179,6 +344,74 @@ describe.skipIf(!browserAvailable)('runFlow with a trace and a recording', () =>
     expect(outcome.video).toBeUndefined();
     expect(outcome.recordError).toMatch(/Executable doesn't exist/);
     expect(outcome.frames.length).toBeGreaterThan(0);
+  });
+
+  it('closes a recorded context whose page cannot open, and runs the flow unrecorded', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'covi-flow-'));
+    writeFileSync(join(dir, 'index.html'), PAGE);
+    server = await serveStatic(dir);
+    const real = await chromium.launch();
+    browser = real;
+    let halfMadeClosed = 0;
+    // Playwright's missing-recorder error comes from newPage, after the context exists.
+    const recorderFailsOnOpen = {
+      newContext: async (options?: BrowserContextOptions) =>
+        options?.recordVideo
+          ? {
+              newPage: () => Promise.reject(new Error("Executable doesn't exist at /x/ffmpeg-mac")),
+              close: async () => {
+                halfMadeClosed++;
+              },
+            }
+          : real.newContext(options),
+    } as unknown as Browser;
+    const outcome = await runFlow(
+      recorderFailsOnOpen,
+      server.url,
+      FLOW,
+      'desktop',
+      (i) => join(dir!, `f-${i}.png`),
+      { recordDir: join(dir, 'rec') },
+    );
+    expect(halfMadeClosed).toBe(1);
+    // The demonstration reports this as `recording.status: 'unavailable'` with this detail.
+    expect(outcome.video).toBeUndefined();
+    expect(outcome.recordError).toMatch(/Executable doesn't exist/);
+    expect(outcome.error).toBeUndefined();
+    expect(outcome.frames.length).toBeGreaterThan(0);
+  });
+
+  it('marks the step that failed, stops the clock, and still returns the recording', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'covi-flow-'));
+    writeFileSync(join(dir, 'index.html'), PAGE);
+    server = await serveStatic(dir);
+    browser = await chromium.launch();
+    const { trace, jump } = stoppableTrace(server.url);
+    const broken = {
+      name: 'Broken',
+      path: '/',
+      steps: [{ click: '#add', note: 'Add an item' }, { press: 'NoSuchKey' }, { wait: 300 }],
+    };
+    const outcome = await runFlow(
+      browser,
+      server.url,
+      broken,
+      'desktop',
+      (i) => join(dir!, `f-${i}.png`),
+      { recordDir: join(dir, 'rec'), trace },
+    );
+    jump();
+    const result = trace.finish();
+    expect(outcome.error).toMatch(/NoSuchKey/);
+    expect(result.steps.map((s) => [s.id, s.status])).toEqual([
+      ['open', 'ok'],
+      ['s1', 'ok'],
+      ['s2', 'failed'],
+    ]);
+    expect(result.steps[2]!.error).toMatch(/NoSuchKey/);
+    expect(result.durationMs).toBeLessThan(60_000);
+    expect(outcome.video).toMatch(/\.webm$/);
+    expect(existsSync(outcome.video!)).toBe(true);
   });
 });
 

@@ -39,10 +39,11 @@ Use the `covi` command. With the Claude Code plugin it is already on your PATH; 
 |---|---|
 | `covi analyze [range] --json` | Deterministic understanding: `context.json`, `brief.md`, `rule-findings.json`, `explanation.draft.json`, `diff.patch` |
 | `covi report --run <id>` | Validates your `explanation.json` and `findings.json`, then renders `review.md`, `explanation.md`, `summary.md` |
+| `covi evidence --run <id> --json` | Every piece of evidence in a run (diff hunks, screenshots, recordings, traces, pixel diffs, requests, commands, test output) with the ids findings, explanations, and scenes cite |
 | `covi demo [range] [--plan file]` | Runs the software at base and head; screenshots, flows, command output, API responses |
 | `covi video ...` | Plans, drafts, and renders review videos (see `covi-video`) |
 | `covi render --run <id>` | Renders a storyboard (or a music score) you edited |
-| `covi schema <explanation\|findings\|storyboard\|score\|demo-plan\|config>` | The JSON Schema for a file you write |
+| `covi schema <explanation\|findings\|storyboard\|score\|demo-plan\|config\|evidence>` | The JSON Schema for a file you write or read |
 | `covi templates` | Storytelling templates for videos |
 | `covi doctor` | What this environment can do (browser, ffmpeg, speech) |
 
@@ -58,7 +59,7 @@ Covi writes in English, Korean, Japanese, or Simplified Chinese (`en`, `ko`, `ja
 
 ## Principles
 
-1. **Evidence over assertion.** Every claim about behavior points at code, a captured run, or command output. If you cannot point, say it is unverified.
+1. **Evidence over assertion.** Every claim about behavior points at code, a captured run, or command output, and cites it by its evidence id. If you cannot point, say it is unverified.
 2. **Say what you do not know.** When intent is unclear, say so instead of inventing it. List what you could not verify.
 3. **Right altitude.** Explain modules, behavior, and consequences, not individual diff lines. A CSS tweak gets two sentences; a cross-service change gets structure.
 4. **Fewer, better findings.** Report what a careful senior reviewer would raise. A sound change with zero findings is a good outcome.
@@ -76,6 +77,7 @@ brief.md              the agent brief: signals, reading order, prioritized diff
 rule-findings.json    deterministic findings with ids you can confirm or dismiss
 explanation.json/.md  the explanation (you write the JSON; Covi renders the Markdown)
 findings.json         your findings; review.json/.md is the merged, rendered review
+evidence.json         every piece of evidence in the run, with the ids claims cite
 summary.md            compact summary for PR/MR descriptions
 demo/                 captures.json, screenshots, diffs, recordings, traces, behavior-diff.json
 video/                storyboard.json, timeline.json, captions, audio.json, music.wav, covi-review.mp4, qc.json

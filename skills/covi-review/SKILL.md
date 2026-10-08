@@ -21,8 +21,8 @@ review
 2. Understand and explain the change (`covi-understand`, `covi-explain`). Write `explanation.json`.
 3. If the change has user-visible or runtime behavior and Covi can run the project, demonstrate it (`covi-demo`). Observed behavior is the strongest evidence you can have.
 4. Inspect risks using the method below and `references/checklists.md`.
-5. Write `findings.json` (`covi schema findings`): your findings, the rule findings you dismiss (with reasons), what you checked, and what you could not verify. Write them in the run's language and set `"language"` (see the `covi` skill).
-6. Run `covi report --run <id>`. It merges your findings with the rule findings, derives the verdict, and renders `review.md` and `summary.md`. Exit code 1 means a configured gate failed.
+5. Write `findings.json` (`covi schema findings`, `schemaVersion: 2`): your findings, the rule findings you dismiss (with reasons), what you checked, and what you could not verify. List the evidence you can cite with `covi evidence --run <id> --json`, and put the ids behind each finding in `evidenceIds`. Write them in the run's language and set `"language"` (see the `covi` skill).
+6. Run `covi report --run <id>`. It checks that every cited id is in the run and that confirmed and likely findings cite one (exit 2 names what to fix), merges your findings with the rule findings, derives the verdict, and renders `review.md` and `summary.md`, where each finding shows the evidence it cites. Exit code 1 means a configured gate failed.
 7. Tell the user the verdict, the findings that matter, and what you could not verify. Link `review.md`.
 
 ## Method
@@ -59,6 +59,8 @@ Only `confirmed` and `likely` findings can fail a CI gate.
 
 Every finding has a location (path and line when possible), evidence (quoted code, observed output, or the search result), an explanation of why it matters, and, when you have one, a concrete suggestion. If you cannot produce evidence, either investigate until you can or downgrade it to a question. If it is a matter of taste, leave it out.
 
+**Cite the evidence by id.** Everything a run diffed or captured has an id, and a finding lists the ones that support it in `evidenceIds`. A diff hunk is `diff-hunk:<path>:<start>`, where `<start>` is the `+` start of its `@@` header. Captures are `screenshot:…`, `recording:…`, `trace:…` (a step, request, or console message inside it is `trace:…#s3`, `#n2`, `#c1`), `pixel-diff:…` (a changed region in it is `….r1`), `http:<n>`, `terminal:<n>`, and `test-run:tests`. A rule finding you keep or restate keeps the ids it lists. A `confirmed` or `likely` finding cites at least one; if nothing you can cite supports it, it is a `risk` or a `question`. Keep the quote in `evidence` too: the ids say where, the quote says what.
+
 ## Calibration
 
 - Prefer a handful of meaningful findings to a long list. Five is plenty for most changes.
@@ -72,7 +74,7 @@ Lead with the verdict and the most important finding. Then the remaining finding
 
 ## Output files
 
-`explanation.json` and `findings.json` (you write them) → `covi report` → `review.json`, `review.md`, `summary.md`, `comment.md`.
+`explanation.json` and `findings.json` (you write them) → `covi report` → `review.json`, `review.md`, `summary.md`, `comment.md`. `evidence.json` is Covi's: every id you can cite.
 
 ## Related skills
 

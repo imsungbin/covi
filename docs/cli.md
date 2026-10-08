@@ -235,6 +235,8 @@ Plus change selection and intelligence options. With the global `--json`, it pri
 
 Validates agent-written `explanation.json` and `findings.json` in a run, merges them with the rule findings, and renders `review.md`, `review.json`, `explanation.md`, `summary.md`, and `comment.md`.
 
+Every evidence id the files cite must be in the run (exit 2 names the file, the claim, and the id), and in `findings.json` version 2 every confirmed or likely finding cites at least one. Explanation statements that cite nothing are recorded as warnings.
+
 | Option | Meaning |
 |---|---|
 | `--run <id>` | Run id, run directory, or `latest` (default). |
@@ -380,9 +382,19 @@ Installing through Covi keeps the browser in step with Covi's Playwright version
 | `covi runs`, `covi runs list` | Recent runs in the runs directory (`output.dir`, default `.covi/runs/`): id, status, verdict, and title. `--json` prints all of them. |
 | `covi runs show [id]` | One run's stages (with durations), and its artifacts. `id` is a run id, a directory, or `latest` (default). `--json` prints the full `run.json`. |
 
+### `covi evidence`
+
+Lists a run's evidence: every id a finding, explanation statement, or storyboard scene can cite (see [Evidence](artifacts.md#evidence)). Read-only.
+
+| Option | Meaning |
+|---|---|
+| `--run <id>` | Run id, run directory, or `latest` (default). |
+
+Without `--json`, one line per item: id, kind, revision, label. With `--json`, the result object with `data.items` (the registry's items), `data.schemaVersion`, and `data.source`: `file` when the run has `evidence.json`, `rebuilt` when it was made before Covi kept one (rebuilt in memory, nothing written; `artifacts.evidence` is then absent).
+
 ### `covi schema <name>`
 
-Prints the JSON Schema of a file an agent can author: `explanation`, `findings`, `storyboard`, `score`, `demo-plan`, or `config`.
+Prints the JSON Schema of a file agents author or read: `explanation`, `findings`, `storyboard`, `score`, `demo-plan`, `config`, or `evidence` (what `covi evidence` prints).
 
 ### `covi templates`
 
@@ -486,14 +498,14 @@ Inside a coding agent, the agent is the reasoning provider:
 1. `covi analyze` resolves and understands the change, runs the rules, and writes `brief.md`. The brief ends with the run id and the next steps.
 2. The agent reads the brief and the surrounding code, following the `covi-review` skill. It writes two files into the run directory:
    - `explanation.json`, following `covi schema explanation`. Starting from `explanation.draft.json` is fine.
-   - `findings.json`, following `covi schema findings`.
+   - `findings.json`, following `covi schema findings`. List what you can cite with `covi evidence --run <id> --json`.
 3. `covi report --run <run-id>` validates both files and renders the reports.
 
 A minimal `findings.json`:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "summary": "The fix works for Latin accents; one edge case is worth a test.",
   "findings": [
     {
@@ -503,6 +515,7 @@ A minimal `findings.json`:
       "category": "edge-case",
       "location": { "path": "src/slugify.js", "line": 9 },
       "evidence": "The new replace(/[^a-z0-9]+/g, '-') removes every non-ASCII character after NFKD.",
+      "evidenceIds": ["diff-hunk:src/slugify.js:1"],
       "explanation": "A title written entirely in, say, Japanese becomes \"\", which callers use as a URL segment.",
       "suggestion": "Fall back to a hash or keep Unicode letters for non-Latin scripts."
     }
@@ -528,6 +541,7 @@ A minimal `findings.json`:
   ```
 
 - **Unknown rule ids:** dismissing a rule finding id that does not exist is an error (exit 2).
+- **Unknown evidence ids:** citing an id the run does not have is an error (exit 2), and so is a confirmed or likely finding without `evidenceIds` in version 2.
 - **No `explanation.json`:** the structural explanation is used, with a warning.
 - **No `findings.json`:** the review contains rule findings only, with a warning.
 

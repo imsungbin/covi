@@ -6,7 +6,7 @@ import {
   groundModelFindings,
   indexEvidence,
 } from '../src/evidence/cite.ts';
-import { analyzeWithModel } from '../src/intelligence/analyze.ts';
+import { analyzeWithModel, PIPELINE_PREAMBLE } from '../src/intelligence/analyze.ts';
 import type { GenerateRequest, ModelProvider } from '../src/intelligence/provider.ts';
 import type { EvidenceItem } from '../src/model/evidence.ts';
 import type { Explanation } from '../src/model/explanation.ts';
@@ -72,7 +72,10 @@ describe('model findings and evidence', () => {
     expect(prompt).toContain('- `trace:flow-cart-head`: Cart (desktop) · head');
     // Hunks are not listed: the model reads them from the diff's own headers.
     expect(prompt).not.toContain('- `diff-hunk:');
-    expect(system).toMatch(/evidenceIds/);
+    // The citation rule is methodology: it reaches the model from the covi-review skill, once.
+    expect(system).toContain('**Cite the evidence by id.**');
+    expect(system.split('A `confirmed` or `likely` finding cites at least one').length).toBe(2);
+    expect(PIPELINE_PREAMBLE).not.toMatch(/evidenceIds/);
   });
 
   const index = indexEvidence({

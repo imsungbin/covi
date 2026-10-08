@@ -52,7 +52,7 @@ The question that drives every demonstration: **what does the reviewer need to s
 - Prefer one precise flow over many pages. Each step label should read like an instruction ("Type a 300-character comment").
 - Reproduce bugs on base first: flows run at both revisions, so the before state is evidence the fix matters.
 - A flow that cannot finish at base because the change adds what it uses is expected and is not a finding; the behavior diff shows where base stopped. A flow that breaks at head is a finding.
-- Point at what a run showed by its id: a scenario (`flow-post-a-comment`, `home-desktop`), a step (`s3`, `end`), a request (`n4`) or console message (`c2`) in a trace, or a changed region (`r1`), as `demo/behavior-diff.json` and `demo/traces/` name them.
+- Point at what a run showed by its evidence id (`covi evidence --run <id> --json` lists them): a trace (`trace:flow-post-a-comment-head`) and a step, request, or console message in it (`#s3`, `#n4`, `#c2`), a step's pixel diff (`pixel-diff:flow-post-a-comment#end`) and a changed region in it (`.r1`), a screenshot (`screenshot:home-desktop-after`), a recording (`recording:flow-post-a-comment-head`), a request (`http:1`), or a command (`terminal:1`).
 - Choose viewports deliberately: mobile when layout or touch changed, desktop otherwise.
 - API and CLI demos compare base and head automatically; Covi turns observed incompatibilities (response shape changes, new failures) into confirmed findings.
 - New JavaScript errors, failing pages, and broken flows at head are findings too.

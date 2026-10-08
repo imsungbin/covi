@@ -162,6 +162,8 @@ The note is rebuilt from the run's schema-validated `review.json` and `explanati
 - what changed and what was not verified
 - links to the job artifacts and the pipeline
 
+Each finding in the note lists the evidence it cites; captures (screenshots, recordings, traces) link to the file in the job's artifacts.
+
 How the video appears depends on `publish.video` in `.covi/config.yml`:
 
 - `link` (default): a link to the video inside the job's artifacts (`<job URL>/artifacts/file/.covi-run/video/covi-review.mp4`). The link works once the job has finished uploading artifacts.

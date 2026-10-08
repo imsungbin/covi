@@ -10,7 +10,7 @@ A good explanation lets a reviewer read the diff already knowing what they are l
 ## Run it
 
 1. Apply `covi-understand` (`covi analyze --json`, read `brief.md` and the code around the changes).
-2. Write `explanation.json` in the run directory (`covi schema explanation`), in the run's language (`data.language` in the `covi analyze --json` result; see the `covi` skill), with `"language"` set to its code. You may start from `explanation.draft.json`.
+2. Write `explanation.json` in the run directory (`covi schema explanation`), in the run's language (`data.language` in the `covi analyze --json` result; see the `covi` skill), with `"language"` set to its code. You may start from `explanation.draft.json`. Cite what grounds each statement in `evidenceIds` (on `intent`, `behavior`, and each entry of `changes`); `covi evidence --run <id> --json` lists the ids.
 3. Run `covi report --run <id>` to validate it and render `explanation.md`. Fix any schema errors it reports.
 4. Share the explanation with the user, in your own words if they asked a question, or the rendered Markdown.
 
@@ -32,6 +32,8 @@ A good explanation lets a reviewer read the diff already knowing what they are l
 4. **Architecture implications**, only when boundaries, contracts, data shapes, or dependencies change.
 5. **Important implementation details**: the one or two non-obvious decisions a reviewer must understand.
 6. **What to know before reading the diff**: generated or mechanical files to skim, the riskiest place to start, related changes outside this diff.
+
+**Ground statements in evidence.** `intent`, `behavior`, and every entry of `changes` take `evidenceIds`: the diff hunks of the files a change touches (`diff-hunk:<path>:<start>`, `<start>` being the `+` start of the hunk's `@@` header), the screenshots, traces, or recordings that show a behavior. An intent, a behavior with a before or an after, and a change that cite nothing are reported as ungrounded.
 
 **Write well.**
 

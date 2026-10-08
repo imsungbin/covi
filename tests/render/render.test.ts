@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -1351,5 +1352,381 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
     expect(status.grounding).toBe('pass');
     expect(qc.checks.filter((c) => c.id !== 'still' && c.status !== 'pass')).toEqual([]);
     expect(existsSync(join(run, 'video', 'contact-sheet.jpg'))).toBe(true);
+  }, 900_000);
+
+  it('renders a storyboard that uses every component and sound field', async () => {
+    const repo = await materializeExample(
+      (await listExamples()).find((e) => e.name === 'ui-comment-composer')!,
+    );
+    const draft = covi(['video', '--repo', repo, '--short', '--draft']);
+    const run = draft.runDir;
+    // COVI_KEEP_RENDER=<file> keeps this render for review and writes its run directory there.
+    if (process.env.COVI_KEEP_RENDER) writeFileSync(process.env.COVI_KEEP_RENDER, run);
+    else dirs.push(repo);
+    const demo = read<Demonstration>(run, 'demo/captures.json');
+    const page = demo.shots.find(
+      (s) => s.kind === 'page' && s.viewport === 'mobile' && s.before && s.after,
+    )!;
+    const steps = demo.shots
+      .filter((s) => s.kind === 'flow-step' && s.viewport === 'mobile' && s.after)
+      .sort((a, b) => (a.step ?? 0) - (b.step ?? 0))
+      .slice(0, 2);
+    expect(page).toBeDefined();
+    expect(steps).toHaveLength(2);
+    // A PNG's size is in its header: width at byte 16, height at byte 20.
+    const size = (path: string) => {
+      const png = readFileSync(join(run, path));
+      return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+    };
+    /** A band across the capture: the top, middle, or bottom third. */
+    const band = (path: string, i: number) => {
+      const { width, height } = size(path);
+      return {
+        x: Math.round(width * 0.1),
+        y: Math.round(height * (0.1 + 0.3 * i)),
+        width: Math.round(width * 0.8),
+        height: Math.round(height * 0.2),
+      };
+    };
+    const stepPath = (i: number) => steps[i]!.after!.path;
+
+    const storyboard: StoryboardInput = {
+      title: 'Count the characters left in a comment',
+      template: 'feature-demo',
+      draft: false,
+      scenes: [
+        {
+          id: 'open',
+          beat: 'context',
+          narration: 'What stops a comment that is [[too long]] to post?',
+          visual: {
+            kind: 'title',
+            title: 'Count the characters left',
+            eyebrow: 'Comments',
+            background: { path: page.after!.path, label: page.name },
+          },
+        },
+        {
+          id: 'type',
+          beat: 'interaction',
+          eyebrow: 'Type',
+          narration: 'Type, and the counter counts down as you go.',
+          transition: 'push',
+          sync: { step2: 'the counter counts down', box: 'as you go' },
+          cues: [{ at: 'box', kind: 'click' }],
+          visual: {
+            kind: 'interaction',
+            steps: [
+              {
+                image: { path: stepPath(0) },
+                label: steps[0]!.label,
+                marks: [{ focus: band(stepPath(0), 1), label: 'The box' }],
+              },
+              {
+                image: { path: stepPath(1) },
+                label: steps[1]!.label,
+                marks: [{ focus: band(stepPath(1), 2), label: 'The counter', sync: 'box' }],
+              },
+            ],
+          },
+        },
+        {
+          id: 'code',
+          beat: 'implementation',
+          eyebrow: 'The check',
+          narration: 'Past the limit, the button gives way to a warning.',
+          transition: 'cut',
+          sync: { morph: 'gives way to', warn: 'a warning' },
+          visual: {
+            kind: 'code',
+            path: 'app.js',
+            language: 'javascript',
+            mode: 'morph',
+            lines: [
+              { type: 'context', text: 'function update() {' },
+              { type: 'del', text: '  post.disabled = !text;' },
+              { type: 'add', text: '  post.disabled = !text || left < 0;' },
+              { type: 'add', text: "  counter.classList.toggle('over', left < 0);" },
+              { type: 'context', text: '}' },
+            ],
+            highlight: [{ lines: [2, 3], sync: 'warn' }],
+            caption: 'Blocked past the limit',
+          },
+        },
+        {
+          id: 'compare',
+          beat: 'review',
+          eyebrow: 'Before and after',
+          hero: true,
+          narration: 'Before, nothing warned you. Now [[the limit]] shows.',
+          sync: { reveal: 'Now the limit', hero: 'shows' },
+          visual: {
+            kind: 'before-after',
+            before: { path: page.before!.path },
+            after: { path: page.after!.path },
+            ...(page.diff?.bounds ? { focus: page.diff.bounds } : {}),
+          },
+        },
+        {
+          id: 'look',
+          beat: 'review',
+          eyebrow: 'Worth a look',
+          narration: 'The count turns red, and the button rests.',
+          transition: 'wipe',
+          sync: { mark2: 'the button rests' },
+          cues: [{ at: 1, kind: 'reveal' }],
+          visual: {
+            kind: 'screenshot',
+            image: { path: page.after!.path, label: page.name },
+            device: 'mobile',
+            marks: [
+              { focus: band(page.after!.path, 1), label: 'The count' },
+              { focus: band(page.after!.path, 2), label: 'The button' },
+            ],
+          },
+        },
+        {
+          id: 'flow',
+          beat: 'implementation',
+          eyebrow: 'How it flows',
+          narration: 'Typing feeds the counter, which gates the button.',
+          transition: 'push',
+          // A diagram shows nothing from the run, so it cites the hunk it draws.
+          evidenceIds: ['diff-hunk:app.js:1'],
+          visual: {
+            kind: 'diagram',
+            nodes: [
+              { id: 'input', label: 'textarea' },
+              { id: 'counter', label: 'counter', changed: true },
+              { id: 'post', label: 'Post button', changed: true },
+            ],
+            edges: [
+              { from: 'input', to: 'counter', label: 'input' },
+              { from: 'counter', to: 'post', label: 'disables' },
+            ],
+          },
+        },
+        {
+          id: 'wrap',
+          beat: 'summary',
+          eyebrow: 'Verdict',
+          narration: 'Ready to merge.',
+          minSeconds: 1.5,
+          expression: 'success',
+          visual: {
+            kind: 'summary',
+            verdict: 'looks-good',
+            headline: 'A counter that blocks overlong comments',
+            points: [],
+          },
+        },
+      ],
+    };
+    writeFileSync(
+      join(run, 'video', 'storyboard.json'),
+      `${JSON.stringify(StoryboardSchema.parse(storyboard), null, 2)}\n`,
+    );
+
+    const rendered = covi(['render', '--repo', repo, '--run', draft.runId]);
+    expect(rendered.video.rendered).toBe(true);
+    expect(rendered.video.qc).not.toBe('fail');
+
+    // The timeline carries every new field, resolved.
+    const timeline = read<Timeline>(run, 'video/timeline.json');
+    const scene = (id: string) => timeline.scenes.find((s) => s.id === id)!;
+    const type = scene('type');
+    const code = scene('code');
+    const compare = scene('compare');
+    expect(type.visual).toMatchObject({
+      steps: [
+        { marks: [{ label: 'The box', phase: 'mark1' }] },
+        { marks: [{ label: 'The counter', phase: 'box' }] },
+      ],
+    });
+    expect(code.visual).toMatchObject({
+      mode: 'morph',
+      highlight: [2, 3],
+      groups: [{ lines: [2, 3], phase: 'warn' }],
+      caption: 'Blocked past the limit',
+    });
+    expect(code.phases!.morph).toBeLessThan(code.phases!.warn!);
+    expect(scene('look').visual).toMatchObject({
+      marks: [{ phase: 'mark1' }, { phase: 'mark2' }],
+    });
+    expect(scene('flow').visual).toMatchObject({
+      edges: [{ label: 'input' }, { label: 'disables' }],
+    });
+    expect(scene('flow').evidenceIds).toContain('diff-hunk:app.js:1');
+
+    // Sounds land where the picture put their moments.
+    const hit = timeline.cues.find((c) => c.kind === 'hero')!;
+    expect(hit.t).toBeCloseTo(compare.start + compare.phases!.hero!, 3);
+    const riser = timeline.cues.find((c) => c.kind === 'riser')!;
+    expect(riser.t).toBeCloseTo(hit.t - 0.8, 3);
+    expect(timeline.cues.filter((c) => c.kind === 'transition').map((c) => c.scene)).toEqual(
+      expect.arrayContaining(['type', 'look', 'flow']),
+    );
+    expect(timeline.cues.some((c) => c.kind === 'click' && c.scene === 'type')).toBe(true);
+    expect(timeline.cues.some((c) => c.kind === 'reveal' && c.scene === 'look')).toBe(true);
+
+    // In the browser, each component moves at its phase, and falls back where it has none.
+    const browser = await chromium.launch();
+    try {
+      const tab = await browser.newPage({
+        viewport: { width: timeline.width, height: timeline.height },
+      });
+      const errors: string[] = [];
+      tab.on('pageerror', (error) => errors.push(error.message));
+      await tab.goto(`file://${join(run, 'video', 'composition', 'index.html')}`);
+      await tab.waitForFunction('window.covi !== undefined');
+      await tab.evaluate('window.covi.ready');
+      const look = <T>(id: string, seconds: number, body: string) =>
+        tab.evaluate(
+          `(() => { window.covi.seek(${Math.round((scene(id).start + seconds) * timeline.fps)}); const scene = document.querySelector('[data-scene="${id}"]'); ${body} })()`,
+        ) as Promise<T>;
+      const gloss = (id: string, seconds: number) =>
+        look<{ text: string; shown: number }>(
+          id,
+          seconds,
+          `const gloss = scene.querySelector('.gloss');
+           return { text: gloss.textContent, shown: Number.parseFloat(gloss.style.opacity || '0') };`,
+        );
+
+      // The code: the old line until the morph phase, the group lit as one at its phase.
+      const v = code.visual as Extract<TimelineVisual, { kind: 'code' }>;
+      const codeSeconds = code.end - code.start;
+      const m = morphTiming(codeSeconds, v.lines, code.phases);
+      expect(m.strike[0]).toBeCloseTo(code.phases!.morph!, 3);
+      const rows = (seconds: number) =>
+        look<{ heights: number[]; struck: boolean[]; lit: number[] }>(
+          'code',
+          seconds,
+          `const rows = [...scene.querySelectorAll('.ln')];
+           return {
+             heights: rows.map((r) => Number.parseFloat(r.style.height || '1.55')),
+             struck: rows.map((r) => r.classList.contains('struck')),
+             lit: rows.map((r) => Number.parseFloat(r.querySelector('.hl')?.style.opacity ?? '0')),
+           };`,
+        );
+      const old = await rows(m.strike[0] - 0.15);
+      expect(old.heights.slice(2, 4)).toEqual([0, 0]);
+      expect(old.struck).toEqual([false, false, false, false, false]);
+      const lit = await rows(Math.min(m.end + 0.55, codeSeconds - 0.02));
+      expect(lit.struck[1]).toBe(true);
+      expect(lit.lit[2]).toBeCloseTo(1, 2);
+      expect(lit.lit[3]).toBeCloseTo(1, 2);
+
+      // The steps: the first mark where it falls by default, the second at the phase it names.
+      const iv = type.visual as Extract<TimelineVisual, { kind: 'interaction' }>;
+      const stepTiming = interactionTiming(
+        type.end - type.start,
+        iv.steps.length,
+        type.phases,
+        iv.steps.map((s) => s.marks),
+      );
+      const counter = stepTiming[1]!.marks![0]!;
+      expect(counter.start).toBeCloseTo(type.phases!.box!, 3);
+      const box = stepTiming[0]!.marks![0]!;
+      expect((await gloss('type', box.pan[1] - 0.05)).text).toBe('1/2  The box');
+      expect((await gloss('type', counter.pan[1] + 0.05)).text).toBe('2/2  The counter');
+
+      // The screenshot: the second mark at its phase, the unpinned first sharing the time before.
+      const sv = scene('look').visual as Extract<TimelineVisual, { kind: 'screenshot' }>;
+      const lookSeconds = scene('look').end - scene('look').start;
+      const [count, button] = screenshotMarks(lookSeconds, sv.marks!, scene('look').phases).marks;
+      expect(button!.start).toBeCloseTo(scene('look').phases!.mark2!, 3);
+      expect(count!.start).toBeCloseTo(button!.start / 2, 6);
+      expect(await gloss('look', count!.pan[1] - 0.05)).toEqual({ text: 'The count', shown: 1 });
+      expect(await gloss('look', button!.pan[1] + 0.05)).toEqual({ text: 'The button', shown: 1 });
+
+      // The diagram: both edge labels shown once their edges have drawn.
+      const flowSeconds = scene('flow').end - scene('flow').start;
+      expect(edgeLabelEntrance(1)[1]).toBeLessThan(flowSeconds);
+      const labels = await look<[string, number][]>(
+        'flow',
+        flowSeconds - 0.05,
+        `return [...scene.querySelectorAll('.edge-label')].map((l) =>
+           [l.textContent, Number.parseFloat(l.style.opacity || '0')]);`,
+      );
+      expect(labels).toEqual([
+        ['input', 1],
+        ['disables', 1],
+      ]);
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+
+    // What the mix did with them: the new engine, the whooshes placed, and the riser swelling
+    // into the hero's hit.
+    type Audio = {
+      engine: string;
+      effects: {
+        placed: Array<{ kind: string; t: number }>;
+        dropped: Array<{ kind: string; t: number; reason: string }>;
+      };
+    };
+    const audio = read<Audio>(run, 'video/audio.json');
+    expect(audio.engine).toBe('covi-audio-3');
+    const placed = (kind: string) => audio.effects.placed.filter((p) => p.kind === kind);
+    expect(placed('transition').length).toBeGreaterThanOrEqual(3);
+    expect(placed('hero').map((p) => p.t)).toEqual([expect.closeTo(hit.t, 3)]);
+    expect(placed('riser').map((p) => p.t)).toEqual([expect.closeTo(hit.t - 0.8, 3)]);
+
+    const qc = read<{ checks: Array<{ id: string; status: string; message?: string }> }>(
+      run,
+      'video/qc.json',
+    );
+    const status = Object.fromEntries(qc.checks.map((c) => [c.id, c.status]));
+    expect(status.hook).toBe('pass');
+    expect(status.duration).toBe('pass');
+    // Every scene rests on the run's evidence: the diagram by its citation.
+    expect(status.grounding).toBe('pass');
+    // Glosses, the code caption, and edge labels fit; nothing covers the captions.
+    expect(qc.checks.filter((c) => c.id !== 'still' && c.status !== 'pass')).toEqual([]);
+    expect(existsSync(join(run, 'video', 'contact-sheet.jpg'))).toBe(true);
+
+    // Crowded: two cues of the hero scene's own in the second before its hit leave the riser
+    // more than three effects a second, so it gives way and the hit still lands. (Wherever the
+    // before/after reveal falls, at least two of the three stay 0.15 s apart inside that second.)
+    const crowdedRun = `${run}-crowded`;
+    cpSync(run, crowdedRun, { recursive: true });
+    const hero = compare.phases!.hero!;
+    expect(hero).toBeGreaterThan(0.8);
+    const crowded = StoryboardSchema.parse({
+      ...storyboard,
+      scenes: storyboard.scenes.map((s) =>
+        s.id === 'compare'
+          ? {
+              ...s,
+              cues: [
+                { at: Math.round((hero - 0.6) * 1000) / 1000, kind: 'click' },
+                { at: Math.round((hero - 0.35) * 1000) / 1000, kind: 'reveal' },
+              ],
+            }
+          : s,
+      ),
+    });
+    const crowdedFile = join(crowdedRun, 'video', 'storyboard-crowded.json');
+    writeFileSync(crowdedFile, `${JSON.stringify(crowded, null, 2)}\n`);
+    const again = covi([
+      'render',
+      '--repo',
+      repo,
+      '--run',
+      crowdedRun,
+      '--storyboard',
+      crowdedFile,
+    ]);
+    expect(again.video.rendered).toBe(true);
+    expect(again.video.qc).not.toBe('fail');
+    const busy = read<Audio>(crowdedRun, 'video/audio.json');
+    expect(busy.effects.placed.filter((p) => p.kind === 'hero').map((p) => p.t)).toEqual([
+      expect.closeTo(hit.t, 3),
+    ]);
+    expect(busy.effects.placed.some((p) => p.kind === 'riser')).toBe(false);
+    expect(busy.effects.dropped).toContainEqual(
+      expect.objectContaining({ kind: 'riser', reason: 'more than 3 per second' }),
+    );
   }, 900_000);
 });

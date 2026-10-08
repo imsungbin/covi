@@ -182,6 +182,7 @@ export const ConfigInputSchema = z.strictObject({
       focus: z.array(z.enum(FINDING_CATEGORIES)).optional(),
       disableRules: z.array(z.string()).optional(),
       runTests: z.boolean().optional(),
+      calibration: z.boolean().optional(),
     })
     .optional(),
   test: z.strictObject({ command: z.string().optional(), timeout: seconds.optional() }).optional(),
@@ -315,6 +316,8 @@ export interface CoviConfig {
     focus: Array<(typeof FINDING_CATEGORIES)[number]>;
     disableRules: string[];
     runTests: boolean;
+    /** Show how past findings held up (`.covi/outcomes/`) in the brief and the model's material. */
+    calibration: boolean;
   };
   test: { command?: string; timeout: number };
   app: {
@@ -365,7 +368,14 @@ export const DEFAULT_CONFIG: CoviConfig = {
   language: 'auto',
   ignore: [],
   intelligence: { provider: 'auto', maxDiffChars: 120_000, timeout: 300 },
-  review: { failOn: 'none', maxFindings: 10, focus: [], disableRules: [], runTests: false },
+  review: {
+    failOn: 'none',
+    maxFindings: 10,
+    focus: [],
+    disableRules: [],
+    runTests: false,
+    calibration: true,
+  },
   test: { timeout: 600 },
   app: { readyPath: '/', timeout: 120, env: {}, passEnv: [] },
   demo: { pages: [], flows: [], commands: [], requests: [], viewports: ['desktop'], record: true },

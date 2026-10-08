@@ -127,6 +127,13 @@ export {
   type RepositoryOutcomes,
   summarizeOutcomes,
 } from './outcomes/precision.ts';
+export {
+  OUTCOMES_DIR,
+  outcomesDir,
+  outcomesOfRepository,
+  readOutcomes,
+  writeOutcome,
+} from './outcomes/store.ts';
 export { renderBrief } from './report/brief.ts';
 export { COMMENT_MARKER, type CommentLinks, renderComment, safeUrl } from './report/comment.ts';
 export { renderDiffDigest, renderFileDiff, renderHunk } from './report/digest.ts';

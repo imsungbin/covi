@@ -236,6 +236,7 @@ async function analysis(
         runId: session.run.id,
         language: session.language.language,
         evidence: evidence.items,
+        calibration: session.calibration,
       }),
     );
   } catch (error) {
@@ -486,11 +487,13 @@ export async function analyzeWorkflow(
     redactor: session.redactor,
     maxDiffChars: config.intelligence.maxDiffChars,
     language,
+    calibration: session.calibration,
   });
   await run.writeText('brief.md', brief, 'brief');
   result.findings = findingCounts(rules.findings);
   result.data = {
     language: session.language,
+    calibration: session.calibration ?? null,
     intent: context.intent,
     size: context.size,
     demonstration: {

@@ -1,10 +1,12 @@
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import {
+  type Calibration,
   type ChangeScope,
   type CodeChange,
   type ConfigLayer,
   type CoviConfig,
+  calibrationOf,
   chooseProvider,
   configFromEnv,
   createProvider,
@@ -19,6 +21,7 @@ import {
   loadRepositoryConfig,
   type ModelProvider,
   openSubject,
+  outcomesOfRepository,
   type ParsedConfigInput,
   type ProviderChoice,
   Redactor,
@@ -28,6 +31,7 @@ import {
   type ReviewContext,
   RUN_PATHS,
   Run,
+  readOutcomes,
   renderFileDiff,
   repositoryCommands,
   resolveChange,
@@ -96,6 +100,11 @@ export interface Session {
    * `subject.store` is off.
    */
   subject?: SubjectHandle;
+   * How past findings held up in this repository, for the brief and the model's material. Read
+   * when the session starts, before any project command could write to `.covi/outcomes/`. A hint
+   * only: nothing changes a finding's certainty because of it.
+   */
+  calibration?: Calibration;
 }
 
 export interface LanguageSettings {
@@ -272,6 +281,7 @@ export async function startSession(options: SessionOptions): Promise<Session> {
   // Diff hunks are evidence from the start: rule findings and authors cite them.
   await writeEvidence(run);
 
+  const calibration = await calibrationFor(config, change, git, run);
   const providerChoice = chooseSessionProvider(config, execution, run, repoConfig.source);
   const provider = createProvider(providerChoice, config, root);
   return {
@@ -291,7 +301,28 @@ export async function startSession(options: SessionOptions): Promise<Session> {
     language,
     languageSettings: languageSettingsOf(resolved),
     subject,
+    calibration,
   };
+}
+
+/** Calibration from this repository's collected outcomes, when it is on and there is enough. */
+async function calibrationFor(
+  config: CoviConfig,
+  change: CodeChange,
+  git: Git,
+  run: Run,
+): Promise<Calibration | undefined> {
+  if (!config.review.calibration) return undefined;
+  const files = await readOutcomes(change.repository.root, {
+    git,
+    warn: (message) => run.warn(message),
+  });
+  return calibrationOf(
+    outcomesOfRepository(files, {
+      name: change.repository.name,
+      platform: change.metadata.platform,
+    }),
+  );
 }
 
 /**

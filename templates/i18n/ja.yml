@@ -180,6 +180,10 @@ brief:
   step2: '2. 実行ディレクトリに `explanation.json`（スキーマ: `covi schema explanation`）と `findings.json`（スキーマ: `covi schema findings`）を書いてください。'
   cite: '   各主張の根拠を `evidenceIds` に書いてください（一覧は `covi evidence --run {runId}`）。確認済みの問題と問題の可能性が高いものには、根拠が少なくとも一つ必要です。'
   step3: '3. `covi report --run {runId}` を実行して検証し、Markdown のレポートを生成してください。'
+  calibrationTitle: 過去の指摘の的中率
+  calibrationFrom: { other: 'このリポジトリで以前レビューした変更 {count} 件から（`covi outcomes report`）:' }
+  calibrationLine: '- {certainty}: {labeled} 件中 {right} 件が妥当（{percent}%）'
+  calibrationNote: 'これは確信の度合いを見直すためのもので、何を報告するかを変えるものではありません。これだけで指摘の確実度は変わりません。各指摘はそれ自体の根拠で分類してください。'
 
 intent:
   kind:

@@ -180,6 +180,10 @@ brief:
   step2: '2. 在运行目录中写入 `explanation.json`（模式：`covi schema explanation`）和 `findings.json`（模式：`covi schema findings`）。'
   cite: '   在 `evidenceIds` 中写明每个结论的依据（用 `covi evidence --run {runId}` 列出）。已确认的问题和可能的问题至少引用一条依据。'
   step3: '3. 运行 `covi report --run {runId}` 进行验证并生成 Markdown 报告。'
+  calibrationTitle: 以往发现的准确度
+  calibrationFrom: { other: '基于本仓库此前评审的 {count} 个变更（`covi outcomes report`）：' }
+  calibrationLine: '- {certainty}：{labeled} 个中有 {right} 个成立（{percent}%）'
+  calibrationNote: '用它来调整你的把握程度，而不是决定报告什么：它本身不会改变任何发现的确定性。请依据每个发现自身的证据来分类。'
 
 intent:
   kind:

@@ -183,6 +183,10 @@ brief:
   step2: '2. Write `explanation.json` (schema: `covi schema explanation`) and `findings.json` (schema: `covi schema findings`) into the run directory.'
   cite: '   Cite the evidence behind each claim in `evidenceIds` (`covi evidence --run {runId}` lists it); confirmed and likely findings cite at least one.'
   step3: '3. Run `covi report --run {runId}` to validate them and render the Markdown reports.'
+  calibrationTitle: How past findings held up
+  calibrationFrom: { one: 'From {count} earlier reviewed change in this repository (`covi outcomes report`):', other: 'From {count} earlier reviewed changes in this repository (`covi outcomes report`):' }
+  calibrationLine: '- {certainty}: {right} of {labeled} held up ({percent}%)'
+  calibrationNote: 'Let this temper how sure you are, not what you report: it changes no finding''s certainty by itself. Classify each finding on its own evidence.'
 
 intent:
   kind:

@@ -6,6 +6,7 @@ import type { ReviewContext } from '../model/context.ts';
 import { type EvidenceItem, withinCitationLimits } from '../model/evidence.ts';
 import { type Explanation, ExplanationSchema } from '../model/explanation.ts';
 import { type Finding, type FindingsFile, FindingsFileBaseSchema } from '../model/finding.ts';
+import type { Calibration } from '../outcomes/precision.ts';
 import { renderBrief } from '../report/brief.ts';
 import { loadSkill, methodologyOf } from '../resources.ts';
 import type { Redactor } from '../security/redact.ts';
@@ -84,6 +85,8 @@ export async function analyzeWithModel(
     language?: Language;
     /** The run's evidence; captured items (not hunks, which the diff shows) are listed for citing. */
     evidence?: readonly EvidenceItem[];
+    /** How past findings held up here; shown in the material, never applied. */
+    calibration?: Calibration;
   },
 ): Promise<ModelAnalysis> {
   const language = input.language ?? 'en';
@@ -94,6 +97,7 @@ export async function analyzeWithModel(
     maxDiffChars: input.maxDiffChars,
     audience: 'model',
     language,
+    calibration: input.calibration,
   });
   const rules = input.ruleFindings.map((f) => ({
     id: f.id,

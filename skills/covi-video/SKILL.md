@@ -30,7 +30,7 @@ Covi decides first (`video/decision.json`): a video is worth making when the cha
 ## Run it
 
 ```bash
-# Draft the storyboard from Covi's evidence, then improve it
+# Draft the storyboard from Covi's evidence, then rewrite it
 covi video --short --duration 30s --draft --json        # writes video/storyboard.json
 # rewrite video/storyboard.json (see the method below)
 covi render --run <id> --json                           # narrate, compose, render, check
@@ -52,10 +52,10 @@ Music never moves frames: changing only the music or the effects (`covi render -
 
 1. Is the opening frame legible and intriguing with the sound off? The poster and the first tile show the subject, readable at a glance, not a title card.
 2. Is the hero visibly the biggest moment? Its tile is the one you would pick as the thumbnail.
-3. Does any scene hold a still picture while the narration continues? In `video/timeline.json`, a scene running past five seconds (`end` minus `start`; the hero may run a little longer), or a screenshot with no `focus` or `click` under a long line, is one: split the scene or shorten its line.
+3. Does any scene hold a still picture while the narration continues? In `video/timeline.json`, a scene running past five seconds (`end` minus `start`; the hero may run a little longer, and so may the scenes of a long standard review), or a screenshot, interaction step, or before-after with no `focus` or `click` under a long line (more than about ten words), is one: split the scene, give it a `focus` or `click` to follow, or, when Covi extended the holds to reach the minimum, give it more to say rather than less.
 4. Would this look at home in a SaaS dashboard? If most tiles are cards (titles, callouts, diagrams, summaries) rather than the product, its code, or its output, it would: trade cards for captured evidence.
 
-If any answer is wrong, or a scene is wrong, crowded, or not grounded in evidence, fix the storyboard, not the renderer, and render again with `covi render --run <id> --json`: it renders `video/storyboard.json` as you left it (`--storyboard <file>` renders one kept elsewhere) and synthesizes only the lines that changed.
+If any answer is wrong, or a scene is wrong, crowded, or not grounded in evidence, fix the storyboard, not the renderer, and render again with `covi render --run <id> --json`: it renders `video/storyboard.json` as you left it (`--storyboard <file>` renders one kept elsewhere) and reuses the voice of unchanged lines.
 
 For narration in Korean, Japanese, or Chinese, also read `video/speech.json`: it shows the text each scene's voice was given after Covi spelled out acronyms. For the sound, read `video/audio.json` (the music's tempo, hero and logo times, how many seconds of music are heard, and the levels of the mix) with the `audio`, `music-fit`, `music-under-speech`, `music-audible`, and `sound-effects` checks. When `music-audible` warns, the music asked for is barely heard: give the narration room (shorter lines, a scene that holds its visual), or choose `--music-placement continuous`.
 

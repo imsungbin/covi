@@ -70,6 +70,22 @@ describe('the music library (templates/music)', () => {
     expect(library.recipes.get('transition')!.anchor).toBeCloseTo(0.2, 9);
   });
 
+  it("settles the hero's thump on the music's tonic", () => {
+    const sr = 48_000;
+    const hero = library.recipes.get('hero')!;
+    const thump = { ...hero, layers: [hero.layers[0]!], fx: undefined };
+    // After its glide the thump is a plain sine: time its rising zero crossings.
+    const pitch = (transpose: number) => {
+      const c = renderSfx(thump, library.patches, { sampleRate: sr, transpose })[0]!;
+      const crossings: number[] = [];
+      for (let i = Math.round(0.12 * sr); i < Math.round(0.3 * sr); i++)
+        if (c[i - 1]! < 0 && c[i]! >= 0) crossings.push(i - 1 + c[i - 1]! / (c[i - 1]! - c[i]!));
+      return ((crossings.length - 1) * sr) / (crossings.at(-1)! - crossings[0]!);
+    };
+    expect(pitch(0)).toBeCloseTo(65.41, 0); // C2
+    expect(pitch(3)).toBeCloseTo(77.78, 0); // E♭2, in an E♭ render
+  });
+
   it('is a new engine: the mix and the effects changed', () => {
     expect(AUDIO_ENGINE_VERSION).toBe('covi-audio-3');
   });

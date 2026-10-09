@@ -4,6 +4,8 @@ import { highlightGroups } from '../storyboard/grammar.ts';
 import type { Scene } from '../storyboard/schema.ts';
 import type { TransitionKind } from '../timeline/types.ts';
 import { DIRECTION_LIMITS, type Direction, type Shot, type ShotBeat } from './schema.ts';
+import type { DirectionSources } from './sources.ts';
+import { morphProblem } from './tokens.ts';
 
 /** How far the camera zooms toward the lines a code scene highlights. */
 export const CODE_ZOOM = 1.25;
@@ -14,16 +16,19 @@ export interface DirectorInput {
   evidence?: EvidenceIndex;
   /** The timeline's seed (from the title): a different change starts the rotation differently. */
   seed: number;
+  /** The run's evidence content: a code scene whose hunk can morph becomes a morph. */
+  sources?: DirectionSources;
 }
 
 const sceneId = (scene: Pick<Scene, 'id'>, i: number) => scene.id ?? `s${i + 1}`;
 
 /**
  * Covi's own direction, for every run without an agent's (CI and `--json` runs get the same
- * motion as interactive ones): each scene keeps its storyboard visual, a code scene that
- * highlights lines zooms toward them as they light, and each scene after the first gets its
+ * motion as interactive ones): a code scene whose hunk is small enough morphs it, the camera
+ * following the changed lines; every other scene keeps its storyboard visual, and a code scene
+ * that highlights lines zooms toward them as they light. Each scene after the first gets its
  * entrance from the rotation unless the storyboard set its `transition`. Pure and deterministic.
- * It never invents content: what it adds later (morphs, metrics, flows) comes from evidence too.
+ * It never invents content: what it adds (morphs, and later metrics and flows) comes from evidence.
  * What it returns reads back unchanged through `DirectionSchema`: Covi never writes a direction
  * file it would then refuse.
  */
@@ -34,11 +39,14 @@ export function defaultDirection(input: DirectorInput): Direction {
     const id = sceneId(scene, i);
     return id.length > DIRECTION_LIMITS.sceneIdChars ? [] : [{ scene, id }];
   });
-  const shots: Shot[] = directed.map(({ scene, id }) => ({
-    scene: id,
-    elements: [{ id: 'visual', kind: 'visual' }],
-    beats: cameraBeats(scene),
-  }));
+  const shots: Shot[] = directed.map(
+    ({ scene, id }) =>
+      morphShot(scene, id, input) ?? {
+        scene: id,
+        elements: [{ id: 'visual', kind: 'visual' }],
+        beats: cameraBeats(scene),
+      },
+  );
   const entered = entrances({ shots }, input.scenes, input.evidence, input.seed);
   directed.forEach(({ scene, id }, k) => {
     const kind = entered.get(id);
@@ -46,6 +54,19 @@ export function defaultDirection(input: DirectorInput): Direction {
     if (kind && !scene.transition) shots[k]!.enter = kind;
   });
   return { schemaVersion: 1, draft: true, shots };
+}
+
+/** The phrase that lights a code scene's first highlight group (or all of them), if it has one. */
+function highlightPhrase(scene: Scene): string | undefined {
+  const v = scene.visual;
+  if (v.kind !== 'code' || !v.highlight.length) return undefined;
+  const sync = scene.sync ?? {};
+  const phase = [highlightGroups(v.highlight)[0]?.phase, 'highlight'].find(
+    (name): name is string => name !== undefined && Object.hasOwn(sync, name),
+  );
+  // Trimmed as the direction schema trims a phrase, so the file reads back as written; phrases
+  // match up to whitespace, so the beat still lands where the storyboard's phrase is spoken.
+  return (phase && sync[phase]!.trim()) || undefined;
 }
 
 /**
@@ -56,14 +77,38 @@ export function defaultDirection(input: DirectorInput): Direction {
 function cameraBeats(scene: Scene): ShotBeat[] {
   const v = scene.visual;
   if (v.kind !== 'code' || !v.highlight.length) return [];
-  const sync = scene.sync ?? {};
-  const phase = [highlightGroups(v.highlight)[0]?.phase, 'highlight'].find(
-    (name): name is string => name !== undefined && Object.hasOwn(sync, name),
-  );
-  // Trimmed as the direction schema trims a phrase, so the file reads back as written; phrases
-  // match up to whitespace, so the beat still lands where the storyboard's phrase is spoken.
-  const at = phase && sync[phase]!.trim();
+  const at = highlightPhrase(scene);
   return [{ verb: 'camera', move: 'zoom', to: 'visual', zoom: CODE_ZOOM, ...(at ? { at } : {}) }];
+}
+
+/**
+ * A code scene that shows one hunk small enough to morph (code on both sides, every changed
+ * line on the card) morphs it instead of showing it: the camera follows the changed lines, and
+ * the morph lands on the phrase that lights its highlights, else spread through its line. A scene
+ * the storyboard set apart keeps its visual: the line morph (`mode: "morph"`), or a caption the
+ * morph would not draw, and so does one that shows only unchanged lines (it is about them, not
+ * about the change beside them). It reads what the scene shows, never what it cites.
+ */
+function morphShot(scene: Scene, id: string, input: DirectorInput): Shot | undefined {
+  const v = scene.visual;
+  const { evidence, sources } = input;
+  if (v.kind !== 'code' || v.mode === 'morph' || v.caption || !evidence || !sources)
+    return undefined;
+  if (v.lines.every((l) => l.type === 'context')) return undefined;
+  const hunks = sceneEvidence({ visual: v }, evidence).filter(
+    (ref) => evidence.find(ref)?.kind === 'diff-hunk',
+  );
+  const hunk = hunks.length === 1 ? sources.hunk(hunks[0]!) : undefined;
+  if (!hunk || morphProblem(hunk.lines)) return undefined;
+  const at = highlightPhrase(scene);
+  return {
+    scene: id,
+    elements: [{ id: 'morph', kind: 'morph', evidence: hunks[0]! }],
+    beats: [
+      { verb: 'camera', move: 'follow', to: 'morph', zoom: CODE_ZOOM },
+      { verb: 'morph', element: 'morph', ...(at ? { at } : {}) },
+    ],
+  };
 }
 
 /**

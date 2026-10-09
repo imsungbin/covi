@@ -158,11 +158,17 @@ describe('example changes', () => {
             templates,
           });
           const seed = seedFrom(storyboard.title);
-          const plan = defaultDirection({ scenes: storyboard.scenes, evidence, seed });
+          const plan = defaultDirection({ scenes: storyboard.scenes, evidence, seed, sources });
           expect(plan.shots.map((s) => s.scene)).toEqual(storyboard.scenes.map((s) => s.id));
           expect(DirectionSchema.parse(plan)).toEqual(plan);
           expect(directionProblems(plan, storyboard.scenes, evidence, sources)).toEqual([]);
-          expect(defaultDirection({ scenes: storyboard.scenes, evidence, seed })).toEqual(plan);
+          expect(defaultDirection({ scenes: storyboard.scenes, evidence, seed, sources })).toEqual(
+            plan,
+          );
+          // A change with nothing to see shows its code changing: the benchmark morphs.
+          const morphs = plan.shots.filter((s) => s.elements.some((e) => e.kind === 'morph'));
+          if (example.name === 'backend-slim-request')
+            expect(morphs.length, mode).toBeGreaterThan(0);
           // No entrance takes more of the story's moves than the transition-variety check allows.
           const moves = [...entrances(plan, storyboard.scenes, evidence, seed).values()];
           if (moves.length >= TRANSITION_MIN)

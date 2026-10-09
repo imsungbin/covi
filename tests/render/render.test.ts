@@ -37,6 +37,7 @@ import { listExamples, materializeExample } from '../../packages/cli/src/example
 import { contactSheetFrames, sheetColumns } from '../../packages/video/src/render/renderer.ts';
 import { tileLayout } from '../../packages/video/src/render/sheet.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
+import { TEXT_FLOOR } from '../../packages/video/src/runtime/sizing.ts';
 import {
   edgeEntrance,
   edgeLabelEntrance,
@@ -1236,7 +1237,7 @@ describe.skipIf(!available)('rendering', () => {
     }
   });
 
-  it('holds body text to 28 px and grows short cards to fill the frame, in Korean too', async () => {
+  it('holds body text to 28 px and grows short cards to fill the frame, in both shapes and Korean', async () => {
     const browser = await chromium.launch();
     try {
       const words = {
@@ -1248,6 +1249,7 @@ describe.skipIf(!available)('rendering', () => {
           review: 'One thing to check before merging.',
           finding: 'Nothing tests a document that changed',
           note: 'The size check throws, but no test reaches it.',
+          nodes: ['Request builder', 'Reader worker', 'Document store', 'Chunk cache'],
         },
         ko: {
           problem: '리더 호출 하나가 단계 예산을 넘겼습니다.',
@@ -1257,94 +1259,168 @@ describe.skipIf(!available)('rendering', () => {
           review: '병합 전에 확인할 것이 하나 있습니다.',
           finding: '바뀐 문서를 다루는 테스트가 없습니다',
           note: '크기 검사가 예외를 던지지만, 그 경로를 지나는 테스트는 없습니다.',
+          // Long enough to wrap in its node: Korean breaks between words, never inside one.
+          nodes: ['요청 빌더', '바뀐 문서를 다시 읽는 리더 워커', '문서 저장소', '청크 캐시'],
         },
       } as const;
-      for (const language of ['en', 'ko'] as const) {
-        const w = words[language];
-        const c = await compose(
-          browser,
-          [
-            {
-              id: 's1',
-              beat: 'problem',
-              eyebrow: 'Problem',
-              heading: w.heading,
-              narration: w.problem,
-              visual: { kind: 'callout', tone: 'warning', title: w.title, body: w.body },
-            },
-            {
-              id: 's2',
-              beat: 'review',
-              eyebrow: 'Review',
-              narration: w.review,
-              visual: {
-                kind: 'findings',
-                findings: [
-                  {
-                    title: w.finding,
-                    certainty: 'risk',
-                    severity: 'low',
-                    location: 'src/reader.js:24',
-                    note: w.note,
-                  },
-                ],
+      // 9:16 sets body text at 32 units; 16:9 sets it at the 28-unit floor, in landscape layouts.
+      for (const size of [{}, { width: 640, height: 360 }])
+        for (const language of ['en', 'ko'] as const) {
+          const w = words[language];
+          const c = await compose(
+            browser,
+            [
+              {
+                id: 's1',
+                beat: 'problem',
+                eyebrow: 'Problem',
+                heading: w.heading,
+                narration: w.problem,
+                visual: { kind: 'callout', tone: 'warning', title: w.title, body: w.body },
               },
-            },
-            {
-              id: 's3',
-              beat: 'architecture',
-              eyebrow: 'How it flows',
-              narration: 'The builder sends a list, and the reader fetches each document.',
-              visual: {
-                kind: 'diagram',
-                nodes: [
-                  { id: 'builder', label: 'Request builder' },
-                  { id: 'reader', label: 'Reader worker', changed: true },
-                  { id: 'store', label: 'Document store' },
-                ],
-                edges: [
-                  { from: 'builder', to: 'reader', label: 'list' },
-                  { from: 'reader', to: 'store', label: 'fetch' },
-                ],
+              {
+                id: 's2',
+                beat: 'review',
+                eyebrow: 'Review',
+                narration: w.review,
+                visual: {
+                  kind: 'findings',
+                  findings: [
+                    {
+                      title: w.finding,
+                      certainty: 'risk',
+                      severity: 'low',
+                      location: 'src/reader.js:24',
+                      note: w.note,
+                    },
+                  ],
+                },
               },
-            },
-            {
-              id: 's4',
-              beat: 'map',
-              eyebrow: 'Where',
-              narration: 'Two areas changed, the source and its tests.',
-              visual: {
-                kind: 'change-map',
-                areas: [
-                  { name: 'src', additions: 20, deletions: 12, files: 2 },
-                  { name: 'test', additions: 30, deletions: 10, files: 2 },
-                ],
+              {
+                id: 's3',
+                beat: 'architecture',
+                eyebrow: 'How it flows',
+                narration: 'The builder sends a list, and the reader fetches each document.',
+                visual: {
+                  kind: 'diagram',
+                  nodes: [
+                    { id: 'builder', label: w.nodes[0] },
+                    { id: 'reader', label: w.nodes[1], changed: true },
+                    { id: 'store', label: w.nodes[2] },
+                    { id: 'cache', label: w.nodes[3] },
+                  ],
+                  edges: [
+                    { from: 'builder', to: 'reader', label: 'list' },
+                    { from: 'reader', to: 'store', label: 'fetch' },
+                    { from: 'store', to: 'cache', label: 'miss' },
+                  ],
+                },
               },
-            },
-            { ...storyboard.scenes[2]!, id: 's5' },
-          ],
-          undefined,
-          { language },
-        );
-        const reports: LayoutReport[] = [];
-        for (const id of ['s1', 's2', 's3', 's4', 's5']) reports.push(await settledReport(c, id));
-        const { unit } = computeRegions(c.timeline);
-        const body = reports.flatMap((r) => r.items.filter((i) => i.text === 'body'));
-        // The heading and the callout, the finding, three nodes, two areas, and the summary.
-        expect(body.length, language).toBeGreaterThanOrEqual(9);
-        for (const item of body) expect(item.font! / unit, language).toBeGreaterThanOrEqual(27.5);
-        const checks = [
-          ...layoutChecks(c.timeline, reports),
-          ...densityChecks(c.timeline, reports),
-        ];
-        const status = Object.fromEntries(checks.map((x) => [x.id, x.status]));
-        expect(status, language).toMatchObject({
-          'text-fits': 'pass',
-          'text-size': 'pass',
-          'empty-frame': 'pass',
-        });
-        expect(c.errors).toEqual([]);
-      }
+              {
+                id: 's4',
+                beat: 'map',
+                eyebrow: 'Where',
+                narration: 'Two areas changed, the source and its tests.',
+                visual: {
+                  kind: 'change-map',
+                  areas: [
+                    { name: 'src', additions: 20, deletions: 12, files: 2 },
+                    { name: 'test', additions: 30, deletions: 10, files: 2 },
+                  ],
+                },
+              },
+              { ...storyboard.scenes[2]!, id: 's5' },
+            ],
+            undefined,
+            { ...size, language },
+          );
+          const vertical = c.timeline.orientation === 'vertical';
+          const at = `${language} ${c.timeline.orientation}`;
+          const ids = ['s1', 's2', 's3', 's4', 's5'];
+          const reports: LayoutReport[] = [];
+          for (const id of ids) reports.push(await settledReport(c, id));
+          const { unit, media } = computeRegions(c.timeline);
+          const body = reports.map((r) => r.items.filter((i) => i.text === 'body'));
+          // The callout and the heading, the finding, four nodes, two areas, and the summary.
+          expect(
+            body.map((items) => items.length),
+            at,
+          ).toEqual([2, 1, 4, 2, 1]);
+          for (const [i, items] of body.entries())
+            for (const item of items)
+              expect(item.font! / unit, `${at} ${ids[i]}`).toBeGreaterThanOrEqual(
+                TEXT_FLOOR.body - 0.1,
+              );
+          // The callout and the finding card cover 60% of the media region.
+          const [callout, finding] = [body[0]![0]!, body[1]![0]!];
+          for (const card of [callout, finding])
+            expect(
+              (card.rect.width * card.rect.height) / (media.width * media.height),
+              at,
+            ).toBeGreaterThan(0.59);
+          // The layouts of each shape: a 1400-unit callout in 16:9; rows grown to twice their
+          // base height (150 or 96 units, less the 14-unit gap); four nodes in one row in 16:9.
+          expect(callout.rect.width / unit, at).toBeCloseTo(
+            vertical ? media.width / unit : 1400,
+            0,
+          );
+          for (const row of body[3]!)
+            expect(row.rect.height / unit, at).toBeCloseTo(vertical ? 286 : 178, 0);
+          expect(new Set(body[2]!.map((n) => Math.round(n.rect.y))).size, at).toBe(
+            vertical ? 2 : 1,
+          );
+          // Short content sits in the middle of its grown card.
+          for (const [id, selector] of [
+            ['s1', '.callout'],
+            ['s2', '.finding .body'],
+          ] as const) {
+            const frame = settledFrame(c.timeline, ids.indexOf(id))!;
+            const [above, below] = await c.look<[number, number]>(
+              frame,
+              id,
+              `const box = scene.querySelector('${selector}').getBoundingClientRect();
+               const first = scene.querySelector('${selector}').firstElementChild.getBoundingClientRect();
+               const last = scene.querySelector('${selector}').lastElementChild.getBoundingClientRect();
+               return [first.top - box.top, box.bottom - last.bottom];`,
+            );
+            expect(Math.abs(above - below), `${at} ${id}`).toBeLessThan(1.5);
+          }
+          // Every word of a node label stays on one line; the long Korean label wraps.
+          const labels = await c.look<Array<{ lines: number; words: number[] }>>(
+            settledFrame(c.timeline, 2)!,
+            's3',
+            `const range = document.createRange();
+             const lines = (text, from, to) => {
+               range.setStart(text, from);
+               range.setEnd(text, to);
+               const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+               return new Set(rects.map((r) => Math.round(r.top))).size;
+             };
+             return [...scene.querySelectorAll('.nlabel')].map((label) => {
+               const text = label.firstChild;
+               let from = 0;
+               const words = text.data.split(' ').map((word) => {
+                 const n = lines(text, from, from + word.length);
+                 from += word.length + 1;
+                 return n;
+               });
+               return { lines: lines(text, 0, text.data.length), words };
+             });`,
+          );
+          for (const label of labels) expect(label.words, at).toEqual(label.words.map(() => 1));
+          if (language === 'ko') expect(labels[1]!.lines, at).toBeGreaterThan(1);
+          const checks = [
+            ...layoutChecks(c.timeline, reports),
+            ...densityChecks(c.timeline, reports),
+          ];
+          const status = Object.fromEntries(checks.map((x) => [x.id, x.status]));
+          expect(status, at).toMatchObject({
+            'text-fits': 'pass',
+            'text-size': 'pass',
+            'empty-frame': 'pass',
+          });
+          expect(c.errors).toEqual([]);
+        }
     } finally {
       await browser.close();
     }

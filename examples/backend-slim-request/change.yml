@@ -1,0 +1,12 @@
+title: Send document references instead of full documents to the reader
+description: A backend change with nothing to see. The review request embedded every document in full, so it was split into chunks at the size limit and the reader worker timed out on one of them. Now the request lists each document's id, title, and size, and the reader fetches each document itself. `node scripts/measure.js` prints the request's size, its chunks, the reader's steps, and its timeouts at both revisions. It is the benchmark for review videos of changes without a UI.
+branch: fix/slim-review-request
+commits:
+  - message: "fix(review): send document references so the reader fetches each document itself"
+expect:
+  intent: bug-fix
+  demonstration: high
+  video: true
+  template: bug-fix
+  rules: []
+  verdict: looks-good

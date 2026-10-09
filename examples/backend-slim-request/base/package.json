@@ -1,0 +1,7 @@
+{
+  "name": "review-pipeline",
+  "version": "2.4.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" }
+}

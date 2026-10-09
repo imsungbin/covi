@@ -156,12 +156,14 @@ Until you do, every run says which settings it withheld and works without them. 
 
 ## Try the bundled examples
 
-Covi ships five realistic example changes. Each one says what Covi should conclude about it:
+Covi ships six realistic example changes. Each one says what Covi should conclude about it:
 
 ```console
 $ covi examples
 api-users-pagination       Paginate the users endpoint
                            expect: feature, demo high, video yes
+backend-slim-request       Send document references instead of full documents to the reader
+                           expect: bug-fix, demo high, video yes
 bugfix-cli-slugify         Fix slugify for accented characters and repeated separators
                            expect: bug-fix, demo high, video yes
 refactor-retry-helper      Extract backoff calculation from the retry loop
@@ -182,6 +184,8 @@ covi video --repo ~/covi-examples/ui   # a review video (at a terminal, Covi fir
 ```
 
 The `refactor-retry-helper` example shows Covi's product judgment. Nothing user-visible changes, so `covi video` declines to render. It explains why and suggests `--force`.
+
+The `backend-slim-request` example is a backend change with nothing to see: Covi demonstrates it by running `node scripts/measure.js` at both revisions, which prints the request's size, its chunks, the reader's steps, and its timeouts.
 
 ## Use Covi from a coding agent
 

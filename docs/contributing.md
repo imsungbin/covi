@@ -131,7 +131,7 @@ expect:
 
 The schema is strict (`ExampleSchema` in `packages/cli/src/examples.ts`), so misspelled keys fail. Put any configuration the example needs, such as how to start the app, what flows to run, and which commands to compare, in `base/.covi/config.yml`. Every example config is parsed by a test, and building an example trusts its commands. Repositories are built with fixed author names and dates, so runs are reproducible. Biome ignores `examples/*/base` and `examples/*/head`.
 
-`tests/examples.test.ts` checks each example's intent, demonstration value, video decision, rule ids, verdict, and template choice. It also drafts short and standard storyboards for each one and validates them. Add your example's name to the list in the test named "ships the five reference scenarios". Try it with:
+`tests/examples.test.ts` checks each example's intent, demonstration value, video decision, rule ids, verdict, and template choice. It also drafts short and standard storyboards for each one and validates them. Add your example's name to the list in the test named "ships the six reference scenarios". Try it with:
 
 ```bash
 ./bin/covi.mjs examples create <name> --into /tmp/covi-example

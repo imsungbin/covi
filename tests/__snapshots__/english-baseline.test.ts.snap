@@ -1188,6 +1188,1263 @@ exports[`English output (baseline) > api-users-pagination > writes the same rule
 "
 `;
 
+exports[`English output (baseline) > backend-slim-request > drafts the same storyboards and captions > captions short 1`] = `
+[
+  [
+    [
+      "Now it sends document",
+      "references so the reader",
+    ],
+    [
+      "fetches each document",
+      "itself in review.",
+    ],
+  ],
+  [
+    [
+      "Covi didn't find",
+      "blocking issues.",
+    ],
+    [
+      "Start the review",
+      "with src/reader.js.",
+    ],
+  ],
+  [
+    [
+      "Overall, this looks",
+      "good to merge.",
+    ],
+  ],
+]
+`;
+
+exports[`English output (baseline) > backend-slim-request > drafts the same storyboards and captions > captions short with demo 1`] = `
+[
+  [
+    [
+      "Now it sends document",
+      "references so the reader",
+    ],
+    [
+      "fetches each document",
+      "itself in review.",
+    ],
+  ],
+  [
+    [
+      "Here is the behavior",
+      "before and after the fix.",
+    ],
+  ],
+  [
+    [
+      "The fix lives in reader.js,",
+      "which updates runReader.",
+    ],
+  ],
+  [
+    [
+      "Covi didn't find",
+      "blocking issues.",
+    ],
+    [
+      "Start the review",
+      "with src/reader.js.",
+    ],
+  ],
+  [
+    [
+      "Overall, this looks",
+      "good to merge.",
+    ],
+  ],
+]
+`;
+
+exports[`English output (baseline) > backend-slim-request > drafts the same storyboards and captions > captions standard 1`] = `
+[
+  [
+    [
+      "Now it sends document",
+      "references so the reader",
+    ],
+    [
+      "fetches each document itself in review.",
+    ],
+    [
+      "The fix lives in reader.js.",
+    ],
+    [
+      "It changes runReader and chunk and 1 other.",
+    ],
+  ],
+  [
+    [
+      "Covi didn't find blocking issues.",
+    ],
+    [
+      "Start the review with src/reader.js.",
+    ],
+  ],
+  [
+    [
+      "Overall, this looks good to merge.",
+    ],
+    [
+      "It comes with 4 new tests.",
+    ],
+    [
+      "If you read the diff,",
+      "start with src/reader.js.",
+    ],
+  ],
+]
+`;
+
+exports[`English output (baseline) > backend-slim-request > drafts the same storyboards and captions > captions standard with demo 1`] = `
+[
+  [
+    [
+      "Now it sends document",
+      "references so the reader",
+    ],
+    [
+      "fetches each document itself in review.",
+    ],
+  ],
+  [
+    [
+      "Here is the behavior",
+      "before and after the fix.",
+    ],
+    [
+      "On the left is the old version;",
+      "on the right, the new one.",
+    ],
+  ],
+  [
+    [
+      "The fix lives in reader.js.",
+    ],
+    [
+      "It changes runReader and chunk and 1 other.",
+    ],
+  ],
+  [
+    [
+      "Here's the new flow.",
+    ],
+    [
+      "Type a comment, counter updates",
+      "as you type, and post the comment.",
+    ],
+  ],
+  [
+    [
+      "Covi didn't find blocking issues.",
+    ],
+    [
+      "Start the review with src/reader.js.",
+    ],
+  ],
+  [
+    [
+      "Overall, this looks good to merge.",
+    ],
+    [
+      "It comes with 4 new tests.",
+    ],
+    [
+      "If you read the diff,",
+      "start with src/reader.js.",
+    ],
+  ],
+]
+`;
+
+exports[`English output (baseline) > backend-slim-request > drafts the same storyboards and captions > storyboard short 1`] = `
+{
+  "scenes": [
+    {
+      "beat": "fix",
+      "eyebrow": "Send document references so…",
+      "heading": undefined,
+      "narration": "Now it sends document references so the reader fetches each document itself in review.",
+      "say": "Now it sends document references so the reader fetches each document itself in review. The fix lives in the reader script, which updates run reader.",
+      "visual": {
+        "highlight": [
+          5,
+          7,
+          8,
+        ],
+        "kind": "code",
+        "language": "javascript",
+        "lines": [
+          {
+            "number": 19,
+            "text": "  };",
+            "type": "context",
+          },
+          {
+            "number": 20,
+            "text": "  for (const message of messages) {",
+            "type": "context",
+          },
+          {
+            "number": 21,
+            "text": "    const parse = Math.ceil(messageBytes(message) / PAGE_BYTES);",
+            "type": "context",
+          },
+          {
+            "number": 21,
+            "text": "    call(parse + message.documents.length + (message.part > 1 ? 1 : 0));",
+            "type": "del",
+          },
+          {
+            "number": 22,
+            "text": "    call(parse + 1 + (message.part > 1 ? 1 : 0));",
+            "type": "add",
+          },
+          {
+            "number": 23,
+            "text": "    for (const ref of message.refs) {",
+            "type": "add",
+          },
+          {
+            "number": 24,
+            "text": "      const document = store.get(ref.id);",
+            "type": "add",
+          },
+          {
+            "number": 25,
+            "text": "      if (Buffer.byteLength(document.body) !== ref.bytes)",
+            "type": "add",
+          },
+          {
+            "number": 26,
+            "text": "        throw new Error(\`\${ref.id} changed after the request was built\`);",
+            "type": "add",
+          },
+          {
+            "number": 27,
+            "text": "      call(1);",
+            "type": "add",
+          },
+          {
+            "number": 28,
+            "text": "    }",
+            "type": "add",
+          },
+        ],
+        "path": "src/reader.js",
+      },
+    },
+    {
+      "beat": "review",
+      "eyebrow": "Worth a look",
+      "heading": undefined,
+      "narration": "Covi didn't find blocking issues. Start the review with src/reader.js.",
+      "say": "Covi didn't find blocking issues. Start the review with the reader script.",
+      "visual": {
+        "body": "Start the review with src/reader.js.",
+        "kind": "callout",
+        "title": "No blocking issues found",
+        "tone": "success",
+      },
+    },
+    {
+      "beat": "summary",
+      "eyebrow": "Summary",
+      "heading": undefined,
+      "narration": "Overall, this looks good to merge.",
+      "say": "Overall, this looks good to merge.",
+      "visual": {
+        "headline": "Send document references so the reader fetches each document itself",
+        "kind": "summary",
+        "points": [
+          "test: Edits reader.test.js and request.test.js.",
+          "src: Changes runReader and chunk and 1 other.",
+          "scripts: Edits measure.js.",
+        ],
+        "stats": {
+          "additions": 40,
+          "deletions": 20,
+          "files": 5,
+        },
+        "verdict": "looks-good",
+      },
+    },
+  ],
+  "template": "bug-fix",
+  "title": "Send document references so the reader fetches each document itself",
+}
+`;
+
+exports[`English output (baseline) > backend-slim-request > drafts the same storyboards and captions > storyboard short with demo 1`] = `
+{
+  "scenes": [
+    {
+      "beat": "context",
+      "eyebrow": "The bug",
+      "heading": undefined,
+      "narration": "Now it sends document references so the reader fetches each document itself in review.",
+      "say": "Now it sends document references so the reader fetches each document itself in review.",
+      "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
+        "eyebrow": "The bug",
+        "kind": "title",
+        "meta": [
+          "backend-slim-request",
+          "5 files · +40 −20",
+        ],
+        "title": "Send document references so the reader fetches each document itself",
+      },
+    },
+    {
+      "beat": "problem",
+      "eyebrow": "Before",
+      "heading": "Home page",
+      "narration": "Here is the behavior before and after the fix.",
+      "say": "Here is the behavior before and after the fix.",
+      "visual": {
+        "after": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
+        "before": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-before.png",
+        },
+        "focus": {
+          "height": 120,
+          "width": 400,
+          "x": 100,
+          "y": 200,
+        },
+        "kind": "before-after",
+        "labels": {
+          "after": "After",
+          "before": "Before",
+        },
+        "layout": "stack",
+      },
+    },
+    {
+      "beat": "fix",
+      "eyebrow": "The fix",
+      "heading": "src/reader.js",
+      "narration": "The fix lives in reader.js, which updates runReader.",
+      "say": "The fix lives in the reader script, which updates run reader.",
+      "visual": {
+        "highlight": [
+          5,
+          7,
+          8,
+        ],
+        "kind": "code",
+        "language": "javascript",
+        "lines": [
+          {
+            "number": 19,
+            "text": "  };",
+            "type": "context",
+          },
+          {
+            "number": 20,
+            "text": "  for (const message of messages) {",
+            "type": "context",
+          },
+          {
+            "number": 21,
+            "text": "    const parse = Math.ceil(messageBytes(message) / PAGE_BYTES);",
+            "type": "context",
+          },
+          {
+            "number": 21,
+            "text": "    call(parse + message.documents.length + (message.part > 1 ? 1 : 0));",
+            "type": "del",
+          },
+          {
+            "number": 22,
+            "text": "    call(parse + 1 + (message.part > 1 ? 1 : 0));",
+            "type": "add",
+          },
+          {
+            "number": 23,
+            "text": "    for (const ref of message.refs) {",
+            "type": "add",
+          },
+          {
+            "number": 24,
+            "text": "      const document = store.get(ref.id);",
+            "type": "add",
+          },
+          {
+            "number": 25,
+            "text": "      if (Buffer.byteLength(document.body) !== ref.bytes)",
+            "type": "add",
+          },
+          {
+            "number": 26,
+            "text": "        throw new Error(\`\${ref.id} changed after the request was built\`);",
+            "type": "add",
+          },
+          {
+            "number": 27,
+            "text": "      call(1);",
+            "type": "add",
+          },
+          {
+            "number": 28,
+            "text": "    }",
+            "type": "add",
+          },
+        ],
+        "path": "src/reader.js",
+      },
+    },
+    {
+      "beat": "review",
+      "eyebrow": "Worth a look",
+      "heading": undefined,
+      "narration": "Covi didn't find blocking issues. Start the review with src/reader.js.",
+      "say": "Covi didn't find blocking issues. Start the review with the reader script.",
+      "visual": {
+        "body": "Start the review with src/reader.js.",
+        "kind": "callout",
+        "title": "No blocking issues found",
+        "tone": "success",
+      },
+    },
+    {
+      "beat": "summary",
+      "eyebrow": "Summary",
+      "heading": undefined,
+      "narration": "Overall, this looks good to merge.",
+      "say": "Overall, this looks good to merge.",
+      "visual": {
+        "headline": "Send document references so the reader fetches each document itself",
+        "kind": "summary",
+        "points": [
+          "test: Edits reader.test.js and request.test.js.",
+          "src: Changes runReader and chunk and 1 other.",
+          "scripts: Edits measure.js.",
+        ],
+        "stats": {
+          "additions": 40,
+          "deletions": 20,
+          "files": 5,
+        },
+        "verdict": "looks-good",
+      },
+    },
+  ],
+  "template": "bug-fix",
+  "title": "Send document references so the reader fetches each document itself",
+}
+`;
+
+exports[`English output (baseline) > backend-slim-request > drafts the same storyboards and captions > storyboard standard 1`] = `
+{
+  "scenes": [
+    {
+      "beat": "fix",
+      "eyebrow": "Send document references so…",
+      "heading": undefined,
+      "narration": "Now it sends document references so the reader fetches each document itself in review. The fix lives in reader.js. It changes runReader and chunk and 1 other.",
+      "say": "Now it sends document references so the reader fetches each document itself in review. The fix lives in the reader script. It changes run reader and chunk and 1 other.",
+      "visual": {
+        "highlight": [
+          5,
+          7,
+          8,
+        ],
+        "kind": "code",
+        "language": "javascript",
+        "lines": [
+          {
+            "number": 19,
+            "text": "  };",
+            "type": "context",
+          },
+          {
+            "number": 20,
+            "text": "  for (const message of messages) {",
+            "type": "context",
+          },
+          {
+            "number": 21,
+            "text": "    const parse = Math.ceil(messageBytes(message) / PAGE_BYTES);",
+            "type": "context",
+          },
+          {
+            "number": 21,
+            "text": "    call(parse + message.documents.length + (message.part > 1 ? 1 : 0));",
+            "type": "del",
+          },
+          {
+            "number": 22,
+            "text": "    call(parse + 1 + (message.part > 1 ? 1 : 0));",
+            "type": "add",
+          },
+          {
+            "number": 23,
+            "text": "    for (const ref of message.refs) {",
+            "type": "add",
+          },
+          {
+            "number": 24,
+            "text": "      const document = store.get(ref.id);",
+            "type": "add",
+          },
+          {
+            "number": 25,
+            "text": "      if (Buffer.byteLength(document.body) !== ref.bytes)",
+            "type": "add",
+          },
+          {
+            "number": 26,
+            "text": "        throw new Error(\`\${ref.id} changed after the request was built\`);",
+            "type": "add",
+          },
+          {
+            "number": 27,
+            "text": "      call(1);",
+            "type": "add",
+          },
+          {
+            "number": 28,
+            "text": "    }",
+            "type": "add",
+          },
+          {
+            "number": 29,
+            "text": "  }",
+            "type": "context",
+          },
+          {
+            "number": 30,
+            "text": "  return { steps, timeouts };",
+            "type": "context",
+          },
+          {
+            "number": 31,
+            "text": "}",
+            "type": "context",
+          },
+        ],
+        "path": "src/reader.js",
+      },
+    },
+    {
+      "beat": "review",
+      "eyebrow": "Worth a look",
+      "heading": undefined,
+      "narration": "Covi didn't find blocking issues. Start the review with src/reader.js.",
+      "say": "Covi didn't find blocking issues. Start the review with the reader script.",
+      "visual": {
+        "body": "Start the review with src/reader.js.",
+        "kind": "callout",
+        "title": "No blocking issues found",
+        "tone": "success",
+      },
+    },
+    {
+      "beat": "summary",
+      "eyebrow": "Summary",
+      "heading": undefined,
+      "narration": "Overall, this looks good to merge. It comes with 4 new tests. If you read the diff, start with src/reader.js.",
+      "say": "Overall, this looks good to merge. It comes with 4 new tests. If you read the diff, start with the reader script.",
+      "visual": {
+        "headline": "Send document references so the reader fetches each document itself",
+        "kind": "summary",
+        "points": [
+          "test: Edits reader.test.js and request.test.js.",
+          "src: Changes runReader and chunk and 1 other.",
+          "scripts: Edits measure.js.",
+          "4 new tests",
+        ],
+        "stats": {
+          "additions": 40,
+          "deletions": 20,
+          "files": 5,
+        },
+        "verdict": "looks-good",
+      },
+    },
+  ],
+  "template": "bug-fix",
+  "title": "Send document references so the reader fetches each document itself",
+}
+`;
+
+exports[`English output (baseline) > backend-slim-request > drafts the same storyboards and captions > storyboard standard with demo 1`] = `
+{
+  "scenes": [
+    {
+      "beat": "context",
+      "eyebrow": "The bug",
+      "heading": undefined,
+      "narration": "Now it sends document references so the reader fetches each document itself in review.",
+      "say": "Now it sends document references so the reader fetches each document itself in review.",
+      "visual": {
+        "background": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
+        "eyebrow": "The bug",
+        "kind": "title",
+        "meta": [
+          "backend-slim-request",
+          "5 files · +40 −20",
+        ],
+        "title": "Send document references so the reader fetches each document itself",
+      },
+    },
+    {
+      "beat": "problem",
+      "eyebrow": "Before",
+      "heading": "Home page",
+      "narration": "Here is the behavior before and after the fix. On the left is the old version; on the right, the new one.",
+      "say": "Here is the behavior before and after the fix. On the left is the old version; on the right, the new one.",
+      "visual": {
+        "after": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-after.png",
+        },
+        "before": {
+          "label": "/",
+          "path": "demo/screenshots/home-desktop-before.png",
+        },
+        "focus": {
+          "height": 120,
+          "width": 400,
+          "x": 100,
+          "y": 200,
+        },
+        "kind": "before-after",
+        "labels": {
+          "after": "After",
+          "before": "Before",
+        },
+        "layout": "split",
+      },
+    },
+    {
+      "beat": "fix",
+      "eyebrow": "The fix",
+      "heading": "src/reader.js",
+      "narration": "The fix lives in reader.js. It changes runReader and chunk and 1 other.",
+      "say": "The fix lives in the reader script. It changes run reader and chunk and 1 other.",
+      "visual": {
+        "highlight": [
+          5,
+          7,
+          8,
+        ],
+        "kind": "code",
+        "language": "javascript",
+        "lines": [
+          {
+            "number": 19,
+            "text": "  };",
+            "type": "context",
+          },
+          {
+            "number": 20,
+            "text": "  for (const message of messages) {",
+            "type": "context",
+          },
+          {
+            "number": 21,
+            "text": "    const parse = Math.ceil(messageBytes(message) / PAGE_BYTES);",
+            "type": "context",
+          },
+          {
+            "number": 21,
+            "text": "    call(parse + message.documents.length + (message.part > 1 ? 1 : 0));",
+            "type": "del",
+          },
+          {
+            "number": 22,
+            "text": "    call(parse + 1 + (message.part > 1 ? 1 : 0));",
+            "type": "add",
+          },
+          {
+            "number": 23,
+            "text": "    for (const ref of message.refs) {",
+            "type": "add",
+          },
+          {
+            "number": 24,
+            "text": "      const document = store.get(ref.id);",
+            "type": "add",
+          },
+          {
+            "number": 25,
+            "text": "      if (Buffer.byteLength(document.body) !== ref.bytes)",
+            "type": "add",
+          },
+          {
+            "number": 26,
+            "text": "        throw new Error(\`\${ref.id} changed after the request was built\`);",
+            "type": "add",
+          },
+          {
+            "number": 27,
+            "text": "      call(1);",
+            "type": "add",
+          },
+          {
+            "number": 28,
+            "text": "    }",
+            "type": "add",
+          },
+          {
+            "number": 29,
+            "text": "  }",
+            "type": "context",
+          },
+          {
+            "number": 30,
+            "text": "  return { steps, timeouts };",
+            "type": "context",
+          },
+          {
+            "number": 31,
+            "text": "}",
+            "type": "context",
+          },
+        ],
+        "path": "src/reader.js",
+      },
+    },
+    {
+      "beat": "proof",
+      "eyebrow": "After",
+      "heading": undefined,
+      "narration": "Here's the new flow. Type a comment, counter updates as you type, and post the comment.",
+      "say": "Here's the new flow. Type a comment, counter updates as you type, and post the comment.",
+      "visual": {
+        "kind": "interaction",
+        "steps": [
+          {
+            "click": {
+              "x": 300,
+              "y": 400,
+            },
+            "focus": undefined,
+            "image": {
+              "path": "demo/screenshots/flow-0.png",
+            },
+            "label": "Type a comment",
+          },
+          {
+            "click": {
+              "x": 300,
+              "y": 400,
+            },
+            "focus": undefined,
+            "image": {
+              "path": "demo/screenshots/flow-1.png",
+            },
+            "label": "Counter updates as you type",
+          },
+          {
+            "click": {
+              "x": 300,
+              "y": 400,
+            },
+            "focus": undefined,
+            "image": {
+              "path": "demo/screenshots/flow-2.png",
+            },
+            "label": "Post the comment",
+          },
+        ],
+      },
+    },
+    {
+      "beat": "review",
+      "eyebrow": "Worth a look",
+      "heading": undefined,
+      "narration": "Covi didn't find blocking issues. Start the review with src/reader.js.",
+      "say": "Covi didn't find blocking issues. Start the review with the reader script.",
+      "visual": {
+        "body": "Start the review with src/reader.js.",
+        "kind": "callout",
+        "title": "No blocking issues found",
+        "tone": "success",
+      },
+    },
+    {
+      "beat": "summary",
+      "eyebrow": "Summary",
+      "heading": undefined,
+      "narration": "Overall, this looks good to merge. It comes with 4 new tests. If you read the diff, start with src/reader.js.",
+      "say": "Overall, this looks good to merge. It comes with 4 new tests. If you read the diff, start with the reader script.",
+      "visual": {
+        "headline": "Send document references so the reader fetches each document itself",
+        "kind": "summary",
+        "points": [
+          "test: Edits reader.test.js and request.test.js.",
+          "src: Changes runReader and chunk and 1 other.",
+          "scripts: Edits measure.js.",
+          "4 new tests",
+        ],
+        "stats": {
+          "additions": 40,
+          "deletions": 20,
+          "files": 5,
+        },
+        "verdict": "looks-good",
+      },
+    },
+  ],
+  "template": "bug-fix",
+  "title": "Send document references so the reader fetches each document itself",
+}
+`;
+
+exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > brief.md 1`] = `
+"# Covi brief: Send document references so the reader fetches each document itself
+
+Run \`20260901-090000-analyze-0000000\` · backend-slim-request · main \`e6898a0\` → HEAD \`42dfe9e\` · 5 files, +40 −20 · size small
+
+## Author description
+
+**fix(review): send document references so the reader fetches each document itself**
+
+> The description is the author’s claim, not evidence. Verify it against the code.
+
+## Commits
+
+- \`42dfe9e\` fix(review): send document references so the reader fetches each document itself
+
+## What Covi determined
+
+- **Intent:** bug-fix (high confidence). title "fix(review): send document references so the reader fetches each document itself" uses the fix prefix; commit "fix(review): send document references so the reader fetches each document itself"; branch name "fix/slim-review-request"
+- **Areas:** test (test); src (internal); scripts (internal)
+- **Surfaces:** test (2)
+- **Demonstration value:** high (cli) → video. 
+- **Can run the app:** yes (commands)
+- **Tests:** 2 test files changed (+4 cases); frameworks: node:test
+
+## Suggested reading order
+
+1. \`src/reader.js\`: Changes \`runReader\`.
+2. \`src/request.js\`: Changes \`chunk\` and \`buildReviewRequest\`.
+3. \`scripts/measure.js\`: Source change (+1 −1).
+4. \`test/request.test.js\`: Test updates for this change.
+5. \`test/reader.test.js\`: Test updates for this change.
+
+## Diff (prioritized)
+
+### src/reader.js · modified · +11 −4 · source
+
+\`\`\`diff
+@@ -6,10 +6,11 @@ export const PAGE_BYTES = 4096;
+ export const STEP_BUDGET = 8;
+ 
+ /**
+- * Runs the reader worker over a review's messages, one call each: it parses the message, indexes
+- * every document in it, and merges the part with the ones before it.
++ * Runs the reader worker over a review's messages. Each message is one call: it parses the list
++ * of documents and merges the part with the ones before it. Then the reader fetches each document
++ * from the store, one call and one step each, since the store hands it over already parsed.
+  */
+-export function runReader(messages) {
++export function runReader(messages, store) {
+   let steps = 0;
+   let timeouts = 0;
+   const call = (cost) => {
+@@ -18,7 +19,13 @@ export function runReader(messages) {
+   };
+   for (const message of messages) {
+     const parse = Math.ceil(messageBytes(message) / PAGE_BYTES);
+-    call(parse + message.documents.length + (message.part > 1 ? 1 : 0));
++    call(parse + 1 + (message.part > 1 ? 1 : 0));
++    for (const ref of message.refs) {
++      const document = store.get(ref.id);
++      if (Buffer.byteLength(document.body) !== ref.bytes)
++        throw new Error(\`\${ref.id} changed after the request was built\`);
++      call(1);
++    }
+   }
+   return { steps, timeouts };
+ }
+\`\`\`
+
+### src/request.js · modified · +9 −3 · source
+
+\`\`\`diff
+@@ -25,11 +25,17 @@ function chunk(review, key, items) {
+   return messages.map((message) => ({ ...message, parts: messages.length }));
+ }
+ 
+-/** The messages that ask the reader to review these documents, each document in full. */
++/**
++ * The messages that ask the reader to review these documents: which ones, by id, title, and
++ * size. The reader fetches each document from the store itself.
++ */
+ export function buildReviewRequest(store, ids) {
+   return chunk(
+     'review-1',
+-    'documents',
+-    ids.map((id) => store.get(id)),
++    'refs',
++    ids.map((id) => {
++      const { title, body } = store.get(id);
++      return { id, title, bytes: Buffer.byteLength(body) };
++    }),
+   );
+ }
+\`\`\`
+
+### scripts/measure.js · modified · +1 −1 · source
+
+\`\`\`diff
+@@ -6,7 +6,7 @@ import { createStore } from '../src/store.js';
+ 
+ const store = createStore(fixtureDocuments());
+ const messages = buildReviewRequest(store, store.ids());
+-const { steps, timeouts } = runReader(messages);
++const { steps, timeouts } = runReader(messages, store);
+ 
+ console.log(\`request bytes: \${messages.reduce((n, m) => n + messageBytes(m), 0)}\`);
+ console.log(\`chunks: \${messages.length}\`);
+\`\`\`
+
+### test/request.test.js · modified · +9 −9 · test
+
+\`\`\`diff
+@@ -6,17 +6,17 @@ import { createStore } from '../src/store.js';
+ 
+ const store = createStore(fixtureDocuments());
+ 
+-test('splits the review into messages under the chunk limit', () => {
+-  const messages = buildReviewRequest(store, store.ids());
+-  assert.ok(messages.length > 1);
+-  for (const message of messages) assert.ok(messageBytes(message) <= CHUNK_LIMIT);
++test('asks for each document by id, title, and size', () => {
++  const [message] = buildReviewRequest(store, store.ids());
+   assert.deepEqual(
+-    messages.map((m) => [m.part, m.parts]),
+-    messages.map((_, i) => [i + 1, messages.length]),
++    message.refs,
++    fixtureDocuments().map((d) => ({ id: d.id, title: d.title, bytes: Buffer.byteLength(d.body) })),
+   );
+ });
+ 
+-test('carries every document in full, in order', () => {
+-  const sent = buildReviewRequest(store, store.ids()).flatMap((m) => m.documents);
+-  assert.deepEqual(sent, store.ids().map((id) => store.get(id)));
++test('leaves the documents out, so the review fits in one message', () => {
++  const messages = buildReviewRequest(store, store.ids());
++  assert.equal(messages.length, 1);
++  assert.ok(messageBytes(messages[0]) <= CHUNK_LIMIT);
++  assert.ok(!JSON.stringify(messages).includes(fixtureDocuments()[0].body));
+ });
+\`\`\`
+
+### test/reader.test.js · modified · +10 −3 · test
+
+\`\`\`diff
+@@ -5,11 +5,18 @@ import { runReader } from '../src/reader.js';
+ import { buildReviewRequest } from '../src/request.js';
+ import { createStore } from '../src/store.js';
+ 
+-test('reads every message, counting its steps', () => {
++test('fetches each document itself, every call within the step budget', () => {
++  const store = createStore(fixtureDocuments());
++  const { steps, timeouts } = runReader(buildReviewRequest(store, store.ids()), store);
++  assert.equal(timeouts, 0);
++  assert.ok(steps >= fixtureDocuments().length);
++});
++
++test('stops at a document that changed after the request was built', () => {
+   const store = createStore(fixtureDocuments());
+   const messages = buildReviewRequest(store, store.ids());
+-  const { steps } = runReader(messages);
+-  assert.ok(steps >= messages.length + fixtureDocuments().length);
++  const changed = fixtureDocuments().map((d, i) => (i === 0 ? { ...d, body: \`\${d.body} More.\` } : d));
++  assert.throws(() => runReader(messages, createStore(changed)), /doc-001 changed/);
+ });
+ 
+ test('builds the same documents every time', () => {
+\`\`\`
+
+## Next steps for the agent
+
+Artifacts live in \`.covi/runs/20260901-090000-analyze-0000000\`.
+
+1. Read the surrounding code for the files above; the diff alone is not enough context.
+2. Write \`explanation.json\` (schema: \`covi schema explanation\`) and \`findings.json\` (schema: \`covi schema findings\`) into the run directory.
+   Cite the evidence behind each claim in \`evidenceIds\` (\`covi evidence --run 20260901-090000-analyze-0000000\` lists it); confirmed and likely findings cite at least one.
+3. Run \`covi report --run 20260901-090000-analyze-0000000\` to validate them and render the Markdown reports.
+"
+`;
+
+exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > comment.md 1`] = `
+"<!-- covi:review -->
+### ✅ Covi review: Looks good
+
+**Send document references so the reader fetches each document itself**
+
+This change sends document references so the reader fetches each document itself in review. It touches 5 files across \`test\`, \`src\`, and \`scripts\` (+40 −20). The change is user-visible (cli).
+
+▶️ [Watch the review video (31s)](https://example.com/v.mp4)
+
+No issues found in the areas Covi checked.
+
+<details><summary>What changed</summary>
+
+- **test**: Edits \`reader.test.js\` and \`request.test.js\`.
+- **src**: Changes \`runReader\` and \`chunk\` and 1 other.
+- **scripts**: Edits \`measure.js\`.
+
+</details>
+
+<details><summary>Not verified</summary>
+
+- Tests were not run (enable review.runTests or pass --run-tests).
+- User-visible behavior was not demonstrated; it was reviewed from the code only.
+- Logic was checked by Covi’s built-in rules only. Run Covi from a coding agent or configure a model provider for a reasoning review.
+
+</details>
+
+<sub>Covi · e6898a0…42dfe9e · heuristic · [artifacts](https://example.com/artifacts) · [run](https://example.com/run)</sub>"
+`;
+
+exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > explanation 1`] = `
+{
+  "ambiguities": [],
+  "architecture": [],
+  "behavior": {
+    "notes": "Covi can run this project to show the behavior; see the demo artifacts when present.",
+    "userVisible": true,
+  },
+  "changes": [
+    {
+      "area": "test",
+      "description": "Edits \`reader.test.js\` and \`request.test.js\`.",
+      "files": [
+        "test/reader.test.js",
+        "test/request.test.js",
+      ],
+    },
+    {
+      "area": "src",
+      "description": "Changes \`runReader\` and \`chunk\` and 1 other.",
+      "files": [
+        "src/reader.js",
+        "src/request.js",
+      ],
+    },
+    {
+      "area": "scripts",
+      "description": "Edits \`measure.js\`.",
+      "files": [
+        "scripts/measure.js",
+      ],
+    },
+  ],
+  "depth": "brief",
+  "details": [],
+  "generatedBy": {
+    "provider": "heuristic",
+  },
+  "headline": "Send document references so the reader fetches each document itself",
+  "intent": {
+    "confidence": "high",
+    "evidence": [
+      "title "fix(review): send document references so the reader fetches each document itself" uses the fix prefix",
+      "commit "fix(review): send document references so the reader fetches each document itself"",
+      "branch name "fix/slim-review-request"",
+    ],
+    "statement": "The title describes it as a bug fix: “fix(review): send document references so the reader fetches each document itself”.",
+  },
+  "readingOrder": [
+    {
+      "path": "src/reader.js",
+      "reason": "Changes \`runReader\`.",
+    },
+    {
+      "path": "src/request.js",
+      "reason": "Changes \`chunk\` and \`buildReviewRequest\`.",
+    },
+    {
+      "path": "scripts/measure.js",
+      "reason": "Source change (+1 −1).",
+    },
+  ],
+  "reviewerNotes": [
+    "Start with \`src/reader.js\`: changes \`runReader\`.",
+    "Tests: 4 test case(s) added, 3 removed.",
+  ],
+  "schemaVersion": 1,
+  "summary": "This change sends document references so the reader fetches each document itself in review. It touches 5 files across \`test\`, \`src\`, and \`scripts\` (+40 −20). The change is user-visible (cli).",
+}
+`;
+
+exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > explanation.md 1`] = `
+"# Send document references so the reader fetches each document itself
+
+This change sends document references so the reader fetches each document itself in review. It touches 5 files across \`test\`, \`src\`, and \`scripts\` (+40 −20). The change is user-visible (cli).
+
+**Why:** The title describes it as a bug fix: “fix(review): send document references so the reader fetches each document itself”. _(confidence: high. Evidence: title "fix(review): send document references so the reader fetches each document itself" uses the fix prefix; commit "fix(review): send document references so the reader fetches each document itself"; branch name "fix/slim-review-request".)_
+
+## Behavior
+
+- User-visible: yes
+- Covi can run this project to show the behavior; see the demo artifacts when present.
+
+## What changed
+
+- **test**: Edits \`reader.test.js\` and \`request.test.js\`.
+- **src**: Changes \`runReader\` and \`chunk\` and 1 other.
+- **scripts**: Edits \`measure.js\`.
+
+## Before you read the diff
+
+- Start with \`src/reader.js\`: changes \`runReader\`.
+- Tests: 4 test case(s) added, 3 removed.
+
+## Suggested reading order
+
+1. \`src/reader.js\`: Changes \`runReader\`.
+2. \`src/request.js\`: Changes \`chunk\` and \`buildReviewRequest\`.
+3. \`scripts/measure.js\`: Source change (+1 −1).
+
+---
+<sub>Generated by Covi (heuristic) · main \`e6898a0\` → HEAD \`42dfe9e\`</sub>
+"
+`;
+
+exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > not verified 1`] = `
+[
+  "Tests were not run (enable review.runTests or pass --run-tests).",
+  "User-visible behavior was not demonstrated; it was reviewed from the code only.",
+  "Logic was checked by Covi’s built-in rules only. Run Covi from a coding agent or configure a model provider for a reasoning review.",
+]
+`;
+
+exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > review summary 1`] = `"No issues found in the areas Covi checked."`;
+
+exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > review.md 1`] = `
+"# Review: Send document references so the reader fetches each document itself
+
+**Looks good**: No issues found in the areas Covi checked.
+
+## What Covi checked
+
+<details><summary>26 checks</summary>
+
+- credentials or private keys added to the repository
+- leftover merge conflict markers
+- pull\\_request\\_target workflows that check out untrusted pull request code
+- GitHub Actions scripts that interpolate untrusted event data
+- SQL built by string interpolation instead of parameters
+- removed or renamed exports that other files still use
+- API routes removed or renamed
+- destructive schema and data migrations
+- ORM schema changes without a migration
+- dependency manifests changed without their lockfile
+- focused tests (.only) that silently skip the rest of the suite
+- async callbacks passed to forEach (never awaited)
+- eval and dynamically constructed code
+- raw HTML injection points (innerHTML, dangerouslySetInnerHTML, v-html)
+- errors that are caught and silently discarded
+- error handling removed without replacement
+- images without alternative text
+- focus indicators removed without a visible replacement
+- click handlers on non-interactive elements without keyboard support
+- workflow token permissions broadened to write-all
+- behavior changes without accompanying tests
+- major-version dependency upgrades
+- new environment variables missing from env examples
+- tests that are newly skipped or disabled
+- debugger statements and breakpoints left in application code
+- mismatch between the stated intent and what the change does
+
+</details>
+
+## Not verified
+
+- Tests were not run (enable review.runTests or pass --run-tests).
+- User-visible behavior was not demonstrated; it was reviewed from the code only.
+- Logic was checked by Covi’s built-in rules only. Run Covi from a coding agent or configure a model provider for a reasoning review.
+
+---
+<sub>Generated by Covi (heuristic) · main \`e6898a0\` → HEAD \`42dfe9e\`</sub>
+"
+`;
+
+exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > rules 1`] = `
+{
+  "checked": [
+    "credentials or private keys added to the repository",
+    "leftover merge conflict markers",
+    "pull_request_target workflows that check out untrusted pull request code",
+    "GitHub Actions scripts that interpolate untrusted event data",
+    "SQL built by string interpolation instead of parameters",
+    "removed or renamed exports that other files still use",
+    "API routes removed or renamed",
+    "destructive schema and data migrations",
+    "ORM schema changes without a migration",
+    "dependency manifests changed without their lockfile",
+    "focused tests (.only) that silently skip the rest of the suite",
+    "async callbacks passed to forEach (never awaited)",
+    "eval and dynamically constructed code",
+    "raw HTML injection points (innerHTML, dangerouslySetInnerHTML, v-html)",
+    "errors that are caught and silently discarded",
+    "error handling removed without replacement",
+    "images without alternative text",
+    "focus indicators removed without a visible replacement",
+    "click handlers on non-interactive elements without keyboard support",
+    "workflow token permissions broadened to write-all",
+    "behavior changes without accompanying tests",
+    "major-version dependency upgrades",
+    "new environment variables missing from env examples",
+    "tests that are newly skipped or disabled",
+    "debugger statements and breakpoints left in application code",
+    "mismatch between the stated intent and what the change does",
+  ],
+  "findings": [],
+}
+`;
+
+exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > summary.md 1`] = `
+"## Send document references so the reader fetches each document itself
+
+This change sends document references so the reader fetches each document itself in review. It touches 5 files across \`test\`, \`src\`, and \`scripts\` (+40 −20). The change is user-visible (cli).
+
+**Changes**
+
+- **test**: Edits \`reader.test.js\` and \`request.test.js\`.
+- **src**: Changes \`runReader\` and \`chunk\` and 1 other.
+- **scripts**: Edits \`measure.js\`.
+
+**Review focus**
+
+- \`src/reader.js\`: Changes \`runReader\`.
+- \`src/request.js\`: Changes \`chunk\` and \`buildReviewRequest\`.
+
+**Testing**
+
+- 4 test cases added across 2 test files
+"
+`;
+
+exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > summary.txt 1`] = `
+"Send document references so the reader fetches each document itself. This change sends document references so the reader fetches each document itself in review. It touches 5 files across \`test\`, \`src\`, and \`scripts\` (+40 −20). The change is user-visible (cli). Review: looks good.
+"
+`;
+
 exports[`English output (baseline) > bugfix-cli-slugify > drafts the same storyboards and captions > captions short 1`] = `
 [
   [

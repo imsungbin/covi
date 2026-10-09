@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -118,9 +119,9 @@ describe('the direction schema', () => {
   });
 
   it('bounds ids, phrases, zoom, and line ranges', () => {
-    for (const id of ['a', 'req-1', 'a'.repeat(24)])
+    for (const id of ['a', 'req-1', 'a'.repeat(DIRECTION_LIMITS.idChars)])
       expect(issues({ shots: [shot({ elements: [{ id, kind: 'visual' }] })] }), id).toEqual([]);
-    for (const id of ['', '1a', 'A', 'a_b', 'a'.repeat(25), '<b>'])
+    for (const id of ['', '1a', 'A', 'a_b', 'a'.repeat(DIRECTION_LIMITS.idChars + 1), '<b>'])
       expect(issues({ shots: [shot({ elements: [{ id, kind: 'visual' }] })] }), id).not.toEqual([]);
     const at = (phrase: string) =>
       issues({ shots: [shot({ beats: [{ verb: 'reveal', element: 'visual', at: phrase }] })] });
@@ -161,6 +162,9 @@ describe('labels', () => {
       'Tom & Jerry (it’s fine)',
       'e—mail · ok?',
       'Before: slow',
+      'Stale data: refetch',
+      'Bad data : retry',
+      'metadata:',
       'café / naïve',
       '요청이 너무 큼',
       'タイムアウト',
@@ -195,9 +199,11 @@ describe('labels', () => {
       'x²',
       '<script>alert(1)</script>',
       'javascript:alert(document)',
+      'javascript: alert(document)',
       'JavaScript : void',
       'vbscript:msgbox',
       'data:text/html',
+      'data:text/html,x',
       'x onerror=alert',
       'see https://evil.example',
       'ftp://host',
@@ -224,13 +230,41 @@ describe('labels', () => {
     ])
       expect(ok(text), text).toBe(false);
   });
+
+  it('refuse invisible characters, which could split a link or draw nothing', () => {
+    for (const text of [
+      'https:\u034f//evil.example',
+      'https:\ufe0f//evil.example',
+      'w\u034fww.evil.example',
+      'www\u180b.evil.example',
+      'a\u{e0100}b',
+      '\u3164\u3164\u3164',
+      '\u115f\u1160',
+      'a\uffa0b',
+      'a\u17b4b',
+      'a\u200bb',
+      'a\ufeffb',
+      'abc\u202edef',
+      '\u2066www.evil.example\u2069',
+    ])
+      expect(ok(text), JSON.stringify(text)).toBe(false);
+  });
+
+  it('refuse links spelled with ideographic full stops', () => {
+    for (const text of ['www。evil。example', 'www｡evil｡example', 'www．evil．example'])
+      expect(ok(text), text).toBe(false);
+    expect(ok('完了。次へ')).toBe(true);
+  });
 });
 
 describe('reading video/direction.json', () => {
-  const file = (content: string) => {
+  const place = () => {
     const dir = mkdtempSync(join(tmpdir(), 'covi-direction-'));
     dirs.push(dir);
-    const path = join(dir, 'direction.json');
+    return join(dir, 'direction.json');
+  };
+  const file = (content: string) => {
+    const path = place();
     writeFileSync(path, content);
     return path;
   };
@@ -258,6 +292,59 @@ describe('reading video/direction.json', () => {
       exitCode: 2,
       message: expect.stringMatching(/not valid JSON/),
     });
+  });
+
+  it('reads a file of exactly the size limit, and refuses one byte more', async () => {
+    const text = JSON.stringify({ shots: [shot()] });
+    const exact = file(text.padEnd(DIRECTION_LIMITS.fileBytes, ' '));
+    expect(await readDirectionFile(exact)).toMatchObject({ shots: [{ scene: 's3' }] });
+    const over = file(text.padEnd(DIRECTION_LIMITS.fileBytes + 1, ' '));
+    await expect(readDirectionFile(over)).rejects.toMatchObject({
+      exitCode: 2,
+      message: expect.stringMatching(/is 262145 bytes; a direction may be at most 262144 bytes/),
+    });
+  });
+
+  it('refuses what is not a regular file instead of reading it without end', async () => {
+    const notFile = { exitCode: 2, message: expect.stringMatching(/is not a regular file/) };
+    const dir = place();
+    mkdirSync(dir);
+    await expect(readDirectionFile(dir)).rejects.toMatchObject(notFile);
+    if (process.platform === 'win32') return;
+    // A device and a FIFO both report size 0: one reads forever, the other blocks on open.
+    const zero = place();
+    symlinkSync('/dev/zero', zero);
+    await expect(readDirectionFile(zero)).rejects.toMatchObject(notFile);
+    const fifo = place();
+    execFileSync('mkfifo', [fifo]);
+    await expect(readDirectionFile(fifo)).rejects.toMatchObject(notFile);
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'says a file it may not read cannot be read, not that it is invalid JSON',
+    async () => {
+      const locked = file(JSON.stringify(valid));
+      chmodSync(locked, 0o000);
+      await expect(readDirectionFile(locked)).rejects.toMatchObject({
+        exitCode: 2,
+        message: expect.stringMatching(/video\/direction\.json cannot be read: .*EACCES/),
+      });
+    },
+  );
+
+  it('never echoes the file raw: escapes and cuts what errors quote', async () => {
+    const ansi = '\u001b]0;pwned\u0007\u001b[2J';
+    const keyed = file(JSON.stringify({ shots: [], [`${ansi}${'k'.repeat(100_000)}`]: 1 }));
+    const keyError = (await readDirectionFile(keyed).catch((e: Error) => e)) as Error;
+    expect(keyError.message).toMatch(/unknown key\(s\): \\u001b\]0;pwned/);
+    // Its lines are joined with newlines; nothing else of the C0 or C1 controls remains.
+    expect(keyError.message).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+    expect(keyError.message.length).toBeLessThan(300);
+    // V8 quotes the start of input it cannot parse.
+    const garbled = file(`${ansi} not json`);
+    const jsonError = (await readDirectionFile(garbled).catch((e: Error) => e)) as Error;
+    expect(jsonError.message).toMatch(/not valid JSON/);
+    expect(jsonError.message).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
   });
 
   it('lists every schema problem at once', async () => {

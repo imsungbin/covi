@@ -1,5 +1,12 @@
-import { readFile, stat } from 'node:fs/promises';
-import { EVIDENCE_LIMITS, parseOrThrow, UsageError } from '@covi/core';
+import { constants } from 'node:fs';
+import { type FileHandle, open } from 'node:fs/promises';
+import {
+  EVIDENCE_LIMITS,
+  errorMessage,
+  escapeUnprintable,
+  parseOrThrow,
+  UsageError,
+} from '@covi/core';
 import { z } from 'zod';
 import { TRANSITION_KINDS } from '../storyboard/schema.ts';
 import { CAMERA_TRANSITIONS } from '../timeline/types.ts';
@@ -38,8 +45,8 @@ export const DIRECTION_LIMITS = {
   evidencePerElement: 4,
 } as const;
 
-/** An element id: a lowercase letter, then up to 23 lowercase letters, digits, or dashes. */
-export const DIRECTION_ID = /^[a-z][a-z0-9-]{0,23}$/;
+/** An element id: a lowercase letter, then lowercase letters, digits, or dashes, `idChars` in all. */
+export const DIRECTION_ID = new RegExp(`^[a-z][a-z0-9-]{0,${DIRECTION_LIMITS.idChars - 1}}$`);
 
 /** How a scene can enter: the storyboard's transitions and the camera's moves between stops. */
 export const ENTRANCE_KINDS = [...TRANSITION_KINDS, ...CAMERA_TRANSITIONS] as const;
@@ -56,12 +63,21 @@ export type ShotLayout = (typeof SHOT_LAYOUTS)[number];
  */
 const LABEL_CHARS = /^[\p{L}\p{M} \-–—·,.'’:()/&+?!、。・「」『』（）！？：]+$/u;
 /**
+ * Characters that draw nothing yet are letters or marks (joiners, variation selectors, Hangul
+ * fillers) or controls (bidi): they could split a link the checks below look for, reorder what is
+ * drawn, or make a label of nothing.
+ */
+const INVISIBLE = /\p{Default_Ignorable_Code_Point}/u;
+/**
  * Links and script-running URL schemes, which the allowed characters could otherwise spell. They
  * are looked for in the NFKC form, so full-width letters and colons (`ｗｗｗ.`, `ｈｔｔｐｓ：//`)
- * count as the ASCII they fold to.
+ * count as the ASCII they fold to, with the ideographic full stops NFKC keeps read as dots, as
+ * address parsing reads them. `data` counts only with something right after its colon, so
+ * "Stale data: refetch" is a label.
  */
 const LINK = /:\/\/|\bwww\./i;
-const SCRIPT_SCHEME = /\b(?:javascript|vbscript|data)\s*:/i;
+const SCRIPT_SCHEME = /\b(?:javascript|vbscript)\s*:|\bdata:\S/i;
+const FULL_STOPS = /[。｡．]/g;
 
 /**
  * Text an agent writes for the screen (a node's name, a label). Numbers must come from evidence,
@@ -77,8 +93,9 @@ export const LabelSchema = z
     LABEL_CHARS,
     "a label is letters, spaces, and - – — · , . ' ’ : ( ) / & + ? ! 、 。 ・ 「 」 『 』 （ ） ！ ？ ： only: no digits, markup, or symbols",
   )
+  .refine((text) => !INVISIBLE.test(text), 'a label holds no invisible characters')
   .refine((text) => {
-    const folded = text.normalize('NFKC');
+    const folded = text.normalize('NFKC').replace(FULL_STOPS, '.');
     return !LINK.test(folded) && !SCRIPT_SCHEME.test(folded);
   }, 'a label holds no links');
 
@@ -91,7 +108,7 @@ const ElementIdSchema = z
   .string()
   .regex(
     DIRECTION_ID,
-    'an element id is a lowercase letter, then up to 23 lowercase letters, digits, or dashes',
+    `an element id is a lowercase letter, then up to ${DIRECTION_LIMITS.idChars - 1} lowercase letters, digits, or dashes`,
   );
 const EvidenceRefSchema = z.string().min(1).max(EVIDENCE_LIMITS.id);
 const PhraseSchema = z
@@ -220,31 +237,48 @@ export type Shot = z.output<typeof ShotSchema>;
 export type ShotElement = z.output<typeof ShotElementSchema>;
 export type ShotBeat = z.output<typeof ShotBeatSchema>;
 
+/** What a parser or the file system says about the file, which can quote the file's own text. */
+const quoted = (error: unknown) => escapeUnprintable(errorMessage(error), 200);
+
 /**
- * Reads the run's direction file, or nothing when the run has none. Its size is bounded before it
- * is parsed, and every schema problem is listed at once (exit 2).
+ * Reads the run's direction file, or nothing when the run has none. Only a regular file is read,
+ * its size is bounded before it is read, and every schema problem is listed at once (exit 2).
  */
 export async function readDirectionFile(path: string): Promise<Direction | undefined> {
-  let size: number;
+  const unreadable = (error: unknown) =>
+    new UsageError(`${DIRECTION_PATH} cannot be read: ${quoted(error)}`, DIRECTION_HINT);
+  let handle: FileHandle;
   try {
-    ({ size } = await stat(path));
+    // Non-blocking, so a FIFO in its place opens at once and is refused below instead of hanging.
+    handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw error;
+    throw unreadable(error);
   }
-  if (size > DIRECTION_LIMITS.fileBytes)
-    throw new UsageError(
-      `video/direction.json is ${size} bytes; a direction may be at most ${DIRECTION_LIMITS.fileBytes} bytes.`,
-      DIRECTION_HINT,
-    );
+  let text: string;
+  try {
+    // Checked on the open file, so the file read is the file checked.
+    const info = await handle.stat();
+    // A device or a FIFO reports size 0 and can be read without end.
+    if (!info.isFile())
+      throw new UsageError(`${DIRECTION_PATH} is not a regular file.`, DIRECTION_HINT);
+    if (info.size > DIRECTION_LIMITS.fileBytes)
+      throw new UsageError(
+        `${DIRECTION_PATH} is ${info.size} bytes; a direction may be at most ${DIRECTION_LIMITS.fileBytes} bytes.`,
+        DIRECTION_HINT,
+      );
+    text = await handle.readFile('utf8');
+  } catch (error) {
+    throw error instanceof UsageError ? error : unreadable(error);
+  } finally {
+    await handle.close();
+  }
   let raw: unknown;
   try {
-    raw = JSON.parse(await readFile(path, 'utf8'));
+    raw = JSON.parse(text);
   } catch (error) {
-    throw new UsageError(
-      `video/direction.json is not valid JSON: ${(error as Error).message}`,
-      DIRECTION_HINT,
-    );
+    // V8 quotes the start of what it could not parse.
+    throw new UsageError(`${DIRECTION_PATH} is not valid JSON: ${quoted(error)}`, DIRECTION_HINT);
   }
-  return parseOrThrow(DirectionSchema, raw, 'video/direction.json', DIRECTION_HINT);
+  return parseOrThrow(DirectionSchema, raw, DIRECTION_PATH, DIRECTION_HINT);
 }

@@ -1236,6 +1236,120 @@ describe.skipIf(!available)('rendering', () => {
     }
   });
 
+  it('holds body text to 28 px and grows short cards to fill the frame, in Korean too', async () => {
+    const browser = await chromium.launch();
+    try {
+      const words = {
+        en: {
+          problem: 'One reader call ran past its step budget.',
+          heading: 'Why the reader timed out',
+          title: 'The reader timed out',
+          body: 'One chunk took nine steps; the budget is eight.',
+          review: 'One thing to check before merging.',
+          finding: 'Nothing tests a document that changed',
+          note: 'The size check throws, but no test reaches it.',
+        },
+        ko: {
+          problem: '리더 호출 하나가 단계 예산을 넘겼습니다.',
+          heading: '리더가 멈춘 이유',
+          title: '리더가 시간 초과로 멈췄습니다',
+          body: '청크 하나가 아홉 단계를 썼고, 예산은 여덟 단계입니다.',
+          review: '병합 전에 확인할 것이 하나 있습니다.',
+          finding: '바뀐 문서를 다루는 테스트가 없습니다',
+          note: '크기 검사가 예외를 던지지만, 그 경로를 지나는 테스트는 없습니다.',
+        },
+      } as const;
+      for (const language of ['en', 'ko'] as const) {
+        const w = words[language];
+        const c = await compose(
+          browser,
+          [
+            {
+              id: 's1',
+              beat: 'problem',
+              eyebrow: 'Problem',
+              heading: w.heading,
+              narration: w.problem,
+              visual: { kind: 'callout', tone: 'warning', title: w.title, body: w.body },
+            },
+            {
+              id: 's2',
+              beat: 'review',
+              eyebrow: 'Review',
+              narration: w.review,
+              visual: {
+                kind: 'findings',
+                findings: [
+                  {
+                    title: w.finding,
+                    certainty: 'risk',
+                    severity: 'low',
+                    location: 'src/reader.js:24',
+                    note: w.note,
+                  },
+                ],
+              },
+            },
+            {
+              id: 's3',
+              beat: 'architecture',
+              eyebrow: 'How it flows',
+              narration: 'The builder sends a list, and the reader fetches each document.',
+              visual: {
+                kind: 'diagram',
+                nodes: [
+                  { id: 'builder', label: 'Request builder' },
+                  { id: 'reader', label: 'Reader worker', changed: true },
+                  { id: 'store', label: 'Document store' },
+                ],
+                edges: [
+                  { from: 'builder', to: 'reader', label: 'list' },
+                  { from: 'reader', to: 'store', label: 'fetch' },
+                ],
+              },
+            },
+            {
+              id: 's4',
+              beat: 'map',
+              eyebrow: 'Where',
+              narration: 'Two areas changed, the source and its tests.',
+              visual: {
+                kind: 'change-map',
+                areas: [
+                  { name: 'src', additions: 20, deletions: 12, files: 2 },
+                  { name: 'test', additions: 30, deletions: 10, files: 2 },
+                ],
+              },
+            },
+            { ...storyboard.scenes[2]!, id: 's5' },
+          ],
+          undefined,
+          { language },
+        );
+        const reports: LayoutReport[] = [];
+        for (const id of ['s1', 's2', 's3', 's4', 's5']) reports.push(await settledReport(c, id));
+        const { unit } = computeRegions(c.timeline);
+        const body = reports.flatMap((r) => r.items.filter((i) => i.text === 'body'));
+        // The heading and the callout, the finding, three nodes, two areas, and the summary.
+        expect(body.length, language).toBeGreaterThanOrEqual(9);
+        for (const item of body) expect(item.font! / unit, language).toBeGreaterThanOrEqual(27.5);
+        const checks = [
+          ...layoutChecks(c.timeline, reports),
+          ...densityChecks(c.timeline, reports),
+        ];
+        const status = Object.fromEntries(checks.map((x) => [x.id, x.status]));
+        expect(status, language).toMatchObject({
+          'text-fits': 'pass',
+          'text-size': 'pass',
+          'empty-frame': 'pass',
+        });
+        expect(c.errors).toEqual([]);
+      }
+    } finally {
+      await browser.close();
+    }
+  });
+
   it('is deterministic: the same timeline renders the same frame bytes', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'covi-det-'));
     dirs.push(dir);

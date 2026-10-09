@@ -7,10 +7,12 @@ import { Frame } from './frame.ts';
 import {
   type Component,
   type ComponentContext,
+  drawnFont,
   entered,
   type LargeFox,
   overflows,
   rectOf,
+  smallestFont,
 } from './types.ts';
 
 type V<K extends TimelineVisual['kind']> = Extract<TimelineVisual, { kind: K }>;
@@ -84,7 +86,15 @@ export function title(v: V<'title'>, ctx: ComponentContext, expression: Expressi
     camera(push) {
       panel.style.transform = push > 1e-6 ? `scale(${(1 + push).toFixed(5)})` : '';
     },
-    report: () => [{ role: 'text', rect: rectOf(heading), overflow: overflows(heading) }],
+    report: () => [
+      {
+        role: 'text',
+        rect: rectOf(heading),
+        overflow: overflows(heading),
+        font: drawnFont(heading),
+        text: 'body',
+      },
+    ],
   };
 }
 
@@ -176,7 +186,9 @@ export function summary(v: V<'summary'>, ctx: ComponentContext): Component {
       height: `${size}px`,
       fontSize: `${size * 0.55}px`,
     });
-    el('span', '', row, p).style.fontSize = `${ctx.u(vertical ? 32 : 27)}px`;
+    el('span', '', row, p);
+    // On the row, so the drawn size can be read from a box (the tick sets its own size).
+    row.style.fontSize = `${ctx.u(vertical ? 32 : 28)}px`;
     return row;
   });
   const statValues: Array<{ node: HTMLElement; value: number; prefix: string }> = [];
@@ -272,6 +284,14 @@ export function summary(v: V<'summary'>, ctx: ComponentContext): Component {
       if (push > 1e-6)
         panel.style.transform = `${panel.style.transform} scale(${(1 + push).toFixed(5)})`;
     },
-    report: () => [{ role: 'text', rect: rectOf(panel), overflow: overflows(panel) }],
+    report: () => [
+      {
+        role: 'text',
+        rect: rectOf(panel),
+        overflow: overflows(panel),
+        font: smallestFont([headline, ...points]),
+        text: 'body',
+      },
+    ],
   };
 }

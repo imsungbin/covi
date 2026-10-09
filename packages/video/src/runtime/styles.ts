@@ -155,7 +155,7 @@ ${syntaxRules('.api-panel ', c.surfaceSyntax)}
 /* Findings */
 .finding { position: absolute; display: flex; overflow: hidden; }
 .finding .bar { width: ${u(10)}; flex: none; }
-.finding .body { padding: ${u(20)} ${u(26)}; display: flex; flex-direction: column; gap: ${u(10)}; min-width: 0; }
+.finding .body { padding: ${u(20)} ${u(26)}; display: flex; flex-direction: column; justify-content: center; gap: ${u(10)}; min-width: 0; }
 .finding .meta { display: flex; gap: ${u(10)}; align-items: center; flex-wrap: wrap; }
 .finding .ftitle { font-weight: 700; line-height: 1.22; color: ${c.text}; }
 .finding .loc { color: ${c.textMuted}; }
@@ -170,7 +170,7 @@ ${syntaxRules('.api-panel ', c.surfaceSyntax)}
 .area-row .nums { white-space: nowrap; color: ${c.textMuted}; font-variant-numeric: tabular-nums; }
 
 /* Callout and summary */
-.callout { position: absolute; display: flex; flex-direction: column; align-items: center; text-align: center; gap: ${u(18)}; padding: ${u(46)}; }
+.callout { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: ${u(18)}; padding: ${u(46)}; }
 .callout .icon { border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; }
 .callout .ctitle { font-weight: 760; line-height: 1.15; letter-spacing: -0.01em; }
 .callout .cbody { color: ${c.textMuted}; line-height: 1.4; }

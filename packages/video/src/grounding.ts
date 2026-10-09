@@ -8,6 +8,7 @@ import {
   ungroundedStatements,
   unknownCitations,
 } from '@covi/core';
+import type { Shot } from './direction/schema.ts';
 import type { QcCheck } from './qc.ts';
 import type { Scene, Visual } from './storyboard/schema.ts';
 
@@ -35,16 +36,41 @@ export function visualImages(visual: Visual): string[] {
 }
 
 /**
- * The evidence a scene rests on: the ids it cites, then what its visual shows from the run (the
- * captured images, the diff hunks of its code, the request, command, or findings on screen).
+ * The evidence a scene rests on: the ids it cites, then what is on screen from the run. Without
+ * direction, or when its shot keeps the storyboard visual, that is what the visual shows (the
+ * captured images, the diff hunks of its code, the request, command, or findings on screen); a
+ * shot adds what its elements cite, and a shot without the visual replaces it.
  */
 export function sceneEvidence(
   scene: Pick<Scene, 'visual' | 'evidenceIds'>,
   index: EvidenceIndex,
   findings: ReadonlyArray<Pick<Finding, 'title' | 'evidenceIds'>> = [],
+  shot?: Pick<Shot, 'elements'>,
 ): string[] {
   const ids = [...(scene.evidenceIds ?? [])];
-  const v = scene.visual;
+  if (!shot || shot.elements.some((e) => e.kind === 'visual'))
+    ids.push(...visualEvidence(scene.visual, index, findings));
+  for (const e of shot?.elements ?? []) {
+    const cited = e.kind === 'node' ? (e.evidence ?? []) : 'evidence' in e ? [e.evidence] : [];
+    // Stored as the registry holds it, like every other id the timeline records.
+    for (const id of cited) {
+      const item = index.find(id);
+      if (item) ids.push(item.id);
+    }
+  }
+  return [...new Set(ids)].slice(0, EVIDENCE_LIMITS.cites);
+}
+
+/**
+ * What a visual shows from the run: its images, the hunks of its code, its request, command, or
+ * findings.
+ */
+function visualEvidence(
+  v: Visual,
+  index: EvidenceIndex,
+  findings: ReadonlyArray<Pick<Finding, 'title' | 'evidenceIds'>>,
+): string[] {
+  const ids: string[] = [];
   const labelled = (kind: string, label: string) =>
     index.items
       .filter((i) => i.kind === kind && i.label === truncate(label, EVIDENCE_LIMITS.label))
@@ -70,7 +96,7 @@ export function sceneEvidence(
       );
   const images = new Set(visualImages(v));
   ids.push(...index.items.filter((i) => images.has(i.path)).map((i) => i.id));
-  return [...new Set(ids)].slice(0, EVIDENCE_LIMITS.cites);
+  return ids;
 }
 
 /** Scenes that cite ids the run's evidence does not have, as `scene <id>: <ids>` lines. */

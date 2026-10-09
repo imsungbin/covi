@@ -99,18 +99,31 @@ export function scenePhases(
   settled = 0,
 ): Record<string, number> | undefined {
   const phases: Record<string, number> = {};
-  const caption = captionWindow({ text, start: timing.speechStart, end: timing.speechEnd });
   for (const [name, phrase] of Object.entries(scene.sync ?? {})) {
-    const span = findPhrase(text, phrase);
-    // Redaction can rewrite a line after it was validated: a phrase it hid, or made ambiguous,
-    // pins nothing.
-    if (span.count !== 1) continue;
-    const time = phraseTime(caption, span, options);
-    if (time) phases[name] = round(time.start - timing.start);
+    const at = phraseMoment(text, phrase, timing, options);
+    if (at !== undefined) phases[name] = at;
   }
   if (scene.hero && phases[HERO_PHASE] === undefined)
     phases[HERO_PHASE] = round(Math.max(timing.speechStart - timing.start, settled));
   return Object.keys(phases).length ? phases : undefined;
+}
+
+/**
+ * When a phrase of a line is heard, in seconds since its scene started: its place in the line's
+ * caption window, split as the captions split it. Nothing when the phrase is not in the line
+ * exactly once: redaction can rewrite a line after it was validated.
+ */
+export function phraseMoment(
+  text: string,
+  phrase: string,
+  timing: SceneTiming,
+  options: CaptionOptions,
+): number | undefined {
+  const span = findPhrase(text, phrase);
+  if (span.count !== 1) return undefined;
+  const caption = captionWindow({ text, start: timing.speechStart, end: timing.speechEnd });
+  const time = phraseTime(caption, span, options);
+  return time ? round(time.start - timing.start) : undefined;
 }
 
 /**

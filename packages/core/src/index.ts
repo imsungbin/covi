@@ -20,6 +20,7 @@ export {
   diffHunkEvidence,
   type EvidenceSources,
   evidenceFiles,
+  hunkDigest,
 } from './evidence/build.ts';
 export {
   citationProblems,

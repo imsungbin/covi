@@ -1,17 +1,36 @@
-import { type EvidenceIndex, type EvidenceKind, escapeUnprintable } from '@covi/core';
+import {
+  type EvidenceIndex,
+  type EvidenceItem,
+  type EvidenceKind,
+  escapeUnprintable,
+} from '@covi/core';
 import { findPhrase, parseEmphasis } from '../storyboard/grammar.ts';
 import type { Scene } from '../storyboard/schema.ts';
 import type { Direction, ShotElement } from './schema.ts';
-import { type DirectionSources, hunkView } from './sources.ts';
+import { type DirectionSources, hunkView, startupLog } from './sources.ts';
 
-/** Characters of a cited id, a phrase, or a scene id a problem echoes. */
+/** Characters a problem prints of a cited id, a phrase, or a scene id, escapes included. */
 const ECHO_CHARS = 120;
 
 /**
  * Text from the direction or the storyboard as a problem echoes it: their authors may be hostile,
- * so nothing unprintable reaches the terminal raw, and a long value is cut.
+ * so nothing unprintable reaches the terminal raw, and the printed text is at most `ECHO_CHARS`
+ * long. A cut falls between characters, never inside an escape or a surrogate pair.
  */
-const shown = (text: string) => escapeUnprintable(text, ECHO_CHARS);
+function shown(text: string): string {
+  const parts: string[] = [];
+  let length = 0;
+  for (const char of text) {
+    const part = escapeUnprintable(char);
+    if (length + part.length > ECHO_CHARS) {
+      while (length + 1 > ECHO_CHARS) length -= parts.pop()!.length;
+      return `${parts.join('')}…`;
+    }
+    parts.push(part);
+    length += part.length;
+  }
+  return parts.join('');
+}
 
 /**
  * What the schema alone cannot check, as lines that name the shot, element, and beat: shots name
@@ -32,15 +51,15 @@ export function directionProblems(
     const sceneId = shown(shot.scene);
     const where = `shot ${i + 1} (scene ${sceneId})`;
     const scene = byId.get(shot.scene);
-    if (!scene) {
+    // A shot for no scene is still checked through, so every problem it has is listed at once;
+    // only its phrases, which need the scene's narration, are not.
+    if (!scene)
       problems.push(
         `${where}: the storyboard has no scene "${sceneId}" (it has: ${[...byId.keys()].map(shown).join(', ')})`,
       );
-      return;
-    }
-    if (directed.has(shot.scene))
+    else if (directed.has(shot.scene))
       problems.push(`${where}: scene ${sceneId} already has a shot; give each scene at most one`);
-    directed.add(shot.scene);
+    else directed.add(shot.scene);
     if (shot.layout === 'single' && shot.elements.length > 1)
       problems.push(
         `${where}: layout "single" shows one element, and the shot has ${shot.elements.length}`,
@@ -52,7 +71,7 @@ export function directionProblems(
       for (const problem of elementProblems(element, evidence, sources))
         problems.push(`${where}, element ${element.id}: ${problem}`);
     }
-    const text = parseEmphasis(scene.narration).text;
+    const text = scene && parseEmphasis(scene.narration).text;
     shot.beats.forEach((beat, k) => {
       const name = `${where}, beat ${k + 1} (${beat.verb})`;
       const target = beat.verb === 'camera' ? beat.to : beat.element;
@@ -60,7 +79,7 @@ export function directionProblems(
         problems.push(
           `${name}: the shot has no element "${target}" (it has: ${[...ids].join(', ')})`,
         );
-      if (beat.verb === 'place' || beat.at === undefined) return;
+      if (beat.verb === 'place' || beat.at === undefined || text === undefined) return;
       const at = findPhrase(text, beat.at);
       if (at.count === 0)
         problems.push(`${name} quotes "${shown(beat.at)}", which is not in the scene's narration`);
@@ -81,13 +100,13 @@ function elementProblems(
   sources: DirectionSources,
 ): string[] {
   const out: string[] = [];
-  /** Whether `id` is in the run's evidence as a `kind` item; says why not. */
-  const cites = (id: string, kind: EvidenceKind, what: string) => {
+  /** The `kind` item `id` names in the run's evidence; says why there is none. */
+  const cites = (id: string, kind: EvidenceKind, what: string): EvidenceItem | undefined => {
     const item = evidence?.find(id);
     if (!item) out.push(`cites "${shown(id)}", ${UNKNOWN}`);
     else if (item.kind !== kind)
       out.push(`${what} shows a ${kind}: item, and "${shown(id)}" is a ${item.kind}`);
-    return item?.kind === kind;
+    return item?.kind === kind ? item : undefined;
   };
   switch (element.kind) {
     case 'code': {
@@ -110,19 +129,23 @@ function elementProblems(
       break;
     }
     case 'output': {
-      if (!cites(element.evidence, 'terminal', 'an output element')) break;
+      const item = cites(element.evidence, 'terminal', 'an output element');
+      if (!item) break;
       const command = sources.command(element.evidence);
+      const log = startupLog(item.id);
       if (!command) out.push(`the run has no output for "${shown(element.evidence)}"`);
-      else if ((element.side ?? 'head') === 'base' && command.before === undefined)
+      else if (element.side === 'base' && log)
+        out.push(
+          `side "base": "${shown(element.evidence)}" is the app's start-up log at ${log}, its only output; leave side out`,
+        );
+      else if (element.side === 'base' && command.before === undefined)
         out.push(`side "base": "${shown(element.evidence)}" ran only after the change`);
       break;
     }
     case 'capture':
-      if (
-        cites(element.evidence, 'screenshot', 'a capture element') &&
-        !sources.capture(element.evidence)
-      )
-        out.push(`the run has no image for "${shown(element.evidence)}"`);
+      // Any screenshot item has an image to show; that the file is there and readable is checked
+      // where it is loaded, as a storyboard's captures are.
+      cites(element.evidence, 'screenshot', 'a capture element');
       break;
     case 'node':
       for (const id of element.evidence ?? [])

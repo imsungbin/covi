@@ -282,4 +282,109 @@ describe('direction references', () => {
       'shot 1 (scene s1), element p: cites "screenshot:x", which the run\'s evidence does not have (`covi evidence --run <id>` lists it)',
     ]);
   });
+
+  it('check a shot for no scene through, and list all its problems with that one', () => {
+    expect(
+      problems({
+        shots: [
+          {
+            scene: 's9',
+            layout: 'single',
+            elements: [
+              { id: 'a', kind: 'code', evidence: 'diff-hunk:nope.js:1' },
+              { id: 'a', kind: 'capture', evidence: 'screenshot:x' },
+            ],
+            beats: [{ verb: 'reveal', element: 'zz', at: 'not checked without a narration' }],
+          },
+        ],
+      }),
+    ).toEqual([
+      'shot 1 (scene s9): the storyboard has no scene "s9" (it has: s1, s2)',
+      'shot 1 (scene s9): layout "single" shows one element, and the shot has 2',
+      'shot 1 (scene s9), element a: cites "diff-hunk:nope.js:1", which the run\'s evidence does not have (`covi evidence --run <id>` lists it)',
+      'shot 1 (scene s9): element id "a" is used twice',
+      'shot 1 (scene s9), element a: cites "screenshot:x", which the run\'s evidence does not have (`covi evidence --run <id>` lists it)',
+      'shot 1 (scene s9), beat 1 (reveal): the shot has no element "zz" (it has: a)',
+    ]);
+  });
+
+  it('measure lines within the side a code element shows', () => {
+    const code = (side: 'head' | 'base' | 'diff', lines: [number, number]) => ({
+      id: 'c',
+      kind: 'code' as const,
+      evidence: 'diff-hunk:src/request.js:10',
+      side,
+      lines,
+    });
+    const check = (element: ReturnType<typeof code>) =>
+      problems({ shots: [{ scene: 's1', elements: [element] }] });
+    expect(check(code('diff', [1, 4]))).toEqual([]);
+    expect(check(code('base', [1, 3]))).toEqual([]);
+    expect(check(code('base', [2, 4]))).toEqual([
+      'shot 1 (scene s1), element c: lines [2, 4] run past the 3 lines of its base side',
+    ]);
+    expect(check(code('diff', [2, 5]))).toEqual([
+      'shot 1 (scene s1), element c: lines [2, 5] run past the 4 lines of its diff side',
+    ]);
+  });
+
+  it("show the app's start-up log on the default side, at either revision", () => {
+    const logs = indexEvidence(buildEvidence({ fileSha: () => '1'.repeat(64) }));
+    const started = directionSources({
+      evidence: logs,
+      appLogs: { base: 'Error: Cannot find module', head: 'listening on :3000' },
+    });
+    expect(started.command('terminal:app-start-base')).toEqual({
+      name: 'app-start · base',
+      command: '',
+      output: 'Error: Cannot find module',
+    });
+    const output = (id: string, evidence: string, side?: 'head' | 'base') => ({
+      id,
+      kind: 'output' as const,
+      evidence,
+      ...(side ? { side } : {}),
+    });
+    expect(
+      directionProblems(
+        DirectionSchema.parse({
+          shots: [
+            {
+              scene: 's1',
+              elements: [
+                output('b', 'terminal:app-start-base'),
+                output('h', 'terminal:app-start-head', 'head'),
+                output('x', 'terminal:app-start-base', 'base'),
+              ],
+            },
+          ],
+        }),
+        scenes,
+        logs,
+        started,
+      ),
+    ).toEqual([
+      'shot 1 (scene s1), element x: side "base": "terminal:app-start-base" is the app\'s start-up log at base, its only output; leave side out',
+    ]);
+  });
+
+  it('echo at most a bounded, printable string, escapes included', () => {
+    const echoed = (line: string) => /"(.*)", which the run's evidence/.exec(line)![1]!;
+    const cite = (evidence: string) =>
+      problems({ shots: [{ scene: 's1', elements: [{ id: 'c', kind: 'code', evidence }] }] })[0]!;
+    // Control characters only: each prints as six characters.
+    const controls = echoed(cite(`diff-hunk:${'\u0001'.repeat(390)}`));
+    expect(controls.length).toBeLessThanOrEqual(120);
+    expect(controls).toMatch(/^diff-hunk:(\\u0001)+…$/);
+    // Astral format characters print as nine; a cut never falls inside one.
+    const tags = echoed(cite(`diff-hunk:${'\u{E0001}'.repeat(150)}`));
+    expect(tags.length).toBeLessThanOrEqual(120);
+    expect(tags).toMatch(/^diff-hunk:(\\u\{e0001\})+…$/);
+    // Printable astral characters stay whole: no lone surrogate is left at the cut.
+    const faces = echoed(cite(`diff-hunk:${'\u{1F600}'.repeat(150)}`));
+    expect(faces.length).toBeLessThanOrEqual(120);
+    expect(faces).not.toMatch(/\p{Cs}/u);
+    expect(faces.endsWith('\u{1F600}…')).toBe(true);
+    for (const text of [controls, tags, faces]) expect(text).not.toMatch(/[\p{Cc}\p{Cf}]/u);
+  });
 });

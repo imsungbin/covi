@@ -4,9 +4,8 @@ import {
   type EvidenceIndex,
   evidenceId,
   type Hunk,
+  hunkDigest,
   parseDiff,
-  renderHunk,
-  sha256,
 } from '@covi/core';
 
 /*
@@ -73,6 +72,11 @@ export function diffFiles(
   });
 }
 
+/** The revision whose app start-up log an evidence id names, if it names one. */
+export function startupLog(id: string): 'base' | 'head' | undefined {
+  return (['base', 'head'] as const).find((revision) => id === evidenceId.appStart(revision));
+}
+
 export type CodeSide = 'head' | 'base' | 'diff';
 
 /**
@@ -87,13 +91,13 @@ export function hunkView(lines: readonly DiffLine[], side: CodeSide): DiffLine[]
 
 export function directionSources(input: SourcesInput): DirectionSources {
   const redact = input.redact ?? ((text: string) => text);
-  // Keyed by id and digest as the registry records them (it hashes a hunk as `diffHunkEvidence`
-  // does), so lines that differ from the evidenced hunk are never shown under its id.
+  // Keyed by id and digest as the registry records them, so lines that differ from the evidenced
+  // hunk are never shown under its id.
   const key = (id: string, digest: string) => `${id}\n${digest}`;
   const hunks = new Map<string, HunkSource>();
   for (const file of input.files ?? [])
     for (const hunk of file.hunks) {
-      const at = key(redact(evidenceId.hunk(file.path, hunk.newStart)), sha256(renderHunk(hunk)));
+      const at = key(redact(evidenceId.hunk(file.path, hunk.newStart)), hunkDigest(hunk));
       if (!hunks.has(at))
         hunks.set(at, {
           path: file.path,
@@ -110,9 +114,9 @@ export function directionSources(input: SourcesInput): DirectionSources {
     command(id) {
       const found = item(id);
       if (found?.kind !== 'terminal') return undefined;
-      const start = /^terminal:app-start-(base|head)$/.exec(found.id);
-      if (start) {
-        const log = input.appLogs?.[start[1] as 'base' | 'head'];
+      const revision = startupLog(found.id);
+      if (revision) {
+        const log = input.appLogs?.[revision];
         return log === undefined ? undefined : { name: found.label, command: '', output: log };
       }
       const n = /^terminal:(\d+)$/.exec(found.id);

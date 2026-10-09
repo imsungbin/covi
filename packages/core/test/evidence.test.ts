@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildEvidence, diffHunkEvidence, evidenceFiles } from '../src/evidence/build.ts';
+import {
+  buildEvidence,
+  diffHunkEvidence,
+  evidenceFiles,
+  hunkDigest,
+} from '../src/evidence/build.ts';
 import { evidenceId, evidencePart } from '../src/evidence/ids.ts';
 import type { BehaviorDiff, Trace } from '../src/model/behavior.ts';
 import type { Hunk } from '../src/model/change.ts';
@@ -168,6 +173,14 @@ describe('diffHunkEvidence', () => {
         revision: 'both',
         sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
       });
+  });
+
+  it('records each hunk under its digest, which changes with any line', () => {
+    const shown = hunk(10, 3, 10, 5);
+    const [item] = diffHunkEvidence([{ path: 'a.ts', hunks: [shown] }]);
+    expect(item!.sha256).toBe(hunkDigest(shown));
+    const edited = { ...shown, lines: [{ ...shown.lines[0]!, text: 'y' }] };
+    expect(hunkDigest(edited)).not.toBe(hunkDigest(shown));
   });
 
   it('skips a hunk with no lines on either side', () => {

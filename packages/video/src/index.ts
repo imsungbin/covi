@@ -6,9 +6,16 @@ export { imageSize } from './composition/images.ts';
 export { runtimeScript } from './composition/runtime-bundle.ts';
 export {
   type DensityTimeline,
+  densityChecks,
   EMPTY_SHARE,
   emptyFrameCheck,
+  leadKind,
+  MAX_RUN,
+  monotonyCheck,
+  TRANSITION_MIN,
+  TRANSITION_SHARE,
   textSizeCheck,
+  transitionVarietyCheck,
 } from './density.ts';
 export {
   localeLanguage,

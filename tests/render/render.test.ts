@@ -147,6 +147,10 @@ describe.skipIf(!available)('rendering', () => {
     });
     const failing = qc.checks.filter((c) => c.status === 'fail' && c.id !== 'duration');
     expect(failing).toEqual([]);
+    // Every render is checked for small text, empty frames, and monotony.
+    expect(qc.checks.map((c) => c.id)).toEqual(
+      expect.arrayContaining(['text-size', 'empty-frame', 'monotony', 'transition-variety']),
+    );
     expect(readFileSync(result.contactSheet!).length).toBeGreaterThan(1000);
     // Each tile is the frame with its label in a band below it: the label never covers the
     // captions, and the sheet is as tall as frames plus bands.

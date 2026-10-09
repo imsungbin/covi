@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { emptyFrameCheck, textSizeCheck } from '../src/density.ts';
+import {
+  densityChecks,
+  emptyFrameCheck,
+  monotonyCheck,
+  textSizeCheck,
+  transitionVarietyCheck,
+} from '../src/density.ts';
 import { layoutSampleFrames } from '../src/render/renderer.ts';
 import {
   CARD_FILL,
@@ -17,6 +23,7 @@ import type {
   Timeline,
   TimelineScene,
   TimelineVisual,
+  TransitionKind,
 } from '../src/timeline/types.ts';
 
 const code: TimelineVisual = {
@@ -240,9 +247,13 @@ describe('the empty-frame check', () => {
     const t = story();
     const thin = emptyFrameCheck(t, [report(at(t, 's1'), 's1', [codeAt(44, band(180))])]);
     expect(thin).toMatchObject({ id: 'empty-frame', status: 'warn' });
-    expect(thin.message).toMatch(/s1 \(27%\)/);
+    expect(thin.message).toMatch(/s1 \(27\.1%\)/);
     const full = emptyFrameCheck(t, [report(at(t, 's1'), 's1', [codeAt(44, band(400))])]);
     expect(full.status).toBe('pass');
+    // Just under 40% (264.6 of 662): named under its floor, never at it.
+    const near = emptyFrameCheck(t, [report(at(t, 's1'), 's1', [codeAt(44, band(264.6))])]);
+    expect(near.status).toBe('warn');
+    expect(near.message).toMatch(/s1 \(39\.9%\); at least 40% of the media region/);
   });
 
   it('counts only content inside the media region, at the fullest settled frame', () => {
@@ -288,5 +299,97 @@ describe('the empty-frame check', () => {
       report(at(t, 's2'), 's2', [narrow]),
     ]);
     expect(check.status).toBe('pass');
+  });
+});
+
+describe('the monotony check', () => {
+  const summary: TimelineVisual = {
+    kind: 'summary',
+    verdict: 'looks-good',
+    headline: 'H',
+    points: [],
+  };
+  /** Story scenes of these visuals, three seconds each, then the outro. */
+  const kinds = (...visuals: TimelineVisual[]) =>
+    ({
+      scenes: [
+        ...visuals.map((v, i) => scene(`s${i + 1}`, i * 3, i * 3 + 3, v)),
+        scene('covi:outro', visuals.length * 3, visuals.length * 3 + 2, { kind: 'outro' }),
+      ],
+    }) as Pick<Timeline, 'scenes'>;
+
+  it('warns at three scenes of one kind in a row, naming them', () => {
+    const check = monotonyCheck(kinds(code, code, code, callout));
+    expect(check).toMatchObject({ id: 'monotony', status: 'warn' });
+    expect(check.message).toMatch(/3 code scenes in a row \(s1–s3\)/);
+  });
+
+  it('passes two of a kind with something else between them', () => {
+    expect(monotonyCheck(kinds(code, code, callout, code, code)).status).toBe('pass');
+    expect(monotonyCheck(kinds(callout, summary, summary)).status).toBe('pass');
+  });
+
+  it('compares visual kinds exactly', () => {
+    expect(monotonyCheck(kinds(code, terminal, code, terminal)).status).toBe('pass');
+  });
+});
+
+describe('the transition-variety check', () => {
+  /** A first scene, then one entering with each kind (none: a timeline from before kinds). */
+  const entering = (...list: Array<TransitionKind | undefined>) =>
+    ({
+      scenes: [
+        scene('s0', 0, 3, callout),
+        ...list.map((kind, i) =>
+          scene(
+            `s${i + 1}`,
+            (i + 1) * 3,
+            (i + 1) * 3 + 3,
+            callout,
+            kind ? { kind, seconds: 0.45 } : undefined,
+          ),
+        ),
+        scene('covi:outro', 30, 32, { kind: 'outro' }, { kind: 'fade', seconds: 0.45 }),
+      ],
+    }) as Pick<Timeline, 'scenes'>;
+
+  it('warns when one kind covers more than 60% of four or more story transitions', () => {
+    const check = transitionVarietyCheck(entering('fade', 'fade', 'fade', 'push'));
+    expect(check).toMatchObject({ id: 'transition-variety', status: 'warn' });
+    expect(check.message).toMatch(/3 of 4 story transitions are fade \(75%\)/);
+  });
+
+  it('passes at 60%, and below four transitions', () => {
+    expect(transitionVarietyCheck(entering('fade', 'fade', 'fade', 'push', 'cut')).status).toBe(
+      'pass',
+    );
+    const few = transitionVarietyCheck(entering('fade', 'fade', 'fade'));
+    expect(few.status).toBe('pass');
+    // The outro's fade is not a story transition: three, not four.
+    expect(few.message).toMatch(/^3 story transition/);
+  });
+
+  it('counts a scene without a kind as a fade', () => {
+    expect(transitionVarietyCheck(entering(undefined, undefined, 'push', 'cut')).status).toBe(
+      'pass',
+    );
+    expect(transitionVarietyCheck(entering(undefined, undefined, undefined, 'push')).status).toBe(
+      'warn',
+    );
+  });
+});
+
+describe('the density checks', () => {
+  it('run in order, and pass quietly on reports that measured nothing', () => {
+    const t = story();
+    const ids = densityChecks(t, []).map((c) => c.id);
+    expect(ids).toEqual(['text-size', 'empty-frame', 'monotony', 'transition-variety']);
+    // Layouts from before fonts were reported, or sampled at no settled frame.
+    const old = densityChecks(t, [
+      report(3, 's1', [{ role: 'media', rect: band(180) }]),
+      report(at(t, 's2'), 's2', [{ role: 'text', rect: band(420) }]),
+    ]);
+    expect(old.map((c) => c.status)).toEqual(['pass', 'pass', 'pass', 'pass']);
+    expect(old[0]!.message).toMatch(/No code or body text was measured/);
   });
 });

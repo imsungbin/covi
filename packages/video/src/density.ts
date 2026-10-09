@@ -2,12 +2,14 @@ import type { QcCheck } from './qc.ts';
 import { computeRegions } from './runtime/layout.ts';
 import { union } from './runtime/narrator.ts';
 import { TEXT_FLOOR } from './runtime/sizing.ts';
+import { storyScenes } from './timeline/build.ts';
 import { settledFrame, settledSpan } from './timeline/cues.ts';
 import type { LayoutReport, Rect, Timeline, TimelineScene } from './timeline/types.ts';
 
 /*
- * Density checks on the rendered layout: is the text large enough to read, and does the content
- * use the frame. They warn rather than fail: they judge taste, not broken output (R-007).
+ * Density and monotony checks: is the text large enough to read, does the content use the frame,
+ * and does the picture vary from scene to scene. They warn rather than fail: they judge taste,
+ * not broken output (R-007).
  */
 
 /** What the density checks read of a timeline. */
@@ -37,6 +39,9 @@ const CARDS: ReadonlySet<TimelineScene['visual']['kind']> = new Set([
 ]);
 
 const percent = (share: number) => `${Math.round(100 * share)}%`;
+
+/** A share to a tenth of a percent, rounded down: a share under its floor is never named at it. */
+const tenths = (share: number) => `${Math.floor(1000 * share + 1e-9) / 10}%`;
 
 /** The first three of `names`, and an ellipsis for the rest. */
 const listed = (names: readonly string[]) =>
@@ -149,10 +154,100 @@ export function emptyFrameCheck(
         ? `Every card scene's content fills at least ${percent(EMPTY_SHARE)} of the media region.`
         : 'No card scene was measured at a settled frame.',
     };
-  const named = listed(empty.map(([id, share]) => `${id} (${percent(share)})`));
+  const named = listed(empty.map(([id, share]) => `${id} (${tenths(share)})`));
   return {
     id: 'empty-frame',
     status: 'warn',
     message: `Content fills little of the frame in ${named}; at least ${percent(EMPTY_SHARE)} of the media region wanted. Show more of the subject in the scene, or merge it with the next.`,
   };
+}
+
+/** At most this many story scenes of one kind in a row; more read as a slide deck. */
+export const MAX_RUN = 2;
+/** One transition kind may cover at most this share of the story's transitions… */
+export const TRANSITION_SHARE = 0.6;
+/** …once there are at least this many. */
+export const TRANSITION_MIN = 4;
+
+/** The kind of picture a scene leads with: its visual's kind. */
+export function leadKind(scene: Pick<TimelineScene, 'visual'>): string {
+  return scene.visual.kind;
+}
+
+/** No more than two story scenes in a row lead with the same kind of visual. */
+export function monotonyCheck(timeline: Pick<Timeline, 'scenes'>): QcCheck {
+  const story = storyScenes(timeline.scenes);
+  const runs: Array<{ kind: string; from: string; to: string; length: number }> = [];
+  let start = 0;
+  for (let i = 1; i <= story.length; i++) {
+    if (i < story.length && leadKind(story[i]!) === leadKind(story[start]!)) continue;
+    if (i - start > MAX_RUN)
+      runs.push({
+        kind: leadKind(story[start]!),
+        from: story[start]!.id,
+        to: story[i - 1]!.id,
+        length: i - start,
+      });
+    start = i;
+  }
+  if (!runs.length)
+    return {
+      id: 'monotony',
+      status: 'pass',
+      message: `No more than ${MAX_RUN} scenes of one kind in a row.`,
+    };
+  return {
+    id: 'monotony',
+    status: 'warn',
+    message: `${runs
+      .slice(0, 3)
+      .map((r) => `${r.length} ${r.kind} scenes in a row (${r.from}–${r.to})`)
+      .join(
+        '; ',
+      )}${runs.length > 3 ? '; …' : ''}: at most ${MAX_RUN} of one kind in a row. Put a different picture between them: the output, a capture, or the code it explains.`,
+  };
+}
+
+/**
+ * With four or more story transitions (into each story scene after the first; the outro's is
+ * Covi's), no one kind covers more than 60% of them. A scene without a kind faded in.
+ */
+export function transitionVarietyCheck(timeline: Pick<Timeline, 'scenes'>): QcCheck {
+  const kinds = storyScenes(timeline.scenes)
+    .slice(1)
+    .map((s) => s.transition?.kind ?? 'fade');
+  if (kinds.length < TRANSITION_MIN)
+    return {
+      id: 'transition-variety',
+      status: 'pass',
+      message: `${kinds.length} story transition(s); variety is checked from ${TRANSITION_MIN}.`,
+    };
+  const counts = new Map<string, number>();
+  for (const kind of kinds) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  const [top, n] = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]!;
+  const share = n / kinds.length;
+  return share > TRANSITION_SHARE + 1e-9
+    ? {
+        id: 'transition-variety',
+        status: 'warn',
+        message: `${n} of ${kinds.length} story transitions are ${top} (${percent(share)}): at most ${percent(TRANSITION_SHARE)} of one kind. Set \`transition\` on scenes: cut when the same subject continues, push for the next step, wipe from before to after.`,
+      }
+    : {
+        id: 'transition-variety',
+        status: 'pass',
+        message: `No transition kind covers more than ${percent(TRANSITION_SHARE)} of the ${kinds.length} story transitions (most: ${top}, ${percent(share)}).`,
+      };
+}
+
+/** The density and monotony checks, in the order `qc.json` lists them. */
+export function densityChecks(
+  timeline: DensityTimeline,
+  layouts: readonly LayoutReport[],
+): QcCheck[] {
+  return [
+    textSizeCheck(timeline, layouts),
+    emptyFrameCheck(timeline, layouts),
+    monotonyCheck(timeline),
+    transitionVarietyCheck(timeline),
+  ];
 }

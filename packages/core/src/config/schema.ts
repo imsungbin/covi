@@ -28,8 +28,9 @@ export const INTELLIGENCE_PROVIDERS = ['auto', 'heuristic', 'anthropic', 'comman
 export const MUSIC_CHOICES = ['theme', 'compose', 'none'] as const;
 export type MusicChoice = (typeof MUSIC_CHOICES)[number];
 /**
- * Where music plays: `auto` lets the kind of video decide, `continuous` keeps a quiet bed under
- * the narration, and `bookends` plays it only around the narration (the start, breaths, the end).
+ * Where music plays: `auto` is continuous for every kind of video; `continuous` keeps a bed under
+ * the whole video that ducks under the narration; `bookends` plays it before the first line and
+ * after the last only.
  */
 export const MUSIC_PLACEMENTS = ['auto', 'continuous', 'bookends'] as const;
 export type MusicPlacementSetting = (typeof MUSIC_PLACEMENTS)[number];
@@ -259,7 +260,7 @@ export const ConfigInputSchema = z.strictObject({
             .enum(MUSIC_PLACEMENTS)
             .optional()
             .describe(
-              'auto (the kind of video decides), continuous (a quiet bed under the narration), or bookends (around the narration only).',
+              'auto (continuous), continuous (a bed under the whole video, ducked under the narration), or bookends (before the first line and after the last only).',
             ),
         })
         .optional(),

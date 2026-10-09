@@ -5,7 +5,11 @@ import {
   dbfs,
   integratedLoudness,
   kWeightingCoefficients,
+  largestJump,
+  loudnessJump,
+  loudnessRange,
   measureLoudness,
+  momentaryLoudness,
   truePeak,
   weightedLevel,
 } from '../src/loudness.ts';
@@ -162,5 +166,97 @@ describe('measureLoudness and weightedLevel', () => {
     // Between the sines only the filters' decaying tails remain.
     expect(weightedLevel([x, x], SR, [[2.2, 3.8]])).toBeLessThan(-150);
     expect(weightedLevel([x, x], SR, [])).toBe(Number.NEGATIVE_INFINITY);
+  });
+});
+
+describe('momentary loudness', () => {
+  it("reads 400 ms windows every 100 ms, as ffmpeg's ebur128 M does", () => {
+    const x = sine(1000, 2, -23);
+    const m = momentaryLoudness([x, x], SR);
+    // 20 steps of 100 ms, windows of 4 steps.
+    expect(m.length).toBe(17);
+    for (const v of m) expect(v).toBeCloseTo(-23, 1);
+  });
+
+  it('is −Infinity in digital silence', () => {
+    const x = new Float32Array(SR);
+    for (const v of momentaryLoudness([x, x], SR)) expect(v).toBe(Number.NEGATIVE_INFINITY);
+  });
+});
+
+describe('loudness range (EBU Tech 3342)', () => {
+  const lra = (...parts: Array<[number, number]>) => {
+    const x = concat(...parts.map(([seconds, db]) => sine(1000, seconds, db)));
+    return loudnessRange([x, x], SR)!;
+  };
+
+  it('reads the Tech 3342 test signals within ±1 LU', () => {
+    expect(Math.abs(lra([20, -20], [20, -30]) - 10)).toBeLessThanOrEqual(1);
+    expect(Math.abs(lra([20, -20], [20, -15]) - 5)).toBeLessThanOrEqual(1);
+    expect(Math.abs(lra([20, -40], [20, -20]) - 20)).toBeLessThanOrEqual(1);
+    // The −50 dBFS ends fall under the relative gate.
+    expect(
+      Math.abs(lra([20, -50], [20, -35], [20, -20], [20, -35], [20, -50]) - 15),
+    ).toBeLessThanOrEqual(1);
+  });
+
+  it('measures only the windows inside a span, and nothing in silence or under 3 s', () => {
+    const x = concat(
+      sine(1000, 20, -50),
+      sine(1000, 20, -35),
+      sine(1000, 20, -20),
+      sine(1000, 20, -35),
+    );
+    expect(Math.abs(loudnessRange([x, x], SR, [20, 80])! - 15)).toBeLessThanOrEqual(1);
+    expect(loudnessRange([x, x], SR, [30, 32.5])).toBeUndefined();
+    const silent = new Float32Array(5 * SR);
+    expect(loudnessRange([silent, silent], SR)).toBeUndefined();
+    const steady = sine(1000, 10, -20);
+    expect(loudnessRange([steady, steady], SR)!).toBeLessThan(0.1);
+  });
+});
+
+describe('loudness jumps', () => {
+  const step = concat(sine(1000, 5, -20), sine(1000, 5, -30));
+
+  it('finds a 10 dB step and when it is heard', () => {
+    const jump = loudnessJump([step, step], SR)!;
+    expect(jump.maxDb).toBeCloseTo(10, 0);
+    expect(jump.at).toBeGreaterThanOrEqual(5);
+    expect(jump.at).toBeLessThanOrEqual(5.6);
+  });
+
+  it('skips every window that touches an exempt window, open-ended ones too', () => {
+    expect(loudnessJump([step, step], SR, { exempt: [[4.5, 5.5]] })!.maxDb).toBeLessThan(0.05);
+    const around = loudnessJump([step, step], SR, {
+      exempt: [
+        [Number.NEGATIVE_INFINITY, 4],
+        [6.5, Number.POSITIVE_INFINITY],
+      ],
+    })!;
+    expect(around.maxDb).toBeCloseTo(10, 0);
+  });
+
+  it('measures a 5 dB-per-second fade as 5 dB within a second', () => {
+    const x = new Float32Array(10 * SR);
+    for (let i = 0; i < x.length; i++) {
+      const t = i / SR;
+      const db = t < 4 ? -20 : t < 6 ? -20 - 5 * (t - 4) : -30;
+      x[i] = 10 ** (db / 20) * Math.sin(2 * Math.PI * 1000 * t);
+    }
+    expect(loudnessJump([x, x], SR)!.maxDb).toBeCloseTo(5, 0);
+  });
+
+  it('counts silence as −70 LUFS, so a drop into silence is a finite jump', () => {
+    const x = concat(sine(1000, 2, -20), new Float32Array(2 * SR));
+    const jump = loudnessJump([x, x], SR)!;
+    expect(Number.isFinite(jump.maxDb)).toBe(true);
+    expect(jump.maxDb).toBeCloseTo(50, 0);
+  });
+
+  it('has nothing to report when fewer than two windows are clear', () => {
+    const x = sine(1000, 2, -20);
+    expect(loudnessJump([x, x], SR, { exempt: [[0, 2]] })).toBeUndefined();
+    expect(largestJump(new Float64Array(0))).toBeUndefined();
   });
 });

@@ -4,8 +4,9 @@
  *
  * Integrated loudness: K-weighting (a high shelf and the RLB high-pass), mean square over 400 ms
  * blocks every 100 ms summed across channels, an absolute gate at −70 LUFS, then a relative gate
- * 10 LU below the loudness of the blocks that passed it. True peak: 4× oversampling with a
- * windowed-sinc interpolator, and the largest magnitude found.
+ * 10 LU below the loudness of the blocks that passed it. Momentary loudness, loudness range
+ * (EBU Tech 3342), and the jumps between nearby windows read the same 100 ms steps. True peak: 4×
+ * oversampling with a windowed-sinc interpolator, and the largest magnitude found.
  */
 
 export interface Loudness {
@@ -104,15 +105,25 @@ const LUFS_OFFSET = -0.691;
 const toLufs = (power: number) =>
   power > 0 ? LUFS_OFFSET + 10 * Math.log10(power) : Number.NEGATIVE_INFINITY;
 
+/** The absolute gate of BS.1770 and Tech 3342 (−70 LUFS) as a mean square. */
+const ABSOLUTE_GATE = 10 ** ((-70 - LUFS_OFFSET) / 10);
+
+/** Mean square of windows `width` steps (100 ms each) wide, one window per step. */
+function windowPowers(steps: Float64Array, width: number, sampleRate: number): Float64Array {
+  const samples = width * Math.round(sampleRate / 10);
+  const out = new Float64Array(Math.max(0, steps.length - width + 1));
+  for (let k = 0; k < out.length; k++) {
+    let sum = 0;
+    for (let j = k; j < k + width; j++) sum += steps[j]!;
+    out[k] = sum / samples;
+  }
+  return out;
+}
+
 /** Integrated loudness in LUFS: gated, so silence and quiet passages do not pull it down. */
 export function integratedLoudness(channels: readonly Float32Array[], sampleRate: number): number {
-  const steps = stepEnergies(channels, sampleRate);
-  const blockSamples = 4 * Math.round(sampleRate / 10);
-  const blocks: number[] = [];
-  for (let j = 0; j + 4 <= steps.length; j++)
-    blocks.push((steps[j]! + steps[j + 1]! + steps[j + 2]! + steps[j + 3]!) / blockSamples);
-  const absolute = 10 ** ((-70 - LUFS_OFFSET) / 10);
-  const loud = blocks.filter((p) => p > absolute);
+  const blocks = windowPowers(stepEnergies(channels, sampleRate), 4, sampleRate);
+  const loud = blocks.filter((p) => p > ABSOLUTE_GATE);
   if (!loud.length) return Number.NEGATIVE_INFINITY;
   const relative = (loud.reduce((a, b) => a + b, 0) / loud.length) * 0.1;
   const gated = loud.filter((p) => p > relative);
@@ -145,13 +156,102 @@ export function weightedLevel(
 }
 
 /**
+ * Momentary loudness (EBU Tech 3341): K-weighted and ungated, over 400 ms windows every 100 ms.
+ * Value k covers [0.1·k, 0.1·k + 0.4] s; −Infinity where a window is digital silence.
+ */
+export function momentaryLoudness(
+  channels: readonly Float32Array[],
+  sampleRate: number,
+): Float64Array {
+  return windowPowers(stepEnergies(channels, sampleRate), 4, sampleRate).map(toLufs);
+}
+
+/**
+ * Loudness range (EBU Tech 3342) in LU: short-term loudness over 3 s windows every 100 ms, of the
+ * windows inside `span` (seconds; the whole signal by default), gated at −70 LUFS and then 20 LU
+ * below the power mean of what passed; the spread from the 10th to the 95th percentile.
+ * Undefined when no window passes: silence, or a span shorter than 3 s.
+ */
+export function loudnessRange(
+  channels: readonly Float32Array[],
+  sampleRate: number,
+  span: readonly [number, number] = [0, Number.POSITIVE_INFINITY],
+): number | undefined {
+  const shortTerm = windowPowers(stepEnergies(channels, sampleRate), 30, sampleRate);
+  const [from, to] = span;
+  const passed: number[] = [];
+  for (let k = 0; k < shortTerm.length; k++) {
+    const start = k / 10;
+    if (start >= from - 1e-9 && start + 3 <= to + 1e-9 && shortTerm[k]! > ABSOLUTE_GATE)
+      passed.push(shortTerm[k]!);
+  }
+  if (!passed.length) return undefined;
+  const gate = (passed.reduce((a, b) => a + b, 0) / passed.length) * 10 ** (-20 / 10);
+  const gated = passed
+    .filter((p) => p > gate)
+    .map(toLufs)
+    .sort((a, b) => a - b);
+  const percentile = (p: number) => gated[Math.round((gated.length - 1) * p)]!;
+  return percentile(0.95) - percentile(0.1);
+}
+
+export interface Jump {
+  /** The largest change (dB). */
+  maxDb: number;
+  /** When it is heard: the end of the later window (s). */
+  at: number;
+}
+
+/**
+ * The largest change of momentary loudness (values from `momentaryLoudness`) between two windows
+ * that start at most `within` seconds apart, both lying wholly outside every `exempt` window
+ * (seconds; either end may be infinite). Silence counts as `floor` LUFS, so a stem that falls
+ * silent reads as a finite drop. Undefined when fewer than two windows are clear.
+ */
+export function largestJump(
+  momentary: Float64Array,
+  options: {
+    exempt?: ReadonlyArray<readonly [number, number]>;
+    within?: number;
+    floor?: number;
+  } = {},
+): Jump | undefined {
+  const exempt = options.exempt ?? [];
+  const reach = Math.round((options.within ?? 1) * 10);
+  const floor = options.floor ?? -70;
+  const clear = Array.from(momentary, (_, k) =>
+    exempt.every(([s, e]) => k / 10 + 0.4 <= s + 1e-9 || k / 10 >= e - 1e-9),
+  );
+  let best: Jump | undefined;
+  for (let i = 0; i < momentary.length; i++) {
+    if (!clear[i]) continue;
+    const a = Math.max(floor, momentary[i]!);
+    for (let j = i + 1; j <= i + reach && j < momentary.length; j++) {
+      if (!clear[j]) continue;
+      const change = Math.abs(Math.max(floor, momentary[j]!) - a);
+      if (!best || change > best.maxDb + 1e-9) best = { maxDb: change, at: j / 10 + 0.4 };
+    }
+  }
+  return best;
+}
+
+/** The largest momentary-loudness jump of a signal (see `largestJump`). */
+export function loudnessJump(
+  channels: readonly Float32Array[],
+  sampleRate: number,
+  options: Parameters<typeof largestJump>[1] = {},
+): Jump | undefined {
+  return largestJump(momentaryLoudness(channels, sampleRate), options);
+}
+
+/**
  * What counts as music a viewer hears: a 0.25 s window of the placed music stem whose RMS is above
  * −45 dBFS. The stem is at the voice's loudness (−16 LUFS) before placement, and the master keeps
- * the narration there, so −45 dBFS sits about 29 dB under the voice as heard. That is halfway
- * between Covi's own placements: a continuous bed under speech (about −36, quiet but heard) and
- * bookends' ducked level (about −56, masked by the voice), with some 10 dB of margin either way
- * for the music's own dynamics. A quarter second resolves a one-second breath and averages over a
- * note's attack and decay.
+ * the narration there, so −45 dBFS sits about 29 dB under the voice as heard. That lies between
+ * Covi's own placements: 14 dB under a continuous bed under speech (about −31, quiet but heard)
+ * and 11 dB over bookends' ducked level (about −56, masked by the voice), margin for the music's
+ * own dynamics. A quarter second resolves a one-second breath and averages over a note's attack
+ * and decay.
  */
 export const AUDIBLE = { thresholdDbfs: -45, window: 0.25 } as const;
 

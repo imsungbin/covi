@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { adsr } from '../src/dsp/env.ts';
 import { Biquad, Svf } from '../src/dsp/filter.ts';
 import { fm2 } from '../src/dsp/fm.ts';
-import { chorus, compressor, delay, limiter, reverb, softClip } from '../src/dsp/fx.ts';
+import {
+  chorus,
+  compressor,
+  delay,
+  glueCompressor,
+  limiter,
+  reverb,
+  softClip,
+  voiceCarve,
+} from '../src/dsp/fx.ts';
 import { karplusStrong } from '../src/dsp/ks.ts';
 import { modal } from '../src/dsp/modal.ts';
 import { noise } from '../src/dsp/noise.ts';
@@ -310,6 +319,29 @@ describe('effects', () => {
     expect(20 * Math.log10(rmsOf(y[0]!, 24000) / Math.SQRT1_2)).toBeLessThan(-10);
   });
 
+  it("compressor's output is pinned (it shares its gain computer with the glue)", () => {
+    // Quiet, inside the knee, and well over: every branch of the knee, attack and release.
+    const random = mulberry32(5);
+    const swell = (i: number) => [0.02, 0.1, 0.25, 0.9, 0.3][Math.floor((5 * i) / SR)]!;
+    const input = () => {
+      const l = Float32Array.from({ length: SR }, (_, i) => swell(i) * Math.sin(i * 0.031));
+      const r = Float32Array.from(l, (v) => v + 0.05 * (random() * 2 - 1));
+      return [l, r];
+    };
+    const a = compressor(input(), { threshold: -18, ratio: 4, attack: 0.005, release: 0.08 });
+    const b = compressor(input(), {
+      threshold: -12,
+      ratio: 2.5,
+      attack: 0.02,
+      release: 0.3,
+      makeup: 3,
+      knee: 10,
+    });
+    // A mismatch means the output changed (bump AUDIO_ENGINE_VERSION), or a new Node changed the
+    // float math with fx.ts untouched (measure again before re-pinning).
+    expect(hashOf(a[0]!, a[1]!, b[0]!, b[1]!)).toBe('d9ad428ce2352cd8');
+  });
+
   it('lookahead limiter holds the ceiling and leaves quiet audio untouched', () => {
     const loud = [tone(100, 1, 2), tone(150, 1, 1.5)];
     const y = limiter(loud, -1);
@@ -329,5 +361,49 @@ describe('effects', () => {
     expect(softClip(-0.3)).toBeCloseTo(-softClip(0.3), 9);
     for (const x of [1, 2, 5, 50]) expect(Math.abs(softClip(x))).toBeLessThan(1);
     expect(softClip(2)).toBeGreaterThan(softClip(1));
+  });
+});
+
+describe('the music bus', () => {
+  it('glue takes a steady loud sine down by half its excess over the threshold', () => {
+    // A sine at −10 dBFS peak has a mean square of −13 dB: 11 dB over −24, so 2:1 takes 5.5 dB.
+    const x = [tone(1000, 2, 10 ** (-10 / 20)), tone(1000, 2, 10 ** (-10 / 20))];
+    const before = rmsOf(x[0]!, SR, 2 * SR);
+    glueCompressor(x, { sr: SR });
+    expect(20 * Math.log10(rmsOf(x[0]!, SR, 2 * SR) / before)).toBeCloseTo(-5.5, 1);
+  });
+
+  it('glue leaves quiet passages exactly as they were', () => {
+    const x = [tone(1000, 1, 0.01), tone(1000, 1, 0.01)]; // −40 dBFS
+    const copy = x.map((c) => c.slice());
+    glueCompressor(x, { sr: SR });
+    expect(x).toEqual(copy);
+  });
+
+  it('glue is deterministic', () => {
+    const noisy = () => {
+      const random = mulberry32(3);
+      const c = Float32Array.from({ length: SR }, () => 0.5 * (random() * 2 - 1));
+      return [c, c.slice()];
+    };
+    const a = glueCompressor(noisy(), { sr: SR });
+    const b = glueCompressor(noisy(), { sr: SR });
+    expect(hashOf(a[0]!, a[1]!)).toBe(hashOf(b[0]!, b[1]!));
+  });
+
+  it('carves −6 dB at 2 kHz while ducked, about 1–4 kHz in all, and nothing at amount 0', () => {
+    const carved = (freq: number, amount: number) => {
+      const x = tone(freq, 0.5);
+      const y = [x.slice()];
+      voiceCarve(y, new Float32Array(x.length).fill(amount), { sr: SR });
+      const from = Math.round(0.25 * SR);
+      return 20 * Math.log10(rmsOf(y[0]!, from) / rmsOf(x, from));
+    };
+    expect(carved(2000, 1)).toBeCloseTo(-6.02, 1);
+    expect(carved(1000, 1)).toBeLessThan(-1);
+    expect(carved(4000, 1)).toBeLessThan(-1);
+    expect(Math.abs(carved(150, 1))).toBeLessThan(0.2);
+    expect(carved(8000, 1)).toBeGreaterThan(-1);
+    expect(carved(2000, 0)).toBe(0);
   });
 });

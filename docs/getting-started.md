@@ -291,7 +291,7 @@ How long?
 Choose 1-4 [1]: 2
 
 What music should the video have?
-  1. Covi theme (default) · Arranged to the story and the verdict. Quietly under short-form narration; around the narration in standard reviews
+  1. Covi theme (default) · Arranged to the story and the verdict. A quiet bed under the narration, louder before the first line and at the end
   2. No music · Narration and subtle sound effects only
 Choose 1-2 [1]: 1
 ```

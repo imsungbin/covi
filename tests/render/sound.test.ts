@@ -67,15 +67,22 @@ async function example(name: string): Promise<string> {
 
 const read = <T>(run: string, rel: string) => JSON.parse(readFileSync(join(run, rel), 'utf8')) as T;
 
-/** Integrated loudness of a file as ffmpeg's ebur128 measures it. */
-function ffmpegLoudness(file: string): number {
+/** A value from the summary ffmpeg's ebur128 prints for a file, or for a stretch of it. */
+function ffmpegSummary(file: string, pattern: RegExp, span: string[] = []): number {
   const { stderr } = spawnSync(
     'ffmpeg',
-    ['-hide_banner', '-nostats', '-i', file, '-af', 'ebur128', '-f', 'null', '-'],
+    ['-hide_banner', '-nostats', ...span, '-i', file, '-af', 'ebur128', '-f', 'null', '-'],
     { encoding: 'utf8' },
   );
-  return Number(/I:\s+(-?[\d.]+) LUFS/.exec(stderr.slice(stderr.lastIndexOf('Summary')))![1]);
+  return Number(pattern.exec(stderr.slice(stderr.lastIndexOf('Summary')))![1]);
 }
+
+/** Integrated loudness of a file as ffmpeg's ebur128 measures it. */
+const ffmpegLoudness = (file: string) => ffmpegSummary(file, /I:\s+(-?[\d.]+) LUFS/);
+
+/** Loudness range of a stretch of a file, as ffmpeg's ebur128 measures it. */
+const ffmpegRange = (file: string, from: number, to: number) =>
+  ffmpegSummary(file, /LRA:\s+(-?[\d.]+) LU/, ['-ss', String(from), '-to', String(to)]);
 
 describe.skipIf(!available || !fullRenders)('sound', () => {
   it('synthesizes a 35 s theme in under 10 s, and measures loudness as ffmpeg does', () => {
@@ -124,7 +131,15 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
       expect(evidence.has(id), id).toBe(true);
     expect(qc.checks.find((c) => c.id === 'grounding')).toBeDefined();
     expect(Math.abs(qc.measured.loudness! + 16)).toBeLessThanOrEqual(1);
-    for (const id of ['audio', 'music-under-speech', 'music-fit', 'music-audible', 'sound-effects'])
+    for (const id of [
+      'audio',
+      'music-under-speech',
+      'music-jump',
+      'music-range',
+      'music-fit',
+      'music-audible',
+      'sound-effects',
+    ])
       expect(qc.checks.find((c) => c.id === id)?.status, id).toBe('pass');
     // Our master's loudness agrees with ffmpeg's, measured on the video itself.
     const audio = read<Audio>(run, 'video/audio.json');
@@ -163,17 +178,61 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
     expect(outro!.t).toBeCloseTo(audio.music.outro!, 3);
   }, 900_000);
 
-  it('keeps the music around the narration of a standard review', async () => {
+  it('lays a continuous bed under a standard review that ducks without jumping', async () => {
     const repo = await example('api-users-pagination');
     const { result } = covi(['video', '--repo', repo, '--standard']);
     expect(result.video.rendered).toBe(true);
-    const audio = read<{ music: { placement: string } }>(result.runDir, 'video/audio.json');
-    expect(audio.music.placement).toBe('bookends');
-    const qc = read<Qc>(result.runDir, 'video/qc.json');
-    expect(qc.checks.find((c) => c.id === 'music-under-speech')?.status).toBe('pass');
-    // The music opens before the first line and is heard in the breaths, not only in the logo.
-    expect(qc.checks.find((c) => c.id === 'music-audible')?.status).toBe('pass');
+    const run = result.runDir;
+    const audio = read<{
+      music: { placement: string };
+      levels: {
+        musicBelowVoiceDb: number;
+        musicRangeLu: number;
+        musicJumps: { maxDb: number };
+        effectsBelowVoiceDb?: number;
+      };
+    }>(run, 'video/audio.json');
+    expect(audio.music.placement).toBe('continuous');
+    expect(audio.levels.musicBelowVoiceDb).toBeGreaterThanOrEqual(12);
+    expect(audio.levels.musicBelowVoiceDb).toBeLessThanOrEqual(20);
+    expect(audio.levels.musicRangeLu).toBeTypeOf('number');
+    expect(audio.levels.musicRangeLu).toBeLessThanOrEqual(8);
+    expect(audio.levels.musicJumps.maxDb).toBeLessThanOrEqual(6);
+    if (audio.levels.effectsBelowVoiceDb !== undefined)
+      expect(audio.levels.effectsBelowVoiceDb).toBeGreaterThanOrEqual(8);
+    const qc = read<Qc>(run, 'video/qc.json');
+    for (const id of ['audio', 'music-under-speech', 'music-jump', 'music-range', 'sound-effects'])
+      expect(qc.checks.find((c) => c.id === id)?.status, id).toBe('pass');
     expect(qc.status).not.toBe('fail');
+    // ffmpeg agrees on the range over the narration.
+    const timeline = read<{ scenes: Array<{ speech?: { start: number; end: number } }> }>(
+      run,
+      'video/timeline.json',
+    );
+    const lines = timeline.scenes.flatMap((s) => (s.speech ? [s.speech] : []));
+    const from = Math.min(...lines.map((l) => l.start));
+    const to = Math.max(...lines.map((l) => l.end));
+    const range = ffmpegRange(join(run, 'video/music.wav'), from, to);
+    expect(range).toBeLessThanOrEqual(8);
+    expect(Math.abs(range - audio.levels.musicRangeLu)).toBeLessThanOrEqual(0.5);
+    // Mixing the same sound again gives the same music, byte for byte.
+    const first = readFileSync(join(run, 'video/music.wav'));
+    covi(['render', '--repo', repo, '--run', result.runId]);
+    expect(readFileSync(join(run, 'video/music.wav')).equals(first)).toBe(true);
+    // Bookends still play, slope-limited: never a jump, effectively off under speech.
+    const remix = covi([
+      'render',
+      '--repo',
+      repo,
+      '--run',
+      result.runId,
+      '--music-placement',
+      'bookends',
+    ]);
+    expect(remix.result.video.framesReused).toBe(true);
+    const bookends = read<Qc>(run, 'video/qc.json');
+    expect(bookends.checks.find((c) => c.id === 'music-jump')?.status).toBe('pass');
+    expect(bookends.checks.find((c) => c.id === 'music-under-speech')?.status).toBe('pass');
   }, 900_000);
 
   it('renders a score composed for the video', async () => {

@@ -1,10 +1,11 @@
+import { EFFECTS_UNDER_VOICE_DB, MUSIC_JUMP_DB } from '@covi/audio';
 import { LANGUAGE_NAME } from '@covi/core';
 import { densityChecks } from './density.ts';
 import { localeLanguage, type SpeechRecord, unspokenAcronyms } from './narration/speech.ts';
 import { suggestedVoice } from './narration/tts.ts';
 import type { Media } from './render/ffmpeg.ts';
 import { computeRegions } from './runtime/layout.ts';
-import { type AudioRecord, musicLibrary } from './sound.ts';
+import { type AudioRecord, musicLibrary, round } from './sound.ts';
 import type { VideoSpec } from './spec.ts';
 import { CAPTION_SPEED_LIMIT, captionCharacters, PACE_LIMIT, speechUnits } from './text.ts';
 import { storyScenes } from './timeline/build.ts';
@@ -64,7 +65,7 @@ const LOUDNESS = { narrated: -16, music: -20 } as const;
 /**
  * The audio stream: present and not silent whenever narration, music, or effects play; at the
  * target loudness (±1 LU passes, ±2 warns); and with headroom (a true peak at or below −1 dBTP;
- * above −0.5 fails).
+ * above −0.5 fails). Both are graded at the tenth ffmpeg reports and the message prints.
  */
 export function audioCheck(
   m: AudioMeasure,
@@ -94,16 +95,18 @@ export function audioCheck(
   const ranks: QcStatus[] = [];
   const parts: string[] = [];
   const target = sound.narrated ? LOUDNESS.narrated : sound.music ? LOUDNESS.music : undefined;
-  if (target !== undefined && m.integrated !== undefined && Number.isFinite(m.integrated)) {
-    const off = Math.abs(m.integrated - target);
+  const integrated = m.integrated === undefined ? undefined : round(m.integrated, 1);
+  const truePeak = m.truePeak === undefined ? undefined : round(m.truePeak, 1);
+  if (target !== undefined && integrated !== undefined && Number.isFinite(integrated)) {
+    const off = Math.abs(integrated - target);
     ranks.push(off <= 1 ? 'pass' : off <= 2 ? 'warn' : 'fail');
-    parts.push(`${m.integrated.toFixed(1)} LUFS (target ${target})`);
-  } else if (m.integrated !== undefined && Number.isFinite(m.integrated)) {
-    parts.push(`${m.integrated.toFixed(1)} LUFS (effects only, no target)`);
+    parts.push(`${integrated.toFixed(1)} LUFS (target ${target})`);
+  } else if (integrated !== undefined && Number.isFinite(integrated)) {
+    parts.push(`${integrated.toFixed(1)} LUFS (effects only, no target)`);
   }
-  if (m.truePeak !== undefined && Number.isFinite(m.truePeak)) {
-    ranks.push(m.truePeak <= -1 ? 'pass' : m.truePeak <= -0.5 ? 'warn' : 'fail');
-    parts.push(`true peak ${m.truePeak.toFixed(1)} dBTP`);
+  if (truePeak !== undefined && Number.isFinite(truePeak)) {
+    ranks.push(truePeak <= -1 ? 'pass' : truePeak <= -0.5 ? 'warn' : 'fail');
+    parts.push(`true peak ${truePeak.toFixed(1)} dBTP`);
   }
   if (missingVoice) ranks.push('warn');
   const status = worst(ranks);
@@ -309,11 +312,39 @@ export function speechShareCheck(timeline: Pick<Timeline, 'scenes'>): QcCheck {
       };
 }
 
+/** The music's loudness range over the narration above which QC warns (LU). */
+export const MUSIC_RANGE_LU = 8;
 /**
- * Checks on the mix itself, read from `video/audio.json`: the music under the narration, the
- * music's fit to the picture (the logo after the last line, the landing before the end, the hero
- * on its downbeat, the tempo, a silent end), how much of the music is heard at all, and the
- * effects' spacing and level.
+ * Where a continuous bed sits under the voice (dB): passes inside, warns outside, fails under
+ * `fail`.
+ */
+export const BED_UNDER_VOICE = { min: 12, max: 20, fail: 9 } as const;
+
+/**
+ * A level to the hundredth, as `video/audio.json` records it: graded and printed at the same
+ * precision, so a message never names a failing level at its limit.
+ */
+const hundredth = (n: number | undefined) => (n === undefined ? n : round(n, 2));
+
+/**
+ * The windows where the music may move faster, by name: the opening first, the ending last, and
+ * the hero, when there is one, between them. A hero in the first 1.5 s starts with the video.
+ */
+function exemptWindows(exempt: ReadonlyArray<readonly [number, number]>): string {
+  const named = exempt.map(([s, e], i) => {
+    const name = i === 0 ? 'the opening' : i === exempt.length - 1 ? 'the ending' : 'the hero';
+    return `${name} (${Math.max(0, s).toFixed(1)}–${e.toFixed(1)} s)`;
+  });
+  return named.length < 3
+    ? named.join(' and ')
+    : `${named.slice(0, -1).join(', ')}, and ${named.at(-1)}`;
+}
+
+/**
+ * Checks on the mix itself, read from `video/audio.json`: the music under the narration, whether
+ * it jumps or ranges too widely, its fit to the picture (the logo after the last line, the landing
+ * before the end, the hero on its downbeat, the tempo, a silent end), how much of it is heard at
+ * all, and the effects' spacing and level.
  */
 export function soundChecks(
   record: AudioRecord,
@@ -321,7 +352,7 @@ export function soundChecks(
 ): QcCheck[] {
   const checks: QcCheck[] = [];
   const music = record.music;
-  const below = record.levels.musicBelowVoiceDb;
+  const below = hundredth(record.levels.musicBelowVoiceDb);
   if (below === undefined)
     checks.push({
       id: 'music-under-speech',
@@ -331,20 +362,67 @@ export function soundChecks(
   else {
     const continuous = music.placement === 'continuous';
     const status: QcStatus = continuous
-      ? below >= 18
-        ? 'pass'
-        : below >= 12
-          ? 'warn'
-          : 'fail'
+      ? below < BED_UNDER_VOICE.fail
+        ? 'fail'
+        : below >= BED_UNDER_VOICE.min && below <= BED_UNDER_VOICE.max
+          ? 'pass'
+          : 'warn'
       : below >= 30
         ? 'pass'
         : 'warn';
     checks.push({
       id: 'music-under-speech',
       status,
-      message: `Music sits ${below.toFixed(1)} dB under the voice where it speaks (${music.placement}: ${continuous ? 'at least 18' : 'at least 30'} dB; WCAG 1.4.7 asks for 20).`,
+      message: `Music sits ${below.toFixed(2)} dB under the voice where it speaks (${continuous ? `continuous: ${BED_UNDER_VOICE.min}–${BED_UNDER_VOICE.max} dB wanted` : 'bookends: at least 30 dB'}).`,
     });
   }
+
+  const jumps = record.levels.musicJumps;
+  if (!jumps)
+    checks.push({
+      id: 'music-jump',
+      status: 'pass',
+      // Music under a narration short enough that the exempt windows cover all of it.
+      message:
+        below === undefined
+          ? 'Not measured: no music under narration.'
+          : 'Not measured: every moment under the narration is exempt.',
+    });
+  else {
+    const maxDb = hundredth(jumps.maxDb)!;
+    const held = record.levels.pausesHeld
+      ? `; ${record.levels.pausesHeld} pause(s) held at the bed's level so it would not jump`
+      : '';
+    const wanted = `(at most ${MUSIC_JUMP_DB} wanted outside ${exemptWindows(jumps.exempt)})${held}`;
+    checks.push(
+      maxDb > MUSIC_JUMP_DB + 1e-9
+        ? {
+            id: 'music-jump',
+            status: 'fail',
+            message: `The music jumps ${maxDb.toFixed(2)} dB within 1 s at ${jumps.at.toFixed(2)} s ${wanted}.`,
+          }
+        : {
+            id: 'music-jump',
+            status: 'pass',
+            message: `The music's momentary loudness changes by at most ${maxDb.toFixed(2)} dB within 1 s ${wanted}.`,
+          },
+    );
+  }
+
+  const range = hundredth(record.levels.musicRangeLu);
+  checks.push(
+    range === undefined
+      ? {
+          id: 'music-range',
+          status: 'pass',
+          message: 'Not measured: no music under at least 3 s of narration.',
+        }
+      : {
+          id: 'music-range',
+          status: range > MUSIC_RANGE_LU + 1e-9 ? 'warn' : 'pass',
+          message: `The music's loudness range over the narration is ${range.toFixed(2)} LU (at most ${MUSIC_RANGE_LU} wanted${range > MUSIC_RANGE_LU + 1e-9 && music.placement === 'bookends' ? '; bookends swell around the narration, continuous keeps one bed' : ''}).`,
+        },
+  );
 
   if (music.error)
     checks.push({
@@ -357,15 +435,16 @@ export function soundChecks(
   else {
     const fails: string[] = [];
     const warns: string[] = [];
-    const lastLine = music.lastLine ?? 0;
-    if (music.logo.start < lastLine + 0.1 - 1e-6)
+    // Graded at the precision the message prints: hundredths of a second, a tenth of a percent.
+    const lastLine = round(music.lastLine ?? 0, 2);
+    const logoStart = round(music.logo.start, 2);
+    const beforeEnd = round(record.duration - music.logo.landing, 2);
+    if (logoStart < lastLine + 0.1 - 1e-6)
       fails.push(
-        `the logo starts at ${music.logo.start.toFixed(2)} s, over the last line (ends ${lastLine.toFixed(2)} s)`,
+        `the logo starts at ${logoStart.toFixed(2)} s, over the last line (ends ${lastLine.toFixed(2)} s)`,
       );
-    if (music.logo.landing > record.duration - 0.8 + 1e-6)
-      warns.push(
-        `the logo lands ${(record.duration - music.logo.landing).toFixed(2)} s before the end (0.8 s wanted)`,
-      );
+    if (beforeEnd < 0.8 - 1e-6)
+      warns.push(`the logo lands ${beforeEnd.toFixed(2)} s before the end (0.8 s wanted)`);
     if (
       music.outro !== undefined &&
       Math.abs(music.logo.landing - music.outro) > 1 / limits.fps + 1e-6
@@ -379,13 +458,12 @@ export function soundChecks(
         music.fallbacks?.find((f) => /hero/.test(f)) ??
           `the hero downbeat is ${(music.hero.downbeat - music.hero.moment).toFixed(2)} s off the payoff`,
       );
-    const tempo = music.scoreBpm ? music.bpm / music.scoreBpm - 1 : 0;
-    if (Math.abs(tempo) > 0.06 + 1e-9)
-      warns.push(`the tempo moved ${(tempo * 100).toFixed(1)}% from the score's, beyond ±6%`);
-    if ((music.tailDb ?? -120) > -60)
-      fails.push(
-        `the music's last 10 ms peak at ${music.tailDb!.toFixed(1)} dBFS (below −60 wanted)`,
-      );
+    const tempo = round(music.scoreBpm ? 100 * (music.bpm / music.scoreBpm - 1) : 0, 1);
+    if (Math.abs(tempo) > 6 + 1e-9)
+      warns.push(`the tempo moved ${tempo.toFixed(1)}% from the score's, beyond ±6%`);
+    const tail = round(music.tailDb ?? -120, 2);
+    if (tail > -60)
+      fails.push(`the music's last 10 ms peak at ${tail.toFixed(2)} dBFS (below −60 wanted)`);
     checks.push(
       fails.length || warns.length
         ? {
@@ -396,7 +474,7 @@ export function soundChecks(
         : {
             id: 'music-fit',
             status: 'pass',
-            message: `${music.id} at ${music.bpm.toFixed(1)} bpm (score ${music.scoreBpm}): the logo follows the last line and lands ${music.outro === undefined ? '' : 'as the outro settles, '}${(record.duration - music.logo.landing).toFixed(2)} s before the end${music.hero ? '; the hero is on its downbeat' : ''}.`,
+            message: `${music.id} at ${music.bpm.toFixed(1)} bpm (score ${music.scoreBpm}): the logo follows the last line and lands ${music.outro === undefined ? '' : 'as the outro settles, '}${beforeEnd.toFixed(2)} s before the end${music.hero ? '; the hero is on its downbeat' : ''}.`,
           },
     );
   }
@@ -416,9 +494,15 @@ export function soundChecks(
     const crowded = spaced.some((t, i) => i > 0 && t - spaced[i - 1]! < limits.minSpacing - 1e-6);
     const max = limits.maxPerSecond;
     const dense = times.some((t, i) => i >= max && t - times[i - max]! < 1 - 1e-6);
-    const level = record.levels.effectsBelowVoiceDb;
+    const level = hundredth(record.levels.effectsBelowVoiceDb);
     const quiet: QcStatus =
-      level === undefined ? 'pass' : level >= 6 ? 'pass' : level >= 3 ? 'warn' : 'fail';
+      level === undefined
+        ? 'pass'
+        : level >= EFFECTS_UNDER_VOICE_DB
+          ? 'pass'
+          : level >= 3
+            ? 'warn'
+            : 'fail';
     const status = crowded || dense ? 'fail' : quiet;
     // With music, the outro's sign-off gives way to the music's own logo: not a crowding drop.
     const logo = effects.dropped.filter((d) => d.kind === 'outro').length;
@@ -429,7 +513,7 @@ export function soundChecks(
         ? `Two effects are closer than ${limits.minSpacing} s.`
         : dense
           ? `More than ${max} effects play within one second.`
-          : `${effects.placed.length} effect(s) placed, ${effects.dropped.length - logo} dropped to keep them apart${logo ? "; the music's sonic logo marks the outro" : ''}${level === undefined ? '' : `; their peaks sit ${level.toFixed(1)} dB under the voice's (at least 6 wanted)`}.`,
+          : `${effects.placed.length} effect(s) placed, ${effects.dropped.length - logo} dropped to keep them apart${logo ? "; the music's sonic logo marks the outro" : ''}${level === undefined ? '' : `; their peaks sit ${level.toFixed(2)} dB under the voice's (at least ${EFFECTS_UNDER_VOICE_DB} wanted)`}.`,
     });
   }
   return checks;
@@ -446,8 +530,9 @@ function musicAudibleCheck(record: AudioRecord): QcCheck {
     return { id: 'music-audible', status: 'pass', message: 'Music is off.' };
   if (!music.audible)
     return { id: 'music-audible', status: 'pass', message: `No music to hear: ${music.reason}` };
-  const { seconds } = music.audible;
-  const wanted = audibleMusicWanted(record.duration);
+  // Graded at the hundredth the message prints.
+  const seconds = round(music.audible.seconds, 2);
+  const wanted = round(audibleMusicWanted(record.duration), 2);
   const share = `${(100 * music.audible.share).toFixed(1)}% of the video`;
   const problems: string[] = [];
   if (seconds < wanted - 1e-9)

@@ -140,7 +140,7 @@ const LAST_TAIL = 0.8;
  * after the last line, whatever the music; frames never depend on the music choice.
  */
 const HOLD = 1;
-/** A pause between two lines at least this long already breathes (bookends music rises in it). */
+/** A pause between two lines at least this long already breathes (the music may rise in it). */
 const BREATH_GAP = 1.5;
 
 /**
@@ -183,11 +183,11 @@ export interface Pacing {
 export const TIGHT: Pacing = { firstLead: 0.2 };
 
 /**
- * Narrated standard reviews breathe: the hook is heard at once, then the music opens in a breath
- * before the second line; the hero scene settles before its line so the music's lift lands clear
- * of speech, and the line after it breathes again; the verdict lands before the summary's line;
- * and long stretches of talk pause at a scene change. A music placement that plays only around
- * the narration (bookends) is heard in exactly these breaths.
+ * Narrated standard reviews breathe: the hook is heard at once, then a pause before the second
+ * line; the hero scene settles before its line, so its moment (and the music's hero section)
+ * starts without a voice over it, and the line after it breathes again; the verdict lands before
+ * the summary's line; and long stretches of talk pause at a scene change. These pauses are shorter
+ * than a continuous bed needs to rise (about 4.5 s), so it stays at its level under speech.
  */
 const BREATHING = { firstLead: 0.3, heroBreath: 1.4, breath: 1.25, chapter: 24 } as const;
 

@@ -38,7 +38,17 @@ function record(overrides: Partial<AudioRecord> = {}): AudioRecord {
     },
     levels: {
       voiceLufs: -16,
-      musicBelowVoiceDb: 20.4,
+      musicBelowVoiceDb: 16.2,
+      musicRangeLu: 3.1,
+      musicJumps: {
+        maxDb: 3.4,
+        at: 12.3,
+        exempt: [
+          [0, 1.3],
+          [9, 12],
+          [28, 30],
+        ],
+      },
       effectsBelowVoiceDb: 11.2,
       master: { integrated: -16, truePeak: -1.4 },
     },
@@ -83,6 +93,18 @@ describe('audio check', () => {
     expect([at(-1), at(-0.8), at(-0.4)]).toEqual(['pass', 'warn', 'fail']);
   });
 
+  it('grades the loudness and the true peak at the tenth it prints, as ffmpeg reports them', () => {
+    const check = (integrated: number, truePeak: number) => {
+      const c = audioCheck({ stream: true, integrated, truePeak, maxVolume: -1 }, sound);
+      return `${c.status}: ${c.message}`;
+    };
+    // Just over a limit is named over it; just under, at it.
+    expect(check(-16, -0.96)).toMatch(/^pass: .*true peak -1\.0 dBTP/);
+    expect(check(-16, -0.94)).toMatch(/^warn: .*true peak -0\.9 dBTP/);
+    expect(check(-17.04, -2)).toMatch(/^pass: .*-17\.0 LUFS/);
+    expect(check(-17.06, -2)).toMatch(/^warn: .*-17\.1 LUFS/);
+  });
+
   it('fails without a stream or with a silent one when anything should play', () => {
     expect(audioCheck({ stream: false }, sound).status).toBe('fail');
     expect(
@@ -109,6 +131,8 @@ describe('sound checks', () => {
     const checks = byId(soundChecks(record(), LIMITS));
     expect(Object.keys(checks)).toEqual([
       'music-under-speech',
+      'music-jump',
+      'music-range',
       'music-fit',
       'music-audible',
       'sound-effects',
@@ -151,6 +175,15 @@ describe('sound checks', () => {
     expect(audible(6.25, 93.6, 'bookends').message).toMatch(
       /heard for 6\.25 s outside the logo \(6\.7% of the video; at least 4\.68 s wanted\); the hero downbeat is clear of speech/,
     );
+    // Graded at the hundredth it prints: 3.2525 s wanted is 3.25, 3.2551 is 3.26.
+    expect(audible(3.25, 65.05, 'continuous')).toMatchObject({
+      status: 'pass',
+      message: expect.stringMatching(/heard for 3\.25 s .*at least 3\.25 s wanted/),
+    });
+    expect(audible(3.25, 65.102, 'continuous')).toMatchObject({
+      status: 'warn',
+      message: expect.stringMatching(/heard for 3\.25 s .*at least 3\.26 s wanted/),
+    });
   });
 
   it('warn when the hero downbeat falls under speech that bookends mute', () => {
@@ -199,7 +232,7 @@ describe('sound checks', () => {
     expect(short.message).toMatch(/too short for music/);
   });
 
-  it('grade music under speech by placement', () => {
+  it('grade music under speech by placement: a bed 12–20 dB under the voice, bookends 30', () => {
     const under = (db: number, placement: 'continuous' | 'bookends') =>
       byId(
         soundChecks(
@@ -210,12 +243,131 @@ describe('sound checks', () => {
           LIMITS,
         ),
       )['music-under-speech']!.status;
-    expect([under(19, 'continuous'), under(14, 'continuous'), under(10, 'continuous')]).toEqual([
-      'pass',
+    expect([12, 16, 20].map((db) => under(db, 'continuous'))).toEqual(['pass', 'pass', 'pass']);
+    expect([21, 11.9, 9, 8.9].map((db) => under(db, 'continuous'))).toEqual([
+      'warn',
+      'warn',
       'warn',
       'fail',
     ]);
     expect([under(31, 'bookends'), under(25, 'bookends')]).toEqual(['pass', 'warn']);
+  });
+
+  it('fail music that jumps more than 6 dB within a second outside the exempt windows', () => {
+    const jump = (maxDb: number | undefined, pausesHeld?: number) =>
+      byId(
+        soundChecks(
+          record({
+            levels: {
+              ...record().levels,
+              musicJumps:
+                maxDb === undefined ? undefined : { ...record().levels.musicJumps!, maxDb },
+              ...(pausesHeld ? { pausesHeld } : {}),
+            },
+          }),
+          LIMITS,
+        ),
+      )['music-jump']!;
+    expect(jump(6).status).toBe('pass');
+    expect(jump(6.4).status).toBe('fail');
+    expect(jump(6.4).message).toMatch(/6\.40 dB within 1 s at 12\.30 s/);
+    expect(jump(6.4).message).toMatch(
+      /outside the opening \(0\.0–1\.3 s\), the hero \(9\.0–12\.0 s\), and the ending \(28\.0–30\.0 s\)/,
+    );
+    expect(jump(3.4, 2).message).toMatch(/2 pause\(s\) held/);
+    // Not measured: nothing to fail.
+    expect(jump(undefined).status).toBe('pass');
+    // Music under a narration so short that the exempt windows cover all of it.
+    expect(jump(undefined).message).toMatch(/every moment under the narration is exempt/);
+    const silent = byId(
+      soundChecks(
+        record({
+          levels: { ...record().levels, musicBelowVoiceDb: undefined, musicJumps: undefined },
+        }),
+        LIMITS,
+      ),
+    )['music-jump']!;
+    expect(silent.message).toMatch(/no music under narration/);
+  });
+
+  it('name only the exempt windows the video has', () => {
+    const jump = (exempt: Array<[number, number]>) =>
+      byId(
+        soundChecks(
+          record({
+            levels: { ...record().levels, musicJumps: { maxDb: 3.4, at: 12.3, exempt } },
+          }),
+          LIMITS,
+        ),
+      )['music-jump']!.message;
+    const noHero = jump([
+      [0, 1.3],
+      [28, 30],
+    ]);
+    expect(noHero).toMatch(/outside the opening \(0\.0–1\.3 s\) and the ending \(28\.0–30\.0 s\)/);
+    expect(noHero).not.toMatch(/hero/);
+    // A hero in the first 1.5 s: its window starts with the video.
+    expect(
+      jump([
+        [0, 1.3],
+        [-0.7, 2.3],
+        [28, 30],
+      ]),
+    ).toMatch(/the hero \(0\.0–2\.3 s\)/);
+  });
+
+  it('print every graded level to the hundredth it is graded at', () => {
+    const checks = (levels: Partial<AudioRecord['levels']>) => {
+      const all = byId(soundChecks(record({ levels: { ...record().levels, ...levels } }), LIMITS));
+      const ids = ['music-jump', 'music-under-speech', 'music-range', 'sound-effects'];
+      return ids.map((id) => `${all[id]!.status}: ${all[id]!.message}`);
+    };
+    const jumps = record().levels.musicJumps!;
+    // Just over a limit is named over it; just under, at it.
+    const [jump, bed, range, effects] = checks({
+      musicJumps: { ...jumps, maxDb: 6.006 },
+      musicBelowVoiceDb: 20.006,
+      musicRangeLu: 8.006,
+      effectsBelowVoiceDb: 7.994,
+    });
+    expect(jump).toMatch(/^fail: .*jumps 6\.01 dB/);
+    expect(bed).toMatch(/^warn: .*20\.01 dB/);
+    expect(range).toMatch(/^warn: .*8\.01 LU/);
+    expect(effects).toMatch(/^warn: .*7\.99 dB/);
+    const [jumpAt, bedAt, rangeAt, effectsAt] = checks({
+      musicJumps: { ...jumps, maxDb: 6.004 },
+      musicBelowVoiceDb: 8.996,
+      musicRangeLu: 8.004,
+      effectsBelowVoiceDb: 7.996,
+    });
+    expect(jumpAt).toMatch(/^pass: .*at most 6\.00 dB/);
+    expect(bedAt).toMatch(/^warn: .*9\.00 dB/);
+    expect(rangeAt).toMatch(/^pass: .*8\.00 LU/);
+    expect(effectsAt).toMatch(/^pass: .*8\.00 dB/);
+  });
+
+  it("warn when the music's loudness range over the narration exceeds 8 LU", () => {
+    const range = (lu: number | undefined, placement: 'continuous' | 'bookends' = 'continuous') =>
+      byId(
+        soundChecks(
+          record({
+            music: { ...record().music, placement },
+            levels: { ...record().levels, musicRangeLu: lu },
+          }),
+          LIMITS,
+        ),
+      )['music-range']!;
+    expect(range(8).status).toBe('pass');
+    expect(range(8.6).status).toBe('warn');
+    expect(range(8.6, 'bookends').message).toMatch(/continuous keeps one bed/);
+    expect(range(undefined).status).toBe('pass');
+  });
+
+  it('pass a record written before these checks existed', () => {
+    const { musicJumps: _j, musicRangeLu: _r, ...old } = record().levels;
+    const checks = byId(soundChecks(record({ levels: old }), LIMITS));
+    expect(checks['music-jump']!.status).toBe('pass');
+    expect(checks['music-range']!.status).toBe('pass');
   });
 
   it('fail a logo that overlaps the last line, and a tail that does not fade out', () => {
@@ -246,6 +398,29 @@ describe('sound checks', () => {
     });
     expect(off.status).toBe('warn');
     expect(off.message).toMatch(/cannot land on the outro/);
+  });
+
+  it('grade the music fit at the precision it prints', () => {
+    const music = record().music;
+    const fit = (m: Partial<AudioRecord['music']>) => {
+      const c = byId(soundChecks(record({ music: { ...music, ...m } }), LIMITS))['music-fit']!;
+      return `${c.status}: ${c.message}`;
+    };
+    // Just over a limit is named over it; just under, at it.
+    expect(fit({ bpm: 106.04 })).toMatch(/^pass: .*at 106\.0 bpm/);
+    expect(fit({ bpm: 106.06 })).toMatch(/^warn: .*moved 6\.1% from the score's/);
+    expect(fit({ logo: { start: 28.5951, landing: 29.2 } })).toMatch(/^pass: /);
+    expect(fit({ logo: { start: 28.594, landing: 29.2 } })).toMatch(
+      /^fail: .*starts at 28\.59 s, over the last line \(ends 28\.50 s\)/,
+    );
+    expect(fit({ logo: { start: 28.76, landing: 29.2049 } })).toMatch(
+      /^pass: .*lands 0\.80 s before the end/,
+    );
+    expect(fit({ logo: { start: 28.76, landing: 29.206 } })).toMatch(
+      /^warn: .*lands 0\.79 s before the end/,
+    );
+    expect(fit({ tailDb: -59.96 })).toMatch(/^fail: .*peak at -59\.96 dBFS/);
+    expect(fit({ tailDb: -60.004 })).toMatch(/^pass: /);
   });
 
   it('pass when there is no music, or no narration to sit under', () => {
@@ -279,6 +454,8 @@ describe('sound checks', () => {
       )['sound-effects']!.status;
     expect(effects([1, 1.1], 10)).toBe('fail');
     expect(effects([1, 1.2, 1.4, 1.6], 10)).toBe('fail');
+    expect(effects([1, 2], 8)).toBe('pass');
+    expect(effects([1, 2], 7)).toBe('warn');
     expect(effects([1, 2], 4)).toBe('warn');
     expect(effects([1, 2], 2)).toBe('fail');
     expect(effects([1, 2], undefined)).toBe('pass');

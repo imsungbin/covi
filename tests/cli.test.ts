@@ -277,7 +277,7 @@ describe('covi CLI', () => {
       outro: false,
     });
     expect(placed.data.questions.find((q) => q.id === 'music')!.options[0]!.description).toMatch(
-      /a quiet bed under the narration/i,
+      /a quiet bed under the narration, louder before the first line and at the end/i,
     );
     expect(
       covi(['video', '--repo', dir, '--dry-run', '--music-placement', 'everywhere', '--json']).code,

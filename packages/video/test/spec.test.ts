@@ -321,16 +321,18 @@ describe('resolveVideoSpec', () => {
     });
   });
 
-  it('places music by the kind of video', () => {
+  it('lays a continuous bed under every kind of video', () => {
     const place = (request: Parameters<typeof resolveVideoSpec>[1]) =>
       resolveVideoSpec(config(), request).music.placement;
-    expect(place({ mode: 'short' })).toBe('continuous');
-    expect(place({ mode: 'standard' })).toBe('bookends');
-    expect(place({ mode: 'custom', width: 1080, height: 1920 })).toBe('continuous');
-    expect(place({ mode: 'custom', width: 1080, height: 1080 })).toBe('continuous');
-    expect(place({ mode: 'custom', width: 1280, height: 720 })).toBe('bookends');
-    // Without narration there is nothing to make room for.
-    expect(place({ mode: 'standard', narration: false })).toBe('continuous');
+    for (const request of [
+      { mode: 'short' },
+      { mode: 'standard' },
+      { mode: 'custom', width: 1080, height: 1920 },
+      { mode: 'custom', width: 1080, height: 1080 },
+      { mode: 'custom', width: 1280, height: 720 },
+      { mode: 'standard', narration: false },
+    ] as const)
+      expect(place(request), JSON.stringify(request)).toBe('continuous');
   });
 
   it('respects repository defaults', () => {
@@ -377,17 +379,17 @@ describe('planVideo (the question protocol)', () => {
       header: 'Music',
       question: 'What music should the video have?',
     });
-    // The kind of video is asked too, and it decides where the music plays.
+    // The kind of video is asked too; whichever it is, the music is a bed under the narration.
     expect(question.options.map((o) => [o.value, o.label, o.description])).toEqual([
       [
         'theme',
         'Covi theme (default)',
-        'Arranged to the story and the verdict. Quietly under short-form narration; around the narration in standard reviews',
+        'Arranged to the story and the verdict. A quiet bed under the narration, louder before the first line and at the end',
       ],
       [
         'compose',
         'Compose for this video',
-        'A new score written for this change; takes a little longer. Quietly under short-form narration; around the narration in standard reviews',
+        'A new score written for this change; takes a little longer. A quiet bed under the narration, louder before the first line and at the end',
       ],
       ['none', 'No music', 'Narration and subtle sound effects only'],
     ]);
@@ -536,43 +538,50 @@ describe('respecVideo', () => {
       new Set(['video.music.use', 'video.soundEffects.enabled']),
     );
     expect(changed).toMatchObject({ music: { use: 'theme' }, soundEffects: true });
-    // A new mode moves the music too: standard reviews keep it around the narration.
+    // A new mode keeps the bed: `auto` is continuous for every kind of video.
     expect(respecVideo(DEFAULT_CONFIG, drafted, { mode: 'standard' }).music).toEqual({
       use: 'compose',
-      placement: 'bookends',
+      placement: 'continuous',
       setting: 'auto',
     });
+    // A run drafted when `auto` meant bookends for standard reviews gets the bed now.
+    const older = {
+      ...drafted,
+      mode: 'standard' as const,
+      music: { use: 'theme' as const, placement: 'bookends' as const, setting: 'auto' as const },
+    };
+    expect(respecVideo(DEFAULT_CONFIG, older, {}).music.placement).toBe('continuous');
   });
 
   it('keeps a chosen placement and the outro through a re-render, unless set again', () => {
     const drafted = resolveVideoSpec(DEFAULT_CONFIG, {
       mode: 'standard',
-      musicPlacement: 'continuous',
+      musicPlacement: 'bookends',
       outro: false,
     });
-    expect(drafted.music).toEqual({ use: 'theme', placement: 'continuous', setting: 'continuous' });
+    expect(drafted.music).toEqual({ use: 'theme', placement: 'bookends', setting: 'bookends' });
     expect(drafted.outro).toBe(false);
-    // A chosen placement holds whatever the kind of video; `auto` follows it.
+    // A chosen placement holds whatever the kind of video; `auto` is continuous.
     expect(respecVideo(DEFAULT_CONFIG, drafted, {})).toMatchObject({
-      music: { placement: 'continuous', setting: 'continuous' },
+      music: { placement: 'bookends', setting: 'bookends' },
       outro: false,
     });
     expect(respecVideo(DEFAULT_CONFIG, drafted, { musicPlacement: 'auto' }).music.placement).toBe(
-      'bookends',
+      'continuous',
     );
     expect(respecVideo(DEFAULT_CONFIG, drafted, { outro: true }).outro).toBe(true);
     // Only the music: the drafted placement and outro stay.
     expect(respecVideo(DEFAULT_CONFIG, drafted, { music: 'none' })).toMatchObject({
-      music: { use: 'none', placement: 'continuous' },
+      music: { use: 'none', placement: 'bookends' },
       outro: false,
     });
     // COVI_MUSIC_PLACEMENT and COVI_OUTRO (explicit configuration) win over the drafted choice,
     // and setting the placement leaves the drafted music alone.
     const composed = resolveVideoSpec(DEFAULT_CONFIG, { mode: 'standard', music: 'compose' });
-    const env = config({ video: { music: { placement: 'continuous' }, outro: false } });
+    const env = config({ video: { music: { placement: 'bookends' }, outro: false } });
     expect(
       respecVideo(env, composed, {}, new Set(['video.music.placement', 'video.outro'])),
-    ).toMatchObject({ music: { use: 'compose', placement: 'continuous' }, outro: false });
+    ).toMatchObject({ music: { use: 'compose', placement: 'bookends' }, outro: false });
   });
 
   it('lets configuration place the music of runs saved before placement was a setting', () => {
@@ -580,18 +589,18 @@ describe('respecVideo', () => {
       mode: 'standard',
     }).music;
     const old = { ...resolveVideoSpec(DEFAULT_CONFIG, { mode: 'standard' }), music };
-    const configured = config({ video: { music: { placement: 'continuous' } } });
-    expect(respecVideo(configured, old, {}).music.placement).toBe('continuous');
-    expect(respecVideo(DEFAULT_CONFIG, old, {}).music.placement).toBe('bookends');
+    const configured = config({ video: { music: { placement: 'bookends' } } });
+    expect(respecVideo(configured, old, {}).music.placement).toBe('bookends');
+    expect(respecVideo(DEFAULT_CONFIG, old, {}).music.placement).toBe('continuous');
   });
 
-  it('places music by the kind of video unless a placement is chosen', () => {
+  it('places music continuously unless a placement is chosen', () => {
     const place = (request: Parameters<typeof resolveVideoSpec>[1]) =>
       resolveVideoSpec(DEFAULT_CONFIG, request).music.placement;
     expect(place({ mode: 'short' })).toBe('continuous');
-    expect(place({ mode: 'standard' })).toBe('bookends');
+    expect(place({ mode: 'standard' })).toBe('continuous');
     expect(place({ mode: 'standard', narration: false })).toBe('continuous');
-    expect(place({ mode: 'custom', width: 1280, height: 720 })).toBe('bookends');
+    expect(place({ mode: 'custom', width: 1280, height: 720 })).toBe('continuous');
     expect(place({ mode: 'custom', width: 1080, height: 1080 })).toBe('continuous');
     expect(place({ mode: 'standard', musicPlacement: 'continuous' })).toBe('continuous');
     expect(place({ mode: 'short', musicPlacement: 'bookends' })).toBe('bookends');
@@ -604,16 +613,16 @@ describe('respecVideo', () => {
   it('says where the music plays in the music question', () => {
     const where = (input: Parameters<typeof planVideo>[1], cfg = config()) =>
       planVideo(cfg, input).questions.find((q) => q.id === 'music')!.options[0]!.description;
-    // A standard review (the length is asked): mostly around the narration.
+    // A standard review gets the bed, like every kind of video.
     expect(
       where({ explicit: { mode: 'custom', width: 1920, height: 1080 }, interactive: true }),
     ).toBe(
-      'Arranged to the story and the verdict. Plays mainly at the opening, in the pauses, under the key moment, and at the end',
+      'Arranged to the story and the verdict. A quiet bed under the narration, louder before the first line and at the end',
     );
     expect(
       where({ explicit: { mode: 'custom', width: 1080, height: 1080 }, interactive: true }),
     ).toBe(
-      'Arranged to the story and the verdict. A quiet bed under the narration that rises in the pauses',
+      'Arranged to the story and the verdict. A quiet bed under the narration, louder before the first line and at the end',
     );
     expect(
       where({
@@ -625,9 +634,11 @@ describe('respecVideo', () => {
     expect(
       where(
         { text: 'make a review video', interactive: true },
-        config({ video: { music: { placement: 'continuous' } } }),
+        config({ video: { music: { placement: 'bookends' } } }),
       ),
-    ).toMatch(/A quiet bed under the narration/);
+    ).toBe(
+      'Arranged to the story and the verdict. Plays at the opening and the end, and drops out under the narration',
+    );
   });
 
   it('reads specs saved before videos had sound', () => {

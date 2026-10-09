@@ -29,19 +29,28 @@ export {
   dbfs,
   dbToGain,
   integratedLoudness,
+  type Jump,
   type Loudness,
+  largestJump,
+  loudnessJump,
+  loudnessRange,
   measureLoudness,
+  momentaryLoudness,
   samplePeak,
   truePeak,
   weightedLevel,
 } from './loudness.ts';
 export {
   CEILING_DB,
+  EFFECTS_UNDER_VOICE_DB,
+  EXEMPT,
   MASTER_LUFS,
   type MixInput,
   type MixLevels,
   type MixResult,
+  MUSIC_JUMP_DB,
   mixSound,
+  musicExemptWindows,
   normalizeVoice,
   STEM_LUFS,
   TRUE_PEAK_MAX_DB,
@@ -62,11 +71,17 @@ export {
 } from './music/render.ts';
 export { type ParsedScore, parseScore, ScoreError } from './music/score.ts';
 export {
+  BED_DB,
   clearOfSpeech,
+  duckAmount,
   PLACEMENT,
   type Placement,
   type PlacementParams,
   placementEnvelope,
+  placementLevels,
+  type RampShape,
+  rampSeconds,
+  swellingPauses,
 } from './placement.ts';
 export {
   SCORE_LIMITS,

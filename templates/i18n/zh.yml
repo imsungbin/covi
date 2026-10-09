@@ -866,10 +866,9 @@ question:
     noneDescriptionNoEffects: 只有旁白
     noneDescriptionSilent: 完全无声
     where:
-      bookends: '{what}；主要出现在开头、停顿处、关键时刻和结尾'
-      continuous: '{what}；在旁白下方轻轻铺底，停顿时稍稍抬起'
+      bookends: '{what}；在开头和结尾播放，旁白期间几乎听不到'
+      continuous: '{what}；在旁白下方轻轻铺底，开头和结尾音量更大'
       throughout: '{what}；贯穿整个视频'
-      byMode: '{what}；短视频中在旁白下方轻轻铺底，标准审查中出现在旁白之间'
 
 outcomes:
   empty: 还没有结果。Covi 在变更上发表评论后，用 `covi outcomes collect` 收集后续结果。

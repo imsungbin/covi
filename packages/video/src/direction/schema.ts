@@ -46,11 +46,22 @@ export const DIRECTION_LIMITS = {
   /**
    * A morph: at most `changedLines` deleted and as many added lines (a landscape card's 14 rows,
    * less two for context), read from the first `hunkLines` lines of its hunk, each cut at
-   * `lineChars` characters and split into at most `tokensPerLine` tokens (the rest of a longer
-   * line stays one token).
+   * `lineChars` characters as a code card cuts its lines (`codeLineText`) and split into at most
+   * `tokensPerLine` tokens (the rest of a longer line stays one token).
    */
   morph: { changedLines: 12, hunkLines: 400, lineChars: 96, tokensPerLine: 64 },
 } as const;
+
+/**
+ * A code line as code cards and morphs draw it, so both draw the same text: tabs as two spaces,
+ * cut at `morph.lineChars` characters, never between the halves of one (an emoji's), which would
+ * draw as a broken glyph that is not in the code.
+ */
+export function codeLineText(text: string): string {
+  const line = text.replace(/\t/g, '  ');
+  const max = DIRECTION_LIMITS.morph.lineChars;
+  return line.slice(0, (line.codePointAt(max - 1) ?? 0) > 0xffff ? max - 1 : max);
+}
 
 /** An element id: a lowercase letter, then lowercase letters, digits, or dashes, `idChars` in all. */
 export const DIRECTION_ID = new RegExp(`^[a-z][a-z0-9-]{0,${DIRECTION_LIMITS.idChars - 1}}$`);

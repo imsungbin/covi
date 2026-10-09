@@ -166,3 +166,30 @@ export function commentPattern(family: SyntaxFamily): RegExp {
   if (family === 'sql') return /--.*$/;
   return /\/\/.*$|\/\*.*?\*\//;
 }
+
+/** A string closed on its line, in double, single, or back quotes, escapes included. */
+const STRING = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/u;
+
+/**
+ * A number, whole: decimal (with `_` separators, a fraction, and an exponent), hex, octal, or
+ * binary, and a BigInt's `n`. A leading-dot decimal (`.5`) starts where a value can, or ends a
+ * dotted run of numbers (`1.2.3`), but not after a word, a dot, or a closing bracket, where the dot
+ * is a member access (`pair.0`, `v2.0`), nor after a backslash, which escapes it.
+ */
+export const NUMBER =
+  /(?:0[xX][\da-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|(?:\d[\d_]*(?:\.\d[\d_]*)?|(?<![\p{L}\p{M}_$][\p{L}\p{M}\p{N}_$]*|[.)\]\\])\.\d[\d_]*)(?:[eE][+-]?\d[\d_]*)?)n?/u;
+
+/** A word: a letter of any script, `_`, or `$`, then letters, digits, `_`, and `$`. */
+export const WORD = /[\p{L}\p{M}_$][\p{L}\p{M}\p{N}_$]*/u;
+
+/**
+ * A family's lexer, the one the code panel and the morph read code with: a comment, a string, a
+ * number, a word, a whitespace run, or any one other character, so every character of a line lands
+ * in exactly one token, in order. Its groups are those six, in that order.
+ */
+export function lexer(family: SyntaxFamily): RegExp {
+  return new RegExp(
+    `(${commentPattern(family).source})|(${STRING.source})|(${NUMBER.source})|(${WORD.source})|(\\s+)|([\\s\\S])`,
+    'gu',
+  );
+}

@@ -1,7 +1,14 @@
 import type { DiffLine } from '@covi/core';
-import { commentPattern, keywordsOf, type SyntaxFamily, syntaxFamily } from '../runtime/syntax.ts';
+import {
+  keywordsOf,
+  lexer,
+  NUMBER,
+  type SyntaxFamily,
+  syntaxFamily,
+  WORD,
+} from '../runtime/syntax.ts';
 import type { MorphRow, MorphToken, MorphVisual, TokenTone } from '../timeline/types.ts';
-import { DIRECTION_LIMITS } from './schema.ts';
+import { codeLineText, DIRECTION_LIMITS } from './schema.ts';
 
 /*
  * A morph's model, built from a diff hunk: every line split into tokens, the lines a card keeps
@@ -13,21 +20,11 @@ const LIMITS = DIRECTION_LIMITS.morph;
 
 type Lexeme = 'comment' | 'string' | 'number' | 'word' | 'space' | 'other';
 
-/**
- * The lexer: a comment, a string, a number, a word (letters of any script), a whitespace run, or
- * any one other character, so every character of a line lands in exactly one token.
- */
-function lexer(family: SyntaxFamily): RegExp {
-  return new RegExp(
-    `(${commentPattern(family).source})|("(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|\`(?:[^\`\\\\]|\\\\.)*\`)|(\\d[\\d_.]*)|([\\p{L}\\p{M}_$][\\p{L}\\p{M}\\p{N}_$]*)|(\\s+)|(.)`,
-    'gu',
-  );
-}
-
+/** The groups of the code panel's lexer, in order: each character lands in exactly one. */
 const LEXEMES: readonly Lexeme[] = ['comment', 'string', 'number', 'word', 'space', 'other'];
 
 /** The words, numbers, spaces, and single characters inside a comment or a string. */
-const PARTS = /[\p{L}\p{M}_$][\p{L}\p{M}\p{N}_$]*|\d[\d_.]*|\s+|./gu;
+const PARTS = new RegExp(`${WORD.source}|${NUMBER.source}|\\s+|[\\s\\S]`, 'gu');
 
 /** Whitespace is layout only: it is never kept, removed, or added. */
 export const isSpace = (token: MorphToken) => /^\s+$/u.test(token.text);
@@ -53,7 +50,8 @@ function lex(line: string, family: SyntaxFamily): Array<{ text: string; kind: Le
  * A line's tokens with their syntax colors, as the code panel colors them: keywords, strings
  * (JSON keys as props), numbers, comments, calls, and capitalized names. Comments and strings are
  * split into their words, so a changed word moves on its own. At most `tokensPerLine`; the rest
- * of a longer line stays one token.
+ * of a longer line stays one token. Markup and CSS read as code here, where the panel has passes
+ * of their own, so their colors can differ; their characters never do.
  */
 export function tokenize(line: string, language?: string): MorphToken[] {
   const family = syntaxFamily(language);
@@ -230,16 +228,11 @@ export function keptLines(lines: readonly DiffLine[], max: number): boolean[] {
     const rows = rowsShown(lines, keep);
     return rows.base <= max && rows.head <= max;
   };
-  // A line refused while a run was left out beside it can fit once a neighbor closes the run, so
-  // try again until nothing more fits.
-  for (let grew = true; grew; ) {
-    grew = false;
-    for (const i of [...changed, ...context]) {
-      if (keep[i]) continue;
-      keep[i] = true;
-      if (fits()) grew = true;
-      else keep[i] = false;
-    }
+  // Keeping a line never takes a row away from either side (a run it splits costs at least the
+  // marker it had), so a line refused once stays refused: one pass keeps all that fits.
+  for (const i of [...changed, ...context]) {
+    keep[i] = true;
+    if (!fits()) keep[i] = false;
   }
   return keep;
 }
@@ -251,7 +244,9 @@ const CARD_ROWS = LIMITS.changedLines + 2;
  * Why a hunk cannot morph, or nothing when it can: it needs code on both sides (a new or a
  * deleted file has nothing to turn into), and few enough changed lines on each side that every
  * one shows, with room for context. Changes spread through a hunk need a marker for each run of
- * context between them, so fewer than that can still overflow a card and hide behind a marker.
+ * context between them, so fewer than that can still overflow a card and hide behind a marker,
+ * or fill it so that one side shows nothing but markers. A card shows a side's code at 18 rows
+ * whenever it does at 14 (it keeps the same changes, then the nearest context that fits).
  */
 export function morphProblem(lines: readonly DiffLine[]): string | undefined {
   if (!lines.some(onBase))
@@ -270,6 +265,12 @@ export function morphProblem(lines: readonly DiffLine[]): string | undefined {
   const keep = keptLines(lines.slice(0, LIMITS.hunkLines), CARD_ROWS);
   if (lines.some((l, i) => l.kind !== 'context' && !keep[i]))
     return `the hunk's changes lie too far apart for a morph's ${CARD_ROWS} rows to show every one; show it as code, with \`lines\``;
+  for (const [side, on] of [
+    ['base', onBase],
+    ['head', onHead],
+  ] as const)
+    if (!lines.some((l, i) => keep[i] && on(l)))
+      return `the hunk's changes fill a morph's ${CARD_ROWS} rows and leave its ${side} side no code, only markers for the lines left out; show it as code, with \`lines\``;
   return undefined;
 }
 
@@ -302,8 +303,7 @@ export function morphHunk(
     rows.push([b, h]);
     for (const [i, j] of pairs) tokens.push([b, i, h, j]);
   };
-  const tokensOf = (text: string) =>
-    tokenize(text.replace(/\t/g, '  ').slice(0, LIMITS.lineChars), options.language);
+  const tokensOf = (text: string) => tokenize(codeLineText(text), options.language);
   const numbered = (n: number | undefined) => (n === undefined ? {} : { number: n });
   // The changed rows since the last context line or marker: a block whose lines may pair.
   let dels: number[] = [];

@@ -1,6 +1,6 @@
 import type { DiffLine } from '@covi/core';
 import { describe, expect, it } from 'vitest';
-import { DIRECTION_LIMITS } from '../src/direction/schema.ts';
+import { codeLineText, DIRECTION_LIMITS } from '../src/direction/schema.ts';
 import {
   isSpace,
   keptLines,
@@ -162,6 +162,18 @@ describe('tokenizing a line', () => {
       'docs:-',
     ]);
     expect(tones(' * The reader fetches it.').every((t) => t.endsWith(':comment'))).toBe(true);
+  });
+
+  it('cuts a line as a code card does: tabs as two spaces, never inside a character', () => {
+    const max = DIRECTION_LIMITS.morph.lineChars;
+    expect(codeLineText('\tx\ty')).toBe('  x  y');
+    expect(codeLineText('a'.repeat(max + 10))).toBe('a'.repeat(max));
+    // An emoji across the cut is left out whole, not drawn as half of one.
+    expect(codeLineText(`${'a'.repeat(max - 1)}🙂b`)).toBe('a'.repeat(max - 1));
+    expect(codeLineText(`${'a'.repeat(max - 2)}🙂b`)).toBe(`${'a'.repeat(max - 2)}🙂`);
+    const long = `\t${'word 🙂 '.repeat(20)}`;
+    const m = morphHunk([context(long, 1), del('a', 2), add('b', 2)], { max: 14, elided })!;
+    expect(side(m, 'base')[0]).toBe(codeLineText(long));
   });
 
   it('caps the tokens of a line, keeping the rest of it as one', () => {
@@ -367,17 +379,65 @@ describe('a hunk as a morph shows it', () => {
     );
     expect(morphProblem([context('a', 1), ...adds.slice(1)])).toBeUndefined();
     // Twelve added lines in groups, each group after six context lines (one hunk at three lines of
-    // context): three groups fit a card with a marker between each, four would hide a change.
+    // context): two groups fit a card with a marker between them and a context line before, three
+    // fill it so that the side before the change shows only markers, four would hide a change.
     const spread = (groups: number) =>
       Array.from({ length: groups }, (_, g) => [
         ...Array.from({ length: 6 }, (_, i) => context(`c${g}.${i}`, g * 6 + i + 1)),
         ...Array.from({ length: 12 / groups }, (_, i) => add(`x${g}.${i}`, 100 + g * 12 + i)),
       ]).flat();
-    expect(morphProblem(spread(3))).toBeUndefined();
-    const shown = morphHunk(spread(3), { max: 14, elided })!.head.filter((r) => r.type === 'add');
-    expect(shown).toHaveLength(12);
+    expect(morphProblem(spread(2))).toBeUndefined();
+    const two = morphHunk(spread(2), { max: 14, elided })!;
+    expect(two.head.filter((r) => r.type === 'add')).toHaveLength(12);
+    expect(side(two, 'base')).toEqual(['c0.5', '… 6 lines']);
+    expect(side(morphHunk(spread(3), { max: 14, elided })!, 'base')).toEqual([
+      '… 6 lines',
+      '… 6 lines',
+    ]);
+    expect(morphProblem(spread(3))).toMatch(
+      /fill a morph's 14 rows and leave its base side no code, only markers/,
+    );
     expect(morphProblem(spread(4))).toMatch(
       /changes lie too far apart for a morph's 14 rows to show every one/,
     );
+  });
+
+  it('shows every change of a hunk it accepts, and code on both sides, at 14 rows and at 18', () => {
+    // Seeded hunks shaped like `--unified=3` output: runs of context between blocks of changes.
+    let seed = 7;
+    const random = (n: number) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return Math.floor((seed / 2 ** 32) * n);
+    };
+    let accepted = 0;
+    for (let k = 0; k < 1500; k++) {
+      const lines: DiffLine[] = [];
+      let [oldLine, newLine] = [1, 1];
+      for (let g = 0, groups = 1 + random(5); g < groups; g++) {
+        for (let i = 0, n = g ? 1 + random(7) : random(4); i < n; i++)
+          lines.push(context(`c${oldLine}`, oldLine++, newLine++));
+        for (let i = 0, n = random(5); i < n; i++) lines.push(del(`d${oldLine}`, oldLine++));
+        for (let i = 0, n = random(5); i < n; i++) lines.push(add(`a${newLine}`, newLine++));
+      }
+      for (let i = 0, n = random(4); i < n; i++)
+        lines.push(context(`c${oldLine}`, oldLine++, newLine++));
+      if (morphProblem(lines)) continue;
+      accepted++;
+      for (const max of [14, 18]) {
+        const m = morphHunk(lines, { max, elided })!;
+        const code = (rows: MorphVisual['base']) => rows.filter((r) => r.type !== 'elided');
+        expect(m.base.length).toBeLessThanOrEqual(max);
+        expect(m.head.length).toBeLessThanOrEqual(max);
+        expect(code(m.base).length).toBeGreaterThan(0);
+        expect(code(m.head).length).toBeGreaterThan(0);
+        expect(m.base.filter((r) => r.type === 'del')).toHaveLength(
+          lines.filter((l) => l.kind === 'del').length,
+        );
+        expect(m.head.filter((r) => r.type === 'add')).toHaveLength(
+          lines.filter((l) => l.kind === 'add').length,
+        );
+      }
+    }
+    expect(accepted).toBeGreaterThan(500);
   });
 });

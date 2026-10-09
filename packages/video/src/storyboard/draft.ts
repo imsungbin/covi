@@ -26,6 +26,7 @@ import {
   toThirdPersonClause,
   truncate,
 } from '@covi/core';
+import { codeLineText } from '../direction/schema.ts';
 import type { VideoSpec } from '../spec.ts';
 import { type Beat, heroScene, type StoryTemplate, selectTemplate } from '../templates.ts';
 import { SPEECH_RATE, segments, speechUnits } from '../text.ts';
@@ -501,7 +502,7 @@ export function excerpt(
   const slice = all.slice(start, start + maxLines);
   const lines = slice.map((l) => ({
     type: l.kind,
-    text: l.text.replace(/\t/g, '  ').slice(0, 96),
+    text: codeLineText(l.text),
     number: l.kind === 'del' ? l.oldLine : l.newLine,
   }));
   // Emphasize the strongest added lines (logic over comments and lookups), keeping file order.

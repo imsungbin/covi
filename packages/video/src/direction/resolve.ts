@@ -16,7 +16,7 @@ import type {
   SceneStaging,
 } from '../timeline/types.ts';
 import { elementSlots, shotRegion } from './layout.ts';
-import type { Direction, Shot, ShotElement } from './schema.ts';
+import { codeLineText, type Direction, type Shot, type ShotElement } from './schema.ts';
 import { type CodeSide, type DirectionSources, hunkView } from './sources.ts';
 import { canvasStops } from './stops.ts';
 
@@ -214,7 +214,7 @@ function element(e: ShotElement, rect: Rect, ctx: Context): DirectionElement | u
 }
 
 /**
- * A diff line as the code component draws it: tabs as two spaces, cut at 96 characters, as a
+ * A diff line as the code component draws it: tabs as two spaces and cut (`codeLineText`), as a
  * drafted code visual's are, and numbered as the side shows the file: base lines by the old file,
  * head lines by the new one, a diff's deleted lines old and the rest new. Redacted before the cut,
  * so a cut never splits a secret on the line.
@@ -224,7 +224,7 @@ function codeLine(l: DiffLine, side: CodeSide, redact: <T>(value: T) => T): Code
   const number = old ? l.oldLine : l.newLine;
   return {
     type: l.kind,
-    text: redact(l.text).replace(/\t/g, '  ').slice(0, 96),
+    text: codeLineText(redact(l.text)),
     ...(number === undefined ? {} : { number }),
   };
 }

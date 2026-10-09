@@ -1,5 +1,5 @@
 import { escapeHtml } from './dom.ts';
-import { commentPattern, keywordsOf, syntaxFamily } from './syntax.ts';
+import { keywordsOf, lexer, syntaxFamily } from './syntax.ts';
 
 /**
  * A deliberately small syntax highlighter: enough contrast to read code on screen, no grammars.
@@ -13,13 +13,9 @@ export function highlightLine(line: string, language?: string): string {
     return highlightMarkup(line);
   if (fam === 'css') return highlightCss(line);
   const kw = keywordsOf(fam);
-  const comment = commentPattern(fam);
-  const token = new RegExp(
-    `(${comment.source})|("(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|\`(?:[^\`\\\\]|\\\\.)*\`)|(\\b\\d[\\d_.]*\\b)|([A-Za-z_$][\\w$]*)|(\\s+)|([^\\sA-Za-z_$\\d"'\`]+)`,
-    'g',
-  );
   let out = '';
-  for (const m of line.matchAll(token)) {
+  // The lexer is total: a character it cannot read as code is still drawn, escaped, as itself.
+  for (const m of line.matchAll(lexer(fam))) {
     const [text, cm, str, num, ident] = m;
     if (cm) out += span('comment', text);
     else if (str)
@@ -60,7 +56,7 @@ function highlightCss(line: string): string {
   if (prop && !line.includes('{')) {
     const [, ws, name, colon, value, rest] = prop;
     const v = escapeHtml(value!).replace(
-      /(#[0-9a-fA-F]{3,8}|\b\d+(\.\d+)?(px|rem|em|%|s|ms|vh|vw)?\b)/g,
+      /(#[0-9a-fA-F]{3,8}|(?:\b\d+(\.\d+)?|(?<![\w.])\.\d+)(px|rem|em|%|s|ms|vh|vw)?\b)/g,
       '<span class="tk-number">$1</span>',
     );
     return `${escapeHtml(ws!)}${span('prop', name!)}${escapeHtml(colon!)}${v}${escapeHtml(rest!)}`;

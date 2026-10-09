@@ -8,6 +8,7 @@
     "cold-open.test.ts",
     "density.test.ts",
     "drawn-font.test.ts",
+    "highlight.test.ts",
     "marks.test.ts",
     "morph.test.ts",
     "motion.test.ts",

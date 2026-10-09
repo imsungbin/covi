@@ -251,6 +251,31 @@ describe.skipIf(!available)('the token morph', () => {
     expect(shown).not.toContain('documents');
   });
 
+  it("gives a token the change recolors the new code's color as the morph settles", async () => {
+    // `size` stays, but the change makes it a call.
+    const v = await morphed([
+      context('function count(x) {', 10),
+      del('  return x.size;', 11),
+      add('  return x.size();', 11),
+      context('}', 12),
+    ]);
+    const colors = (frame: number) =>
+      v.seek(
+        frame,
+        `return [...document.querySelectorAll('[data-element="m"] .mlive [data-token="kept"]')]
+           .filter((n) => n.textContent === 'size').map((n) => getComputedStyle(n).color);`,
+      ) as Promise<string[]>;
+    const rgb = (hex: string) =>
+      `rgb(${[1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+    const { codeText, syntax } = v.timeline.theme;
+    const end = MORPH.t + MORPH.seconds;
+    expect(await colors(v.at(1))).toEqual([rgb(codeText)]);
+    const [settling] = await colors(v.at(end + 0.25));
+    expect([rgb(codeText), rgb(syntax.fn)]).not.toContain(settling);
+    expect(await colors(v.at(end + 0.6))).toEqual([rgb(syntax.fn)]);
+    expect(v.errors).toEqual([]);
+  });
+
   it('is deterministic: the same timeline renders the same mid-morph bytes', async () => {
     const [a, b] = [await morphed(refs), await morphed(refs)];
     const frame = a.at(MORPH.t + MORPH.seconds / 2);

@@ -325,14 +325,22 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
   // Kept tokens last, over everything: drawn once, from the base, travelling to their head box.
   for (const [b, i, h, j] of v.tokens) {
     const token = v.base[b]!.tokens[i]!;
+    const twin = v.head[h]!.tokens[j]!;
     const [from, to] = [before[b]!.tokens[i]!, after[h]!.tokens[j]!];
-    const node = piece(live, classes(token, v.base[b]!), token.text, before[b]!.box.height);
+    const [was, becomes] = [classes(token, v.base[b]!), classes(twin, v.head[h]!)];
+    const node = piece(live, was, token.text, before[b]!.box.height);
     node.dataset.token = 'kept';
     const p = sides[0]!.path[b]!;
-    draws.push((f) => {
+    draws.push((f, settle) => {
       const x = lerp(from.x, to.x, f.travel);
       position(node, x, p, f.travel);
       clip(node, x, from.width, Math.max(ellipsis(0, b, f), ellipsis(1, h, f)));
+      // A token the change recolors (a name that became a call) takes the new code's class once
+      // the morph is over, its color easing over as the added tokens settle.
+      if (was === becomes) return;
+      node.className = settle > 0 ? becomes : was;
+      node.style.color =
+        settle > 0 && settle < 1 ? mix(color(token.tone), color(twin.tone), settle) : '';
     });
   }
 

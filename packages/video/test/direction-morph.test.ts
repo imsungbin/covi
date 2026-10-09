@@ -1,12 +1,13 @@
 import { buildEvidence, DEFAULT_CONFIG, type Hunk, indexEvidence, Redactor } from '@covi/core';
 import { describe, expect, it } from 'vitest';
+import { captionOptionsFor } from '../src/captions.ts';
 import { directionProblems } from '../src/direction/refs.ts';
 import { BEAT_SECONDS, resolveDirection } from '../src/direction/resolve.ts';
 import { type DirectionInput, DirectionSchema } from '../src/direction/schema.ts';
 import { directionSources } from '../src/direction/sources.ts';
 import { resolveVideoSpec } from '../src/spec.ts';
 import { type Scene, SceneSchema } from '../src/storyboard/schema.ts';
-import { layoutScenes, pacingFor } from '../src/timeline/build.ts';
+import { layoutScenes, pacingFor, phraseMoment } from '../src/timeline/build.ts';
 import type { SceneStaging } from '../src/timeline/types.ts';
 
 // A run with three hunks: a replaced line holding a secret (outside any string, so its tokens
@@ -223,7 +224,49 @@ describe('resolving a morph', () => {
     ).toBe('  return send(docs, [REDACTED]);');
   });
 
+  it('redacts a line before cutting it, so a secret across the cut leaves no piece behind', () => {
+    // Cut first, the line would end in the secret's first characters, which no rule matches.
+    const wide: Hunk = {
+      oldStart: 1,
+      oldLines: 1,
+      newStart: 1,
+      newLines: 1,
+      lines: [
+        { kind: 'del', text: `${' '.repeat(90)}${SECRET}`, oldLine: 1 },
+        { kind: 'add', text: 'send();', newLine: 1 },
+      ],
+    };
+    const wideFiles = [{ path: 'w.js', hunks: [wide] }];
+    const wideEvidence = indexEvidence(buildEvidence({ diff: wideFiles }));
+    const staging = resolveDirection({
+      plan: DirectionSchema.parse({
+        shots: [
+          { scene: 's2', elements: [{ id: 'req', kind: 'morph', evidence: 'diff-hunk:w.js:1' }] },
+        ],
+      }),
+      scenes,
+      layout,
+      spec,
+      language: 'en',
+      sources: directionSources({ files: wideFiles, evidence: wideEvidence }),
+      image: () => ({ src: '', width: 1, height: 1 }),
+      seed: 5,
+      redact: (value) => redactor.redactDeep(value),
+    });
+    expect(JSON.stringify(staging)).not.toContain('hunter');
+    expect(
+      element(staging)
+        .morph.base[0]!.tokens.map((t) => t.text)
+        .join(''),
+    ).toBe(`${' '.repeat(90)}[REDAC`);
+  });
+
   it('morphs on its phrase, or where an implicit beat spreads it when no beat names it', () => {
+    const timing = layout.scenes[1]!;
+    const options = { ...captionOptionsFor('landscape'), language: 'en' as const };
+    const text = 'Now it sends only the ids, and the reader fetches each one.';
+    const lead = timing.speechStart - timing.start;
+    const speech = timing.speechEnd - timing.speechStart;
     const pinned = resolve({
       scene: 's2',
       elements: [morph()],
@@ -232,13 +275,26 @@ describe('resolving a morph', () => {
         { verb: 'morph', element: 'req', at: 'only the ids' },
       ],
     })[1]!.direction.beats;
-    expect(pinned.map((b) => b.verb).sort()).toEqual(['camera', 'morph']);
+    expect(pinned.map((b) => b.verb)).toEqual(['camera', 'morph']);
     const beat = pinned.find((b) => b.verb === 'morph')!;
     expect(beat).toMatchObject({ element: 'req', seconds: BEAT_SECONDS.morph });
-    const implicit = resolve({ scene: 's2', elements: [morph()], beats: [] })[1]!.direction.beats;
-    expect(implicit).toEqual([
+    expect(beat.t).toBe(phraseMoment(text, 'only the ids', timing, options));
+    expect(pinned[0]!.t).toBeCloseTo(lead + speech * 0.15, 3);
+    // A morph no beat names takes the slot a last beat without a phrase would.
+    const implicit = resolve({
+      scene: 's2',
+      elements: [morph()],
+      beats: [{ verb: 'camera', move: 'follow', to: 'req' }],
+    })[1]!.direction.beats;
+    expect(implicit.map((b) => b.verb)).toEqual(['camera', 'morph']);
+    expect(implicit[1]).toMatchObject({ element: 'req', seconds: BEAT_SECONDS.morph });
+    expect(implicit[0]!.t).toBeCloseTo(lead + speech * 0.15, 3);
+    expect(implicit[1]!.t).toBeCloseTo(lead + speech * (0.15 + 0.85 / 2), 3);
+    const alone = resolve({ scene: 's2', elements: [morph()], beats: [] })[1]!.direction.beats;
+    expect(alone).toEqual([
       expect.objectContaining({ verb: 'morph', element: 'req', seconds: BEAT_SECONDS.morph }),
     ]);
+    expect(alone[0]!.t).toBeCloseTo(lead + speech * 0.15, 3);
   });
 
   it('waits for its element to be in place before it morphs, as the camera does', () => {

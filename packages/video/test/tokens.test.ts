@@ -162,6 +162,11 @@ describe('tokenizing a line', () => {
       'docs:-',
     ]);
     expect(tones(' * The reader fetches it.').every((t) => t.endsWith(':comment'))).toBe(true);
+    // In CSS a star starts a selector (`* {`, `*, *::before`); only a slash and a star open a
+    // comment there.
+    for (const rule of ['* { box-sizing: border-box; }', '*, *::before {', '  * + p {'])
+      expect(tones(rule, 'css').filter((t) => t.endsWith(':comment'))).toEqual([]);
+    expect(tones('/* reset */', 'css').every((t) => t.endsWith(':comment'))).toBe(true);
   });
 
   it('cuts a line as a code card does: tabs as two spaces, never inside a character', () => {

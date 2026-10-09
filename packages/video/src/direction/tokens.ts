@@ -29,12 +29,20 @@ const PARTS = new RegExp(`${WORD.source}|${NUMBER.source}|\\s+|[\\s\\S]`, 'gu');
 /** Whitespace is layout only: it is never kept, removed, or added. */
 export const isSpace = (token: MorphToken) => /^\s+$/u.test(token.text);
 
+/** A line that opens a block comment, or (in C-like code) continues one, by family. */
+const BLOCK_COMMENT: Partial<Record<SyntaxFamily, RegExp>> = {
+  c: /^(\s*)((?:\/\*|\*).*)$/u,
+  // A CSS line that starts with a star is a selector (`* {`, `*, *::before`), not a comment.
+  css: /^(\s*)(\/\*.*)$/u,
+};
+
 /**
  * A line's lexemes. A line that opens or continues a block comment (it starts with a slash and a
- * star, or a star) reads as a comment, as it does in its file, though the line is read alone.
+ * star, or a star outside CSS) reads as a comment, as it does in its file, though the line is
+ * read alone.
  */
 function lex(line: string, family: SyntaxFamily): Array<{ text: string; kind: Lexeme }> {
-  const inside = (family === 'c' || family === 'css') && /^(\s*)((?:\/\*|\*).*)$/u.exec(line);
+  const inside = BLOCK_COMMENT[family]?.exec(line);
   if (inside)
     return [
       ...(inside[1] ? [{ text: inside[1], kind: 'space' as const }] : []),

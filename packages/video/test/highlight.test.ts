@@ -53,9 +53,9 @@ const TRICKY = [
   'a < b && c > d & e; "<&>"',
   'trailing space  ',
   'crlf line;\r',
-  'zero​width nbsp bom﻿',
+  'zero\u200bwidth nbsp\u00a0bom\ufeff',
   'lone \ud800 surrogate',
-  'line sep end',
+  'line\u2028sep\u2029end',
   '\\\\ backslashes \\',
   '٣٤ arabic digits ² é5 x²',
 ];
@@ -67,9 +67,9 @@ const ALPHABET = [
   'é',
   '漢',
   '😀',
-  '́',
-  ' ',
-  ' ',
+  '\u0301',
+  '\u00a0',
+  '\u2028',
 ];
 
 /** Seeded random lines, so the fuzz is the same on every run. */
@@ -141,6 +141,19 @@ describe('highlighting a code line', () => {
     expect(numbers('ip = 127.0.0.1; r = 0..10')).toEqual(['127.0', '.0', '.1', '0', '10']);
     // Inside a string or a comment, a number is the string's or the comment's.
     expect(numbers('f("1e5") // 10n')).toEqual([]);
+  });
+
+  it('leaves the tail of an address uncolored, and still colors a comment after code', () => {
+    const comments = (line: string, language?: string) =>
+      [...highlightLine(line, language).matchAll(/<span class="tk-comment">([^<]*)<\/span>/g)].map(
+        (m) => m[1],
+      );
+    expect(comments('See https://example.com/docs for the details.', 'markdown')).toEqual([]);
+    expect(comments('  url: http://localhost:3000')).toEqual([]);
+    expect(comments('fetch(base + "/v1"); // see http://x.io/a')).toEqual(['// see http://x.io/a']);
+    expect(
+      tokenize('Read https://example.com/a now', 'markdown').filter((t) => t.tone === 'comment'),
+    ).toEqual([]);
   });
 
   it('reads code as the morph does: the same characters, and the same numbers', () => {

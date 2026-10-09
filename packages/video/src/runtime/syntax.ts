@@ -160,11 +160,14 @@ export function keywordsOf(family: SyntaxFamily): ReadonlySet<string> {
   return new Set(family === 'py' || family === 'sh' ? KEYWORDS[family] : KEYWORDS.c);
 }
 
-/** A family's comments: to the end of the line, or a block comment that closes on it. */
+/**
+ * A family's comments: to the end of the line, or a block comment that closes on it. Two slashes
+ * after a colon are an address (`https://…`), not a comment, as in Markdown and plain text.
+ */
 export function commentPattern(family: SyntaxFamily): RegExp {
   if (family === 'py' || family === 'sh') return /#.*$/;
   if (family === 'sql') return /--.*$/;
-  return /\/\/.*$|\/\*.*?\*\//;
+  return /(?<!:)\/\/.*$|\/\*.*?\*\//;
 }
 
 /** A string closed on its line, in double, single, or back quotes, escapes included. */

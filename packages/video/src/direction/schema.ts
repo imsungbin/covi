@@ -190,7 +190,7 @@ export const ShotElementSchema = z.discriminatedUnion('kind', [
       evidence: EvidenceRefSchema.describe('A diff-hunk: id from `covi evidence --run <id>`.'),
     })
     .describe(
-      "The hunk's code before the change, turning token by token into the code after it on its `morph` beat.",
+      "The hunk's code before the change, turning token by token into the code after it on its `morph` beat. A morph element that no beat names morphs anyway, on a beat spaced through the line like any beat without `at`.",
     ),
   z.strictObject({
     id: ElementIdSchema,
@@ -225,7 +225,7 @@ export const ShotBeatSchema = z.discriminatedUnion('verb', [
     move: z
       .enum(CAMERA_MOVES)
       .describe(
-        'zoom: frame the element; pan: center it at the same scale; follow: frame what it highlights.',
+        'zoom: frame the element; pan: center it at the same scale; follow: frame what it highlights; on a morph, keep its changed lines framed as they move.',
       ),
     to: ElementIdSchema,
     zoom: z
@@ -243,7 +243,7 @@ export const ShotBeatSchema = z.discriminatedUnion('verb', [
       at: PhraseSchema.optional(),
     })
     .describe(
-      'A morph element turns from the code before the change into the code after it: removed lines fold away, new ones slide in, and the tokens that stay travel to their new places.',
+      'A morph element turns from the code before the change into the code after it, once: removed lines fold away, new ones slide in, and the tokens that stay travel to their new places. A morph element that no beat names morphs anyway; a morph of a revealed element waits for its reveal.',
     ),
 ]);
 

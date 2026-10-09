@@ -7,13 +7,13 @@ Spec: `specs/2026-10-09-covi-0.3.0-program-design.md`. Plans: `plans/`.
 
 | PR | Branch | Plan | PR # | State |
 |---|---|---|---|---|
-| A1 Broadcast mix | broadcast-mix | — | — | not started |
-| B1 Density and monotony | density-checks | — | — | not started |
-| B2 Direction and canvas | direction-canvas | — | — | not started |
-| B3 Code morph | code-morph | — | — | not started |
-| B4 Numbers | metrics | — | — | not started |
-| B5 Flow verbs | flow-verbs | — | — | not started |
-| B6 Draft and critique | draft-critique | — | — | not started |
+| A1 Broadcast mix | broadcast-mix | plans/2026-10-09-a1-broadcast-mix.md | — | task 7 of 9 |
+| B1 Density and monotony | density-checks | plans/2026-10-09-b1-density-checks.md | #10 | final review |
+| B2 Direction and canvas | direction-canvas | plans/2026-10-09-b2-direction-canvas.md | — | planned |
+| B3 Code morph | code-morph | plans/2026-10-09-b3-code-morph.md | — | planned |
+| B4 Numbers | metrics | plans/2026-10-09-b4-metrics.md | — | planned |
+| B5 Flow verbs | flow-verbs | plans/2026-10-09-b5-flow-verbs.md | — | planned |
+| B6 Draft and critique | draft-critique | — | — | planning |
 | B7 Direction methodology | direction-method | — | — | not started |
 | A2 Sound from motion | sound-from-motion | — | — | not started |
 | R Release 0.3.0 | release-0.3.0 | — | — | not started |

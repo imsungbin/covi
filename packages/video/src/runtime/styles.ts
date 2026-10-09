@@ -138,6 +138,13 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
 .code .ln .strike { position: absolute; left: 4.9em; right: 1em; top: 52%; height: max(2px, 0.08em); background: ${c.delText};
   transform-origin: left center; transform: scaleX(0); }
 .code .caret { display: inline-block; width: 0.5em; height: 1.05em; margin-left: 0.05em; vertical-align: text-bottom; background: ${c.codeText}; opacity: 0.75; }
+.code.tokens .mrows, .code.tokens .mlive { position: absolute; inset: 0; }
+.code.tokens .mrows > span, .code.tokens .mlive > span { position: absolute; left: 0; top: 0; white-space: pre; transform-origin: 0 0; }
+.code.tokens .mlive { clip-path: inset(0 1em 0 0); }
+.code.tokens .mbar { background: ${c.addBackground}; } .code.tokens .mbar.del { background: ${c.delBackground}; }
+.code.tokens .mmark.add { color: ${c.addText}; } .code.tokens .mmark.del { color: ${c.delText}; }
+.code.tokens .mnum { color: ${c.codeMuted}; }
+.code.tokens .elided { color: ${c.codeMuted}; font-style: italic; }
 .code-caption { position: absolute; color: ${c.textMuted}; font-weight: 560; line-height: 1.3; overflow: hidden;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 ${syntaxRules('', c.syntax)}

@@ -53,6 +53,11 @@ export interface Component {
    */
   target?(clock: SceneClock): Rect | undefined;
   /**
+   * Where a moving target is laid out `t` seconds into the component's clock (a morph's changed
+   * lines), in stage pixels before any transform; pure, so the camera can follow it at any frame.
+   */
+  follow?(t: number): Rect | undefined;
+  /**
    * Its target and `focus` items are computed from its layout (a frame's geometry), not measured
    * as drawn: the canvas camera does not move them, so the stage maps them through it.
    */

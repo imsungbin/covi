@@ -687,8 +687,22 @@ export function restFrame(
 }
 
 /**
+ * A token morph's phases, as shares of its beat: removed tokens tint and fade over `remove`, the
+ * rows close up and kept tokens travel over `travel`, and added tokens arrive over `add`. They
+ * overlap, so the middle of a morph shows all three at once.
+ */
+export const MORPH_PHASES = {
+  remove: [0, 0.7],
+  travel: [0.1, 0.9],
+  add: [0.35, 1],
+} as const satisfies Record<string, Span>;
+/** Added tokens keep the added color this long after a morph, then take their syntax colors. */
+export const MORPH_SETTLE = 0.5;
+
+/**
  * When a directed scene's choreography is done: every element has entered and played its own (the
- * storyboard visual on the scene's phases, the others from their reveal), and every beat has ended.
+ * storyboard visual on the scene's phases, the others from their reveal; a morph once its added
+ * tokens have settled), and every beat has ended.
  */
 export function shotSettledAt(
   scene: Pick<TimelineScene, 'visual' | 'direction' | 'phases' | 'start' | 'end'>,
@@ -701,6 +715,10 @@ export function shotSettledAt(
   const elements = d.elements.map((e) => {
     if (e.kind === 'visual') return settledAt(scene.visual, duration, scene.phases);
     const at = revealedAt(e.id);
+    if (e.kind === 'morph') {
+      const beat = d.beats.find((b) => b.verb === 'morph' && b.element === e.id);
+      return Math.max(at + 0.5, beat ? beat.t + beat.seconds + MORPH_SETTLE : 0);
+    }
     return e.kind === 'node' || e.kind === 'label'
       ? at + 0.5
       : at + settledAt(e.visual, Math.max(0.1, duration - at));

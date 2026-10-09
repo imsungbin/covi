@@ -1,3 +1,4 @@
+import type { Span } from '../../timeline/cues.ts';
 import type {
   DirectionBeat,
   DirectionElement,
@@ -20,11 +21,13 @@ import {
 } from '../components/types.ts';
 import { el, fitText, place } from '../dom.ts';
 import { union } from '../narrator.ts';
+import { morph } from './morph.ts';
 
 /*
  * A directed scene's elements, drawn together as one component, so the stage treats a shot like a
  * visual. Code, output, and captures are drawn by the components that draw those visuals, each in
- * its slot; nodes and labels are the agent's short text, always set as text, never as markup.
+ * its slot; a morph by its own; nodes and labels are the agent's short text, always set as text,
+ * never as markup.
  */
 
 /** A shot, drawn: one component for the stage, and the storyboard visual's own when it keeps it. */
@@ -74,7 +77,16 @@ export function mountShot(
     const reveal = direction.beats.find(
       (b): b is Reveal => b.verb === 'reveal' && b.element === element.id,
     );
-    return { element, layer, ...(reveal ? { reveal } : {}), ...draw(element, sub, drawVisual) };
+    const placed = { element, layer, ...(reveal ? { reveal } : {}) };
+    // The element's own beat (a morph's), on the element's own clock. A morph without one (a
+    // timeline built by hand) shows the code after the change from the start.
+    const beat = direction.beats.find(
+      (b) => b.verb !== 'reveal' && b.verb !== 'camera' && b.element === element.id,
+    );
+    const span = beat
+      ? ([elementTime(placed, beat.t), elementTime(placed, beat.t + beat.seconds)] as const)
+      : ([0, 0] as const);
+    return { ...placed, ...draw(element, sub, drawVisual, span) };
   });
   const shown = drawn.find((d) => d.element.kind === 'visual');
   const visual = shown?.component;
@@ -97,9 +109,17 @@ export function mountShot(
     // An element not revealed yet is not on screen.
     report: () =>
       drawn.filter((d) => !d.reveal || now > d.reveal.t).flatMap((d) => d.component.report()),
-    // Nothing to point at before the visual is revealed.
-    target: (clock) =>
-      shown?.reveal && clock.t <= shown.reveal.t ? undefined : visual?.target?.(clock),
+    // What the visual highlights, else what an element does (a morph's changed lines), and nothing
+    // before it is revealed. Only the visual's target may come from layout (the shot takes its
+    // flag), so another element's counts only when it is measured as drawn.
+    target: (clock) => {
+      const hidden = (d: Drawn) => d.reveal !== undefined && clock.t <= d.reveal.t;
+      if (shown) return hidden(shown) ? undefined : visual?.target?.(clock);
+      return drawn
+        .filter((d) => !hidden(d) && !d.component.laidOut)
+        .map((d) => d.component.target?.(elementClock(d, clock)))
+        .find((rect) => rect !== undefined);
+    },
     frame(id) {
       const d = drawn.find((x) => x.element.id === id);
       const boxes = (d?.component.report() ?? [])
@@ -111,14 +131,25 @@ export function mountShot(
 }
 
 /**
- * The clock an element plays on. The visual keeps the scene's; an element revealed later plays its
- * own choreography from its reveal, in the time left (as `shotSettledAt` times it), and already in
- * place, since the reveal brings it in.
+ * When an element's own clock starts, in seconds since the scene started. The visual keeps the
+ * scene's clock; an element revealed later plays its own choreography from its reveal, in the time
+ * left (as `shotSettledAt` times it), and already in place, since the reveal brings it in.
  */
+function clockStart(d: Pick<Drawn, 'element' | 'reveal'>): number | undefined {
+  return d.element.kind === 'visual' ? undefined : d.reveal?.t;
+}
+
+/** Seconds since the scene started, on an element's own clock. */
+function elementTime(d: Pick<Drawn, 'element' | 'reveal'>, t: number): number {
+  return t - (clockStart(d) ?? 0);
+}
+
+/** The clock an element plays on (see `clockStart`). */
 function elementClock(d: Drawn, clock: SceneClock): SceneClock {
-  if (!d.reveal || d.element.kind === 'visual') return clock;
-  const t = clock.t - d.reveal.t;
-  const duration = Math.max(0.1, clock.duration - d.reveal.t);
+  const start = clockStart(d);
+  if (start === undefined) return clock;
+  const t = clock.t - start;
+  const duration = Math.max(0.1, clock.duration - start);
   return { ...clock, t, duration, p: clamp(t / duration), open: true };
 }
 
@@ -126,6 +157,7 @@ function draw(
   element: DirectionElement,
   ctx: ComponentContext,
   drawVisual: (ctx: ComponentContext) => Component,
+  span: Span,
 ): Part {
   switch (element.kind) {
     case 'visual':
@@ -136,6 +168,8 @@ function draw(
       return { component: terminal(element.visual, ctx) };
     case 'capture':
       return { component: screenshot(element.visual, ctx) };
+    case 'morph':
+      return { component: morph(element.morph, ctx, span) };
     case 'node':
       return textBox(element.label, element.rect, 'node dnode', ctx);
     case 'label':

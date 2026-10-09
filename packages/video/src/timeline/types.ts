@@ -82,7 +82,7 @@ export interface MorphVisual {
 /**
  * An element of a directed scene, resolved: content from the run's evidence (never from the
  * agent, labels excepted) and its slot in stop-local stage pixels. Code, output, and captures are
- * drawn by the components that draw those visuals, inside their slot.
+ * drawn by the components that draw those visuals, inside their slot; a morph by its own.
  */
 export type DirectionElement =
   | { id: string; kind: 'visual'; rect: Rect }
@@ -99,6 +99,7 @@ export type DirectionElement =
       rect: Rect;
       visual: Extract<TimelineVisual, { kind: 'screenshot' }>;
     }
+  | { id: string; kind: 'morph'; rect: Rect; morph: MorphVisual }
   | { id: string; kind: 'node'; rect: Rect; label: string }
   | {
       id: string;
@@ -111,7 +112,8 @@ export type DirectionElement =
 /** A beat, resolved: when it starts (seconds since the scene started) and how long it takes. */
 export type DirectionBeat =
   | { verb: 'reveal'; element: string; style: RevealStyle; t: number; seconds: number }
-  | { verb: 'camera'; move: CameraMove; to: string; zoom?: number; t: number; seconds: number };
+  | { verb: 'camera'; move: CameraMove; to: string; zoom?: number; t: number; seconds: number }
+  | { verb: 'morph'; element: string; t: number; seconds: number };
 
 /** A scene's shot, resolved. */
 export interface SceneDirection {

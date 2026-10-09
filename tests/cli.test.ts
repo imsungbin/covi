@@ -384,6 +384,12 @@ describe('covi CLI', () => {
     expect(Object.keys(score.properties.form!.properties!)).toEqual(
       expect.arrayContaining(['ending', 'logo']),
     );
+    const direction = covi(['schema', 'direction']).json() as {
+      properties: Record<string, unknown>;
+      additionalProperties: boolean;
+    };
+    expect(Object.keys(direction.properties)).toEqual(['schemaVersion', 'draft', 'shots']);
+    expect(direction.additionalProperties).toBe(false);
     expect(covi(['schema', 'nope']).code).toBe(2);
     expect(covi(['templates', '--json']).json()).toHaveLength(7);
     expect(

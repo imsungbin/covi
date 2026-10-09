@@ -47,6 +47,7 @@ import {
 import { detectPlatform, platformContext } from '@covi/platforms';
 import {
   applyAnswers,
+  DirectionSchema,
   followUpQuestions,
   loadTemplates,
   planVideo,
@@ -1380,7 +1381,7 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
     .command('schema')
     .argument(
       '<name>',
-      'explanation | findings | storyboard | score | demo-plan | config | evidence | subject | outcome',
+      'explanation | findings | storyboard | direction | score | demo-plan | config | evidence | subject | outcome',
     )
     .description('Print the JSON Schema for files agents author or read')
     .action(async (name: string) => {
@@ -1388,6 +1389,7 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
         explanation: ExplanationSchema,
         findings: FindingsFileSchema,
         storyboard: StoryboardSchema,
+        direction: DirectionSchema,
         score: ScoreSchema,
         'demo-plan': DemoPlanSchema,
         config: ConfigInputSchema,

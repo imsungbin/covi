@@ -18,6 +18,17 @@ export {
   transitionVarietyCheck,
 } from './density.ts';
 export {
+  DIRECTION_LIMITS,
+  DIRECTION_PATH,
+  type Direction,
+  type DirectionInput,
+  DirectionSchema,
+  readDirectionFile,
+  type Shot,
+  type ShotBeat,
+  type ShotElement,
+} from './direction/schema.ts';
+export {
   localeLanguage,
   normalizeSpeech,
   type Pronunciations,

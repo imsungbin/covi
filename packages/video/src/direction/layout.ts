@@ -54,9 +54,10 @@ function along(region: Rect, weights: readonly number[], axis: 'x' | 'y', gap: n
 }
 
 /**
- * Deterministic slots for a shot's elements, in stop-local stage pixels. `auto` picks from the
- * count: one fills the region, two split it, three line up (a row on wide frames, a column on
- * tall ones), and more make a grid of two columns on tall frames or two rows on wide ones.
+ * Deterministic slots for a shot's elements, in stop-local stage pixels. One element fills the
+ * region whatever the layout. `auto` picks from the count: two split it, three line up (a row on
+ * wide frames, a column on tall ones), and more make a grid of two columns on tall frames or two
+ * rows on wide ones.
  */
 export function elementSlots(
   kinds: readonly ShotElement['kind'][],
@@ -69,10 +70,10 @@ export function elementSlots(
   const tall = orientation === 'vertical';
   const weights = kinds.map((k) => WEIGHT[k]);
   const resolved =
-    layout !== 'auto'
-      ? layout
-      : n === 1
-        ? 'single'
+    n === 1
+      ? 'single'
+      : layout !== 'auto'
+        ? layout
         : n === 2
           ? 'split'
           : n === 3
@@ -86,7 +87,7 @@ export function elementSlots(
   else if (resolved === 'column') slots = along(region, weights, 'y', gap);
   else if (resolved === 'split') {
     const [first, rest] = along(region, [1, 1], tall ? 'y' : 'x', gap) as [Rect, Rect];
-    slots = [first, ...(n > 1 ? along(rest, weights.slice(1), tall ? 'x' : 'y', gap) : [])];
+    slots = [first, ...along(rest, weights.slice(1), tall ? 'x' : 'y', gap)];
   } else {
     const columns = tall ? 2 : Math.ceil(n / 2);
     const rows = Math.ceil(n / columns);

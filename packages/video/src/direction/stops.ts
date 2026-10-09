@@ -9,8 +9,10 @@ export const HERO_DROP = 0.5;
 /**
  * Where each story scene's stop sits on the canvas: a path that runs to the right and turns down
  * every 2–4 stops (the seed decides where, so a different change travels differently), with the
- * hero's stop dropped off the row so the camera pulls back to reach it. Coordinates are multiples
- * of the dot grid (`grid` px), so at every stop the canvas's dots line up with the stage's.
+ * hero's stop dropped off the row so the camera pulls back to reach it. The drop never reaches
+ * into the frame of a stop below (the path turns down under the last stop of a row), so no two
+ * stops' frames overlap, and no later stop moves. Coordinates are multiples of the dot grid
+ * (`grid` px), so at every stop the canvas's dots line up with the stage's.
  */
 export function canvasStops(input: {
   count: number;
@@ -41,8 +43,23 @@ export function canvasStops(input: {
         run++;
       }
     }
-    const drop = i === input.hero ? HERO_DROP * height : 0;
-    stops.push({ x: snap(x), y: snap(y + drop) });
+    stops.push({ x: snap(x), y: snap(y) });
   }
+  const hero = input.hero === undefined ? undefined : stops[input.hero];
+  if (hero) hero.y += heroDrop(hero, stops, input);
   return stops;
+}
+
+/** How far the hero drops: `HERO_DROP` of a frame, or as far as the frame of a stop below allows. */
+function heroDrop(
+  hero: Stop,
+  stops: readonly Stop[],
+  frame: { width: number; height: number; grid: number },
+): number {
+  const { width, height, grid } = frame;
+  const below = stops.filter((s) => s.y > hero.y && s.x < hero.x + width && hero.x < s.x + width);
+  const room = Math.min(...below.map((s) => s.y - hero.y - height));
+  // Whole grid steps, so the dropped stop stays on the grid; a hair of slack absorbs float error.
+  const steps = (v: number) => Math.floor(v / grid + 1e-9) * grid;
+  return Math.max(0, Math.min(Math.round((HERO_DROP * height) / grid) * grid, steps(room)));
 }

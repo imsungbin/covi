@@ -39,7 +39,9 @@ export function visualImages(visual: Visual): string[] {
  * The evidence a scene rests on: the ids it cites, then what is on screen from the run. Without
  * direction, or when its shot keeps the storyboard visual, that is what the visual shows (the
  * captured images, the diff hunks of its code, the request, command, or findings on screen); a
- * shot adds what its elements cite, and a shot without the visual replaces it.
+ * shot adds what its elements cite, and a shot without the visual replaces it. `shot` is what is
+ * on screen of the scene's shot once resolved (`shownShot`), never the plan's: an element whose
+ * content the run lacks is not drawn, and when none is, the storyboard visual shows instead.
  */
 export function sceneEvidence(
   scene: Pick<Scene, 'visual' | 'evidenceIds'>,

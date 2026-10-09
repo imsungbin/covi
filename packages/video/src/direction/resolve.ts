@@ -17,7 +17,7 @@ import type {
 } from '../timeline/types.ts';
 import { elementSlots, shotRegion } from './layout.ts';
 import type { Direction, Shot, ShotElement } from './schema.ts';
-import { type DirectionSources, hunkView } from './sources.ts';
+import { type CodeSide, type DirectionSources, hunkView } from './sources.ts';
 import { canvasStops } from './stops.ts';
 
 /** How long each verb takes, in seconds. */
@@ -31,10 +31,15 @@ export interface ResolveInput {
   plan: Pick<Direction, 'shots'>;
   /** The story's scenes as fitted (redacted, the lines the captions show), with their ids. */
   scenes: readonly Scene[];
-  /** Their timing, aligned with `scenes`. */
+  /** Their timing, matched to them by scene id. */
   layout: Layout;
   spec: Pick<VideoSpec, 'width' | 'height'>;
   language: Language;
+  /**
+   * What elements may show. Hunks must come from the run's `diff.patch`, which is redacted as a
+   * whole: code lines are redacted one by one here, and a secret split over lines (a key's body)
+   * matches no pattern line by line.
+   */
   sources: DirectionSources;
   /** Resolves a run-relative image path to its composition asset (prepared beforehand). */
   image: (path: string) => ImageAsset;
@@ -82,12 +87,31 @@ export function resolveDirection(input: ResolveInput): SceneStaging[] {
     language: input.language,
     redact: input.redact,
   };
+  const timings = new Map(input.layout.scenes.map((t) => [t.id, t]));
   const staged = input.scenes.map((scene, i): SceneStaging => {
     const id = scene.id ?? `s${i + 1}`;
+    const timing = timings.get(id);
+    const stop = stops[i];
+    // Beats timed against another scene's line would land on the wrong words: refuse instead.
+    if (!timing || !stop) throw new Error(`Story scene ${i + 1} has no timing in the layout.`);
     const shot = shots.get(id) ?? visualOnly(id);
-    return { stop: stops[i]!, direction: resolveShot(shot, scene, input.layout.scenes[i]!, ctx) };
+    return { stop, direction: resolveShot(shot, scene, timing, ctx) };
   });
   return input.redact(staged);
+}
+
+/**
+ * What of a shot is on screen once it is resolved, for grounding (`sceneEvidence`): the elements
+ * that resolved, or nothing when the scene shows its storyboard visual alone (no shot, a shot of
+ * just the visual, or a shot none of whose content the run has), so the visual's evidence counts.
+ */
+export function shownShot(
+  shot: Pick<Shot, 'elements'> | undefined,
+  direction: Pick<SceneDirection, 'whole' | 'elements'>,
+): Pick<Shot, 'elements'> | undefined {
+  if (!shot || direction.whole) return undefined;
+  const shown = new Map(direction.elements.map((e) => [e.id, e.kind]));
+  return { elements: shot.elements.filter((e) => shown.get(e.id) === e.kind) };
 }
 
 /** A scene without a shot shows its storyboard visual, as without direction. */
@@ -135,7 +159,8 @@ function element(e: ShotElement, rect: Rect, ctx: Context): DirectionElement | u
     case 'code': {
       const hunk = ctx.sources.hunk(e.evidence);
       if (!hunk) return undefined;
-      const view = hunkView(hunk.lines, e.side ?? 'head');
+      const side = e.side ?? 'head';
+      const view = hunkView(hunk.lines, side);
       const shown = e.lines
         ? view.slice(e.lines[0] - 1, e.lines[1])
         : codeWindow(view, tall ? CODE_LINES.vertical : CODE_LINES.landscape);
@@ -148,7 +173,7 @@ function element(e: ShotElement, rect: Rect, ctx: Context): DirectionElement | u
           kind: 'code',
           path: hunk.path,
           ...(hunk.language ? { language: hunk.language } : {}),
-          lines: shown.map((l) => codeLine(l, ctx.redact)),
+          lines: shown.map((l) => codeLine(l, side, ctx.redact)),
           highlight: [],
         },
       };
@@ -190,10 +215,13 @@ function element(e: ShotElement, rect: Rect, ctx: Context): DirectionElement | u
 
 /**
  * A diff line as the code component draws it: tabs as two spaces, cut at 96 characters, as a
- * drafted code visual's are. Redacted before the cut, so a cut never splits a secret.
+ * drafted code visual's are, and numbered as the side shows the file: base lines by the old file,
+ * head lines by the new one, a diff's deleted lines old and the rest new. Redacted before the cut,
+ * so a cut never splits a secret on the line.
  */
-function codeLine(l: DiffLine, redact: <T>(value: T) => T): CodeLine {
-  const number = l.kind === 'del' ? l.oldLine : l.newLine;
+function codeLine(l: DiffLine, side: CodeSide, redact: <T>(value: T) => T): CodeLine {
+  const old = side === 'base' || (side === 'diff' && l.kind === 'del');
+  const number = old ? l.oldLine : l.newLine;
   return {
     type: l.kind,
     text: redact(l.text).replace(/\t/g, '  ').slice(0, 96),

@@ -9,12 +9,19 @@ import {
 import { describe, expect, it } from 'vitest';
 import { captionOptionsFor } from '../src/captions.ts';
 import { elementSlots, shotRegion } from '../src/direction/layout.ts';
-import { BEAT_SECONDS, directionImages, resolveDirection } from '../src/direction/resolve.ts';
+import {
+  BEAT_SECONDS,
+  CODE_LINES,
+  directionImages,
+  resolveDirection,
+  shownShot,
+} from '../src/direction/resolve.ts';
 import { type DirectionInput, DirectionSchema } from '../src/direction/schema.ts';
 import { directionSources } from '../src/direction/sources.ts';
 import { canvasStops, HERO_DROP, STOP_GAP } from '../src/direction/stops.ts';
+import { sceneEvidence } from '../src/grounding.ts';
 import { computeRegions, gridSpacing } from '../src/runtime/layout.ts';
-import { resolveVideoSpec } from '../src/spec.ts';
+import { orientationOf, resolveVideoSpec } from '../src/spec.ts';
 import { type Scene, SceneSchema } from '../src/storyboard/schema.ts';
 import { layoutScenes, pacingFor, phraseMoment } from '../src/timeline/build.ts';
 
@@ -65,6 +72,49 @@ describe('stops on the canvas', () => {
     expect(Math.abs(hero[3]!.y - plain[3]!.y - HERO_DROP * H)).toBeLessThanOrEqual(grid);
     expect(hero[4]).toEqual(plain[4]);
   });
+
+  it('never let two stops’ frames overlap, the hero’s included, on any frame', () => {
+    const overlaps: string[] = [];
+    let bounded = 0;
+    for (const [width, height] of [
+      [1920, 1080],
+      [1080, 1920],
+      [1080, 1080],
+    ] as const) {
+      const unit = computeRegions({
+        width,
+        height,
+        orientation: orientationOf(width, height),
+      }).unit;
+      const g = gridSpacing(unit);
+      for (let seed = 0; seed < 24; seed++) {
+        const plain = canvasStops({ count: 9, seed, width, height, grid: g });
+        for (let hero = 0; hero < 9; hero++) {
+          const path = canvasStops({ count: 9, hero, seed, width, height, grid: g });
+          path.forEach((p, a) => {
+            // Only the hero moves.
+            if (a !== hero) expect(p).toEqual(plain[a]);
+            path.slice(a + 1).forEach((q, k) => {
+              const apart =
+                p.x + width <= q.x ||
+                q.x + width <= p.x ||
+                p.y + height <= q.y ||
+                q.y + height <= p.y;
+              if (!apart)
+                overlaps.push(`${width}x${height} seed ${seed} hero ${hero}: ${a}/${a + 1 + k}`);
+            });
+          });
+          const drop = path[hero]!.y - plain[hero]!.y;
+          expect(drop).toBeGreaterThan(0);
+          expect(drop).toBeLessThanOrEqual(HERO_DROP * height + g);
+          if (drop < HERO_DROP * height - g) bounded++;
+        }
+      }
+    }
+    expect(overlaps).toEqual([]);
+    // The bound is exercised: some heroes end a row, with the path turning down right under them.
+    expect(bounded).toBeGreaterThan(0);
+  });
 });
 
 describe('element slots', () => {
@@ -96,6 +146,11 @@ describe('element slots', () => {
     ]);
     expect(elementSlots(['visual'], 'auto', region, 'landscape', 20)).toEqual([region]);
     expect(elementSlots(['code', 'label'], 'auto', region, 'landscape', 20)[0]!.width).toBe(490);
+  });
+  it('give one element the whole region, whatever the layout', () => {
+    for (const layout of ['auto', 'single', 'row', 'column', 'split'] as const)
+      expect(elementSlots(['visual'], layout, region, 'landscape', 20)).toEqual([region]);
+    expect(elementSlots(['code'], 'split', region, 'vertical', 20)).toEqual([region]);
   });
   it('give the visual alone its own region: a card without a header fills the frame', () => {
     const regions = computeRegions({ width: W, height: H, orientation: 'landscape' });
@@ -170,7 +225,7 @@ const resolve = (direction: DirectionInput) =>
   });
 
 describe('resolving a direction', () => {
-  const staging = resolve({
+  const directed: DirectionInput = {
     shots: [
       {
         scene: 's2',
@@ -190,7 +245,8 @@ describe('resolving a direction', () => {
         ],
       },
     ],
-  });
+  };
+  const staging = resolve(directed);
   const [s1, s2, s3] = staging;
 
   it('gives every story scene a stop, and the scenes without a shot their visual alone', () => {
@@ -345,18 +401,22 @@ describe('resolving a direction', () => {
     only: Scene,
     shot: DirectionInput['shots'][number],
     run: Parameters<typeof directionSources>[0],
-  ) =>
-    resolveDirection({
+    options: { spec?: typeof spec; redactor?: Redactor } = {},
+  ) => {
+    const frame = options.spec ?? spec;
+    const redaction = options.redactor ?? redactor;
+    return resolveDirection({
       plan: DirectionSchema.parse({ shots: [shot] }),
       scenes: [only],
-      layout: layoutScenes([only], new Map(), new Map(), 'en', pacingFor(spec)),
-      spec,
+      layout: layoutScenes([only], new Map(), new Map(), 'en', pacingFor(frame)),
+      spec: frame,
       language: 'en',
       sources: directionSources(run),
       image: (path) => ({ src: `assets/${path}`, width: 800, height: 600 }),
       seed: 5,
-      redact: (value) => redactor.redactDeep(value),
+      redact: (value) => redaction.redactDeep(value),
     })[0]!;
+  };
 
   it('redacts code and output before cutting them, so a cut never splits a secret', () => {
     const pad = 'x'.repeat(90);
@@ -439,10 +499,11 @@ describe('resolving a direction', () => {
       ],
       beats: [],
     });
+    const plain = scene('constructor', 'Plain.', { kind: 'callout', title: 'Plain' });
     const unshot = resolveDirection({
       plan: { shots: [] },
-      scenes: [scene('constructor', 'Plain.', { kind: 'callout', title: 'Plain' })],
-      layout: { ...layout, scenes: [layout.scenes[0]!] },
+      scenes: [plain],
+      layout: layoutScenes([plain], new Map(), new Map(), 'en', pacingFor(spec)),
       spec,
       language: 'en',
       sources,
@@ -486,5 +547,223 @@ describe('resolving a direction', () => {
     const q = timed.scenes[1]!;
     expect(q.speechEnd).toBe(q.speechStart);
     expect(staged[1]!.direction.beats[0]!.t).toBeCloseTo((q.end - q.start) * 0.15, 3);
+  });
+
+  // A later hunk of a file: its old and new line numbers differ.
+  const later: Hunk = {
+    oldStart: 20,
+    oldLines: 3,
+    newStart: 25,
+    newLines: 3,
+    lines: [
+      { kind: 'context', text: 'a();', oldLine: 20, newLine: 25 },
+      { kind: 'del', text: 'b();', oldLine: 21 },
+      { kind: 'add', text: 'c();', newLine: 26 },
+      { kind: 'context', text: 'd();', oldLine: 22, newLine: 27 },
+    ],
+  };
+  const laterFiles = [{ path: 'src/later.js', hunks: [later] }];
+  const laterRun = {
+    files: laterFiles,
+    evidence: indexEvidence(buildEvidence({ diff: laterFiles })),
+  };
+  const codeOf = (element: Record<string, unknown>, options = {}) => {
+    const only = scene('n', 'The numbers.', { kind: 'callout', title: 'Numbers' });
+    const shot = { scene: 'n', elements: [{ id: 'c', kind: 'code', ...element }] };
+    const [code] = alone(only, shot as DirectionInput['shots'][number], laterRun, options).direction
+      .elements;
+    if (code?.kind !== 'code') throw new Error('expected code');
+    return code.visual.lines;
+  };
+
+  it('numbers code lines as the side shows the file: base by the old file, head by the new', () => {
+    const numbers = (side: 'base' | 'head' | 'diff') =>
+      codeOf({ evidence: 'diff-hunk:src/later.js:25', side }).map((l) => [l.type, l.number]);
+    expect(numbers('base')).toEqual([
+      ['context', 20],
+      ['del', 21],
+      ['context', 22],
+    ]);
+    expect(numbers('head')).toEqual([
+      ['context', 25],
+      ['add', 26],
+      ['context', 27],
+    ]);
+    expect(numbers('diff')).toEqual([
+      ['context', 25],
+      ['del', 21],
+      ['add', 26],
+      ['context', 27],
+    ]);
+  });
+
+  it('shows the lines a code element asks for, 1-based and inclusive within its side', () => {
+    expect(codeOf({ evidence: 'diff-hunk:src/later.js:25', side: 'base', lines: [2, 3] })).toEqual([
+      { type: 'del', text: 'b();', number: 21 },
+      { type: 'context', text: 'd();', number: 22 },
+    ]);
+    // Asked for, a long window is shown whole: only the default window is cut to fit.
+    const many: Hunk = {
+      oldStart: 1,
+      oldLines: 0,
+      newStart: 1,
+      newLines: 30,
+      lines: Array.from({ length: 30 }, (_, i) => ({
+        kind: 'add' as const,
+        text: `l${i}();`,
+        newLine: i + 1,
+      })),
+    };
+    const manyFiles = [{ path: 'm.js', hunks: [many] }];
+    const run = { files: manyFiles, evidence: indexEvidence(buildEvidence({ diff: manyFiles })) };
+    const only = scene('m', 'Many lines.', { kind: 'callout', title: 'Many' });
+    const [code] = alone(
+      only,
+      {
+        scene: 'm',
+        elements: [{ id: 'c', kind: 'code', evidence: 'diff-hunk:m.js:1', lines: [3, 22] }],
+      },
+      run,
+    ).direction.elements;
+    if (code?.kind !== 'code') throw new Error('expected code');
+    expect(code.visual.lines.map((l) => l.number)).toEqual(
+      Array.from({ length: 20 }, (_, i) => i + 3),
+    );
+  });
+
+  it('fits tall frames: 18 code lines, 8 output lines, and three elements in a column', () => {
+    const tall = resolveVideoSpec(DEFAULT_CONFIG, { mode: 'short' });
+    expect(orientationOf(tall.width, tall.height)).toBe('vertical');
+    const long: Hunk = {
+      oldStart: 1,
+      oldLines: 0,
+      newStart: 1,
+      newLines: 40,
+      lines: Array.from({ length: 40 }, (_, i) => ({
+        kind: 'add' as const,
+        text: `t${i}();`,
+        newLine: i + 1,
+      })),
+    };
+    const tallFiles = [{ path: 't.js', hunks: [long] }];
+    const output = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n');
+    const tallDemo = {
+      commands: [
+        { name: 'many', command: 'node many.js', after: { exitCode: 0, output }, changed: true },
+      ],
+      shots: [],
+    } as unknown as Pick<Demonstration, 'commands' | 'shots'>;
+    const run = {
+      files: tallFiles,
+      demo: tallDemo,
+      evidence: indexEvidence(
+        buildEvidence({
+          diff: tallFiles,
+          demo: {
+            ...tallDemo,
+            requests: [],
+            skipped: [],
+            findings: [],
+          } as unknown as Demonstration,
+        }),
+      ),
+    };
+    const staged = alone(
+      scene('t', 'A tall frame.', { kind: 'callout', title: 'Tall' }),
+      {
+        scene: 't',
+        elements: [
+          { id: 'c', kind: 'code', evidence: 'diff-hunk:t.js:1' },
+          { id: 'o', kind: 'output', evidence: 'terminal:1' },
+          { id: 'l', kind: 'label', text: 'Tall' },
+        ],
+      },
+      run,
+      { spec: tall },
+    );
+    const [code, out, label] = staged.direction.elements;
+    if (code?.kind !== 'code' || out?.kind !== 'output')
+      throw new Error('expected code and output');
+    expect(code.visual.lines).toHaveLength(CODE_LINES.vertical);
+    const shown = out.visual.output.split('\n');
+    expect(shown).toHaveLength(8);
+    expect(shown.slice(0, 7)).toEqual(Array.from({ length: 7 }, (_, i) => `line ${i}`));
+    // `auto` with three on a tall frame: one column, top to bottom.
+    const media = computeRegions({ ...tall, orientation: 'vertical' }).media;
+    expect([code, out, label].map((e) => e!.rect.x)).toEqual([media.x, media.x, media.x]);
+    expect(code.rect.y).toBeLessThan(out.rect.y);
+    expect(out.rect.y).toBeLessThan(label!.rect.y);
+  });
+
+  it('redacts what an agent writes, too: node names and labels', () => {
+    const word = 'Classified';
+    const staged = alone(
+      scene('w', 'The words.', { kind: 'callout', title: 'Words' }),
+      {
+        scene: 'w',
+        elements: [
+          { id: 'n', kind: 'node', label: word },
+          { id: 'l', kind: 'label', text: `${word} notes` },
+        ],
+      },
+      { files, demo, evidence },
+      { redactor: new Redactor({ literals: [word] }) },
+    );
+    expect(JSON.stringify(staged)).not.toContain(word);
+    expect(staged.direction.elements).toMatchObject([
+      { kind: 'node', label: '[REDACTED]' },
+      { kind: 'label', text: '[REDACTED] notes' },
+    ]);
+  });
+
+  it('grounds a scene in what resolved: dropped elements cite nothing, a fallback its visual', () => {
+    const capture = scene('g', 'The page.', {
+      kind: 'screenshot',
+      image: { path: 'demo/home.png' },
+    });
+    const run = { files, demo, evidence };
+    const shotOf = (elements: unknown[]) =>
+      DirectionSchema.parse({ shots: [{ scene: 'g', elements }] }).shots[0]!;
+    // The output cites a hunk, which it cannot show: it is not drawn, so it grounds nothing.
+    const partly = shotOf([
+      { id: 'n', kind: 'node', label: 'Reader', evidence: ['terminal:1'] },
+      { id: 'o', kind: 'output', evidence: 'diff-hunk:src/request.js:10' },
+    ]);
+    const drawn = alone(capture, partly, run);
+    expect(drawn.direction.elements.map((e) => e.id)).toEqual(['n']);
+    expect(sceneEvidence(capture, evidence, [], partly)).toContain('diff-hunk:src/request.js:10');
+    expect(sceneEvidence(capture, evidence, [], shownShot(partly, drawn.direction))).toEqual([
+      'terminal:1',
+    ]);
+    // Nothing resolved: the storyboard visual shows, and grounds the scene.
+    const gone = shotOf([{ id: 'o', kind: 'output', evidence: 'diff-hunk:src/request.js:10' }]);
+    const fallback = alone(capture, gone, run);
+    expect(fallback.direction.whole).toBe(true);
+    expect(shownShot(gone, fallback.direction)).toBeUndefined();
+    expect(sceneEvidence(capture, evidence, [], shownShot(gone, fallback.direction))).toEqual([
+      'screenshot:home',
+    ]);
+    expect(shownShot(undefined, drawn.direction)).toBeUndefined();
+  });
+
+  it('matches each scene to its timing by id, and refuses a scene the layout lacks', () => {
+    const input = {
+      plan: DirectionSchema.parse(directed),
+      scenes,
+      spec,
+      language: 'en' as const,
+      sources,
+      image: (path: string) => ({ src: `assets/${path}`, width: 800, height: 600 }),
+      seed: 5,
+      redact: <T>(value: T) => redactor.redactDeep(value),
+    };
+    // Out of order, so the directed scene's place in the layout holds another scene's line.
+    const [first, ...rest] = layout.scenes;
+    const rotated = { ...layout, scenes: [...rest, first!] };
+    expect(resolveDirection({ ...input, layout: rotated })).toEqual(staging);
+    const short = { ...layout, scenes: layout.scenes.slice(0, 2) };
+    expect(() => resolveDirection({ ...input, layout: short })).toThrow(
+      'Story scene 3 has no timing in the layout.',
+    );
   });
 });

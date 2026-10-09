@@ -67,11 +67,17 @@ export {
 } from './music/render.ts';
 export { type ParsedScore, parseScore, ScoreError } from './music/score.ts';
 export {
+  BED_DB,
   clearOfSpeech,
+  duckAmount,
   PLACEMENT,
   type Placement,
   type PlacementParams,
   placementEnvelope,
+  placementLevels,
+  type RampShape,
+  rampSeconds,
+  swellingPauses,
 } from './placement.ts';
 export {
   SCORE_LIMITS,

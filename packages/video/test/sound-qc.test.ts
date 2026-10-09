@@ -93,6 +93,18 @@ describe('audio check', () => {
     expect([at(-1), at(-0.8), at(-0.4)]).toEqual(['pass', 'warn', 'fail']);
   });
 
+  it('grades the loudness and the true peak at the tenth it prints, as ffmpeg reports them', () => {
+    const check = (integrated: number, truePeak: number) => {
+      const c = audioCheck({ stream: true, integrated, truePeak, maxVolume: -1 }, sound);
+      return `${c.status}: ${c.message}`;
+    };
+    // Just over a limit is named over it; just under, at it.
+    expect(check(-16, -0.96)).toMatch(/^pass: .*true peak -1\.0 dBTP/);
+    expect(check(-16, -0.94)).toMatch(/^warn: .*true peak -0\.9 dBTP/);
+    expect(check(-17.04, -2)).toMatch(/^pass: .*-17\.0 LUFS/);
+    expect(check(-17.06, -2)).toMatch(/^warn: .*-17\.1 LUFS/);
+  });
+
   it('fails without a stream or with a silent one when anything should play', () => {
     expect(audioCheck({ stream: false }, sound).status).toBe('fail');
     expect(
@@ -163,6 +175,15 @@ describe('sound checks', () => {
     expect(audible(6.25, 93.6, 'bookends').message).toMatch(
       /heard for 6\.25 s outside the logo \(6\.7% of the video; at least 4\.68 s wanted\); the hero downbeat is clear of speech/,
     );
+    // Graded at the hundredth it prints: 3.2525 s wanted is 3.25, 3.2551 is 3.26.
+    expect(audible(3.25, 65.05, 'continuous')).toMatchObject({
+      status: 'pass',
+      message: expect.stringMatching(/heard for 3\.25 s .*at least 3\.25 s wanted/),
+    });
+    expect(audible(3.25, 65.102, 'continuous')).toMatchObject({
+      status: 'warn',
+      message: expect.stringMatching(/heard for 3\.25 s .*at least 3\.26 s wanted/),
+    });
   });
 
   it('warn when the hero downbeat falls under speech that bookends mute', () => {

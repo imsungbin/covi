@@ -321,7 +321,11 @@ export interface GlueOptions {
   sr?: number;
 }
 
-/** The music bus's glue: dense passages come down 1–3 dB together, quiet ones not at all. */
+/**
+ * The music bus's glue: dense passages come down together, quiet ones not at all. On the theme,
+ * measured over half seconds, the reduction is about 3 dB at the median and 3.7–4.5 dB at the
+ * 90th percentile.
+ */
 export const GLUE = {
   threshold: -24,
   ratio: 2,

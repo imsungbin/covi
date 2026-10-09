@@ -637,7 +637,7 @@ describe('respecVideo', () => {
         config({ video: { music: { placement: 'bookends' } } }),
       ),
     ).toBe(
-      'Arranged to the story and the verdict. Plays at the opening and the end, and stays low under the narration',
+      'Arranged to the story and the verdict. Plays at the opening and the end, and drops out under the narration',
     );
   });
 

@@ -140,7 +140,7 @@ const LAST_TAIL = 0.8;
  * after the last line, whatever the music; frames never depend on the music choice.
  */
 const HOLD = 1;
-/** A pause between two lines at least this long already breathes (bookends music rises in it). */
+/** A pause between two lines at least this long already breathes (the music may rise in it). */
 const BREATH_GAP = 1.5;
 
 /**

@@ -98,7 +98,7 @@ Details:
 | `--tts <provider>` | Speech engine: `auto`, `system`, `openai`, `elevenlabs`, or `none`. |
 | `--theme <theme>` | Color theme: `light` or `dark`. |
 | `--music <music>` | Background music: `theme` (the Covi theme, default), `compose` (a score written for this video), or `none`. See [Video](video.md#sound). |
-| `--music-placement <placement>` | Where the music plays: `auto` (the kind of video decides, default), `continuous` (a quiet bed under the narration), or `bookends` (around the narration only). See [Video](video.md#where-the-music-plays). |
+| `--music-placement <placement>` | Where the music plays: `auto` (continuous, default), `continuous` (a bed under the whole video, ducked under the narration), or `bookends` (before the first line and after the last only). See [Video](video.md#where-the-music-plays). |
 | `--no-sound-effects` | No sound effects for clicks, the before/after reveal, findings, the verdict, and the outro. |
 | `--outro`, `--no-outro` | End with Covi's branded outro (default), or hold the last scene for a second instead. See [Video](video.md#the-outro). |
 

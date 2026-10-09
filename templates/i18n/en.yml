@@ -883,7 +883,7 @@ question:
     noneDescriptionSilent: No sound at all
     # Where the music plays, after the theme's or the score's description ({what}).
     where:
-      bookends: '{what}. Plays at the opening and the end, and stays low under the narration'
+      bookends: '{what}. Plays at the opening and the end, and drops out under the narration'
       continuous: '{what}. A quiet bed under the narration that rises in the pauses'
       throughout: '{what}. Plays under the whole video'
 

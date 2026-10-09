@@ -5,7 +5,7 @@ import { localeLanguage, type SpeechRecord, unspokenAcronyms } from './narration
 import { suggestedVoice } from './narration/tts.ts';
 import type { Media } from './render/ffmpeg.ts';
 import { computeRegions } from './runtime/layout.ts';
-import { type AudioRecord, musicLibrary } from './sound.ts';
+import { type AudioRecord, musicLibrary, round } from './sound.ts';
 import type { VideoSpec } from './spec.ts';
 import { CAPTION_SPEED_LIMIT, captionCharacters, PACE_LIMIT, speechUnits } from './text.ts';
 import { storyScenes } from './timeline/build.ts';
@@ -65,7 +65,7 @@ const LOUDNESS = { narrated: -16, music: -20 } as const;
 /**
  * The audio stream: present and not silent whenever narration, music, or effects play; at the
  * target loudness (±1 LU passes, ±2 warns); and with headroom (a true peak at or below −1 dBTP;
- * above −0.5 fails).
+ * above −0.5 fails). Both are graded at the tenth ffmpeg reports and the message prints.
  */
 export function audioCheck(
   m: AudioMeasure,
@@ -95,16 +95,18 @@ export function audioCheck(
   const ranks: QcStatus[] = [];
   const parts: string[] = [];
   const target = sound.narrated ? LOUDNESS.narrated : sound.music ? LOUDNESS.music : undefined;
-  if (target !== undefined && m.integrated !== undefined && Number.isFinite(m.integrated)) {
-    const off = Math.abs(m.integrated - target);
+  const integrated = m.integrated === undefined ? undefined : round(m.integrated, 1);
+  const truePeak = m.truePeak === undefined ? undefined : round(m.truePeak, 1);
+  if (target !== undefined && integrated !== undefined && Number.isFinite(integrated)) {
+    const off = Math.abs(integrated - target);
     ranks.push(off <= 1 ? 'pass' : off <= 2 ? 'warn' : 'fail');
-    parts.push(`${m.integrated.toFixed(1)} LUFS (target ${target})`);
-  } else if (m.integrated !== undefined && Number.isFinite(m.integrated)) {
-    parts.push(`${m.integrated.toFixed(1)} LUFS (effects only, no target)`);
+    parts.push(`${integrated.toFixed(1)} LUFS (target ${target})`);
+  } else if (integrated !== undefined && Number.isFinite(integrated)) {
+    parts.push(`${integrated.toFixed(1)} LUFS (effects only, no target)`);
   }
-  if (m.truePeak !== undefined && Number.isFinite(m.truePeak)) {
-    ranks.push(m.truePeak <= -1 ? 'pass' : m.truePeak <= -0.5 ? 'warn' : 'fail');
-    parts.push(`true peak ${m.truePeak.toFixed(1)} dBTP`);
+  if (truePeak !== undefined && Number.isFinite(truePeak)) {
+    ranks.push(truePeak <= -1 ? 'pass' : truePeak <= -0.5 ? 'warn' : 'fail');
+    parts.push(`true peak ${truePeak.toFixed(1)} dBTP`);
   }
   if (missingVoice) ranks.push('warn');
   const status = worst(ranks);
@@ -322,7 +324,7 @@ export const BED_UNDER_VOICE = { min: 12, max: 20, fail: 9 } as const;
  * A level to the hundredth, as `video/audio.json` records it: graded and printed at the same
  * precision, so a message never names a failing level at its limit.
  */
-const hundredth = (n: number | undefined) => (n === undefined ? n : Math.round(100 * n) / 100);
+const hundredth = (n: number | undefined) => (n === undefined ? n : round(n, 2));
 
 /**
  * Checks on the mix itself, read from `video/audio.json`: the music under the narration, whether
@@ -515,8 +517,9 @@ function musicAudibleCheck(record: AudioRecord): QcCheck {
     return { id: 'music-audible', status: 'pass', message: 'Music is off.' };
   if (!music.audible)
     return { id: 'music-audible', status: 'pass', message: `No music to hear: ${music.reason}` };
-  const { seconds } = music.audible;
-  const wanted = audibleMusicWanted(record.duration);
+  // Graded at the hundredth the message prints.
+  const seconds = hundredth(music.audible.seconds)!;
+  const wanted = hundredth(audibleMusicWanted(record.duration))!;
   const share = `${(100 * music.audible.share).toFixed(1)}% of the video`;
   const problems: string[] = [];
   if (seconds < wanted - 1e-9)

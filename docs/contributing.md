@@ -304,7 +304,7 @@ Sound is data in `templates/music/`, synthesized by `packages/audio`:
 
 Every file is validated on load, and `packages/audio/test/library.test.ts` loads them all. When rendered output changes (a patch, the DSP, the scheduling, the mix), bump `AUDIO_ENGINE_VERSION` in `packages/audio/src/library.ts` so cached music is rendered again.
 
-Check a change by ear and by eye: render an example, listen to `video/music.wav` (the music alone, as placed) and the video, and read `video/audio.json` and the `audio`, `music-fit`, `music-under-speech`, `music-audible`, and `sound-effects` checks in `video/qc.json`. Render a narrated standard review too: its music plays mostly in the breaths around the narration, and `music-audible` says how much of it is heard. Pictures help:
+Check a change by ear and by eye: render an example, listen to `video/music.wav` (the music alone, as placed) and the video, and read `video/audio.json` and the `audio`, `music-under-speech`, `music-jump`, `music-range`, `music-fit`, `music-audible`, and `sound-effects` checks in `video/qc.json`. Render a narrated standard review too: its bed should sit 12–20 dB under the voice for two minutes without jumping, and `levels.musicJumps` says where the music moves most. Pictures help:
 
 ```bash
 dir=$(./bin/covi examples create ui-comment-composer)

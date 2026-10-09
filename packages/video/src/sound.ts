@@ -497,7 +497,8 @@ function peakOf(x: Float32Array): number {
   return p;
 }
 
-function round(n: number, digits: number): number {
+/** `n` to `digits` decimals, as the records write levels; a non-finite `n` passes through. */
+export function round(n: number, digits: number): number {
   if (!Number.isFinite(n)) return n;
   const k = 10 ** digits;
   return Math.round(n * k) / k;

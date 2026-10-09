@@ -211,7 +211,9 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
     const lines = timeline.scenes.flatMap((s) => (s.speech ? [s.speech] : []));
     const from = Math.min(...lines.map((l) => l.start));
     const to = Math.max(...lines.map((l) => l.end));
-    expect(ffmpegRange(join(run, 'video/music.wav'), from, to)).toBeLessThanOrEqual(8);
+    const range = ffmpegRange(join(run, 'video/music.wav'), from, to);
+    expect(range).toBeLessThanOrEqual(8);
+    expect(Math.abs(range - audio.levels.musicRangeLu)).toBeLessThanOrEqual(0.5);
     // Mixing the same sound again gives the same music, byte for byte.
     const first = readFileSync(join(run, 'video/music.wav'));
     covi(['render', '--repo', repo, '--run', result.runId]);

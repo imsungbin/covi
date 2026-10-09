@@ -247,11 +247,11 @@ export function loudnessJump(
 /**
  * What counts as music a viewer hears: a 0.25 s window of the placed music stem whose RMS is above
  * −45 dBFS. The stem is at the voice's loudness (−16 LUFS) before placement, and the master keeps
- * the narration there, so −45 dBFS sits about 29 dB under the voice as heard. That is halfway
- * between Covi's own placements: a continuous bed under speech (about −36, quiet but heard) and
- * bookends' ducked level (about −56, masked by the voice), with some 10 dB of margin either way
- * for the music's own dynamics. A quarter second resolves a one-second breath and averages over a
- * note's attack and decay.
+ * the narration there, so −45 dBFS sits about 29 dB under the voice as heard. That lies between
+ * Covi's own placements: 14 dB under a continuous bed under speech (about −31, quiet but heard)
+ * and 11 dB over bookends' ducked level (about −56, masked by the voice), margin for the music's
+ * own dynamics. A quarter second resolves a one-second breath and averages over a note's attack
+ * and decay.
  */
 export const AUDIBLE = { thresholdDbfs: -45, window: 0.25 } as const;
 

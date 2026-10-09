@@ -69,6 +69,13 @@ const refs: DiffLine[] = [
   context('}', 50, 55),
 ];
 const MORPH: DirectionBeat = { verb: 'morph', element: 'm', t: 2, seconds: 1.6 };
+// One line becomes nine: the changed lines grow taller than a zoomed view as they arrive.
+const grow: DiffLine[] = [
+  context('function load(id) {', 1),
+  del('  return fetch(id);', 2),
+  ...Array.from({ length: 9 }, (_, i) => add(`  step${i}(id);`, i + 2)),
+  context('}', 3, 11),
+];
 
 /**
  * A two-scene 640×360 composition whose second scene morphs `lines` on `beats` (seconds since that
@@ -355,10 +362,11 @@ describe.skipIf(!available)('the token morph', () => {
   });
 
   it('follows a long changed line only as far as the text column, where it ends', async () => {
-    // A card narrow enough that, zoomed in, the camera can frame the line as it shows.
+    // A card narrow enough that, zoomed in, the camera can frame the line as it shows, with room
+    // to spare (a box over half as wide as the view is framed a little toward its start).
     const long = `  return '${'x'.repeat(80)}';`;
     const center = media.x + media.width / 2;
-    const narrow = { x: center - 100, y: media.y, width: 200, height: media.height };
+    const narrow = { x: center - 55, y: media.y, width: 110, height: media.height };
     const follow: DirectionBeat = {
       verb: 'camera',
       move: 'follow',
@@ -386,6 +394,73 @@ describe.skipIf(!available)('the token morph', () => {
     expect((start + end) / 2).toBeCloseTo(center, 0);
     expect(start).toBeGreaterThan(media.x + 1);
     expect(end).toBeLessThan(media.x + media.width - 1);
+    expect(v.errors).toEqual([]);
+  });
+
+  it('holds one scale while it follows changed lines that grow, when no zoom is given', async () => {
+    const follow: DirectionBeat = { verb: 'camera', move: 'follow', to: 'm', t: 1, seconds: 0.8 };
+    const v = await morphed(grow, [follow, MORPH]);
+    // From the end of its ease until the scene settles and the camera starts to linger.
+    const cameras: Array<{ tx: number; ty: number; scale: number }> = [];
+    const [from, to] = [
+      v.at(follow.t + follow.seconds + 0.05),
+      v.at(MORPH.t + MORPH.seconds + 0.4),
+    ];
+    for (let frame = from; frame <= to; frame++) cameras.push(await v.camera(frame));
+    expect(new Set(cameras.map((c) => c.scale)).size).toBe(1);
+    expect(cameras[0]!.scale).toBeGreaterThan(1.1);
+    // Only its position moves with the lines.
+    expect(cameras.at(-1)!.ty).toBeLessThan(cameras[0]!.ty - 10);
+    expect(v.errors).toEqual([]);
+  });
+
+  it('slows down rather than stopping dead as the lines it follows outgrow the view', async () => {
+    const follow: DirectionBeat = {
+      verb: 'camera',
+      move: 'follow',
+      to: 'm',
+      zoom: 2.5,
+      t: 1,
+      seconds: 0.8,
+    };
+    const v = await morphed(grow, [follow, MORPH]);
+    const ty: number[] = [];
+    for (let frame = v.at(MORPH.t); frame <= v.at(MORPH.t + MORPH.seconds); frame++)
+      ty.push((await v.camera(frame)).ty);
+    const speed = ty.slice(1).map((y, i) => y - ty[i]!);
+    // It moves with the lines, then holds on their start, its speed changing a little each frame.
+    expect(Math.max(...speed.map(Math.abs))).toBeGreaterThan(4);
+    expect(speed.at(-1)).toBe(0);
+    for (const [i, s] of speed.entries())
+      if (i) expect(Math.abs(s - speed[i - 1]!)).toBeLessThan(2.5);
+    const first = (await v.seek(
+      v.at(MORPH.t + MORPH.seconds),
+      `return document.querySelector('[data-element="m"] .mbar.add').getBoundingClientRect().top;`,
+    )) as number;
+    expect(first).toBeGreaterThanOrEqual(media.y - 1);
+  });
+
+  it('follows a morph revealed later on the morph’s own clock', async () => {
+    const reveal: DirectionBeat = {
+      verb: 'reveal',
+      element: 'm',
+      style: 'rise',
+      t: 1,
+      seconds: 0.5,
+    };
+    const follow: DirectionBeat = {
+      verb: 'camera',
+      move: 'follow',
+      to: 'm',
+      zoom: 1.25,
+      t: 1.5,
+      seconds: 0.4,
+    };
+    const v = await morphed(refs, [reveal, follow, MORPH]);
+    const ty = async (share: number) => (await v.camera(v.at(MORPH.t + MORPH.seconds * share))).ty;
+    // Still moving with the lines while they travel: on the scene's clock it would be a second
+    // ahead, and done before they are.
+    expect(Math.abs((await ty(0.3)) - (await ty(0.9)))).toBeGreaterThan(1);
     expect(v.errors).toEqual([]);
   });
 });

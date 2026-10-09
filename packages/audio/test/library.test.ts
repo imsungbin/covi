@@ -88,8 +88,8 @@ describe('the music library (templates/music)', () => {
     expect(pitch(3)).toBeCloseTo(77.78, 0); // E♭2, in an E♭ render
   });
 
-  it('is a new engine: the mix and the effects changed', () => {
-    expect(AUDIO_ENGINE_VERSION).toBe('covi-audio-3');
+  it('is a new engine: the mix changed (bus, carve, placement, effect levels)', () => {
+    expect(AUDIO_ENGINE_VERSION).toBe('covi-audio-4');
   });
 
   it('describes the theme the spec asks for', () => {

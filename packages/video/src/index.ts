@@ -17,6 +17,10 @@ export {
   textSizeCheck,
   transitionVarietyCheck,
 } from './density.ts';
+export { defaultDirection, entrances, mergeDirection } from './direction/director.ts';
+export { type DirectionMode, type DirectionPlan, planDirection } from './direction/plan.ts';
+export { directionProblems } from './direction/refs.ts';
+export { directionImages, resolveDirection } from './direction/resolve.ts';
 export {
   DIRECTION_LIMITS,
   DIRECTION_PATH,
@@ -28,6 +32,7 @@ export {
   type ShotBeat,
   type ShotElement,
 } from './direction/schema.ts';
+export { type DirectionSources, directionSources } from './direction/sources.ts';
 export {
   localeLanguage,
   normalizeSpeech,

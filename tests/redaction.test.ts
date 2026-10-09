@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -70,5 +70,9 @@ describe('redaction in videos', () => {
     expect(result.storyboard.scenes.some((s) => s.visual.kind === 'code')).toBe(true);
     expect(text).not.toContain(TOKEN);
     expect(text).toMatch(/ghp_\S*(redacted|•|\*)/i);
+    // The drafted direction is written beside the storyboard, redacted too.
+    const direction = readFileSync(run.path('video/direction.json'), 'utf8');
+    expect(JSON.parse(direction)).toMatchObject({ draft: true });
+    expect(direction).not.toContain(TOKEN);
   });
 });

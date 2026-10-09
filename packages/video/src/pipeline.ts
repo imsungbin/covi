@@ -4,6 +4,7 @@ import { normalizeVoice } from '@covi/audio';
 import {
   type CodeChange,
   type Demonstration,
+  demoPath,
   type EvidenceIndex,
   type Explanation,
   exists,
@@ -14,12 +15,18 @@ import {
   parseOrThrow,
   type Review,
   type ReviewContext,
+  RUN_PATHS,
   type Run,
   type SubjectSnapshot,
+  seedFrom,
   UsageError,
 } from '@covi/core';
 import { toSrt, toVtt } from './captions.ts';
 import { AssetCollector, writeComposition } from './composition/build.ts';
+import { planDirection } from './direction/plan.ts';
+import { directionImages, resolveDirection, shownShot } from './direction/resolve.ts';
+import { DIRECTION_PATH, readDirectionFile } from './direction/schema.ts';
+import { diffFiles, directionSources } from './direction/sources.ts';
 import { groundingCheck, sceneEvidence, unknownSceneEvidence } from './grounding.ts';
 import {
   type Pronunciations,
@@ -130,6 +137,11 @@ export interface ProduceVideoInput {
    * stops a storyboard that does not use it.
    */
   subject?: SubjectSnapshot | (() => Promise<SubjectSnapshot | undefined>);
+  /**
+   * `video.direction`: direct the video on the canvas, from the run's `video/direction.json` and
+   * Covi's default director (`auto`, the default), or render it as 0.2.0 did (`off`).
+   */
+  direction?: 'auto' | 'off';
 }
 
 export interface ProduceVideoResult {
@@ -187,18 +199,18 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   // storyboard, so redacting it here keeps secrets in code excerpts or output out of the video.
   const redact = <T>(value: T): T => run.redactor.redactDeep(value);
   let storyboard: Storyboard;
+  let authored: Scene[];
   let drafted = false;
   if (input.storyboard) {
-    storyboard = parseOrThrow(
+    const parsed = parseOrThrow(
       StoryboardSchema,
       input.storyboard,
       'storyboard.json',
       'Run `covi schema storyboard` for the format.',
     );
-    storyboard = redact({
-      ...storyboard,
-      scenes: storyboard.scenes.map((s, i) => ({ ...s, id: s.id ?? `s${i + 1}` })),
-    });
+    // As written: direction phrases are checked against the line the agent quoted, like `sync`.
+    authored = parsed.scenes.map((s, i) => ({ ...s, id: s.id ?? `s${i + 1}` }));
+    storyboard = redact({ ...parsed, scenes: authored });
     const unknown = input.evidence ? unknownSceneEvidence(storyboard.scenes, input.evidence) : [];
     if (unknown.length)
       throw new UsageError(
@@ -235,6 +247,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
         );
       }
     }
+    authored = storyboard.scenes;
   }
   // A `focus` may name an element of the subject model. It is placed before anything is written,
   // and the storyboard is kept as written, so rendering again places it the same way.
@@ -249,18 +262,58 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
       `storyboard.json focuses on elements Covi cannot place:\n  ${placed.problems.join('\n  ')}`,
       `List the screens and elements in each capture with \`covi subject --run ${run.id}\`, or give the region as a rect.`,
     );
+  // Direction: the agent's shots, checked against the storyboard and the evidence, over Covi's
+  // default director's; none when video.direction is off. Entrances are decided before timing:
+  // a shot's `enter` shapes the overlap like a storyboard transition.
+  const directionMode = input.direction ?? 'auto';
+  // Off: nothing is read for a direction that will not be drawn.
+  const sources = directionSources(
+    directionMode === 'off'
+      ? {}
+      : {
+          // The diff the evidence was built from: a hunk shows only with the lines its id hashed.
+          files: (await run.has(RUN_PATHS.diff))
+            ? diffFiles(await run.readText(RUN_PATHS.diff), input.change.files)
+            : input.change.files,
+          demo: input.demo,
+          evidence: input.evidence,
+          appLogs: await appLogs(run),
+          redact: (text) => run.redactor.redact(text),
+        },
+  );
+  const seed = seedFrom(storyboard.title);
+  const directionFile =
+    directionMode === 'auto' ? await readDirectionFile(run.path(DIRECTION_PATH)) : undefined;
+  const directed = planDirection({
+    mode: directionMode,
+    file: directionFile,
+    authored,
+    scenes: storyboard.scenes,
+    evidence: input.evidence,
+    sources,
+    seed,
+  });
+  // Labels and phrases are agent text: redacted like the storyboard they are matched against.
+  const plan = directed.plan && redact(directed.plan);
   await run.writeJson('video/storyboard.json', storyboard, 'storyboard');
   if (input.draftOnly) {
     // Composed music starts from the theme, for the agent to rewrite before `covi render`.
     if (spec.music.use === 'compose' && !(await run.has(AUDIO_PATHS.score)))
       await run.writeJson(AUDIO_PATHS.score, draftScore(), 'audio');
+    // Covi's direction, for the agent to rewrite (and mark "draft": false) before `covi render`;
+    // a direction the agent already wrote stays as it is.
+    if (directed.draft && !(directionFile && !directionFile.draft))
+      await run.writeJson(DIRECTION_PATH, directed.draft, 'storyboard');
     return { storyboard, drafted, narration: { enabled: false, reason: 'draft only' }, notes };
   }
   storyboard = placed.storyboard;
 
   const missing: string[] = [];
   const imagePaths = new Set<string>();
-  for (const p of storyboardImages(storyboard)) {
+  for (const p of [
+    ...storyboardImages(storyboard),
+    ...(plan ? directionImages(plan, sources) : []),
+  ]) {
     let full: string;
     try {
       full = run.path(p);
@@ -346,10 +399,10 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   // video whose voice could not be synthesized is paced as captions only.
   const hero = (await loadTemplates()).get(storyboard.template)?.hero;
   const pacing = () => pacingFor(spec, hero, takes.size > 0);
-  let fit = fitToDuration(storyboard, speech(), spec, language, pacing());
+  let fit = fitToDuration(storyboard, speech(), spec, language, pacing(), directed.entrances);
   if (fit.tempo > 1.02 && takes.size) {
     await synthesizeAll(fit.tempo);
-    fit = fitToDuration(storyboard, speech(), spec, language, pacing());
+    fit = fitToDuration(storyboard, speech(), spec, language, pacing(), directed.entrances);
   }
   notes.push(...fit.notes);
   for (const n of fit.notes) logger.info(n);
@@ -403,15 +456,38 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   // 4. Timeline, captions, composition.
   const assets = new AssetCollector(run.dir);
   await assets.prepare(imagePaths);
+  const shots = new Map(plan?.shots.map((s) => [s.scene, s]));
+  // Each story scene's stop and shot, aligned with the scenes that were fitted (an optional scene
+  // may have been dropped), resolved from the evidence and redacted.
+  const staging = plan
+    ? resolveDirection({
+        plan,
+        scenes: fit.scenes,
+        layout: fit.layout,
+        spec,
+        language,
+        sources,
+        image: assets.image,
+        seed,
+        redact,
+      })
+    : undefined;
   const timeline: Timeline = buildTimeline({
     title: storyboard.title,
-    // Each scene records the evidence it rests on: what it cites and what its visual shows.
-    // Redacted like the storyboard: a finding's ids may come from the raw change, and the
-    // contact sheet draws them into an image.
+    // Each scene records the evidence it rests on: what it cites and what it shows (its visual,
+    // or the elements of its shot that resolved). Redacted like the storyboard: a finding's ids
+    // may come from the raw change, and the contact sheet draws them into an image.
     scenes: input.evidence
-      ? fit.scenes.map((s) => ({
+      ? fit.scenes.map((s, i) => ({
           ...s,
-          evidenceIds: redact(sceneEvidence(s, input.evidence!, input.review.findings)),
+          evidenceIds: redact(
+            sceneEvidence(
+              s,
+              input.evidence!,
+              input.review.findings,
+              staging && shownShot(shots.get(s.id!), staging[i]!.direction),
+            ),
+          ),
         }))
       : fit.scenes,
     layout: fit.layout,
@@ -420,6 +496,8 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
     mouth,
     language,
     verdict: input.review.verdict,
+    entrances: directed.entrances,
+    ...(staging ? { staging } : {}),
   });
   await run.writeJson('video/timeline.json', timeline, 'timeline');
   if (timeline.captions.length) {
@@ -569,6 +647,16 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
     audio: sound.record,
     framesReused,
   };
+}
+
+/** The app's start-up logs, which `terminal:app-start-*` evidence shows. */
+async function appLogs(run: Run): Promise<Partial<Record<'base' | 'head', string>>> {
+  const logs: Partial<Record<'base' | 'head', string>> = {};
+  for (const revision of ['base', 'head'] as const) {
+    const rel = demoPath.appLog(revision);
+    if (await run.has(rel)) logs[revision] = await run.readText(rel);
+  }
+  return logs;
 }
 
 /** Writes a storyboard JSON file for agents to start from (used by `covi video --draft`). */

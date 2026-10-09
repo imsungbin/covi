@@ -225,14 +225,29 @@ export interface StoryboardIssue {
   message: string;
 }
 
-/** What the schema alone cannot check: one hero, sound markup, and phrases that pin a moment. */
+/**
+ * What the schema alone cannot check: one id per scene, one hero, sound markup, and phrases that
+ * pin a moment.
+ */
 export function storyboardIssues(storyboard: { scenes: readonly Scene[] }): StoryboardIssue[] {
   const issues: StoryboardIssue[] = [];
   let hero: string | undefined;
+  // Timing, entrances, and direction find a scene by its id, so two scenes with one would share
+  // them. A scene without an id is `s<n>`, so that one counts too.
+  const named = new Map<string, number>();
   storyboard.scenes.forEach((scene, i) => {
     const name = scene.id ?? `s${i + 1}`;
     const issue = (path: Array<string | number>, message: string) =>
       issues.push({ path: ['scenes', i, ...path], message: `scene ${name}: ${message}` });
+    const first = named.get(name);
+    if (first === undefined) named.set(name, i);
+    else {
+      const implied = scene.id === undefined || storyboard.scenes[first]!.id === undefined;
+      issue(
+        ['id'],
+        `scene ${first + 1} has this id too; give each scene its own id${implied ? ` (a scene without one is s and its number, here ${name})` : ''}`,
+      );
+    }
     const line = parseEmphasis(scene.narration);
     if (line.error) issue(['narration'], line.error);
     if (scene.hero) {

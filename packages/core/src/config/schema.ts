@@ -271,6 +271,12 @@ export const ConfigInputSchema = z.strictObject({
         .describe(
           'End with the branded Covi outro (true), or hold the last scene for 1 s (false).',
         ),
+      direction: z
+        .enum(['auto', 'off'])
+        .optional()
+        .describe(
+          "auto (default): draw the video on Covi's canvas, directed by the run's video/direction.json and Covi's default director. off: render as Covi 0.2 did, with no canvas.",
+        ),
     })
     .optional(),
   output: z
@@ -375,6 +381,8 @@ export interface CoviConfig {
     soundEffects: { enabled: boolean };
     /** The branded outro after the last scene. */
     outro: boolean;
+    /** How the video is directed: on the canvas (auto), or as 0.2.0 rendered it (off). */
+    direction: 'auto' | 'off';
   };
   output: { dir: string; keep: number };
   publish: {
@@ -419,6 +427,7 @@ export const DEFAULT_CONFIG: CoviConfig = {
     music: { use: 'theme', placement: 'auto' },
     soundEffects: { enabled: true },
     outro: true,
+    direction: 'auto',
   },
   output: { dir: '.covi/runs', keep: 20 },
   publish: {

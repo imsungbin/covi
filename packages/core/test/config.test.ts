@@ -275,6 +275,27 @@ describe('music and sound effects', () => {
   });
 });
 
+describe('video direction', () => {
+  it('directs on the canvas by default; the file, COVI_VIDEO_DIRECTION, and flags can turn it off', () => {
+    const { config, provenance } = resolveConfig([]);
+    expect(config.video.direction).toBe('auto');
+    expect(provenance['video.direction']).toBe('global');
+    // YAML 1.2: an unquoted `off` is the string, not false.
+    const parsed = parseYamlConfig('video:\n  direction: off\n', '.covi/config.yml');
+    const repo = resolveConfig([
+      { name: 'repository', source: '.covi/config.yml', values: parsed },
+    ]);
+    expect(repo.config.video.direction).toBe('off');
+    expect(repo.provenance['video.direction']).toBe('repository (.covi/config.yml)');
+    expect(configFromEnv({ COVI_VIDEO_DIRECTION: 'off' })).toMatchObject({
+      video: { direction: 'off' },
+    });
+    expect(() => configFromEnv({ COVI_VIDEO_DIRECTION: 'sometimes' })).toThrow(
+      /video\.direction: expected one of "auto", "off"/,
+    );
+  });
+});
+
 describe('YAML config edge cases', () => {
   it('treats sections with only commented-out keys as absent', () => {
     expect(parseYamlConfig('test:\n  # command: npm test\nvideo:\n  mode: short\n', 'cfg')).toEqual(

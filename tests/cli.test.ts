@@ -353,6 +353,47 @@ describe('covi CLI', () => {
     expect(await music('none', 'mixer exploded')).toEqual({ use: 'theme', source: 'none' });
   });
 
+  it('drafts the direction with the storyboard, and refuses one that does not fit the run', async () => {
+    const dir = await example('bugfix-cli-slugify');
+    const draft = covi(['video', '--repo', dir, '--draft', '--force', '--json']);
+    expect(draft.code).toBe(0);
+    const json = draft.json() as { runId: string; artifacts: Record<string, string> };
+    const direction = JSON.parse(readFileSync(json.artifacts.direction!, 'utf8')) as {
+      draft: boolean;
+      shots: Array<{ scene: string }>;
+    };
+    const storyboard = JSON.parse(readFileSync(json.artifacts.storyboard!, 'utf8')) as {
+      scenes: Array<{ id: string }>;
+    };
+    expect(direction.draft).toBe(true);
+    expect(direction.shots.map((s) => s.scene)).toEqual(storyboard.scenes.map((s) => s.id));
+    // An agent's direction naming a scene the storyboard does not have stops the render (exit 2)
+    // before anything is narrated or drawn.
+    writeFileSync(
+      json.artifacts.direction!,
+      JSON.stringify({ shots: [{ scene: 'nope', elements: [{ id: 'v', kind: 'visual' }] }] }),
+    );
+    const render = covi(['render', '--repo', dir, '--run', json.runId, '--json']);
+    expect(render.code).toBe(2);
+    expect((render.json() as { error: string }).error).toMatch(
+      /video\/direction\.json does not fit this run:\n {2}shot 1 \(scene nope\)/,
+    );
+    // With direction off, nothing is drafted.
+    const off = covi([
+      'video',
+      '--repo',
+      dir,
+      '--draft',
+      '--force',
+      '--direction',
+      'off',
+      '--json',
+    ]);
+    expect(
+      (off.json() as { artifacts: Record<string, string> }).artifacts.direction,
+    ).toBeUndefined();
+  });
+
   it('declines a video for an internal change and still produces the review', async () => {
     const dir = await example('refactor-retry-helper');
     const result = covi(['video', '--repo', dir, '--json']);

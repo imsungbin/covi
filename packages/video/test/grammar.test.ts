@@ -203,6 +203,21 @@ describe('the storyboard schema', () => {
     ]);
   });
 
+  it('rejects two scenes with one id, counting the id a scene without one gets', () => {
+    // Timing, entrances, and direction find scenes by id: two with one id would share them.
+    const twice = storyboard();
+    twice.scenes[3]!.id = 'fix';
+    expect(issues(twice)).toEqual([
+      'scenes.3.id: scene fix: scene 2 has this id too; give each scene its own id',
+    ]);
+    const implied = storyboard();
+    delete implied.scenes[0]!.id;
+    implied.scenes[2]!.id = 's1';
+    expect(issues(implied)).toEqual([
+      'scenes.2.id: scene s1: scene 1 has this id too; give each scene its own id (a scene without one is s and its number, here s1)',
+    ]);
+  });
+
   it('rejects a sync phrase that is missing or repeated, naming the scene and the phase', () => {
     const missing = storyboard();
     missing.scenes[2]!.sync = { zoom: 'Tap minus' };

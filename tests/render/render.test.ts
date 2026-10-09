@@ -1648,7 +1648,9 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
       `${JSON.stringify(StoryboardSchema.parse(storyboard), null, 2)}\n`,
     );
 
-    const rendered = covi(['render', '--repo', repo, '--run', draft.runId]);
+    // This test pins 0.2.0's timing grammar (zoom-through into the hero, its music lift 0.6 s
+    // in), which `--direction off` keeps; tests/render/canvas.test.ts covers the canvas.
+    const rendered = covi(['render', '--repo', repo, '--run', draft.runId, '--direction', 'off']);
     expect(rendered.video.rendered).toBe(true);
     expect(rendered.video.qc).not.toBe('fail');
 

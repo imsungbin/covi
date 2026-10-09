@@ -131,6 +131,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv): ParsedConfigInput {
   if (env.COVI_SOUND_EFFECTS)
     set('video', 'soundEffects', { enabled: bool(env.COVI_SOUND_EFFECTS) });
   if (env.COVI_OUTRO) set('video', 'outro', bool(env.COVI_OUTRO));
+  if (env.COVI_VIDEO_DIRECTION) set('video', 'direction', env.COVI_VIDEO_DIRECTION);
   if (env.COVI_DEMO_RECORD) set('demo', 'record', bool(env.COVI_DEMO_RECORD));
   if (env.COVI_OUTPUT_DIR) set('output', 'dir', env.COVI_OUTPUT_DIR);
   return parseConfigInput(raw, 'COVI_* environment variables');

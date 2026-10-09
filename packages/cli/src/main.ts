@@ -264,6 +264,7 @@ function explicitConfig(cmd: Command): ParsedConfigInput {
   if (explicitSource(cmd, 'soundEffects'))
     set('video', 'soundEffects', { enabled: o.soundEffects });
   if (explicitSource(cmd, 'outro')) set('video', 'outro', o.outro);
+  set('video', 'direction', o.direction);
   if (explicitSource(cmd, 'comment')) set('publish', 'comment', o.comment);
   if (explicitSource(cmd, 'annotations')) set('publish', 'annotations', o.annotations);
   if (explicitSource(cmd, 'anchors')) set('publish', 'anchors', o.anchors);
@@ -361,7 +362,13 @@ function addVideo(cmd: Command): Command {
       'no sound effects for clicks, reveals, findings, the verdict, and the outro',
     )
     .option('--outro', 'end with the branded Covi outro (default)')
-    .option('--no-outro', 'no outro: hold the last scene for a second instead');
+    .option('--no-outro', 'no outro: hold the last scene for a second instead')
+    .addOption(
+      new Option(
+        '--direction <mode>',
+        "direct the video on the canvas: auto (the run's video/direction.json, else Covi's default director; the default) or off (no canvas, as Covi 0.2 rendered)",
+      ).choices(['auto', 'off']),
+    );
 }
 
 function selection(cmd: Command, range: string | undefined) {

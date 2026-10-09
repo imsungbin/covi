@@ -4,11 +4,11 @@
 
 **Goal:** An agent can check a video's motion before the real render: `covi render --run <id> --draft` renders the same video at half size and 15 fps, with the voice alone, into `video/draft/` (preview, poster, contact sheet, QC, timeline) in seconds, never touching the video's own files; every `qc.json` (draft and final) gains seven motion checks (`motion-gap`, `motion-busy`, `reading-time`, `empty-opening`, `overlap`, `out-of-frame`, `dropped-beats`); the poster (draft and final) shows the change at its best instead of the frame at 1.6 s; a directed shot whose beats wait on its line no longer holds still before its first beat; and the `covi-video` skill tells the agent to draft, look, and revise `video/direction.json` at most three times before rendering.
 
-**Architecture:** The scene camera's plan moves from `runtime/camera.ts` into a new DOM-free `timeline/motion.ts`, shared by the runtime and Node QC, which also lists every stretch of planned motion (`motionSpans`: entrances, shot elements and beats from the refactored `shotMotion`, the scene camera). A new Node module `choreography.ts` holds the seven checks: four read the timeline alone; `overlap`/`out-of-frame` read a new `LayoutReport.shot` the stage reports at settled frames (each element's box where its stop lays it out, the camera undone with the pure `unview`); and `empty-opening` reads a new `LayoutReport.content` (the box around what the scene visibly draws, `drawnBox`) at frames the renderer now samples through each scene's opening (`openingSpan`). The poster frame is chosen from the timeline (`posterFrame`: where the key number's count lands, else the hero after its accent, else 1.6 s). `still` shares its threshold and narration rule with `motion-gap` (`spokenStills`) and names stretches where only the camera's push-in moved. The draft is a branch of `produceVideo` after the timeline is built at the draft's spec (`draftSpec`): `renderDraft` writes only under `video/draft/` with a voice-only master (`masterVoice`), and the CLI reports it as a preview (`video.rendered: false`, `video.draft`).
+**Architecture:** The scene camera's plan moves from `runtime/camera.ts` into a new DOM-free `timeline/motion.ts`, shared by the runtime and Node QC, which also lists every stretch of planned motion (`motionSpans`: entrances, shot elements and beats from the refactored `shotMotion`, the scene camera). A new Node module `choreography.ts` holds the seven checks: four read the timeline alone; `overlap`/`out-of-frame` read a new `LayoutReport.shot` the stage reports at settled frames (each element's box where its stop lays it out, the camera undone with the pure `unview`); and `empty-opening` reads a new `LayoutReport.content` (the box around what the scene visibly draws, `drawnBox`) at frames the renderer now samples through each scene's opening (`openingSpan`). The poster frame is chosen from the timeline by R-029 (`posterTime` in DOM-free `timeline/motion.ts`: where the key number's count lands, else the hero once its accent has played and it has settled, else 1.6 s). `still` shares its threshold and narration rule with `motion-gap` (`spokenStills`) and names stretches where only the camera's push-in moved. The draft is a branch of `produceVideo` after the timeline is built at the draft's spec (`draftSpec`): `renderDraft` writes only under `video/draft/` with a voice-only master (`masterVoice`), and the CLI reports it as a preview (`video.rendered: false`, `video.draft`).
 
 **Tech Stack:** TypeScript on Node 22.18+ (type stripping, no build step), Zod 4, Vitest 5, Playwright Chromium, ffmpeg (`freezedetect`, `ffprobe`), Biome; the browser runtime is bundled by esbuild.
 
-**Spec:** `~/projects/covi-0.3.0-program/docs/superpowers/specs/2026-10-09-covi-0.3.0-program-design.md` — §10 (draft and critique loop: the draft render and the motion checks), §4.7 (beat timing: spaced beats from 0.15 of the line, which this plan keeps), §5 (the canvas: stop camera, push, clip), §8 (QC warns, R-007), §14–§18. Rulings ledger: `~/projects/covi-0.3.0-program/docs/superpowers/rulings.md` (R-006: the draft is `covi render --run <id> --draft` into `video/draft/`, `covi video --draft` keeps its meaning; R-007: motion checks warn, only `out-of-frame` fails; R-016: `video.direction: off` renders as 0.2.0; R-017: CHANGELOG subsection; R-023: the resolver records the beats it drops and B6's motion QC surfaces them). Code worktree: `~/projects/covi-direction`, branch `draft-critique`, started from the latest `main` after B1–B5 merged.
+**Spec:** `~/projects/covi-0.3.0-program/docs/superpowers/specs/2026-10-09-covi-0.3.0-program-design.md` — §10 (draft and critique loop: the draft render and the motion checks), §4.7 (beat timing: spaced beats from 0.15 of the line, which this plan keeps), §5 (the canvas: stop camera, push, clip), §8 (QC warns, R-007), §14–§18. Rulings ledger: `~/projects/covi-0.3.0-program/docs/superpowers/rulings.md` (R-006: the draft is `covi render --run <id> --draft` into `video/draft/`, `covi video --draft` keeps its meaning; R-007: motion checks warn, only `out-of-frame` fails; R-016: `video.direction: off` renders as 0.2.0; R-017: CHANGELOG subsection; R-023: the resolver records the beats it drops and B6's motion QC surfaces them; R-029, which superseded R-026: the poster's frame). Code worktree: `~/projects/covi-direction`, branch `draft-critique`, started from the latest `main` after B1–B5 merged.
 
 ## Global Constraints
 
@@ -19,7 +19,7 @@ Every task's requirements include these. Values are copied from the spec, the ru
 - Runtime: every visual property is a pure function of the frame time. No `Date`, no `Math.random`, no CSS transitions or animations, no `Intl`. Text is set with `textContent`.
 - Spec §10, verbatim: "`covi render --run <id> --draft` (R-006): renders at half size and 15 fps into `video/draft/` (`preview.mp4`, `contact-sheet.jpg`, `qc.json`, `timeline.json`), reusing cached narration; it never touches the final render's files or `frames.json`." Motion QC "in both draft and final `qc.json`": `motion-gap` (warn) "longest stretch of narration with nothing moving > 1.5 s (motion intervals computed from the timeline: transitions, camera moves, beats, component choreography via `settledAt`, stop camera push)"; `motion-busy` (warn) "more than 3 beats starting within any 1 s, or more than 2 camera moves within 2 s"; `reading-time` (warn) "text elements visible less than `0.4 s + characters / 15 s` (CJK: `/ 8`)"; `overlap` (warn) "direction element rects overlapping by > 4% of the smaller at settled frames (containment by design excluded)"; `out-of-frame` (fail) "an element rect outside the viewport clip at a settled frame". The skill: "after drafting, render `--draft`, open `video/draft/contact-sheet.jpg`, read `video/draft/qc.json`, revise `direction.json`; at most 3 rounds, then a final render."
 - R-006: `covi video --draft` keeps its meaning (write the drafts and stop). The draft render is the `--draft` flag of `covi render` only.
-- The program lead's addition (after B1's benchmark render): "Plan a deterministic poster choice that shows the change at its best (e.g. the hero scene settled after its accent, or the frame where the key metric's count lands — the largest number on screen — falling back to the current rule), apply it to both the draft and final render… Also make sure motion QC sees an opening phase that holds a mostly empty frame (B1's empty-frame reads only settled frames)."
+- The program lead's addition (after B1's benchmark render): "Plan a deterministic poster choice that shows the change at its best (e.g. the hero scene settled after its accent, or the frame where the key metric's count lands — the largest number on screen — falling back to the current rule), apply it to both the draft and final render… Also make sure motion QC sees an opening phase that holds a mostly empty frame (B1's empty-frame reads only settled frames)." Its final ruling, R-029 (superseding R-026's order): "poster = where the key number's count lands (+0.3 s so the % shows; skip one that lands while the next scene is entering), else the hero after its accent has settled (phase + 0.7 s, inside the scene before its exit), else the old rule."
 - R-007: the new checks warn; only `out-of-frame` fails. R-016: with `video.direction: off`, frames are drawn exactly as 0.2.0 drew them (this PR's camera change applies only to scenes with a direction).
 - Spec §4.7: beats without `at` still start at 0.15 of the line and spread evenly (`SPACED_FROM` unchanged).
 - Interactive and non-interactive parity: CI and `covi video` without an agent never draft; nothing new is asked, and no configuration key is added.
@@ -1836,10 +1836,10 @@ EOF
 ### Task 4: What a viewer sees — the poster at the change's best, and an opening that holds a mostly empty frame
 
 **Files:**
-- Modify: `packages/video/src/timeline/motion.ts` (`ACCENT_OUT`)
+- Modify: `packages/video/src/timeline/motion.ts` (`ACCENT_OUT`, `COUNTED`, `posterTime`)
 - Modify: `packages/video/src/runtime/camera.ts` (`heroAccent` reads `ACCENT_OUT`; its private `RING` goes)
 - Modify: `packages/video/src/timeline/cues.ts` (`openingSpan`, before `settledFrame`)
-- Modify: `packages/video/src/render/renderer.ts` (imports; B1's `layoutSampleFrames`; `OPENING_STEP`, `OPENING_SAMPLES`, `COUNTED`, `posterFrame`; `RenderOptions.posterFrame`'s doc; `renderComposition`)
+- Modify: `packages/video/src/render/renderer.ts` (imports; B1's `layoutSampleFrames`; `OPENING_STEP`, `OPENING_SAMPLES`, `posterFrame`; `RenderOptions.posterFrame`'s doc; `renderComposition`)
 - Modify: `packages/video/src/runtime/dom.ts` (`drawnBox`)
 - Modify: `packages/video/src/timeline/types.ts` (`LayoutReport.content`)
 - Modify: `packages/video/src/runtime/stage.ts` (`report()`)
@@ -1854,12 +1854,14 @@ EOF
 - Consumes: `settledSpan`, `settledFrame`, `Span` (B1, `timeline/cues.ts`); `HERO_PHASE`, `Timeline`, `LayoutReport`, `Rect` (`timeline/types.ts`); `PUNCH_OUT` (Task 1); B1's `layoutSampleFrames`, `EMPTY_SHARE`, `CARDS`, `leadKind` (B2–B5 widened it); Task 2's `Stretch`, `spokenStills`, and the private `seconds`, `listed`, `area`; Task 3's `ChoreographyTimeline`, `choreographyChecks`, `clipAt`/`region` in `report()`.
 - Produces:
   ```ts
-  // packages/video/src/timeline/motion.ts
+  // packages/video/src/timeline/motion.ts (DOM-free)
   export const ACCENT_OUT = 0.7; // the hero's ring has faded this long after its phase
+  export const COUNTED = 0.3;    // a counter's change in percent has come in this long after it lands
+  export function posterTime(timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'duration'>): number; // seconds (R-029)
   // packages/video/src/timeline/cues.ts
   export function openingSpan(timeline: Pick<Timeline, 'scenes' | 'transition'>, index: number): Span | undefined;
   // packages/video/src/render/renderer.ts
-  export function posterFrame(timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames' | 'duration'>): number;
+  export function posterFrame(timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames' | 'duration'>): number; // posterTime on the nearest frame
   // layoutSampleFrames also samples each story scene's opening (every 0.5 s, at most 8 frames)
   // packages/video/src/runtime/dom.ts
   export function drawnBox(root: HTMLElement, clip: Rect): Rect | undefined;
@@ -1872,7 +1874,7 @@ EOF
   // choreographyChecks: motion-gap, motion-busy, reading-time, empty-opening, overlap, out-of-frame, dropped-beats
   ```
 
-Why: the benchmark's B1 render took its poster at the fixed 1.6 s, which on that video is the first scene's opening with only the Before terminal window up, about 30% of the media region; the owner's acceptance opens `video/poster.png` and judges it as a viewer. The poster now goes where the change shows best, chosen from the timeline alone (so the same composition always gives the same poster, and a sound-only render that keeps the frames keeps it): where the key number's count lands (B4 draws that counter as the largest thing on screen when it lands, its change in percent coming in 0.25 s later), else the hero scene once its accent has played and it has settled, else the old 1.6 s. A morph mid-way is never the poster (B3's concern): every candidate is a settled moment. On the scratch copy the benchmark's poster became "9,907 −86%" beside the reader steps' 28 and 10; `bugfix-cli-slugify`'s the fixed `slugify` after its morph; `ui-comment-composer`'s the composer with "280 characters left".
+Why: the benchmark's B1 render took its poster at the fixed 1.6 s, which on that video is the first scene's opening with only the Before terminal window up, about 30% of the media region; the owner's acceptance opens `video/poster.png` and judges it as a viewer. R-029 (the program lead's ruling, after R-026) sets the choice, a pure function of the timeline (`posterTime`, in DOM-free `timeline/motion.ts`), so one composition always gives one poster and a sound-only render that keeps the frames keeps it: (1) where the key number's count lands (the `count` whose metric changes the most, the earliest on a tie), 0.3 s on so its change in percent (which B4 fades in over 0.25 s) shows, passing over a count that lands while the next scene is entering; else (2) the hero scene once its accent has played (its phase plus 0.7 s) and the scene has settled, held inside the scene before its exit transition; else (3) the old 1.6 s rule. The number landing is the clearest single frame of a change: B4 draws it as the largest thing on screen with its change beside it, and it reads at thumbnail size where code and captures do not. Every candidate is a settled moment, so a morph mid-way is never the poster (B3's concern). On the scratch copy the benchmark's poster became the byte counter landed on 9,907 with −86% beside the reader steps' 28 and 10 (10.7 s in, after `s1`'s opening ends at 10.4 s), instead of the opening; `bugfix-cli-slugify`'s the fixed `slugify` after its morph; `ui-comment-composer`'s the composer with "280 characters left".
 
 The opening problem is not caught by B1's `empty-frame`, which reads only settled frames: the stretch from a scene's entrance until it settles can hold a mostly empty frame for seconds of narration. `empty-opening` samples each card's and shot's opening every half second and measures what the scene visibly draws (`drawnBox`): components report the boxes of parts not yet shown (a terminal's After window is laid out from the start at opacity 0), so the layout items cannot answer how full the frame looks. On the scratch copy, the benchmark rendered with `--direction off` (B1's look) warned `empty-opening … s1 (20% of the media region for 6.2 s from 0.0 s)`; with the default director it passes, and of the five examples only `bugfix-cli-slugify` (a vertical before/after terminal) warns.
 
@@ -1884,6 +1886,7 @@ Create `packages/video/test/poster.test.ts`:
 import { describe, expect, it } from 'vitest';
 import { layoutSampleFrames, posterFrame } from '../src/render/renderer.ts';
 import { openingSpan, settledSpan } from '../src/timeline/cues.ts';
+import { posterTime } from '../src/timeline/motion.ts';
 import type {
   DirectionBeat,
   DirectionElement,
@@ -1937,13 +1940,16 @@ const timeline = (scenes: TimelineScene[]) => {
   } as Timeline;
 };
 
-describe('the poster', () => {
-  it('shows the key number where its count lands, its change in beside it', () => {
+describe('the poster (R-029)', () => {
+  const after = (t: number) => Math.round(t * 30);
+
+  it('shows the key number where its count lands, its change in beside it, before the hero', () => {
     const t = timeline([
       scene('s1', 0, 8, { direction: counted(metric('bytes', 70406, 9907), count('bytes', 4)) }),
-      scene('s2', 7.55, 12),
+      scene('s2', 7.55, 12, { hero: true, phases: { hero: 1 } }),
     ]);
-    expect(posterFrame(t)).toBe(Math.round((4 + 1.6 + 0.3) * 30));
+    expect(posterTime(t)).toBeCloseTo(4 + 1.6 + 0.3, 9);
+    expect(posterFrame(t)).toBe(after(5.9));
   });
 
   it('picks the count that changes its metric the most', () => {
@@ -1951,7 +1957,7 @@ describe('the poster', () => {
       scene('s1', 0, 8, { direction: counted(metric('a', 100, 90), count('a', 1)) }),
       scene('s2', 7.55, 14, { direction: counted(metric('b', 28, 10), count('b', 2)) }),
     ]);
-    expect(posterFrame(t)).toBe(Math.round((7.55 + 2 + 1.6 + 0.3) * 30));
+    expect(posterTime(t)).toBeCloseTo(7.55 + 2 + 1.6 + 0.3, 9);
   });
 
   it('holds the moment before the next scene starts to enter', () => {
@@ -1963,13 +1969,36 @@ describe('the poster', () => {
     expect(posterFrame(t)).toBe(Math.floor(7.55 * 30 - 1e-6));
   });
 
-  it('shows the hero after its accent when no count lands in a settled scene', () => {
+  it('passes over a count that lands while the next scene enters, for the hero after its accent', () => {
     const t = timeline([
-      // This count lands while s2 is entering: not a moment to show.
       scene('s1', 0, 8, { direction: counted(metric('a', 10, 1), count('a', 6.2)) }),
       scene('s2', 7.55, 12, { hero: true, phases: { hero: 1 } }),
     ]);
-    expect(posterFrame(t)).toBe(Math.round((7.55 + 1 + 0.7) * 30));
+    // s2's callout has settled 0.6 s in; its accent has played 1.7 s in.
+    expect(posterTime(t)).toBeCloseTo(7.55 + 1 + 0.7, 9);
+  });
+
+  it('waits for a hero still moving, and holds it inside its scene before the next one enters', () => {
+    const moving = timeline([
+      scene('s1', 0, 8, {
+        hero: true,
+        phases: { hero: 0.5 },
+        direction: {
+          whole: false,
+          elements: [{ id: 'l', kind: 'label', rect, text: 'Late', tone: 'warning' }],
+          beats: [{ verb: 'reveal', element: 'l', style: 'rise', t: 3.5, seconds: 0.5 }],
+        },
+      }),
+      scene('s2', 7.55, 12),
+    ]);
+    // Its label rises in by 4 s, after the accent (1.2 s): the poster waits for the scene to settle.
+    expect(posterTime(moving)).toBeCloseTo(4, 9);
+    const late = timeline([
+      scene('s1', 0, 8, { hero: true, phases: { hero: 7.2 } }),
+      scene('s2', 7.55, 12),
+    ]);
+    // The accent would end at 7.9 s, after s2 starts to enter at 7.55 s.
+    expect(posterFrame(late)).toBe(Math.floor(7.55 * 30 - 1e-6));
   });
 
   it('falls back to 1.6 s in, or a third of a very short video', () => {
@@ -2114,9 +2143,9 @@ describe.skipIf(!available)('what a scene visibly draws', () => {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run packages/video/test/poster.test.ts packages/video/test/choreography.test.ts tests/render/canvas.test.ts`
-Expected: FAIL — `posterFrame`, `openingSpan`, and `emptyOpeningCheck` do not exist; the layout report has no `content`.
+Expected: FAIL — `posterTime`, `posterFrame`, `openingSpan`, and `emptyOpeningCheck` do not exist; the layout report has no `content`.
 
-- [ ] **Step 3: The accent's length, shared (`timeline/motion.ts`, `runtime/camera.ts`)**
+- [ ] **Step 3: The accent's length, shared, and the poster's moment (`timeline/motion.ts`, `runtime/camera.ts`)**
 
 In `timeline/motion.ts`, replace
 
@@ -2136,7 +2165,53 @@ export const ACCENT_OUT = 0.7;
 
 In `runtime/camera.ts`, import it (`import { ACCENT_OUT, type CameraPlan, PUNCH_OUT } from '../timeline/motion.ts';`), delete `const RING = 0.7;`, and in `heroAccent` replace both uses of `RING` with `ACCENT_OUT`. (B2's "flashes for under 0.2 s and rings once" test pins the same 0.7 s.)
 
-- [ ] **Step 4: Openings and the poster (`timeline/cues.ts`, `render/renderer.ts`)**
+In `timeline/motion.ts`, add `settledSpan` to the `./cues.ts` import (`import { type Span, settledAt, settledSpan, shotMotion, shotSettledAt } from './cues.ts';`) and append:
+
+```ts
+/** The poster shows a counter this long after its count lands, its change in percent come in. */
+export const COUNTED = 0.3;
+
+/**
+ * When the poster is taken, in seconds (R-029): where the key number's count lands (the count that
+ * changes its metric the most, the earliest on a tie), 0.3 s on so its change in percent shows;
+ * else the hero scene once its accent has played and the scene has settled; else 1.6 s in, or a
+ * third of the way for very short videos. Every moment is held inside its scene, before the next
+ * one starts to enter; a count that lands during that entrance is passed over.
+ */
+export function posterTime(
+  timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'duration'>,
+): number {
+  const half = 0.5 / timeline.fps;
+  let key: { t: number; change: number } | undefined;
+  timeline.scenes.forEach((s, i) => {
+    const end = settledSpan(timeline, i)?.[1];
+    if (end === undefined) return;
+    for (const b of s.direction?.beats ?? []) {
+      if (b.verb !== 'count') continue;
+      const e = s.direction!.elements.find((x) => x.id === b.element);
+      if (e?.kind !== 'metric' || e.from === undefined) continue;
+      const lands = s.start + b.t + b.seconds;
+      if (lands > end + 1e-6) continue;
+      const change = Math.abs(e.to - e.from) / Math.max(Math.abs(e.from), 1e-9);
+      if (!key || change > key.change + 1e-9)
+        key = { t: Math.min(lands + COUNTED, end - half), change };
+    }
+  });
+  if (key) return key.t;
+  const index = timeline.scenes.findIndex((s) => s.hero && s.phases?.[HERO_PHASE] !== undefined);
+  const hero = timeline.scenes[index];
+  const span = settledSpan(timeline, index);
+  if (hero && span) {
+    const accent = hero.start + hero.phases![HERO_PHASE]! + ACCENT_OUT;
+    return Math.max(hero.start, Math.min(Math.max(accent, span[0]), span[1] - half));
+  }
+  return Math.min(1.6, timeline.duration / 3);
+}
+```
+
+(Half a frame before the next scene's entrance keeps the rounded frame inside the scene. The key number is the `count` whose metric changes most from `from` to `to`, as B4 counts it; a count-up shows one side, not the change, so it is not a candidate. If B4 merged the metric element without `from` on counted metrics, read its merged field.)
+
+- [ ] **Step 4: Openings, and the poster's frame (`timeline/cues.ts`, `render/renderer.ts`)**
 
 In `timeline/cues.ts`, insert before `settledFrame`'s doc comment:
 
@@ -2160,7 +2235,7 @@ export function openingSpan(
 
 In `render/renderer.ts`:
 
-1. Imports: B1's `import { settledFrame } from '../timeline/cues.ts';` becomes `import { openingSpan, settledFrame, settledSpan } from '../timeline/cues.ts';`, and add `import { ACCENT_OUT } from '../timeline/motion.ts';` (`HERO_PHASE` is already imported from `../timeline/types.ts`).
+1. Imports: B1's `import { settledFrame } from '../timeline/cues.ts';` becomes `import { openingSpan, settledFrame } from '../timeline/cues.ts';`, and add `import { posterTime } from '../timeline/motion.ts';`.
 2. In B1's `layoutSampleFrames`, replace the `timeline.scenes.forEach((s, i) => { … });` loop with:
 
    ```ts
@@ -2187,49 +2262,11 @@ const OPENING_STEP = 0.5;
 /** …at most this many times. */
 const OPENING_SAMPLES = 8;
 
-/** The poster shows a counter this long after its count lands, its change come in beside it. */
-const COUNTED = 0.3;
-
-/**
- * The frame the poster shows: the change at its best. That is where the key number's count lands
- * (the count that changes its metric the most, by relative change; the earliest on a tie), drawn
- * as the largest thing on screen; else the hero scene once it has settled after its accent; else
- * 1.6 s in (a third of the way for very short videos). Each moment is held inside the scene's
- * settled span, before the next scene starts to enter.
- */
+/** The frame the poster is taken at: `posterTime`'s moment (R-029), on the nearest frame. */
 export function posterFrame(
   timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames' | 'duration'>,
 ): number {
-  const last = Math.max(0, timeline.frames - 1);
-  const frame = (t: number, end = timeline.duration) =>
-    Math.max(
-      0,
-      Math.min(last, Math.floor(end * timeline.fps - 1e-6), Math.round(t * timeline.fps)),
-    );
-  let best: { t: number; end: number; change: number } | undefined;
-  timeline.scenes.forEach((s, i) => {
-    const end = settledSpan(timeline, i)?.[1];
-    if (end === undefined) return;
-    for (const b of s.direction?.beats ?? []) {
-      if (b.verb !== 'count') continue;
-      const e = s.direction!.elements.find((x) => x.id === b.element);
-      if (e?.kind !== 'metric' || e.from === undefined) continue;
-      const lands = s.start + b.t + b.seconds;
-      if (lands > end + 1e-6) continue;
-      const change = Math.abs(e.to - e.from) / Math.max(Math.abs(e.from), 1e-9);
-      if (!best || change > best.change + 1e-9)
-        best = { t: Math.min(lands + COUNTED, end), end, change };
-    }
-  });
-  if (best) return frame(best.t, best.end);
-  const index = timeline.scenes.findIndex((s) => s.hero && s.phases?.[HERO_PHASE] !== undefined);
-  const hero = timeline.scenes[index];
-  const span = settledSpan(timeline, index);
-  if (hero && span) {
-    const accent = hero.start + hero.phases![HERO_PHASE]! + ACCENT_OUT;
-    return frame(Math.min(Math.max(accent, span[0]), span[1]), span[1]);
-  }
-  return frame(Math.min(1.6, timeline.duration / 3));
+  return Math.max(0, Math.min(timeline.frames - 1, Math.round(posterTime(timeline) * timeline.fps)));
 }
 ```
 
@@ -2447,7 +2484,7 @@ function clipBox(a: Rect, b: Rect): Rect {
 
 (B4 and B5 widened `leadKind`'s return beyond the visual kinds `CARDS` holds; the `ReadonlySet<string>` view reads the set without a type error, whatever B1–B5 merged. If B2–B5 merged an exported predicate for "a card the empty-frame check holds", use it instead.)
 
-In `packages/video/src/index.ts`, add `emptyOpeningCheck,` to the `./choreography.ts` export block, `CARDS,` to B1's `./density.ts` block, and `posterFrame,` to the `./render/renderer.ts` block.
+In `packages/video/src/index.ts`, add `emptyOpeningCheck,` to the `./choreography.ts` export block, `CARDS,` to B1's `./density.ts` block, and `posterFrame,` to the `./render/renderer.ts` block, and export `posterTime` from `./timeline/motion.ts` (`export { posterTime } from './timeline/motion.ts';`).
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
@@ -2464,7 +2501,7 @@ npx biome check --write packages/video/src packages/video/test tests/render/canv
 npm run lint && npm run typecheck
 git add packages/video/src/timeline/motion.ts packages/video/src/runtime/camera.ts packages/video/src/timeline/cues.ts packages/video/src/render/renderer.ts packages/video/src/runtime/dom.ts packages/video/src/timeline/types.ts packages/video/src/runtime/stage.ts packages/video/src/density.ts packages/video/src/choreography.ts packages/video/src/index.ts packages/video/test/poster.test.ts packages/video/test/choreography.test.ts tests/render/canvas.test.ts
 git commit -m "$(cat <<'EOF'
-Show the change at its best on the poster, and warn on openings that leave the frame empty
+Take the poster where the key number lands, and warn on openings that leave the frame empty
 
 Claude-Session: https://claude.ai/code/session_01J7ZXRARft4Xuha1NPN7A4S
 EOF
@@ -2488,7 +2525,7 @@ EOF
 - Modify: `tests/render/render.test.ts` (imports; a new `describe` before "the timing grammar (full pipeline)")
 
 **Interfaces:**
-- Consumes: everything in `produceVideo` up to `buildTimeline` (B2's direction planning and resolution, narration, fitting, staging); `renderComposition`, `RenderResult`, `posterFrame` (`render/renderer.ts`; Task 4 made the poster choice the default); `runQc`, `withCheck` (`qc.ts`, now with Tasks 2–4's checks); `groundingCheck` (`grounding.ts`); `mixSound`, `writeWav` (`@covi/audio`, as `produceSound` uses them); `SoundInput`, `SAMPLE_RATE` (`sound.ts`); `applyVideoResult`, `artifact`, `baseResult`, `WorkflowResult` (`workflows.ts`); `printResult` (`ui.ts`).
+- Consumes: everything in `produceVideo` up to `buildTimeline` (B2's direction planning and resolution, narration, fitting, staging); `renderComposition`, `RenderResult`, `posterFrame` (`render/renderer.ts`; Task 4 made R-029's choice the default); `runQc`, `withCheck` (`qc.ts`, now with Tasks 2–4's checks); `groundingCheck` (`grounding.ts`); `mixSound`, `writeWav` (`@covi/audio`, as `produceSound` uses them); `SoundInput`, `SAMPLE_RATE` (`sound.ts`); `applyVideoResult`, `artifact`, `baseResult`, `WorkflowResult` (`workflows.ts`); `printResult` (`ui.ts`).
 - Produces:
   ```ts
   // packages/video/src/draft.ts
@@ -3291,7 +3328,7 @@ RUN=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1]
 time ./bin/covi.mjs render --repo "$RENDER/repo" --run "$RUN" --draft
 ```
 
-Run the `covi video` line in the background and wait. Expected: the last command prints a `Draft …/video/draft/preview.mp4 (…s · QC pass · Draft rendered at 960×540, 15 fps: …)` line and takes well under the video's render time. Open `<runDir>/video/draft/contact-sheet.jpg` with the Read tool beside `<runDir>/video/contact-sheet.jpg`: the same tiles at the same moments, the draft's smaller but legible (scene labels readable, the counter and the pile visible in `s1`, the morph mid-way in `s2`); and `<runDir>/video/draft/poster.png` beside `<runDir>/video/poster.png`: the same moment, the byte counter landed on 9,907 with −86% beside it. Record both timings and what the sheets show in the report, then `rm -rf "$RENDER"`.
+Run the `covi video` line in the background and wait. Expected: the last command prints a `Draft …/video/draft/preview.mp4 (…s · QC pass · Draft rendered at 960×540, 15 fps: …)` line and takes well under the video's render time. Open `<runDir>/video/draft/contact-sheet.jpg` with the Read tool beside `<runDir>/video/contact-sheet.jpg`: the same tiles at the same moments, the draft's smaller but legible (scene labels readable, the counter and the pile visible in `s1`, the morph mid-way in `s2`); and `<runDir>/video/draft/poster.png` beside `<runDir>/video/poster.png`: the same moment, the byte counter landed on 9,907 with −86% (R-029). Record both timings and what the sheets show in the report, then `rm -rf "$RENDER"`.
 
 - [ ] **Step 10: Commit**
 
@@ -3314,10 +3351,10 @@ EOF
 - Modify: `tests/render/render.test.ts` (B1's `covi video (full pipeline)` loop: its check-id assertion, and B4's `if (example === 'backend-slim-request') { … }` block)
 
 **Interfaces:**
-- Consumes: Tasks 1–5 (the camera fix, the seven checks in every `qc.json`, the shot report, the drawn box, `posterFrame`, which Task 5 imported into this file); B1's loop variables `example`, `result` (`runDir`, `video`), and `qc`; B4/B5's benchmark block.
-- Produces: the full-pipeline render test asserts the seven motion check ids on every example's `qc.json`, that the benchmark's default render (`--standard`, English) passes `still`, `motion-gap`, `motion-busy`, `reading-time`, `empty-opening`, `overlap`, `out-of-frame`, and `dropped-beats`, and that its poster is where its byte count lands.
+- Consumes: Tasks 1–5 (the camera fix, the seven checks in every `qc.json`, the shot report, the drawn box, `posterFrame`, which Task 5 imported into this file); `openingSpan` (Task 4) from `timeline/cues.ts`; B1's loop variables `example`, `result` (`runDir`, `video`), and `qc`; B4/B5's benchmark block.
+- Produces: the full-pipeline render test asserts the seven motion check ids on every example's `qc.json`, that the benchmark's default render (`--standard`, English) passes `still`, `motion-gap`, `motion-busy`, `reading-time`, `empty-opening`, `overlap`, `out-of-frame`, and `dropped-beats`, and that its poster is the frame where its byte count lands (R-029), past its first scene's opening.
 
-Measured on the scratch copy with Tasks 1–5 applied: the benchmark renders `pass` in English and Korean, its poster the byte counter landed on 9,907 with −86%; `ui-comment-composer`, `api-users-pagination`, `bugfix-cli-slugify`, `visual-pricing-cards`, and `backend-slim-request` (short-form) all render without an `overlap` warning or an `out-of-frame` failure. `bugfix-cli-slugify` warns `empty-opening` (s1, a vertical before/after terminal, 17% of the media region for 4.4 s while only its Before window is up), the condition the B1 benchmark render showed. `api-users-pagination` (s1, a 13 s morph shot whose two beats are 4.4 s apart) and `bugfix-cli-slugify` (the same s1) still warn `still`, now with "where only the camera's slow push-in moves", while `motion-gap` passes: the push-in counts as motion in the plan (spec §10) but is too slow to show on thin code text. Those are warnings for an agent's draft loop to fix with beats, not this PR's to remove.
+Measured on the scratch copy with Tasks 1–5 applied: the benchmark renders `pass` in English and Korean, its poster the byte counter landed on 9,907 with −86% (10.7 s in; the first scene's opening runs to 10.4 s); `ui-comment-composer`, `api-users-pagination`, `bugfix-cli-slugify`, `visual-pricing-cards`, and `backend-slim-request` (short-form) all render without an `overlap` warning or an `out-of-frame` failure. `bugfix-cli-slugify` warns `empty-opening` (s1, a vertical before/after terminal, 17% of the media region for 4.4 s while only its Before window is up), the condition the B1 benchmark render showed. `api-users-pagination` (s1, a 13 s morph shot whose two beats are 4.4 s apart) and `bugfix-cli-slugify` (the same s1) still warn `still`, now with "where only the camera's slow push-in moves", while `motion-gap` passes: the push-in counts as motion in the plan (spec §10) but is too slow to show on thin code text. Those are warnings for an agent's draft loop to fix with beats, not this PR's to remove.
 
 - [ ] **Step 1: Pin the motion checks in the full-pipeline test**
 
@@ -3353,7 +3390,7 @@ with (keep B1's `qc` declaration between them as merged):
       );
 ```
 
-Inside B4's `if (example === 'backend-slim-request') { … }` block (which B5 extended), after its last assertion, add:
+Add `openingSpan,` to the file's existing `../../packages/video/src/timeline/cues.ts` import (DOM-free). Inside B4's `if (example === 'backend-slim-request') { … }` block (which B5 extended), after its last assertion, add:
 
 ```ts
         // The benchmark moves whenever it speaks and fills its frame as it comes in: every motion
@@ -3375,7 +3412,8 @@ Inside B4's `if (example === 'backend-slim-request') { … }` block (which B5 ex
             motion.checks.find((c) => c.id === id),
             id,
           ).toMatchObject({ status: 'pass' });
-        // Its poster is where the byte count lands, the largest number on screen.
+        // Its poster is where the byte count lands (R-029), the counter the largest thing on
+        // screen, past s1's opening, which B1's render showed with only the Before window up.
         const drawn = JSON.parse(
           readFileSync(join(result.runDir, 'video', 'timeline.json'), 'utf8'),
         ) as Timeline;
@@ -3383,6 +3421,9 @@ Inside B4's `if (example === 'backend-slim-request') { … }` block (which B5 ex
         const lands = counting.direction!.beats.find((b) => b.verb === 'count')!;
         expect(posterFrame(drawn)).toBe(
           Math.round((counting.start + lands.t + lands.seconds + 0.3) * drawn.fps),
+        );
+        expect(posterFrame(drawn) / drawn.fps).toBeGreaterThanOrEqual(
+          openingSpan(drawn, 0)?.[1] ?? 0,
         );
         expect(existsSync(join(result.runDir, 'video', 'poster.png'))).toBe(true);
 ```
@@ -3392,7 +3433,7 @@ These pin what Tasks 1–5 achieved, so they pass once those tasks are in; to se
 - [ ] **Step 2: Run the full-pipeline renders**
 
 Run (in the background, and wait): `COVI_TEST_RENDER=1 npx vitest run tests/render/render.test.ts -t "full pipeline"`
-Expected: PASS — every example renders with QC not `fail` (so no `out-of-frame` failure anywhere), every `qc.json` lists the seven motion checks, the benchmark passes all eight and has its poster on the landed count, the timing-grammar render (pinned to `--direction off`) passes as before, and the draft test from Task 5 passes.
+Expected: PASS — every example renders with QC not `fail` (so no `out-of-frame` failure anywhere), every `qc.json` lists the seven motion checks, the benchmark passes all eight and has its poster on its landed count, the timing-grammar render (pinned to `--direction off`) passes as before, and the draft test from Task 5 passes.
 
 If the benchmark warns `still` or `motion-gap` here although Task 1's hand render passed, print the check's message (`npx vitest … --reporter verbose` shows the failing id) and compare `video/timeline.json`'s `s1` beats with the hand render's before changing any code; a change to the drafted storyboard since Task 1 is the likeliest cause.
 
@@ -3411,7 +3452,7 @@ for (const c of qc.checks) if (["still","motion-gap","motion-busy","reading-time
 ' "$RENDER/ko.json"
 ```
 
-Run the `covi video` line in the background and wait. Expected (scratch copy): `pass`, the eight motion checks `pass`. Open `<runDir>/video/contact-sheet.jpg` and `<runDir>/video/poster.png` with the Read tool: `s1` stages the problem (pieces, a filling pile, the counter), the morph is mid-way in `s2`, nothing covers the captions or the narrator, and the poster shows the counter landed on 9,907 with −86% beside the reader steps' 28 and 10. Record what the sheet shows, then `rm -rf "$RENDER"`.
+Run the `covi video` line in the background and wait. Expected (scratch copy): `pass`, the eight motion checks `pass`. Open `<runDir>/video/contact-sheet.jpg` and `<runDir>/video/poster.png` with the Read tool: `s1` stages the problem (pieces, a filling pile, the counter), the morph is mid-way in `s2`, nothing covers the captions or the narrator, and the poster shows the counter landed on 9,907 with −86% beside the reader steps' 28 and 10, not the opening. Record what the sheet shows, then `rm -rf "$RENDER"`.
 
 - [ ] **Step 4: Commit**
 
@@ -3467,7 +3508,7 @@ After B2–B5's **Direction.** paragraph, add:
 Stop after three draft rounds even if a warning remains, then render the video with `covi render --run <id> --json` and review it as below.
 ```
 
-In **Review it yourself**, question 2, add after its first sentence: "Covi takes the poster where the key number's count lands, else on the hero after its accent; if `video/poster.png` is not the moment you would pick, mark that scene the hero, or count its number, so Covi finds it." In question 3, after the sentence about the `still` check, add: "`motion-gap` names the same from the plan, and what ends each gap."
+In **Review it yourself**, question 2, add after its first sentence: "Covi takes the poster (`video/poster.png`) where the key number's count lands, else on the hero once its accent has played and the scene has settled, else 1.6 s in: a video with neither gets a weak poster." In question 3, after the sentence about the `still` check, add: "`motion-gap` names the same from the plan, and what ends each gap."
 
 In `## Output files`, add after `video/qc.json`: "and, from `covi render --draft`, `video/draft/` (`preview.mp4`, `poster.png`, `contact-sheet.jpg`, `qc.json`, `timeline.json`, `composition/`): a preview at half size and 15 fps, never the video."
 
@@ -3496,7 +3537,7 @@ covi render --run <id> --json
 In `### Composition and rendering`, replace the bullet "The poster (`video/poster.png`) is the frame at 1.6 s, or a third of the way in for very short videos." with:
 
 ```markdown
-- The poster (`video/poster.png`) shows the change at its best, chosen from the timeline: where the key number's count lands (the count that changes its metric the most), 0.3 s on so its change in percent shows beside it; else the hero scene once its accent has played and it has settled; else 1.6 s in, or a third of the way for very short videos. Each moment is held before the next scene starts to enter. The same composition always gives the same poster, and a render that keeps its frames keeps it.
+- The poster (`video/poster.png`) shows the change at its best, chosen from the timeline: where the key number's count lands (the count that changes its metric the most), 0.3 s on so its change in percent shows beside it, unless it lands while the next scene is entering; else the hero scene once its accent has played and it has settled (its phase plus 0.7 s, or later while its choreography runs); else 1.6 s in, or a third of the way for very short videos. Each moment is held before the next scene starts to enter. The same composition always gives the same poster, and a render that keeps its frames keeps it.
 ```
 
 In `### Quality checks`, replace the `still` row with:
@@ -3585,10 +3626,10 @@ EOF
 
 Checked against the spec with fresh eyes, then fixed inline.
 
-- **Spec coverage.** §10 draft render: `covi render --run <id> --draft` (R-006) at half size and 15 fps into `video/draft/` with `preview.mp4`, `contact-sheet.jpg`, `qc.json`, `timeline.json`, reusing cached narration, never touching the final render's files or `frames.json` → Task 5 (unit tests for the spec, the scaled timeline, and the voice master; CLI tests for the refusal and the result; a full-pipeline test that hashes every file of the run before and after). §10 motion QC in both draft and final `qc.json` → Tasks 2–4 (`runQc` serves both): `motion-gap` with the spec's intervals (transitions, camera moves, beats, component choreography via `settledAt` in `shotMotion`, the stop camera's push) → Tasks 1–2; `motion-busy` (> 3 beats in 1 s, > 2 camera moves in 2 s) → Task 2; `reading-time` (0.4 s + characters / 15, CJK / 8) → Task 2; `overlap` (> 4% of the smaller at settled frames, containment by design excluded) → Task 3; `out-of-frame` (fail, at a settled frame) → Task 3. R-023's dropped beats surfaced → Task 2 (`dropped-beats`). The skill's loop (render `--draft`, open the sheet, read the QC, revise `direction.json`, at most 3 rounds, then the final render) → Task 7. The lead's pointers: the benchmark's `still` cause fixed (Task 1) and its default render passing every motion check pinned (Task 6); "the same direction at full size gives the same choreography" → Task 5's scaled-view tests; reconciliation with `still` → Task 2 (one rule, `spokenStills`; `still` names push-only stretches). The lead's addition: a deterministic poster that shows the change at its best, in the draft and the final render → Task 4 (`posterFrame`, unit-tested on each rule), Task 5 (the draft's poster at the video's moment), Task 6 (the benchmark's poster on its landed count); an opening that holds a mostly empty frame seen by motion QC → Task 4 (`empty-opening` on what is drawn, sampled through each opening). Docs (`docs/video.md` QC list, poster, and draft section, `docs/cli.md` `--draft`, `docs/artifacts.md`, AGENTS.md run outputs), CHANGELOG under `### Added`, `npm run check` and `npm run test:render` → Task 7. §4.7 spaced beats from 0.15 kept; §14 nothing new reaches the renderer from the agent (QC reads only resolved, redacted timelines and the runtime's own boxes).
+- **Spec coverage.** §10 draft render: `covi render --run <id> --draft` (R-006) at half size and 15 fps into `video/draft/` with `preview.mp4`, `contact-sheet.jpg`, `qc.json`, `timeline.json`, reusing cached narration, never touching the final render's files or `frames.json` → Task 5 (unit tests for the spec, the scaled timeline, and the voice master; CLI tests for the refusal and the result; a full-pipeline test that hashes every file of the run before and after). §10 motion QC in both draft and final `qc.json` → Tasks 2–4 (`runQc` serves both): `motion-gap` with the spec's intervals (transitions, camera moves, beats, component choreography via `settledAt` in `shotMotion`, the stop camera's push) → Tasks 1–2; `motion-busy` (> 3 beats in 1 s, > 2 camera moves in 2 s) → Task 2; `reading-time` (0.4 s + characters / 15, CJK / 8) → Task 2; `overlap` (> 4% of the smaller at settled frames, containment by design excluded) → Task 3; `out-of-frame` (fail, at a settled frame) → Task 3. R-023's dropped beats surfaced → Task 2 (`dropped-beats`). The skill's loop (render `--draft`, open the sheet, read the QC, revise `direction.json`, at most 3 rounds, then the final render) → Task 7. The lead's pointers: the benchmark's `still` cause fixed (Task 1) and its default render passing every motion check pinned (Task 6); "the same direction at full size gives the same choreography" → Task 5's scaled-view tests; reconciliation with `still` → Task 2 (one rule, `spokenStills`; `still` names push-only stretches). The lead's addition and R-029: a deterministic poster that shows the change at its best, in the draft and the final render → Task 4 (`posterTime`, pure and DOM-free, unit-tested on each branch: the key count landing ahead of a hero, the largest change among counts, a landing held before the next entrance, a count landing during that entrance passed over for the hero, a hero still settling and one clamped before its exit, the fixed rule), Task 5 (the draft's poster at the video's moment), Task 6 (the benchmark's poster on its landed byte count, past its first scene's opening); an opening that holds a mostly empty frame seen by motion QC → Task 4 (`empty-opening` on what is drawn, sampled through each opening). Docs (`docs/video.md` QC list, poster, and draft section, `docs/cli.md` `--draft`, `docs/artifacts.md`, AGENTS.md run outputs), CHANGELOG under `### Added`, `npm run check` and `npm run test:render` → Task 7. §4.7 spaced beats from 0.15 kept; §14 nothing new reaches the renderer from the agent (QC reads only resolved, redacted timelines and the runtime's own boxes).
 - **Placeholders.** None: every code step carries its code. Steps that touch B2–B5 code name the merged function and say what to do when the merged body differs; Task 2's Step 0 branches on how B5 merged R-023 and gives the code for the case where it kept nothing on the timeline.
-- **Type consistency.** `CameraPlan.steady`, `cameraPlan`, `ENTERED`, `PUNCH_OUT`, `MotionKind`, `MotionSpan`, `motionSpans` (Task 1, `timeline/motion.ts`); `ShotMotion`, `shotMotion` (Task 1, `timeline/cues.ts`); `STILL_SECONDS`, `Stretch`, `SpokenStill` (`scene`, `seconds`, `at`, `end`), `spokenStills`, `onlyCameraMoves`, `plannedStills`, `motionGapCheck`, `BUSY_BEATS`, `BUSY_MOVES`, `motionBusyCheck`, `READING`, `readingSeconds`, `readingTimeCheck`, `droppedBeatsCheck`, `DroppedBeat`, `SceneDirection.dropped`, `choreographyChecks(timeline)` (Task 2) widened to `choreographyChecks(timeline, layouts)` with `ChoreographyTimeline`, `OVERLAP_SHARE`, `overlapCheck`, `outOfFrameCheck`, `ShotReport`, `LayoutReport.shot`, `unview`, `ShotComponent.placed`, and the exported `settledReports` (Task 3); `ACCENT_OUT`, `openingSpan`, `posterFrame`, `drawnBox`, `LayoutReport.content`, the exported `CARDS`, `emptyOpeningCheck`, and the seven-check `choreographyChecks` (Task 4); `DRAFT_DIR`, `DRAFT_PATHS` (with `poster`), `DRAFT_FPS`, `DRAFT_SCALE`, `draftSpec`, `masterVoice`, `ProduceVideoInput.draftRender`, `ProduceVideoResult.draft`, `ArtifactKind` `'draft'`, `WorkflowResult.video.draft`, `renderWorkflow`'s `draft`, `RenderFlags` (Task 5). Each later use matches its definition.
-- **Verification of the plan itself.** Tasks 1–6 were applied to a scratch copy of the repository with B1–B5 applied (the mirror the B5 planner built from B2–B5's plans, with B1's merged `settledReports` and settled-frame sampling ported in), and every test in this plan passed there: the unit suites, `tests/cli.test.ts`, the canvas, morph, and flow render tests, and `COVI_TEST_RENDER=1` for the draft test; the full suite ran 1617 tests green and `biome check .` was clean. By hand: the benchmark rendered `pass` in English and Korean (before Task 1: `still` 1.7 s and 2.1 s in `s1`), its poster the counter landed on 9,907 with −86% (draft and final at the same moment); rendered with `--direction off` (B1's look) it warned `empty-opening` on `s1` at 20% for 6.2 s; its draft rendered 960×540 at 15 fps in about 8 s against about 17 s for the video, with identical timings, positions within 0.01 px of half, every pre-existing file of the run byte-identical, and a contact sheet that reads like the video's; five example videos rendered with no `overlap` warning and no `out-of-frame` failure, one `empty-opening` warning (`bugfix-cli-slugify`'s before/after terminal), and posters that show the change (the fixed `slugify` after its morph, the composer with its character count). The mirror is not B1–B5's merged code, so the pre-flight scan stands.
+- **Type consistency.** `CameraPlan.steady`, `cameraPlan`, `ENTERED`, `PUNCH_OUT`, `MotionKind`, `MotionSpan`, `motionSpans` (Task 1, `timeline/motion.ts`); `ShotMotion`, `shotMotion` (Task 1, `timeline/cues.ts`); `STILL_SECONDS`, `Stretch`, `SpokenStill` (`scene`, `seconds`, `at`, `end`), `spokenStills`, `onlyCameraMoves`, `plannedStills`, `motionGapCheck`, `BUSY_BEATS`, `BUSY_MOVES`, `motionBusyCheck`, `READING`, `readingSeconds`, `readingTimeCheck`, `droppedBeatsCheck`, `DroppedBeat`, `SceneDirection.dropped`, `choreographyChecks(timeline)` (Task 2) widened to `choreographyChecks(timeline, layouts)` with `ChoreographyTimeline`, `OVERLAP_SHARE`, `overlapCheck`, `outOfFrameCheck`, `ShotReport`, `LayoutReport.shot`, `unview`, `ShotComponent.placed`, and the exported `settledReports` (Task 3); `ACCENT_OUT`, `COUNTED`, `posterTime`, `openingSpan`, `posterFrame`, `drawnBox`, `LayoutReport.content`, the exported `CARDS`, `emptyOpeningCheck`, and the seven-check `choreographyChecks` (Task 4); `DRAFT_DIR`, `DRAFT_PATHS` (with `poster`), `DRAFT_FPS`, `DRAFT_SCALE`, `draftSpec`, `masterVoice`, `ProduceVideoInput.draftRender`, `ProduceVideoResult.draft`, `ArtifactKind` `'draft'`, `WorkflowResult.video.draft`, `renderWorkflow`'s `draft`, `RenderFlags` (Task 5). Each later use matches its definition.
+- **Verification of the plan itself.** Tasks 1–6 were applied to a scratch copy of the repository with B1–B5 applied (the mirror the B5 planner built from B2–B5's plans, with B1's merged `settledReports` and settled-frame sampling ported in), and every test in this plan passed there: the unit suites, `tests/cli.test.ts`, the canvas, morph, and flow render tests, and `COVI_TEST_RENDER=1` for the draft test; the full suite ran 1617 tests green and `biome check .` was clean. By hand: the benchmark rendered `pass` in English and Korean (before Task 1: `still` 1.7 s and 2.1 s in `s1`), its poster the byte counter landed on 9,907 with −86%, by R-029 (draft and final at the same moment); rendered with `--direction off` (B1's look) it warned `empty-opening` on `s1` at 20% for 6.2 s; its draft rendered 960×540 at 15 fps in about 8 s against about 17 s for the video, with identical timings, positions within 0.01 px of half, every pre-existing file of the run byte-identical, and a contact sheet that reads like the video's; five example videos rendered with no `overlap` warning and no `out-of-frame` failure, one `empty-opening` warning (`bugfix-cli-slugify`'s before/after terminal), and posters that show the change (the fixed `slugify` after its morph, the composer with its character count). The mirror is not B1–B5's merged code, so the pre-flight scan stands.
 - **Review Focus.** Each of the five lines has its test in the owning task (Tasks 3, 5, 5, 5, 2).
 
 ## Rulings
@@ -3618,8 +3659,7 @@ Checked against the spec with fresh eyes, then fixed inline.
 - Ruling: both frame checks tolerate 4 design units (4 px at 1080p, 2 in the draft) — drawn boxes round, and the draft must judge like the video — a 3 px overhang passes.
 - Ruling: a storyboard visual shown alone (`whole`) reports no shot — it is drawn exactly as without direction, and `text-fits`, `captions-clear-of-content`, and B1's checks cover it — a 0.2.0 component drawn past its region is not `out-of-frame`'s to catch.
 - Ruling: dropped beats travel on the timeline as `SceneDirection.dropped` (left out when empty), read by `dropped-beats` (warn), beside B5's run warning and note — QC reads the timeline in both the draft and the final render, and an empty list keeps every frames key — if B5 merged another carrier, the pre-flight maps it (Task 2, Step 0).
-- Ruling: the poster is chosen from the timeline (`posterFrame`): where the key number's count lands (the `count` on a metric with the largest relative change, the earliest on a tie), 0.3 s on so its change in percent has come in; else the hero scene once its accent (0.7 s) has played and it has settled; else 1.6 s (a third of a very short video); every moment held before the next scene starts to enter, and a count landing during that entrance skipped — the lead asked for a deterministic poster that shows the change at its best, and B4 draws the landed count as the largest thing on screen; a timeline-only choice keeps one composition to one poster, also when frames are reused — a UI change whose agent also counted an incidental number gets the number as its poster, not its hero (the skill says to mark the moment as the hero or count its number). This supersedes B3's "the poster stays at 1.6 s"; B3's concern (no mid-morph poster) holds, since every candidate is a settled moment.
-- Ruling: the count beats the hero when both exist — a measured number with its percent reads at thumbnail size, and on backend changes (the benchmark) it is the effect the change was made for, while code and captures do not read at thumbnail size — an agent who staged a hero capture and a minor count sees the count on the poster.
+- Ruling: the poster's frame follows R-029 (which superseded R-026's order) — `posterTime(timeline)` (pure, in DOM-free `timeline/motion.ts`; `posterFrame` puts it on the nearest frame): (1) where the key number's count lands, the `count` whose metric changes the most (the earliest on a tie), 0.3 s on so B4's change in percent shows, passing over a count that lands while the next scene is entering; else (2) the hero scene once its accent has played (phase + `ACCENT_OUT`, 0.7 s) and the scene has settled, held inside the scene half a frame before its exit transition; else (3) the old `Math.min(1.6, duration / 3)`; the same choice in the draft and the final render — the number landing is the clearest single frame of a change: B4 draws it as the largest thing on screen with its change beside it, and it reads at thumbnail size where code and captures do not; every candidate is a settled moment (B3's mid-morph concern holds), and a timeline-only choice keeps one composition to one poster when frames are reused — a UI change whose agent also counted an incidental number gets the number, not its hero, as its poster; this supersedes B3's "the poster stays at 1.6 s".
 - Ruling: `empty-opening` measures what the scene visibly draws (`drawnBox`: text, images, SVG shapes, and boxes with a fill, border, or shadow, at a cumulative opacity above 0.1, clipped to the scene's region), not the layout items — components report parts laid out before they are shown (a terminal's After window at opacity 0), so the items would call the B1 poster frame full — `drawnBox` reads computed styles at every layout sample (a few dozen per video, milliseconds each), and a part drawn transparent by a means other than opacity (a clip-path wipe in progress) counts as drawn.
 - Ruling: `empty-opening` holds the scenes `empty-frame` holds (B1's `CARDS` by lead kind) plus shots that lay out elements, through each scene's opening (from its entrance to `settledSpan`'s start), sampled every 0.5 s at most eight times, and warns when frames under 40% of the media region (B1's `EMPTY_SHARE`) cover 1.5 s or more of narration (`spokenStills`, `still`'s rule) — one emptiness threshold and one narration rule across the checks; captures, titles, and summaries keep the exemptions B1 gave them — an empty stretch shorter than the half-second sampling can be missed, and a long opening's eight samples are up to its length / 8 apart.
 - Ruling: the hero's ring length becomes `ACCENT_OUT` in `timeline/motion.ts`, shared by the runtime's `heroAccent` and the poster — one value for "the accent has played" — none.

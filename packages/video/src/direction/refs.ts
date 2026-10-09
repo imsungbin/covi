@@ -32,15 +32,27 @@ function shown(text: string): string {
   return parts.join('');
 }
 
+/** What the checks read of a storyboard scene. */
+export type DirectedScene = Pick<Scene, 'id' | 'narration'> & {
+  visual: Pick<Scene['visual'], 'kind'>;
+};
+
+/**
+ * Storyboard cards a shot shows only alone: they draw their own header and large fox, which the
+ * outro takes over, and a slot beside other elements can honor neither.
+ */
+const WHOLE_ONLY = new Set<Scene['visual']['kind']>(['title', 'summary']);
+
 /**
  * What the schema alone cannot check, as lines that name the shot, element, and beat: shots name
- * storyboard scenes (one each), beats name elements of their shot, every cited id is in the run's
- * evidence with the kind its element shows, a requested side exists, lines lie within the side
- * shown, and every `at` is quoted from the scene's narration exactly once (as `sync` phrases are).
+ * storyboard scenes (one each), beats name elements of their shot, a title or summary card is
+ * shown only alone, every cited id is in the run's evidence with the kind its element shows, a
+ * requested side exists, lines lie within the side shown, and every `at` is quoted from the
+ * scene's narration exactly once (as `sync` phrases are).
  */
 export function directionProblems(
   direction: Pick<Direction, 'shots'>,
-  scenes: ReadonlyArray<Pick<Scene, 'id' | 'narration'>>,
+  scenes: readonly DirectedScene[],
   evidence: EvidenceIndex | undefined,
   sources: DirectionSources,
 ): string[] {
@@ -63,6 +75,18 @@ export function directionProblems(
     if (shot.layout === 'single' && shot.elements.length > 1)
       problems.push(
         `${where}: layout "single" shows one element, and the shot has ${shot.elements.length}`,
+      );
+    // Shown whole exactly when the shot resolves whole: the visual alone, never revealed.
+    const visual = shot.elements.find((e) => e.kind === 'visual');
+    const revealed = shot.beats.some((b) => b.verb === 'reveal' && b.element === visual?.id);
+    if (
+      scene &&
+      visual &&
+      WHOLE_ONLY.has(scene.visual.kind) &&
+      (shot.elements.length > 1 || revealed)
+    )
+      problems.push(
+        `${where}, element ${visual.id}: a ${scene.visual.kind} card draws its own header and fox, so it is shown only alone; make it the shot's one element, without a reveal, or leave it out`,
       );
     const ids = new Set<string>();
     for (const element of shot.elements) {

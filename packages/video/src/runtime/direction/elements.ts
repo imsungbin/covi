@@ -76,7 +76,8 @@ export function mountShot(
     );
     return { element, layer, ...(reveal ? { reveal } : {}), ...draw(element, sub, drawVisual) };
   });
-  const visual = drawn.find((d) => d.element.kind === 'visual')?.component;
+  const shown = drawn.find((d) => d.element.kind === 'visual');
+  const visual = shown?.component;
   // The stage maps a target and focus items through the camera when they come from layout. Only
   // the visual has either (a capture element shows no focus), so the shot takes its flag: what is
   // measured as drawn is never mapped again.
@@ -96,7 +97,9 @@ export function mountShot(
     // An element not revealed yet is not on screen.
     report: () =>
       drawn.filter((d) => !d.reveal || now > d.reveal.t).flatMap((d) => d.component.report()),
-    target: (clock) => visual?.target?.(clock),
+    // Nothing to point at before the visual is revealed.
+    target: (clock) =>
+      shown?.reveal && clock.t <= shown.reveal.t ? undefined : visual?.target?.(clock),
     frame(id) {
       const d = drawn.find((x) => x.element.id === id);
       const boxes = (d?.component.report() ?? [])
@@ -174,15 +177,22 @@ function textBox(
   // The tone marks the box; the text keeps the theme's color, which reads on any tint.
   if (color) Object.assign(box.style, { borderColor: color, background: `${color}1f` });
   const label = el('div', 'nlabel', box, text);
-  // Fitted to the box's content area, whatever padding and border its class gives it.
+  // Fitted to the box's content area, whatever padding and border its class gives it. Words are
+  // kept whole while fitting, so a long one shrinks the text rather than breaking (a word that may
+  // break anywhere never overflows); one that does not fit even at the smallest size breaks after
+  // all. A pixel to spare, since the scroll width is rounded.
   const style = getComputedStyle(box);
   const px = (a: string, b: string) => Number.parseFloat(a) + Number.parseFloat(b);
-  fitText(label, {
+  label.style.overflowWrap = 'normal';
+  const size = fitText(label, {
     max: u(tall ? 48 : 40),
     min: u(28),
-    maxWidth: box.clientWidth - px(style.paddingLeft, style.paddingRight),
+    maxWidth: box.clientWidth - px(style.paddingLeft, style.paddingRight) - 2,
     maxHeight: box.clientHeight - px(style.paddingTop, style.paddingBottom),
   });
+  label.style.overflowWrap = '';
+  // The box's own size sets how far text may hang below it before it counts as cut off.
+  box.style.fontSize = `${size}px`;
   return {
     component: {
       // In with the scene, as a diagram's nodes come in; a reveal has it in place already.

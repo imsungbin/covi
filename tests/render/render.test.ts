@@ -34,6 +34,7 @@ import {
 import { type Browser, chromium } from 'playwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../../packages/cli/src/examples.ts';
+import { DirectionSchema } from '../../packages/video/src/direction/schema.ts';
 import { contactSheetFrames, sheetColumns } from '../../packages/video/src/render/renderer.ts';
 import { tileLayout } from '../../packages/video/src/render/sheet.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
@@ -1508,20 +1509,20 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
   }
 });
 
-describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)', () => {
-  const root = join(import.meta.dirname, '..', '..');
-  const covi = (args: string[]) =>
-    JSON.parse(
-      execFileSync('node', ['bin/covi.mjs', ...args, '--json'], {
-        cwd: root,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 600_000,
-      }),
-    ) as { runId: string; runDir: string; video: { rendered: boolean; qc: string } };
-  const read = <T>(run: string, rel: string) =>
-    JSON.parse(readFileSync(join(run, rel), 'utf8')) as T;
+// The CLI from this checkout, and a run's JSON files, for the full-pipeline tests below.
+const root = join(import.meta.dirname, '..', '..');
+const covi = (args: string[]) =>
+  JSON.parse(
+    execFileSync('node', ['bin/covi.mjs', ...args, '--json'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 600_000,
+    }),
+  ) as { runId: string; runDir: string; video: { rendered: boolean; qc: string } };
+const read = <T>(run: string, rel: string) => JSON.parse(readFileSync(join(run, rel), 'utf8')) as T;
 
+describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)', () => {
   it('renders a storyboard that uses every timing field', async () => {
     const repo = await materializeExample(
       (await listExamples()).find((e) => e.name === 'ui-comment-composer')!,
@@ -2090,4 +2091,68 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
       expect.objectContaining({ kind: 'riser', reason: 'more than 3 per second' }),
     );
   }, 900_000);
+});
+
+describe.skipIf(!available || !fullRenders)('an agent’s direction (full pipeline)', () => {
+  it('renders the shot an agent wrote, code beside a node and a label, and QC reads it', async () => {
+    const repo = await materializeExample(
+      (await listExamples()).find((e) => e.name === 'backend-slim-request')!,
+    );
+    dirs.push(repo);
+    const draft = covi(['video', '--repo', repo, '--short', '--draft']);
+    const run = draft.runDir;
+    const evidence = read<{ items: Array<{ id: string; kind: string }> }>(run, 'evidence.json');
+    const hunk = evidence.items.find((i) => i.kind === 'diff-hunk' && i.id.includes(':src/'));
+    const drafted = read<StoryboardInput>(run, 'video/storyboard.json');
+    const scene = drafted.scenes.find((s) => s.visual.kind === 'code');
+    expect(hunk).toBeDefined();
+    expect(scene?.id).toBeDefined();
+    // The agent's own shot: no longer Covi's draft, so it is checked against the run and kept.
+    const direction = DirectionSchema.parse({
+      schemaVersion: 1,
+      draft: false,
+      shots: [
+        {
+          scene: scene!.id,
+          layout: 'auto',
+          elements: [
+            { id: 'fix', kind: 'code', evidence: hunk!.id, side: 'diff' },
+            { id: 'reader', kind: 'node', label: 'Reader' },
+            { id: 'note', kind: 'label', text: 'Fetches each document', tone: 'success' },
+          ],
+          beats: [
+            { verb: 'reveal', element: 'note', style: 'pop' },
+            { verb: 'camera', move: 'zoom', to: 'reader' },
+          ],
+        },
+      ],
+    });
+    writeFileSync(join(run, 'video', 'direction.json'), `${JSON.stringify(direction, null, 2)}\n`);
+
+    const rendered = covi(['render', '--repo', repo, '--run', draft.runId]);
+    expect(rendered.video.rendered).toBe(true);
+    expect(rendered.video.qc).not.toBe('fail');
+    const qc = read<{ checks: Array<{ id: string; status: string }> }>(run, 'video/qc.json');
+    expect(qc.checks.filter((c) => c.status === 'fail')).toEqual([]);
+    const status = (id: string) => qc.checks.find((c) => c.id === id)?.status;
+    expect(status('text-fits')).toBe('pass');
+    expect(status('captions-clear-of-content')).toBe('pass');
+
+    // The timeline holds the shot as resolved, its beats timed.
+    const timeline = read<Timeline>(run, 'video/timeline.json');
+    const drawn = timeline.scenes.find((s) => s.id === scene!.id)!;
+    expect(drawn.direction!.whole).toBe(false);
+    expect(drawn.direction!.elements.map((e) => [e.id, e.kind])).toEqual([
+      ['fix', 'code'],
+      ['reader', 'node'],
+      ['note', 'label'],
+    ]);
+    expect(drawn.direction!.beats.map((b) => b.verb)).toEqual(['reveal', 'camera']);
+    // And QC read it as drawn: a frame sampled in the scene holds the node's and label's text.
+    const frames = read<{ layouts: LayoutReport[] }>(run, 'video/frames.json');
+    const body = (report: LayoutReport) => report.items.filter((i) => i.text === 'body').length;
+    expect(
+      frames.layouts.some((l) => l.scene === drawn.id && body(l) === 2 + (drawn.heading ? 1 : 0)),
+    ).toBe(true);
+  }, 600_000);
 });

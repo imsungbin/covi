@@ -6,12 +6,14 @@ import {
   type Demonstration,
   type Hunk,
   indexEvidence,
+  type Language,
   resolveConfig,
   seedFrom,
 } from '@covi/core';
 import {
   AssetCollector,
   buildTimeline,
+  densityChecks,
   type LayoutReport,
   layoutChecks,
   layoutScenes,
@@ -35,6 +37,11 @@ import { resolveDirection } from '../../packages/video/src/direction/resolve.ts'
 import { type DirectionInput, DirectionSchema } from '../../packages/video/src/direction/schema.ts';
 import { directionSources, type SourcesInput } from '../../packages/video/src/direction/sources.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
+import {
+  settledFrame,
+  settledSpan,
+  shotSettledAt,
+} from '../../packages/video/src/timeline/cues.ts';
 import { canUseBrowser } from '../helpers/env.ts';
 
 /*
@@ -84,13 +91,15 @@ const insetTop = (clip: string | null) => Number(/inset\(([\d.]+)px/.exec(clip ?
 /**
  * Builds a directed 640×360 composition the way the pipeline does (default director, the given
  * shots over it, entrances, timing, resolution) and opens it. `off` builds it as 0.2.0 did;
- * `edit` changes the timeline before it is written; `capture` puts a 640×400 capture at demo/a.png.
+ * `language` is the narration's; `edit` changes the timeline before it is written; `capture` puts
+ * a 640×400 capture at demo/a.png.
  */
 async function directed(
   scenes: StoryboardInput['scenes'],
   shots: DirectionInput['shots'] = [],
   options: {
     off?: boolean;
+    language?: Language;
     sources?: SourcesInput;
     edit?: (timeline: Timeline) => void;
     capture?: boolean;
@@ -120,7 +129,8 @@ async function directed(
         defaultDirection({ scenes: parsed, evidence, seed }),
       );
   const enter = plan ? entrances(plan, parsed, evidence, seed) : new Map<string, TransitionKind>();
-  const layout = layoutScenes(parsed, new Map(), new Map(), 'en', pacingFor(spec), enter);
+  const language = options.language ?? 'en';
+  const layout = layoutScenes(parsed, new Map(), new Map(), language, pacingFor(spec), enter);
   const assets = new AssetCollector(dir);
   if (options.capture) await assets.prepare(['demo/a.png']);
   const staging = plan
@@ -129,7 +139,7 @@ async function directed(
         scenes: parsed,
         layout,
         spec,
-        language: 'en',
+        language,
         sources,
         image: assets.image,
         seed,
@@ -142,6 +152,7 @@ async function directed(
     layout,
     spec,
     image: assets.image,
+    language,
     entrances: enter,
     ...(staging ? { staging } : {}),
   });
@@ -809,6 +820,46 @@ describe.skipIf(!available)('a shot’s elements', () => {
     expect(cramped[0]!.overflow).toBe(true);
   });
 
+  it('shrinks a label to keep a long word whole, and breaks it only below the smallest size', async () => {
+    const word = elements.map((e) =>
+      e.id === 'note' ? { id: 'note', kind: 'label' as const, text: 'Deduplication' } : e,
+    );
+    const label = async (width: number) => {
+      const v = await directed(story, [{ scene: 's3', layout: 'row', elements: word }], {
+        sources: run,
+        edit: (timeline) => {
+          const shot = timeline.scenes.find((s) => s.id === 's3')!.direction!;
+          const note = shot.elements.find((e) => e.id === 'note')!;
+          note.rect = { ...note.rect, x: note.rect.x + (note.rect.width - width) / 2, width };
+        },
+      });
+      return (await v.seek(
+        v.frameAt('s3', 1.2),
+        `const n = document.querySelector('[data-element="note"] .nlabel');
+         const box = n.parentElement;
+         const range = document.createRange();
+         range.selectNodeContents(n);
+         const style = getComputedStyle(box);
+         return {
+           lines: range.getClientRects().length,
+           font: Number.parseFloat(getComputedStyle(n).fontSize),
+           width: n.scrollWidth,
+           room: box.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight),
+         };`,
+      )) as { lines: number; font: number; width: number; room: number };
+    };
+    // Room for the word between the smallest size and the largest: smaller, on one line.
+    const fits = await label(90);
+    expect(fits.lines).toBe(1);
+    expect(fits.font / regions.unit).toBeGreaterThanOrEqual(28 - 0.1);
+    expect(fits.font / regions.unit).toBeLessThan(40);
+    // No room even at the smallest size: broken over lines rather than cut off at the side.
+    const narrow = await label(50);
+    expect(narrow.lines).toBeGreaterThan(1);
+    expect(narrow.font / regions.unit).toBeCloseTo(28, 0);
+    expect(narrow.width).toBeLessThanOrEqual(narrow.room + 1);
+  });
+
   it('reports a capture’s focus where the camera draws it, in a shot as in a whole scene', async () => {
     const page = {
       id: 's2',
@@ -856,5 +907,106 @@ describe.skipIf(!available)('a shot’s elements', () => {
     expect(inside(focus.rect.x, focus.rect.y)).toBe(true);
     expect(inside(focus.rect.x + focus.rect.width, focus.rect.y + focus.rect.height)).toBe(true);
     expect(v.errors).toEqual([]);
+  });
+
+  it('passes QC where it has settled, in English and in Korean', async () => {
+    const korean: StoryboardInput['scenes'] = [
+      { ...story[0]!, narration: '요청이 모든 문서를 실어 보냈습니다.' },
+      { ...story[1]!, eyebrow: '이전', narration: '그래서 읽기가 시간을 넘겼습니다.' },
+      {
+        ...story[2]!,
+        eyebrow: '수정',
+        narration: '이제 아이디만 보내고, 다른 것은 보내지 않습니다.',
+      },
+      { ...story[3]!, narration: '준비됐습니다.' },
+    ];
+    for (const [language, scenes, node, label] of [
+      ['en', story, 'Reader service', 'Much smaller'],
+      ['ko', korean, '읽기 서비스', '요청이 훨씬 작아졌습니다'],
+    ] as const) {
+      const v = await directed(
+        scenes,
+        [
+          {
+            scene: 's3',
+            layout: 'row',
+            elements: [
+              elements[0]!,
+              { id: 'reader', kind: 'node', label: node },
+              { id: 'note', kind: 'label', text: label, tone: 'success' },
+            ],
+          },
+        ],
+        { sources: run, language },
+      );
+      const index = v.timeline.scenes.findIndex((s) => s.id === 's3');
+      const s3 = v.timeline.scenes[index]!;
+      // Where QC reads it once the shot's own choreography is done too.
+      const frame = Math.max(
+        settledFrame(v.timeline, index)!,
+        Math.ceil((s3.start + shotSettledAt(s3)) * v.timeline.fps),
+      );
+      expect(frame / v.timeline.fps).toBeLessThanOrEqual(settledSpan(v.timeline, index)![1]);
+      const report = await v.report(frame);
+      expect(report.scene).toBe('s3');
+      // The node's name and the label, measured.
+      expect(report.items.filter((i) => i.text === 'body')).toHaveLength(2);
+      const checks = [
+        ...layoutChecks(v.timeline, [report]),
+        ...densityChecks(v.timeline, [report]),
+      ];
+      expect(checks.map((c) => c.id)).toEqual(expect.arrayContaining(['text-fits', 'text-size']));
+      expect(
+        checks.filter((c) => c.status !== 'pass').map((c) => `${language} ${c.id}: ${c.message}`),
+      ).toEqual([]);
+      expect(v.errors).toEqual([]);
+    }
+  });
+
+  it('points at the visual only once it is revealed', async () => {
+    const page = {
+      id: 's2',
+      beat: 'fix',
+      eyebrow: 'The page',
+      hero: true,
+      narration: 'First look here, then at the save button.',
+      sync: { hero: 'First look here' },
+      visual: {
+        kind: 'screenshot',
+        image: { path: 'demo/a.png' },
+        focus: { x: 540, y: 0, width: 100, height: 60 },
+        device: 'desktop',
+      },
+    } satisfies StoryboardInput['scenes'][number];
+    const v = await directed(
+      [story[0]!, page, story[3]!],
+      [
+        {
+          scene: 's2',
+          layout: 'row',
+          elements: [
+            { id: 'visual', kind: 'visual' },
+            { id: 'note', kind: 'label', text: 'Saved' },
+          ],
+          beats: [{ verb: 'reveal', element: 'visual', at: 'the save button' }],
+        },
+      ],
+      { capture: true },
+    );
+    const s2 = v.scene('s2');
+    const reveal = s2.direction!.beats[0]!;
+    const hero = s2.phases!.hero!;
+    expect(hero + 0.2).toBeLessThan(reveal.t);
+    // The hero's ring opens around what the scene points at; before the capture is there, around
+    // the middle of the media region instead.
+    const ring = (await v.seek(
+      v.frameAt('s2', hero + 0.2),
+      `const n = document.querySelector('.hero-accent .ring');
+       const r = n.getBoundingClientRect();
+       return { x: r.x + r.width / 2, y: r.y + r.height / 2, opacity: Number(n.style.opacity) };`,
+    )) as { x: number; y: number; opacity: number };
+    expect(ring.opacity).toBeGreaterThan(0.05);
+    expect(Math.abs(ring.x - pivot.x)).toBeLessThan(1);
+    expect(Math.abs(ring.y - pivot.y)).toBeLessThan(1);
   });
 });

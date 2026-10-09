@@ -1,6 +1,6 @@
 import { buildEvidence, type Demonstration, type Hunk, indexEvidence, parseDiff } from '@covi/core';
 import { describe, expect, it } from 'vitest';
-import { directionProblems } from '../src/direction/refs.ts';
+import { type DirectedScene, directionProblems } from '../src/direction/refs.ts';
 import { type DirectionInput, DirectionSchema } from '../src/direction/schema.ts';
 import { diffFiles, directionSources, hunkView } from '../src/direction/sources.ts';
 
@@ -58,9 +58,13 @@ const evidence = indexEvidence(
   }),
 );
 const sources = directionSources({ files, demo, evidence });
-const scenes = [
-  { id: 's1', narration: 'The request carried every document.' },
-  { id: 's2', narration: 'Now it sends [[only the ids]], and the ids are small.' },
+const scenes: DirectedScene[] = [
+  { id: 's1', narration: 'The request carried every document.', visual: { kind: 'callout' } },
+  {
+    id: 's2',
+    narration: 'Now it sends [[only the ids]], and the ids are small.',
+    visual: { kind: 'code' },
+  },
 ];
 const problems = (direction: DirectionInput) =>
   directionProblems(DirectionSchema.parse(direction), scenes, evidence, sources);
@@ -306,6 +310,46 @@ describe('direction references', () => {
       'shot 1 (scene s9), element a: cites "screenshot:x", which the run\'s evidence does not have (`covi evidence --run <id>` lists it)',
       'shot 1 (scene s9), beat 1 (reveal): the shot has no element "zz" (it has: a)',
     ]);
+  });
+
+  it('show a title or summary card only alone, as it draws its own header and fox', () => {
+    const cards: DirectedScene[] = [
+      { id: 'open', narration: 'Send only the ids.', visual: { kind: 'title' } },
+      { id: 'end', narration: 'Ready to merge.', visual: { kind: 'summary' } },
+      { id: 'fix', narration: 'Now it sends the ids.', visual: { kind: 'code' } },
+    ];
+    const visual = { id: 'visual', kind: 'visual' as const };
+    const note = { id: 'note', kind: 'label' as const, text: 'Ids only' };
+    const check = (shot: DirectionInput['shots'][number]) =>
+      directionProblems(DirectionSchema.parse({ shots: [shot] }), cards, evidence, sources);
+    // Alone and in place, a card is drawn whole; it may still be left out for other elements.
+    expect(check({ scene: 'open', elements: [visual] })).toEqual([]);
+    expect(
+      check({
+        scene: 'end',
+        elements: [visual],
+        beats: [{ verb: 'camera', move: 'zoom', to: 'visual' }],
+      }),
+    ).toEqual([]);
+    expect(check({ scene: 'end', elements: [note] })).toEqual([]);
+    // Beside another element or revealed, it would be drawn in a slot under the scene's header.
+    const alone = (scene: string, kind: string) =>
+      `shot 1 (scene ${scene}), element visual: a ${kind} card draws its own header and fox, so it is shown only alone; make it the shot's one element, without a reveal, or leave it out`;
+    expect(check({ scene: 'open', layout: 'row', elements: [visual, note] })).toEqual([
+      alone('open', 'title'),
+    ]);
+    expect(
+      check({ scene: 'end', elements: [visual], beats: [{ verb: 'reveal', element: 'visual' }] }),
+    ).toEqual([alone('end', 'summary')]);
+    // Other visuals keep their slot beside other elements, and their reveals.
+    expect(
+      check({
+        scene: 'fix',
+        layout: 'row',
+        elements: [visual, note],
+        beats: [{ verb: 'reveal', element: 'visual' }],
+      }),
+    ).toEqual([]);
   });
 
   it('measure lines within the side a code element shows', () => {

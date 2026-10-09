@@ -194,7 +194,7 @@ describe('a direction citing evidence the run does not have', () => {
     });
     const found = directionProblems(
       direction,
-      [{ id: 's1', narration: 'One line.' }],
+      [{ id: 's1', narration: 'One line.', visual: { kind: 'callout' } }],
       evidence,
       directionSources({ evidence }),
     );
@@ -221,7 +221,7 @@ describe('a direction citing evidence the run does not have', () => {
     });
     const found = directionProblems(
       direction,
-      [{ id: 's1', narration: 'One line.' }],
+      [{ id: 's1', narration: 'One line.', visual: { kind: 'callout' } }],
       evidence,
       directionSources({ evidence }),
     );
@@ -250,11 +250,16 @@ describe.skipIf(!(await canUseBrowser()))('text from a direction, on the page', 
   it('is drawn as text: no element, no script, exactly the characters it holds', async () => {
     // One label passes validation with characters markup would read (& ’ ( ) /). The others are
     // put straight into a timeline, as if they had slipped past the schema, and a code line from
-    // the diff carries markup too.
+    // the diff and a command's name, line, and output from the demo carry markup too.
     const passing = LabelSchema.parse('Tom & Jerry (it’s &amp / fine)');
     const smuggled = '<img src=x onerror="window.__pwned=1">';
     const script = '</script><script>window.__pwned=2</script>';
     const line = '<b onmouseover="window.__pwned=3">bold</b>';
+    const command = {
+      title: '<b>measure</b>',
+      command: '<img src=x onerror="window.__pwned=4">',
+      output: '</script><script>window.__pwned=5</script>\n<img src=x onerror="window.__pwned=6">',
+    };
     const dir = mkdtempSync(join(tmpdir(), 'covi-direction-security-'));
     dirs.push(dir);
     const spec = resolveVideoSpec(resolveConfig([]).config, {
@@ -276,7 +281,7 @@ describe.skipIf(!(await canUseBrowser()))('text from a direction, on the page', 
       ],
     }).scenes;
     const layout = layoutScenes(scenes, new Map(), new Map(), 'en', pacingFor(spec));
-    const slot = (x: number) => ({ x, y: 80, width: 140, height: 120 });
+    const slot = (x: number, width = 140) => ({ x, y: 80, width, height: 120 });
     const staging: SceneStaging[] = [
       {
         stop: { x: 0, y: 0 },
@@ -304,6 +309,12 @@ describe.skipIf(!(await canUseBrowser()))('text from a direction, on the page', 
                 lines: [{ type: 'add', text: line }],
                 highlight: [],
               },
+            },
+            {
+              id: 'e',
+              kind: 'output',
+              rect: { ...slot(20, 600), y: 210, height: 100 },
+              visual: { kind: 'terminal', ...command },
             },
           ],
           beats: [],
@@ -344,6 +355,11 @@ describe.skipIf(!(await canUseBrowser()))('text from a direction, on the page', 
              texts: labels.map((n) => n.textContent),
              children: labels.map((n) => n.children.length),
              code: document.querySelector('[data-element="d"] .ln .txt').textContent,
+             output: {
+               title: document.querySelector('[data-element="e"] .term-head .label').textContent,
+               command: document.querySelector('[data-element="e"] .cmd').textContent,
+               output: [...document.querySelectorAll('[data-element="e"] .out')].map((n) => n.textContent).join('\\n'),
+             },
            };
          })()`,
       )) as {
@@ -353,6 +369,7 @@ describe.skipIf(!(await canUseBrowser()))('text from a direction, on the page', 
         texts: string[];
         children: number[];
         code: string;
+        output: typeof command;
       };
       expect(seen).toEqual({
         pwned: null,
@@ -361,6 +378,7 @@ describe.skipIf(!(await canUseBrowser()))('text from a direction, on the page', 
         texts: [passing, smuggled, script],
         children: [0, 0, 0],
         code: line,
+        output: command,
       });
       expect(errors).toEqual([]);
     } finally {

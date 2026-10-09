@@ -338,6 +338,35 @@ describe('resolving a direction', () => {
     expect(beats.map((b) => b.t)).toEqual([...beats.map((b) => b.t)].sort((a, b) => a - b));
   });
 
+  it('aims the camera at a revealed element only once it is in place', () => {
+    const [, shot] = resolve({
+      shots: [
+        {
+          scene: 's2',
+          layout: 'row',
+          elements: [
+            { id: 'req', kind: 'code', evidence: 'diff-hunk:src/request.js:10', side: 'diff' },
+            { id: 'note', kind: 'label', text: 'Much smaller' },
+          ],
+          beats: [
+            { verb: 'camera', move: 'zoom', to: 'note', at: 'only the ids' },
+            { verb: 'reveal', element: 'note', style: 'pop', at: 'only the ids' },
+            { verb: 'camera', move: 'pan', to: 'req', at: 'only the ids' },
+          ],
+        },
+      ],
+    });
+    const beats = shot!.direction.beats;
+    const reveal = beats.find((b) => b.verb === 'reveal')!;
+    const onNote = beats.find((b) => b.verb === 'camera' && b.to === 'note')!;
+    const onReq = beats.find((b) => b.verb === 'camera' && b.to === 'req')!;
+    expect(onNote.t).toBeCloseTo(reveal.t + reveal.seconds, 3);
+    expect(onNote.seconds).toBe(BEAT_SECONDS.camera);
+    // An element that is there from the start is aimed at on its phrase.
+    expect(onReq.t).toBe(reveal.t);
+    expect(beats.map((b) => b.t)).toEqual([...beats.map((b) => b.t)].sort((a, b) => a - b));
+  });
+
   it('lists the run images a shot shows, for the composition', () => {
     expect(
       directionImages(

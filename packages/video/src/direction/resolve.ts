@@ -249,6 +249,8 @@ function codeWindow(view: readonly DiffLine[], max: number): DiffLine[] {
  * phrase as the captions time it; a beat without one, or whose phrase redaction removed, takes an
  * evenly spaced slot over the line from 0.15 of it (over the scene when it has no line). `place`
  * is the default made explicit, so it resolves to nothing; beats on elements that are gone drop.
+ * The camera never aims at an element that is not in place yet: a beat toward a revealed element
+ * starts once its (first) reveal is done.
  */
 function timeBeats(
   shot: Shot,
@@ -264,13 +266,17 @@ function timeBeats(
   const from = spoken ? timing.speechStart - timing.start : 0;
   const span = spoken ? timing.speechEnd - timing.speechStart : duration;
   const round = (n: number) => Math.round(n * 1000) / 1000;
+  /** A beat from `start`, kept inside the scene. */
+  const moment = (verb: keyof typeof BEAT_SECONDS, start: number) => {
+    const t = round(Math.min(Math.max(0, start), Math.max(0, duration - 0.1)));
+    return { t, seconds: round(Math.min(BEAT_SECONDS[verb], Math.max(0.1, duration - t))) };
+  };
   const beats = live.flatMap((beat, i): DirectionBeat[] => {
     const target = beat.verb === 'camera' ? beat.to : beat.element;
     if (!kept.has(target)) return [];
     const pinned = beat.at === undefined ? undefined : phraseMoment(text, beat.at, timing, options);
     const spaced = from + span * (SPACED_FROM + ((1 - SPACED_FROM) * i) / live.length);
-    const t = round(Math.min(Math.max(0, pinned ?? spaced), Math.max(0, duration - 0.1)));
-    const seconds = round(Math.min(BEAT_SECONDS[beat.verb], Math.max(0.1, duration - t)));
+    const { t, seconds } = moment(beat.verb, pinned ?? spaced);
     return beat.verb === 'reveal'
       ? [{ verb: 'reveal', element: beat.element, style: beat.style ?? 'rise', t, seconds }]
       : [
@@ -284,8 +290,15 @@ function timeBeats(
           },
         ];
   });
+  const inPlace = new Map<string, number>();
+  for (const b of [...beats].sort((a, b) => a.t - b.t))
+    if (b.verb === 'reveal' && !inPlace.has(b.element)) inPlace.set(b.element, b.t + b.seconds);
+  const aimed = beats.map((b) => {
+    const ready = b.verb === 'camera' ? inPlace.get(b.to) : undefined;
+    return ready === undefined || b.t >= ready ? b : { ...b, ...moment('camera', ready) };
+  });
   // Stable: beats at the same moment keep the order the agent wrote.
-  return beats.sort((a, b) => a.t - b.t);
+  return aimed.sort((a, b) => a.t - b.t);
 }
 
 /** The run images a direction shows (its captures), for the composition to prepare. */

@@ -133,6 +133,137 @@ describe('symbols', () => {
     ]);
   });
 
+  const changedIn = (
+    language: string,
+    path: string,
+    before: string[],
+    after: string[],
+    changed: { base: number[]; head: number[] },
+  ) =>
+    diffSymbols({
+      path,
+      base: {
+        symbols: extractSymbols(before.join('\n'), language, path),
+        lines: before.length,
+        changed: new Set(changed.base),
+      },
+      head: {
+        symbols: extractSymbols(after.join('\n'), language, path),
+        lines: after.length,
+        changed: new Set(changed.head),
+      },
+    })
+      .map((c) => `${c.name}:${c.change}`)
+      .sort();
+
+  it('gives a changed doc comment to the symbol it documents, not the one before', () => {
+    const base = [
+      'export function a() {',
+      '  return 1;',
+      '}',
+      '',
+      '/** Old doc. */',
+      'export function b() {',
+      '  return 2;',
+      '}',
+      '// The limit.',
+      'export const LIMIT = 3;',
+    ];
+    const head = [
+      'export function a() {',
+      '  return 1;',
+      '}',
+      '',
+      '/**',
+      ' * New doc,',
+      ' * longer.',
+      ' */',
+      'export function b() {',
+      '  return 2;',
+      '}',
+      '// The new limit.',
+      'export const LIMIT = 3;',
+    ];
+    expect(changedIn('typescript', 'x.ts', base, head, { base: [5], head: [5, 6, 7, 8] })).toEqual([
+      'b:modified',
+    ]);
+    expect(changedIn('typescript', 'x.ts', base, head, { base: [9], head: [12] })).toEqual([
+      'LIMIT:modified',
+    ]);
+  });
+
+  it('reads a block comment that mentions a glob, and not code that ends in a comment', () => {
+    const lines = (glob: string, note: string) => [
+      'export function a() {',
+      '  return 1;',
+      '}',
+      '/**',
+      ` * Reads ${glob}/**\\/*.ts.`,
+      ' */',
+      'export function b() {}',
+      `init(); /* ${note} */`,
+      'export function c() {}',
+    ];
+    const base = lines('src', 'Old note.');
+    const head = lines('lib', 'New note.');
+    expect(changedIn('typescript', 'x.ts', base, head, { base: [5], head: [5] })).toEqual([
+      'b:modified',
+    ]);
+    expect(changedIn('typescript', 'x.ts', base, head, { base: [8], head: [8] })).toEqual([
+      'b:modified',
+    ]);
+  });
+
+  it('still gives a change in the body to the symbol it is in', () => {
+    const base = ['export function a() {', '  return 1;', '}', '/** Doc. */', 'function b() {}'];
+    const head = ['export function a() {', '  return 2;', '}', '/** Doc. */', 'function b() {}'];
+    expect(changedIn('typescript', 'x.ts', base, head, { base: [2], head: [2] })).toEqual([
+      'a:modified',
+    ]);
+  });
+
+  it('reads # comments, and leaves a comment indented in the body above to that body', () => {
+    const base = [
+      'def a():',
+      '    return 1',
+      '    # Old note.',
+      '# Old doc.',
+      'def b():',
+      '    return 2',
+    ];
+    const head = [
+      'def a():',
+      '    return 1',
+      '    # New note.',
+      '# New doc.',
+      'def b():',
+      '    return 2',
+    ];
+    expect(changedIn('python', 'x.py', base, head, { base: [4], head: [4] })).toEqual([
+      'b:modified',
+    ]);
+    expect(changedIn('python', 'x.py', base, head, { base: [3], head: [3] })).toEqual([
+      'a:modified',
+    ]);
+  });
+
+  it('gives a changed comment above a route to that route', () => {
+    const lines = (doc: string) => [
+      'export function register(app) {',
+      '  // Lists users.',
+      "  app.get('/users', list);",
+      `  // ${doc}`,
+      "  app.post('/users', create);",
+      '}',
+    ];
+    expect(
+      changedIn('javascript', 'server.js', lines('Creates a user.'), lines('Adds a user.'), {
+        base: [4],
+        head: [4],
+      }),
+    ).toEqual(['POST /users:modified', 'register:modified']);
+  });
+
   it('counts test cases', () => {
     expect(
       countTestCases([

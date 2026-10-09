@@ -7,6 +7,11 @@ export interface ExtractedSymbol {
   exported: boolean;
   /** A one-statement declaration (`const LIMIT = 280;`): edits further down are not about it. */
   oneLine?: boolean;
+  /**
+   * The first line of the comment that sits directly on the declaration, with the blank lines
+   * above it: edits there are about this symbol, not the one before.
+   */
+  start?: number;
 }
 
 type Rule = {
@@ -246,13 +251,95 @@ function extractCssSelectors(content: string): ExtractedSymbol[] {
   return out;
 }
 
+/** How a language writes comments: its line-comment marker, and whether it has `/* … *\/` blocks. */
+const COMMENTS: Record<string, { line?: string; block: boolean }> = {
+  typescript: { line: '//', block: true },
+  javascript: { line: '//', block: true },
+  go: { line: '//', block: true },
+  rust: { line: '//', block: true },
+  java: { line: '//', block: true },
+  kotlin: { line: '//', block: true },
+  python: { line: '#', block: false },
+  ruby: { line: '#', block: false },
+  css: { block: true },
+  scss: { line: '//', block: true },
+  sass: { line: '//', block: true },
+  less: { line: '//', block: true },
+};
+
+function indentOf(text: string): number {
+  return text.length - text.trimStart().length;
+}
+
+/**
+ * The line a `/* … *\/` comment that ends on line `close` opens on, or 0 when it shares a line
+ * with code or opens no lower than `floor`.
+ */
+function blockOpener(lines: readonly string[], close: number, floor: number): number {
+  const last = lines[close - 1]!.trim();
+  if (last.startsWith('/*')) return close;
+  // `x(); /* note */` is code with a comment; ` * reads src/**\/*.ts */` is still the comment.
+  if (last.includes('/*') && !last.startsWith('*')) return 0;
+  for (let i = close - 1; i > floor; i--) {
+    const text = lines[i - 1]!.trim();
+    if (text.startsWith('/*')) return i;
+    if (text.includes('*/')) return 0;
+  }
+  return 0;
+}
+
+/**
+ * Where the comment directly above a declaration begins, with the blank lines above it, or
+ * undefined when there is none. A comment indented deeper than the declaration ends the body above
+ * it (a Python function's last line), and none reaches back past `floor`, the previous symbol.
+ */
+function leadingStart(
+  lines: readonly string[],
+  line: number,
+  floor: number,
+  style: { line?: string; block: boolean },
+): number | undefined {
+  const indent = indentOf(lines[line - 1] ?? '');
+  let top = line;
+  while (top - 1 > floor) {
+    const above = top - 1;
+    const text = lines[above - 1]!.trim();
+    let open = 0;
+    if (style.line && text.startsWith(style.line)) open = above;
+    else if (style.block && text.endsWith('*/')) open = blockOpener(lines, above, floor);
+    if (open <= floor || indentOf(lines[open - 1]!) > indent) break;
+    top = open;
+  }
+  if (top === line) return undefined;
+  while (top - 1 > floor && lines[top - 2]!.trim() === '') top--;
+  return top;
+}
+
+function withLeadingComments(
+  symbols: ExtractedSymbol[],
+  content: string,
+  language: string,
+): ExtractedSymbol[] {
+  const style = COMMENTS[language];
+  if (!style) return symbols;
+  const lines = content.split('\n');
+  const taken = [...new Set(symbols.map((s) => s.line))].sort((a, b) => a - b);
+  const floor = new Map(taken.map((line, i) => [line, taken[i - 1] ?? 0]));
+  for (const symbol of symbols) {
+    const start = leadingStart(lines, symbol.line, floor.get(symbol.line)!, style);
+    if (start !== undefined) symbol.start = start;
+  }
+  return symbols;
+}
+
 export function extractSymbols(
   content: string,
   language: string | undefined,
   path: string,
 ): ExtractedSymbol[] {
   if (!language) return [];
-  if (['css', 'scss', 'sass', 'less'].includes(language)) return extractCssSelectors(content);
+  if (['css', 'scss', 'sass', 'less'].includes(language))
+    return withLeadingComments(extractCssSelectors(content), content, language);
   if (language === 'vue' || language === 'svelte' || language === 'astro') {
     const name = (path.split('/').pop() ?? path).replace(/\.\w+$/, '');
     return [{ name, kind: 'component', line: 1, exported: true }];
@@ -306,7 +393,7 @@ export function extractSymbols(
     });
     for (const symbol of out) if (exportedNames.has(symbol.name)) symbol.exported = true;
   }
-  return [...out, ...extractRoutes(content, path)];
+  return withLeadingComments([...out, ...extractRoutes(content, path)], content, language);
 }
 
 function rangeMap(
@@ -317,9 +404,15 @@ function rangeMap(
   const declarations = [...symbols]
     .filter((s) => s.kind !== 'route')
     .sort((a, b) => a.line - b.line);
+  // A symbol ends where the next one's leading comment begins: that comment documents the next one.
   declarations.forEach((s, i) => {
     const next = declarations[i + 1];
-    map.set(s, [s.line, s.oneLine ? s.line : next ? Math.max(s.line, next.line - 1) : totalLines]);
+    const end = s.oneLine
+      ? s.line
+      : next
+        ? Math.max(s.line, (next.start ?? next.line) - 1)
+        : totalLines;
+    map.set(s, [s.start ?? s.line, end]);
   });
   // A route's handler follows its definition: it spans until the next route or the end of the
   // enclosing declaration, so edits inside the handler count as changes to the route.
@@ -328,8 +421,11 @@ function rangeMap(
     const enclosing = declarations.filter((d) => d.line <= route.line).at(-1);
     const enclosingEnd = enclosing ? map.get(enclosing)![1] : totalLines;
     const nextRoute = routes[i + 1];
-    const end = Math.min(enclosingEnd, nextRoute ? nextRoute.line - 1 : totalLines);
-    map.set(route, [route.line, Math.max(route.line, end)]);
+    const end = Math.min(
+      enclosingEnd,
+      nextRoute ? (nextRoute.start ?? nextRoute.line) - 1 : totalLines,
+    );
+    map.set(route, [route.start ?? route.line, Math.max(route.line, end)]);
   });
   return map;
 }

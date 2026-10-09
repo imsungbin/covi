@@ -1276,7 +1276,7 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
       "The fix lives in reader.js.",
     ],
     [
-      "It changes runReader and chunk and 1 other.",
+      "It changes runReader and buildReviewRequest.",
     ],
   ],
   [
@@ -1328,7 +1328,7 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
       "The fix lives in reader.js.",
     ],
     [
-      "It changes runReader and chunk and 1 other.",
+      "It changes runReader and buildReviewRequest.",
     ],
   ],
   [
@@ -1464,7 +1464,7 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
         "kind": "summary",
         "points": [
           "test: Edits reader.test.js and request.test.js.",
-          "src: Changes runReader and chunk and 1 other.",
+          "src: Changes runReader and buildReviewRequest.",
           "scripts: Edits measure.js.",
         ],
         "stats": {
@@ -1631,7 +1631,7 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
         "kind": "summary",
         "points": [
           "test: Edits reader.test.js and request.test.js.",
-          "src: Changes runReader and chunk and 1 other.",
+          "src: Changes runReader and buildReviewRequest.",
           "scripts: Edits measure.js.",
         ],
         "stats": {
@@ -1655,8 +1655,8 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
       "beat": "fix",
       "eyebrow": "Send document references so…",
       "heading": undefined,
-      "narration": "Now it sends document references so the reader fetches each document itself in review. The fix lives in reader.js. It changes runReader and chunk and 1 other.",
-      "say": "Now it sends document references so the reader fetches each document itself in review. The fix lives in the reader script. It changes run reader and chunk and 1 other.",
+      "narration": "Now it sends document references so the reader fetches each document itself in review. The fix lives in reader.js. It changes runReader and buildReviewRequest.",
+      "say": "Now it sends document references so the reader fetches each document itself in review. The fix lives in the reader script. It changes run reader and build review request.",
       "visual": {
         "highlight": [
           5,
@@ -1764,7 +1764,7 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
         "kind": "summary",
         "points": [
           "test: Edits reader.test.js and request.test.js.",
-          "src: Changes runReader and chunk and 1 other.",
+          "src: Changes runReader and buildReviewRequest.",
           "scripts: Edits measure.js.",
           "4 new tests",
         ],
@@ -1838,8 +1838,8 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
       "beat": "fix",
       "eyebrow": "The fix",
       "heading": "src/reader.js",
-      "narration": "The fix lives in reader.js. It changes runReader and chunk and 1 other.",
-      "say": "The fix lives in the reader script. It changes run reader and chunk and 1 other.",
+      "narration": "The fix lives in reader.js. It changes runReader and buildReviewRequest.",
+      "say": "The fix lives in the reader script. It changes run reader and build review request.",
       "visual": {
         "highlight": [
           5,
@@ -1992,7 +1992,7 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
         "kind": "summary",
         "points": [
           "test: Edits reader.test.js and request.test.js.",
-          "src: Changes runReader and chunk and 1 other.",
+          "src: Changes runReader and buildReviewRequest.",
           "scripts: Edits measure.js.",
           "4 new tests",
         ],
@@ -2037,7 +2037,7 @@ Run \`20260901-090000-analyze-0000000\` · backend-slim-request · main \`e6898a
 ## Suggested reading order
 
 1. \`src/reader.js\`: Changes \`runReader\`.
-2. \`src/request.js\`: Changes \`chunk\` and \`buildReviewRequest\`.
+2. \`src/request.js\`: Changes \`buildReviewRequest\`.
 3. \`scripts/measure.js\`: Source change (+1 −1).
 4. \`test/request.test.js\`: Test updates for this change.
 5. \`test/reader.test.js\`: Test updates for this change.
@@ -2204,7 +2204,7 @@ No issues found in the areas Covi checked.
 <details><summary>What changed</summary>
 
 - **test**: Edits \`reader.test.js\` and \`request.test.js\`.
-- **src**: Changes \`runReader\` and \`chunk\` and 1 other.
+- **src**: Changes \`runReader\` and \`buildReviewRequest\`.
 - **scripts**: Edits \`measure.js\`.
 
 </details>
@@ -2239,7 +2239,7 @@ exports[`English output (baseline) > backend-slim-request > writes the same rule
     },
     {
       "area": "src",
-      "description": "Changes \`runReader\` and \`chunk\` and 1 other.",
+      "description": "Changes \`runReader\` and \`buildReviewRequest\`.",
       "files": [
         "src/reader.js",
         "src/request.js",
@@ -2275,7 +2275,7 @@ exports[`English output (baseline) > backend-slim-request > writes the same rule
     },
     {
       "path": "src/request.js",
-      "reason": "Changes \`chunk\` and \`buildReviewRequest\`.",
+      "reason": "Changes \`buildReviewRequest\`.",
     },
     {
       "path": "scripts/measure.js",
@@ -2306,7 +2306,7 @@ This change sends document references so the reader fetches each document itself
 ## What changed
 
 - **test**: Edits \`reader.test.js\` and \`request.test.js\`.
-- **src**: Changes \`runReader\` and \`chunk\` and 1 other.
+- **src**: Changes \`runReader\` and \`buildReviewRequest\`.
 - **scripts**: Edits \`measure.js\`.
 
 ## Before you read the diff
@@ -2317,7 +2317,7 @@ This change sends document references so the reader fetches each document itself
 ## Suggested reading order
 
 1. \`src/reader.js\`: Changes \`runReader\`.
-2. \`src/request.js\`: Changes \`chunk\` and \`buildReviewRequest\`.
+2. \`src/request.js\`: Changes \`buildReviewRequest\`.
 3. \`scripts/measure.js\`: Source change (+1 −1).
 
 ---
@@ -2426,13 +2426,13 @@ This change sends document references so the reader fetches each document itself
 **Changes**
 
 - **test**: Edits \`reader.test.js\` and \`request.test.js\`.
-- **src**: Changes \`runReader\` and \`chunk\` and 1 other.
+- **src**: Changes \`runReader\` and \`buildReviewRequest\`.
 - **scripts**: Edits \`measure.js\`.
 
 **Review focus**
 
 - \`src/reader.js\`: Changes \`runReader\`.
-- \`src/request.js\`: Changes \`chunk\` and \`buildReviewRequest\`.
+- \`src/request.js\`: Changes \`buildReviewRequest\`.
 
 **Testing**
 

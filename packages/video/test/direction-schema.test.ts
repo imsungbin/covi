@@ -77,9 +77,9 @@ describe('the direction schema', () => {
   });
 
   it('rejects kinds and verbs this PR does not draw', () => {
-    for (const kind of ['metric', 'morph', 'packet', 'pile', 'html', 'iframe'])
+    for (const kind of ['metric', 'packet', 'pile', 'html', 'iframe'])
       expect(issues({ shots: [shot({ elements: [{ id: 'a', kind }] })] }), kind).not.toEqual([]);
-    for (const verb of ['morph', 'count', 'flow', 'eval'])
+    for (const verb of ['count', 'flow', 'eval'])
       expect(issues({ shots: [shot({ beats: [{ verb, element: 'visual' }] })] }), verb).not.toEqual(
         [],
       );

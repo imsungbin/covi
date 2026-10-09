@@ -1,4 +1,4 @@
-import type { DiffLine, Language } from '@covi/core';
+import { type DiffLine, type Language, t } from '@covi/core';
 import { type CaptionOptions, captionOptionsFor } from '../captions.ts';
 import { computeRegions, gridSpacing, type Regions } from '../runtime/layout.ts';
 import { orientationOf, type VideoSpec } from '../spec.ts';
@@ -19,10 +19,11 @@ import { elementSlots, shotRegion } from './layout.ts';
 import { codeLineText, type Direction, type Shot, type ShotElement } from './schema.ts';
 import { type CodeSide, type DirectionSources, hunkView } from './sources.ts';
 import { canvasStops } from './stops.ts';
+import { morphHunk } from './tokens.ts';
 
 /** How long each verb takes, in seconds. */
-export const BEAT_SECONDS = { reveal: 0.5, camera: 0.8 } as const;
-/** Code elements show at most this many lines (wide, tall frames), as the morph's elision will. */
+export const BEAT_SECONDS = { reveal: 0.5, camera: 0.8, morph: 1.6 } as const;
+/** Code elements show at most this many lines (wide, tall frames), as morphs do a side. */
 export const CODE_LINES = { landscape: 14, vertical: 18 } as const;
 /** Beats without a phrase start this far into the line, then spread evenly through the rest. */
 const SPACED_FROM = 0.15;
@@ -114,6 +115,15 @@ export function shownShot(
   return { elements: shot.elements.filter((e) => shown.get(e.id) === e.kind) };
 }
 
+/** A morph element no `morph` beat names morphs anyway, as if the shot ended with one. */
+function withMorphs(shot: Shot): Shot {
+  const named = new Set(shot.beats.flatMap((b) => (b.verb === 'morph' ? [b.element] : [])));
+  const implicit = shot.elements.flatMap((e) =>
+    e.kind === 'morph' && !named.has(e.id) ? [{ verb: 'morph' as const, element: e.id }] : [],
+  );
+  return implicit.length ? { ...shot, beats: [...shot.beats, ...implicit] } : shot;
+}
+
 /** A scene without a shot shows its storyboard visual, as without direction. */
 const visualOnly = (scene: string): Shot => ({
   scene,
@@ -121,7 +131,8 @@ const visualOnly = (scene: string): Shot => ({
   beats: [],
 });
 
-function resolveShot(shot: Shot, scene: Scene, timing: SceneTiming, ctx: Context): SceneDirection {
+function resolveShot(given: Shot, scene: Scene, timing: SceneTiming, ctx: Context): SceneDirection {
+  const shot = withMorphs(given);
   const revealed = new Set(shot.beats.flatMap((b) => (b.verb === 'reveal' ? [b.element] : [])));
   let whole =
     shot.elements.length === 1 &&
@@ -175,6 +186,30 @@ function element(e: ShotElement, rect: Rect, ctx: Context): DirectionElement | u
           ...(hunk.language ? { language: hunk.language } : {}),
           lines: shown.map((l) => codeLine(l, side, ctx.redact)),
           highlight: [],
+        },
+      };
+    }
+    case 'morph': {
+      const hunk = ctx.sources.hunk(e.evidence);
+      if (!hunk) return undefined;
+      // Each line is redacted whole before it is split, so no secret survives split into tokens.
+      const morph = morphHunk(
+        hunk.lines.map((l) => ({ ...l, text: ctx.redact(l.text) })),
+        {
+          max: tall ? CODE_LINES.vertical : CODE_LINES.landscape,
+          ...(hunk.language ? { language: hunk.language } : {}),
+          elided: (count) => t(ctx.language, 'video.elided', { count }),
+        },
+      );
+      if (!morph) return undefined;
+      return {
+        id: e.id,
+        kind: 'morph',
+        rect,
+        morph: {
+          path: hunk.path,
+          ...(hunk.language ? { language: hunk.language } : {}),
+          ...morph,
         },
       };
     }
@@ -249,8 +284,8 @@ function codeWindow(view: readonly DiffLine[], max: number): DiffLine[] {
  * phrase as the captions time it; a beat without one, or whose phrase redaction removed, takes an
  * evenly spaced slot over the line from 0.15 of it (over the scene when it has no line). `place`
  * is the default made explicit, so it resolves to nothing; beats on elements that are gone drop.
- * The camera never aims at an element that is not in place yet: a beat toward a revealed element
- * starts once its (first) reveal is done.
+ * The camera never aims at an element that is not in place yet, nor does a morph play on one: a
+ * beat toward, or a morph of, a revealed element starts once its (first) reveal is done.
  */
 function timeBeats(
   shot: Shot,
@@ -277,25 +312,27 @@ function timeBeats(
     const pinned = beat.at === undefined ? undefined : phraseMoment(text, beat.at, timing, options);
     const spaced = from + span * (SPACED_FROM + ((1 - SPACED_FROM) * i) / live.length);
     const { t, seconds } = moment(beat.verb, pinned ?? spaced);
-    return beat.verb === 'reveal'
-      ? [{ verb: 'reveal', element: beat.element, style: beat.style ?? 'rise', t, seconds }]
-      : [
-          {
-            verb: 'camera',
-            move: beat.move,
-            to: beat.to,
-            ...(beat.zoom === undefined ? {} : { zoom: beat.zoom }),
-            t,
-            seconds,
-          },
-        ];
+    if (beat.verb === 'reveal')
+      return [{ verb: 'reveal', element: beat.element, style: beat.style ?? 'rise', t, seconds }];
+    if (beat.verb === 'morph') return [{ verb: 'morph', element: beat.element, t, seconds }];
+    return [
+      {
+        verb: 'camera',
+        move: beat.move,
+        to: beat.to,
+        ...(beat.zoom === undefined ? {} : { zoom: beat.zoom }),
+        t,
+        seconds,
+      },
+    ];
   });
   const inPlace = new Map<string, number>();
   for (const b of [...beats].sort((a, b) => a.t - b.t))
     if (b.verb === 'reveal' && !inPlace.has(b.element)) inPlace.set(b.element, b.t + b.seconds);
   const aimed = beats.map((b) => {
-    const ready = b.verb === 'camera' ? inPlace.get(b.to) : undefined;
-    return ready === undefined || b.t >= ready ? b : { ...b, ...moment('camera', ready) };
+    const waits = b.verb === 'camera' ? b.to : b.verb === 'morph' ? b.element : undefined;
+    const ready = waits === undefined ? undefined : inPlace.get(waits);
+    return ready === undefined || b.t >= ready ? b : { ...b, ...moment(b.verb, ready) };
   });
   // Stable: beats at the same moment keep the order the agent wrote.
   return aimed.sort((a, b) => a.t - b.t);

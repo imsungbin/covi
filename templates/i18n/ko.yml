@@ -716,6 +716,7 @@ video:
     terminal: 터미널
     signOff: Covi로 리뷰 완료
   moreLines: { other: '… {count}줄 더' }
+  elided: { other: '… {count}줄' }
   musicHint: '음악: Covi 테마. 바꾸려면 `covi render --run {run} --music none` 또는 `--music compose`를 실행하세요.'
 
 narration:

@@ -8,6 +8,7 @@ const WEIGHT: Record<ShotElement['kind'], number> = {
   code: 3,
   output: 3,
   capture: 3,
+  morph: 3,
   node: 2,
   label: 1,
 };

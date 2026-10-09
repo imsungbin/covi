@@ -6,8 +6,9 @@ import {
 } from '@covi/core';
 import { findPhrase, parseEmphasis } from '../storyboard/grammar.ts';
 import type { Scene } from '../storyboard/schema.ts';
-import type { Direction, ShotElement } from './schema.ts';
+import type { Direction, ShotBeat, ShotElement } from './schema.ts';
 import { type DirectionSources, hunkView, startupLog } from './sources.ts';
+import { morphProblem } from './tokens.ts';
 
 /** Characters a problem prints of a cited id, a phrase, or a scene id, escapes included. */
 const ECHO_CHARS = 120;
@@ -43,12 +44,16 @@ export type DirectedScene = Pick<Scene, 'id' | 'narration'> & {
  */
 const WHOLE_ONLY = new Set<Scene['visual']['kind']>(['title', 'summary']);
 
+/** The kind of element each verb that acts on an element works on; it acts on each one once. */
+const ACTS_ON: Partial<Record<ShotBeat['verb'], ShotElement['kind']>> = { morph: 'morph' };
+
 /**
  * What the schema alone cannot check, as lines that name the shot, element, and beat: shots name
  * storyboard scenes (one each), beats name elements of their shot, a title or summary card is
  * shown only alone, every cited id is in the run's evidence with the kind its element shows, a
- * requested side exists, lines lie within the side shown, and every `at` is quoted from the
- * scene's narration exactly once (as `sync` phrases are).
+ * requested side exists, lines lie within the side shown, a morph's hunk can morph, a verb that
+ * acts on an element names one of its kind (once), and every `at` is quoted from the scene's
+ * narration exactly once (as `sync` phrases are).
  */
 export function directionProblems(
   direction: Pick<Direction, 'shots'>,
@@ -88,21 +93,38 @@ export function directionProblems(
       problems.push(
         `${where}, element ${visual.id}: a ${scene.visual.kind} card draws its own header and fox, so it is shown only alone; make it the shot's one element, without a reveal, or leave it out`,
       );
-    const ids = new Set<string>();
+    const kinds = new Map<string, ShotElement['kind']>();
     for (const element of shot.elements) {
-      if (ids.has(element.id)) problems.push(`${where}: element id "${element.id}" is used twice`);
-      ids.add(element.id);
+      if (kinds.has(element.id))
+        problems.push(`${where}: element id "${element.id}" is used twice`);
+      else kinds.set(element.id, element.kind);
       for (const problem of elementProblems(element, evidence, sources))
         problems.push(`${where}, element ${element.id}: ${problem}`);
     }
     const text = scene && parseEmphasis(scene.narration).text;
+    const acted = new Set<string>();
     shot.beats.forEach((beat, k) => {
       const name = `${where}, beat ${k + 1} (${beat.verb})`;
       const target = beat.verb === 'camera' ? beat.to : beat.element;
-      if (!ids.has(target))
+      const kind = kinds.get(target);
+      if (!kind)
         problems.push(
-          `${name}: the shot has no element "${target}" (it has: ${[...ids].join(', ')})`,
+          `${name}: the shot has no element "${target}" (it has: ${[...kinds.keys()].join(', ')})`,
         );
+      const needs = ACTS_ON[beat.verb];
+      // An element the shot lacks is reported above; it neither has a kind nor acts.
+      if (needs && kind) {
+        const key = `${beat.verb}:${target}`;
+        if (kind !== needs)
+          problems.push(
+            `${name}: ${beat.verb} acts on a ${needs} element, and "${target}" is a ${kind}`,
+          );
+        else if (acted.has(key))
+          problems.push(
+            `${name}: "${target}" already ${beat.verb}s at an earlier beat; it ${beat.verb}s once`,
+          );
+        acted.add(key);
+      }
       if (beat.verb === 'place' || beat.at === undefined || text === undefined) return;
       const at = findPhrase(text, beat.at);
       if (at.count === 0)
@@ -164,6 +186,15 @@ function elementProblems(
         );
       else if (element.side === 'base' && command.before === undefined)
         out.push(`side "base": "${shown(element.evidence)}" ran only after the change`);
+      break;
+    }
+    case 'morph': {
+      if (!cites(element.evidence, 'diff-hunk', 'a morph element')) break;
+      const hunk = sources.hunk(element.evidence);
+      const problem = hunk
+        ? morphProblem(hunk.lines)
+        : `Covi cannot find hunk "${shown(element.evidence)}" in the run's diff`;
+      if (problem) out.push(problem);
       break;
     }
     case 'capture':

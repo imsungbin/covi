@@ -183,6 +183,15 @@ export const ShotElementSchema = z.discriminatedUnion('kind', [
     kind: z.literal('capture'),
     evidence: EvidenceRefSchema.describe('A screenshot: id.'),
   }),
+  z
+    .strictObject({
+      id: ElementIdSchema,
+      kind: z.literal('morph'),
+      evidence: EvidenceRefSchema.describe('A diff-hunk: id from `covi evidence --run <id>`.'),
+    })
+    .describe(
+      "The hunk's code before the change, turning token by token into the code after it on its `morph` beat.",
+    ),
   z.strictObject({
     id: ElementIdSchema,
     kind: z.literal('node'),
@@ -227,6 +236,15 @@ export const ShotBeatSchema = z.discriminatedUnion('verb', [
       .describe('1–2.5; default: fit the element to the region.'),
     at: PhraseSchema.optional(),
   }),
+  z
+    .strictObject({
+      verb: z.literal('morph'),
+      element: ElementIdSchema,
+      at: PhraseSchema.optional(),
+    })
+    .describe(
+      'A morph element turns from the code before the change into the code after it: removed lines fold away, new ones slide in, and the tokens that stay travel to their new places.',
+    ),
 ]);
 
 export const ShotSchema = z.strictObject({

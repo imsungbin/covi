@@ -43,6 +43,13 @@ export const DIRECTION_LIMITS = {
   /** Items a pile or a split draws at most (later verbs); the counter shows the true value. */
   drawnItems: 12,
   evidencePerElement: 4,
+  /**
+   * A morph: at most `changedLines` deleted and as many added lines (a landscape card's 14 rows,
+   * less two for context), read from the first `hunkLines` lines of its hunk, each cut at
+   * `lineChars` characters and split into at most `tokensPerLine` tokens (the rest of a longer
+   * line stays one token).
+   */
+  morph: { changedLines: 12, hunkLines: 400, lineChars: 96, tokensPerLine: 64 },
 } as const;
 
 /** An element id: a lowercase letter, then lowercase letters, digits, or dashes, `idChars` in all. */

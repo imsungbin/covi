@@ -1,0 +1,285 @@
+import { buildEvidence, type Demonstration, type Hunk, indexEvidence, parseDiff } from '@covi/core';
+import { describe, expect, it } from 'vitest';
+import { directionProblems } from '../src/direction/refs.ts';
+import { type DirectionInput, DirectionSchema } from '../src/direction/schema.ts';
+import { diffFiles, directionSources, hunkView } from '../src/direction/sources.ts';
+
+const hunk: Hunk = {
+  oldStart: 10,
+  oldLines: 3,
+  newStart: 10,
+  newLines: 3,
+  lines: [
+    { kind: 'context', text: 'function build(docs) {', oldLine: 10, newLine: 10 },
+    { kind: 'del', text: '  return { docs };', oldLine: 11 },
+    { kind: 'add', text: '  return { ids: docs.map((d) => d.id) };', newLine: 11 },
+    { kind: 'context', text: '}', oldLine: 12, newLine: 12 },
+  ],
+};
+const deleteOnly: Hunk = {
+  oldStart: 40,
+  oldLines: 1,
+  newStart: 39,
+  newLines: 0,
+  lines: [{ kind: 'del', text: 'legacy();', oldLine: 40 }],
+};
+const files = [{ path: 'src/request.js', language: 'javascript', hunks: [hunk, deleteOnly] }];
+const demo = {
+  commands: [
+    {
+      name: 'measure',
+      command: 'node scripts/measure.js',
+      before: { exitCode: 0, output: 'request bytes: 120000' },
+      after: { exitCode: 0, output: 'request bytes: 9000' },
+      changed: true,
+    },
+    {
+      name: 'version',
+      command: 'node -v',
+      after: { exitCode: 0, output: 'v22' },
+      changed: false,
+    },
+  ],
+  shots: [
+    {
+      id: 'home',
+      kind: 'page',
+      name: '/',
+      viewport: 'mobile',
+      after: { path: 'demo/screenshots/home-after.png' },
+    },
+  ],
+} as unknown as Pick<Demonstration, 'commands' | 'shots'>;
+const evidence = indexEvidence(
+  buildEvidence({
+    diff: files,
+    demo: { ...demo, requests: [], skipped: [], findings: [] } as unknown as Demonstration,
+    fileSha: () => '0'.repeat(64),
+  }),
+);
+const sources = directionSources({ files, demo, evidence });
+const scenes = [
+  { id: 's1', narration: 'The request carried every document.' },
+  { id: 's2', narration: 'Now it sends [[only the ids]], and the ids are small.' },
+];
+const problems = (direction: DirectionInput) =>
+  directionProblems(DirectionSchema.parse(direction), scenes, evidence, sources);
+
+describe('evidence sources', () => {
+  it('find a hunk, a command, and a capture by the ids the registry wrote', () => {
+    expect(sources.hunk('diff-hunk:src/request.js:10')).toMatchObject({
+      path: 'src/request.js',
+      language: 'javascript',
+    });
+    expect(sources.command('terminal:1')).toEqual({
+      name: 'measure',
+      command: 'node scripts/measure.js',
+      output: 'request bytes: 9000',
+      before: 'request bytes: 120000',
+    });
+    expect(sources.command('terminal:2')).not.toHaveProperty('before');
+    expect(sources.capture('screenshot:home-after')).toEqual({
+      path: 'demo/screenshots/home-after.png',
+      device: 'mobile',
+    });
+    // Wrong kinds find nothing.
+    expect(sources.hunk('terminal:1')).toBeUndefined();
+    expect(sources.command('diff-hunk:src/request.js:10')).toBeUndefined();
+    expect(sources.capture('terminal:1')).toBeUndefined();
+  });
+
+  it('show a hunk from either side, or both', () => {
+    expect(hunkView(hunk.lines, 'head').map((l) => l.kind)).toEqual(['context', 'add', 'context']);
+    expect(hunkView(hunk.lines, 'base').map((l) => l.kind)).toEqual(['context', 'del', 'context']);
+    expect(hunkView(hunk.lines, 'diff')).toHaveLength(4);
+  });
+
+  it('read the app start-up log for terminal:app-start ids', () => {
+    const withLog = indexEvidence(
+      buildEvidence({
+        fileSha: (path) => (path === 'demo/app-head.log' ? '1'.repeat(64) : undefined),
+      }),
+    );
+    const logged = directionSources({ evidence: withLog, appLogs: { head: 'EADDRINUSE :3000' } });
+    expect(logged.command('terminal:app-start-head')).toEqual({
+      name: 'app-start · head',
+      command: '',
+      output: 'EADDRINUSE :3000',
+    });
+  });
+
+  it("show only the lines the evidence hashed: the run's diff, not a change read again", () => {
+    // The run wrote its diff redacted; a change read again from git holds the secret.
+    const raw: Hunk = {
+      ...hunk,
+      lines: hunk.lines.map((l) =>
+        l.kind === 'add' ? { ...l, text: '  return { ids, token: "hunter2-shh" };' } : l,
+      ),
+    };
+    const written: Hunk = {
+      ...raw,
+      lines: raw.lines.map((l) => ({ ...l, text: l.text.replace('hunter2-shh', '[REDACTED]') })),
+    };
+    const ran = indexEvidence(
+      buildEvidence({ diff: [{ path: 'src/request.js', hunks: [written] }] }),
+    );
+    const id = 'diff-hunk:src/request.js:10';
+    expect(
+      directionSources({ files: [{ path: 'src/request.js', hunks: [raw] }], evidence: ran }).hunk(
+        id,
+      ),
+    ).toBeUndefined();
+    expect(
+      directionSources({
+        files: [{ path: 'src/request.js', hunks: [written] }],
+        evidence: ran,
+      }).hunk(id)?.lines,
+    ).toEqual(written.lines);
+    expect(
+      directionProblems(
+        DirectionSchema.parse({
+          shots: [{ scene: 's1', elements: [{ id: 'c', kind: 'code', evidence: id }] }],
+        }),
+        scenes,
+        ran,
+        directionSources({ files: [{ path: 'src/request.js', hunks: [raw] }], evidence: ran }),
+      ),
+    ).toEqual([`shot 1 (scene s1), element c: Covi cannot find hunk "${id}" in the run's diff`]);
+  });
+
+  it("read the run's diff.patch, with each file's language from the change", () => {
+    const patch = [
+      'diff --git a/src/request.js b/src/request.js',
+      '--- a/src/request.js',
+      '+++ b/src/request.js',
+      '@@ -10,3 +10,3 @@ function build(docs) {',
+      ' function build(docs) {',
+      '-  return { docs };',
+      '+  return { ids: docs.map((d) => d.id) };',
+      ' }',
+      'diff --git a/README.md b/README.md',
+      '--- a/README.md',
+      '+++ b/README.md',
+      '@@ -1 +1 @@',
+      '-Old',
+      '+New',
+      '',
+    ].join('\n');
+    const read = diffFiles(patch, [{ path: 'src/request.js', language: 'javascript' }]);
+    expect(read.map((f) => [f.path, f.language])).toEqual([
+      ['src/request.js', 'javascript'],
+      ['README.md', undefined],
+    ]);
+    expect(read[1]).not.toHaveProperty('language');
+    const ran = indexEvidence(buildEvidence({ diff: parseDiff(patch) }));
+    const found = directionSources({ files: read, evidence: ran }).hunk(
+      'diff-hunk:src/request.js:10',
+    );
+    expect(found?.language).toBe('javascript');
+    expect(hunkView(found!.lines, 'head').map((l) => l.text)).toEqual([
+      'function build(docs) {',
+      '  return { ids: docs.map((d) => d.id) };',
+      '}',
+    ]);
+  });
+
+  it('look ids up by value, never through an object prototype', () => {
+    for (const id of ['constructor', '__proto__', 'toString', 'terminal:0', 'terminal:constructor'])
+      expect([sources.hunk(id), sources.command(id), sources.capture(id)], id).toEqual([
+        undefined,
+        undefined,
+        undefined,
+      ]);
+  });
+});
+
+describe('direction references', () => {
+  it('accept a direction that names real scenes, elements, evidence, and phrases', () => {
+    expect(
+      problems({
+        shots: [
+          {
+            scene: 's2',
+            elements: [
+              { id: 'req', kind: 'code', evidence: 'diff-hunk:src/request.js:10', lines: [1, 3] },
+              { id: 'out', kind: 'output', evidence: 'terminal:1', side: 'base' },
+              { id: 'page', kind: 'capture', evidence: 'screenshot:home-after' },
+              { id: 'n', kind: 'node', label: 'Reader', evidence: ['terminal:2'] },
+            ],
+            beats: [
+              { verb: 'reveal', element: 'out', at: 'only the ids' },
+              { verb: 'camera', move: 'zoom', to: 'req' },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it('name the shot, element, and beat of every problem, all at once', () => {
+    const found = problems({
+      shots: [
+        { scene: 's9', elements: [{ id: 'v', kind: 'visual' }] },
+        {
+          scene: 's1',
+          layout: 'single',
+          elements: [
+            { id: 'a', kind: 'visual' },
+            { id: 'a', kind: 'label', text: 'Twice' },
+          ],
+        },
+        { scene: 's1', elements: [{ id: 'v', kind: 'visual' }] },
+        {
+          scene: 's2',
+          elements: [
+            { id: 'c', kind: 'code', evidence: 'diff-hunk:nope.js:1' },
+            { id: 'd', kind: 'code', evidence: 'terminal:1' },
+            { id: 'e', kind: 'code', evidence: 'diff-hunk:src/request.js:39' },
+            { id: 'f', kind: 'code', evidence: 'diff-hunk:src/request.js:10', lines: [2, 4] },
+            { id: 'g', kind: 'output', evidence: 'terminal:2', side: 'base' },
+            { id: 'h', kind: 'capture', evidence: 'diff-hunk:src/request.js:10' },
+            { id: 'i', kind: 'node', label: 'Reader', evidence: ['made-up:1'] },
+          ],
+          beats: [
+            { verb: 'reveal', element: 'zz' },
+            { verb: 'camera', move: 'pan', to: 'c', at: 'not in the line' },
+            { verb: 'reveal', element: 'c', at: 'the ids' },
+          ],
+        },
+      ],
+    });
+    expect(found).toEqual([
+      'shot 1 (scene s9): the storyboard has no scene "s9" (it has: s1, s2)',
+      'shot 2 (scene s1): layout "single" shows one element, and the shot has 2',
+      'shot 2 (scene s1): element id "a" is used twice',
+      'shot 3 (scene s1): scene s1 already has a shot; give each scene at most one',
+      'shot 4 (scene s2), element c: cites "diff-hunk:nope.js:1", which the run\'s evidence does not have (`covi evidence --run <id>` lists it)',
+      'shot 4 (scene s2), element d: a code element shows a diff-hunk: item, and "terminal:1" is a terminal',
+      'shot 4 (scene s2), element e: the hunk has no head lines; show side "base" or "diff"',
+      'shot 4 (scene s2), element f: lines [2, 4] run past the 3 lines of its head side',
+      'shot 4 (scene s2), element g: side "base": "terminal:2" ran only after the change',
+      'shot 4 (scene s2), element h: a capture element shows a screenshot: item, and "diff-hunk:src/request.js:10" is a diff-hunk',
+      'shot 4 (scene s2), element i: cites "made-up:1", which the run\'s evidence does not have (`covi evidence --run <id>` lists it)',
+      'shot 4 (scene s2), beat 1 (reveal): the shot has no element "zz" (it has: c, d, e, f, g, h, i)',
+      'shot 4 (scene s2), beat 2 (camera) quotes "not in the line", which is not in the scene\'s narration',
+      'shot 4 (scene s2), beat 3 (reveal) quotes "the ids", which appears 2 times in the scene\'s narration; quote enough words to make it unique',
+    ]);
+  });
+
+  it('cannot check evidence the run does not have', () => {
+    expect(
+      directionProblems(
+        DirectionSchema.parse({
+          shots: [
+            { scene: 's1', elements: [{ id: 'p', kind: 'capture', evidence: 'screenshot:x' }] },
+          ],
+        }),
+        scenes,
+        undefined,
+        directionSources({}),
+      ),
+    ).toEqual([
+      'shot 1 (scene s1), element p: cites "screenshot:x", which the run\'s evidence does not have (`covi evidence --run <id>` lists it)',
+    ]);
+  });
+});

@@ -1,5 +1,8 @@
+import { indexEvidence } from '@covi/core';
 import { describe, expect, it } from 'vitest';
+import { directionProblems } from '../packages/video/src/direction/refs.ts';
 import { DIRECTION_LIMITS, DirectionSchema } from '../packages/video/src/direction/schema.ts';
+import { directionSources } from '../packages/video/src/direction/sources.ts';
 
 /*
  * A direction file is untrusted: an agent writes it, and the repository it read can steer the
@@ -152,5 +155,70 @@ describe('a hostile direction file', () => {
       expect(
         rejected({ shots: [{ scene: 's1', elements: [{ id: 'v', kind: 'visual', ...extra }] }] }),
       ).toBe(true);
+  });
+});
+
+describe('a direction citing evidence the run does not have', () => {
+  it('is refused, element by element, before anything renders', () => {
+    const evidence = indexEvidence({ items: [] });
+    const direction = DirectionSchema.parse({
+      shots: [
+        {
+          scene: 's1',
+          elements: [
+            { id: 'a', kind: 'code', evidence: 'diff-hunk:../../etc/passwd:1' },
+            { id: 'b', kind: 'capture', evidence: 'screenshot:../../secret' },
+            { id: 'c', kind: 'output', evidence: 'terminal:999' },
+            { id: 'd', kind: 'node', label: 'Made up', evidence: ['metric:x:y'] },
+          ],
+        },
+      ],
+    });
+    const found = directionProblems(
+      direction,
+      [{ id: 's1', narration: 'One line.' }],
+      evidence,
+      directionSources({ evidence }),
+    );
+    expect(found).toHaveLength(4);
+    for (const line of found) expect(line).toMatch(/which the run's evidence does not have/);
+  });
+
+  it('cannot reach the terminal through the ids and phrases its problems echo', () => {
+    const evidence = indexEvidence({ items: [] });
+    // An ANSI clear-screen and a right-to-left override, then an id at the schema's length limit.
+    const hostile = `diff-hunk:\u001b[2J\u202e${'x'.repeat(380)}`;
+    const direction = DirectionSchema.parse({
+      shots: [
+        { scene: 'constructor', elements: [{ id: 'v', kind: 'visual' }] },
+        {
+          scene: 's1',
+          elements: [
+            { id: 'a', kind: 'code', evidence: hostile },
+            { id: 'b', kind: 'node', label: 'Reader', evidence: ['\u001b]8;;https://evil\u0007'] },
+          ],
+          beats: [{ verb: 'reveal', element: 'a', at: 'One \u001b[31mline\u2028.' }],
+        },
+      ],
+    });
+    const found = directionProblems(
+      direction,
+      [{ id: 's1', narration: 'One line.' }],
+      evidence,
+      directionSources({ evidence }),
+    );
+    // Looked up by value: the "constructor" every object has is no scene.
+    expect(found[0]).toBe(
+      'shot 1 (scene constructor): the storyboard has no scene "constructor" (it has: s1)',
+    );
+    expect(found).toHaveLength(4);
+    for (const line of found) {
+      expect(line).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
+      expect(line.length).toBeLessThan(300);
+    }
+    expect(found[1]).toContain('"diff-hunk:\\u001b[2J\\u202exxx');
+    expect(found[1]).toContain('x…"');
+    expect(found[2]).toContain('"\\u001b]8;;https://evil\\u0007"');
+    expect(found[3]).toContain('quotes "One \\u001b[31mline\\u2028."');
   });
 });

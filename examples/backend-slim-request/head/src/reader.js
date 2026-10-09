@@ -23,7 +23,7 @@ export function runReader(messages, store) {
     for (const ref of message.refs) {
       const document = store.get(ref.id);
       if (Buffer.byteLength(document.body) !== ref.bytes)
-        throw new Error(`${ref.id} changed after the request was built`);
+        throw new Error(`${ref.id} changed size after the request was built`);
       call(1);
     }
   }

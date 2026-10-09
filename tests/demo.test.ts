@@ -43,6 +43,16 @@ describe('demonstrations', () => {
     });
   });
 
+  // Later work renders this example as its benchmark, so its numbers must not drift unnoticed.
+  it('measures the benchmark request at base and head', async () => {
+    const result = await demo('backend-slim-request');
+    expect(result.commands[0]).toMatchObject({
+      changed: true,
+      before: { output: 'request bytes: 70406\nchunks: 4\nreader steps: 28\ntimeouts: 1' },
+      after: { output: 'request bytes: 9907\nchunks: 1\nreader steps: 10\ntimeouts: 0' },
+    });
+  });
+
   it.skipIf(!browser)(
     'runs the app at both revisions and turns an observed response change into a confirmed finding',
     async () => {

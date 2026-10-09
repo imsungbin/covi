@@ -1423,7 +1423,7 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
           },
           {
             "number": 26,
-            "text": "        throw new Error(\`\${ref.id} changed after the request was built\`);",
+            "text": "        throw new Error(\`\${ref.id} changed size after the request was built\`);",
             "type": "add",
           },
           {
@@ -1590,7 +1590,7 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
           },
           {
             "number": 26,
-            "text": "        throw new Error(\`\${ref.id} changed after the request was built\`);",
+            "text": "        throw new Error(\`\${ref.id} changed size after the request was built\`);",
             "type": "add",
           },
           {
@@ -1708,7 +1708,7 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
           },
           {
             "number": 26,
-            "text": "        throw new Error(\`\${ref.id} changed after the request was built\`);",
+            "text": "        throw new Error(\`\${ref.id} changed size after the request was built\`);",
             "type": "add",
           },
           {
@@ -1891,7 +1891,7 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
           },
           {
             "number": 26,
-            "text": "        throw new Error(\`\${ref.id} changed after the request was built\`);",
+            "text": "        throw new Error(\`\${ref.id} changed size after the request was built\`);",
             "type": "add",
           },
           {
@@ -2013,7 +2013,7 @@ exports[`English output (baseline) > backend-slim-request > drafts the same stor
 exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > brief.md 1`] = `
 "# Covi brief: Send document references so the reader fetches each document itself
 
-Run \`20260901-090000-analyze-0000000\` · backend-slim-request · main \`e6898a0\` → HEAD \`42dfe9e\` · 5 files, +40 −20 · size small
+Run \`20260901-090000-analyze-0000000\` · backend-slim-request · main \`e6898a0\` → HEAD \`8b9d220\` · 5 files, +40 −20 · size small
 
 ## Author description
 
@@ -2023,7 +2023,7 @@ Run \`20260901-090000-analyze-0000000\` · backend-slim-request · main \`e6898a
 
 ## Commits
 
-- \`42dfe9e\` fix(review): send document references so the reader fetches each document itself
+- \`8b9d220\` fix(review): send document references so the reader fetches each document itself
 
 ## What Covi determined
 
@@ -2071,7 +2071,7 @@ Run \`20260901-090000-analyze-0000000\` · backend-slim-request · main \`e6898a
 +    for (const ref of message.refs) {
 +      const document = store.get(ref.id);
 +      if (Buffer.byteLength(document.body) !== ref.bytes)
-+        throw new Error(\`\${ref.id} changed after the request was built\`);
++        throw new Error(\`\${ref.id} changed size after the request was built\`);
 +      call(1);
 +    }
    }
@@ -2147,7 +2147,7 @@ Run \`20260901-090000-analyze-0000000\` · backend-slim-request · main \`e6898a
 +  const messages = buildReviewRequest(store, store.ids());
 +  assert.equal(messages.length, 1);
 +  assert.ok(messageBytes(messages[0]) <= CHUNK_LIMIT);
-+  assert.ok(!JSON.stringify(messages).includes(fixtureDocuments()[0].body));
++  assert.ok(!JSON.stringify(messages).includes(JSON.stringify(fixtureDocuments()[0].body)));
  });
 \`\`\`
 
@@ -2166,13 +2166,13 @@ Run \`20260901-090000-analyze-0000000\` · backend-slim-request · main \`e6898a
 +  assert.ok(steps >= fixtureDocuments().length);
 +});
 +
-+test('stops at a document that changed after the request was built', () => {
++test('stops at a document whose size changed after the request was built', () => {
    const store = createStore(fixtureDocuments());
    const messages = buildReviewRequest(store, store.ids());
 -  const { steps } = runReader(messages);
 -  assert.ok(steps >= messages.length + fixtureDocuments().length);
 +  const changed = fixtureDocuments().map((d, i) => (i === 0 ? { ...d, body: \`\${d.body} More.\` } : d));
-+  assert.throws(() => runReader(messages, createStore(changed)), /doc-001 changed/);
++  assert.throws(() => runReader(messages, createStore(changed)), /doc-001 changed size/);
  });
  
  test('builds the same documents every time', () => {
@@ -2217,7 +2217,7 @@ No issues found in the areas Covi checked.
 
 </details>
 
-<sub>Covi · e6898a0…42dfe9e · heuristic · [artifacts](https://example.com/artifacts) · [run](https://example.com/run)</sub>"
+<sub>Covi · e6898a0…8b9d220 · heuristic · [artifacts](https://example.com/artifacts) · [run](https://example.com/run)</sub>"
 `;
 
 exports[`English output (baseline) > backend-slim-request > writes the same rule findings, explanation, and reports > explanation 1`] = `
@@ -2321,7 +2321,7 @@ This change sends document references so the reader fetches each document itself
 3. \`scripts/measure.js\`: Source change (+1 −1).
 
 ---
-<sub>Generated by Covi (heuristic) · main \`e6898a0\` → HEAD \`42dfe9e\`</sub>
+<sub>Generated by Covi (heuristic) · main \`e6898a0\` → HEAD \`8b9d220\`</sub>
 "
 `;
 
@@ -2380,7 +2380,7 @@ exports[`English output (baseline) > backend-slim-request > writes the same rule
 - Logic was checked by Covi’s built-in rules only. Run Covi from a coding agent or configure a model provider for a reasoning review.
 
 ---
-<sub>Generated by Covi (heuristic) · main \`e6898a0\` → HEAD \`42dfe9e\`</sub>
+<sub>Generated by Covi (heuristic) · main \`e6898a0\` → HEAD \`8b9d220\`</sub>
 "
 `;
 

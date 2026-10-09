@@ -18,5 +18,5 @@ test('leaves the documents out, so the review fits in one message', () => {
   const messages = buildReviewRequest(store, store.ids());
   assert.equal(messages.length, 1);
   assert.ok(messageBytes(messages[0]) <= CHUNK_LIMIT);
-  assert.ok(!JSON.stringify(messages).includes(fixtureDocuments()[0].body));
+  assert.ok(!JSON.stringify(messages).includes(JSON.stringify(fixtureDocuments()[0].body)));
 });

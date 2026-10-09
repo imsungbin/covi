@@ -12,11 +12,11 @@ test('fetches each document itself, every call within the step budget', () => {
   assert.ok(steps >= fixtureDocuments().length);
 });
 
-test('stops at a document that changed after the request was built', () => {
+test('stops at a document whose size changed after the request was built', () => {
   const store = createStore(fixtureDocuments());
   const messages = buildReviewRequest(store, store.ids());
   const changed = fixtureDocuments().map((d, i) => (i === 0 ? { ...d, body: `${d.body} More.` } : d));
-  assert.throws(() => runReader(messages, createStore(changed)), /doc-001 changed/);
+  assert.throws(() => runReader(messages, createStore(changed)), /doc-001 changed size/);
 });
 
 test('builds the same documents every time', () => {

@@ -249,11 +249,52 @@ describe('sound checks', () => {
       )['music-jump']!;
     expect(jump(6).status).toBe('pass');
     expect(jump(6.4).status).toBe('fail');
-    expect(jump(6.4).message).toMatch(/6\.4 dB within 1 s at 12\.30 s/);
+    expect(jump(6.4).message).toMatch(/6\.40 dB within 1 s at 12\.30 s/);
     expect(jump(6.4).message).toMatch(/0\.0–1\.3 s, 9\.0–12\.0 s, 28\.0–30\.0 s/);
     expect(jump(3.4, 2).message).toMatch(/2 pause\(s\) held/);
-    // Not measured (no narration, or a 0.2.0 record): nothing to fail.
+    // Not measured: nothing to fail.
     expect(jump(undefined).status).toBe('pass');
+    // Music under a narration so short that the exempt windows cover all of it.
+    expect(jump(undefined).message).toMatch(/every moment under the narration is exempt/);
+    const silent = byId(
+      soundChecks(
+        record({
+          levels: { ...record().levels, musicBelowVoiceDb: undefined, musicJumps: undefined },
+        }),
+        LIMITS,
+      ),
+    )['music-jump']!;
+    expect(silent.message).toMatch(/no music under narration/);
+  });
+
+  it('print every graded level to the hundredth it is graded at', () => {
+    const checks = (levels: Partial<AudioRecord['levels']>) => {
+      const all = byId(soundChecks(record({ levels: { ...record().levels, ...levels } }), LIMITS));
+      const ids = ['music-jump', 'music-under-speech', 'music-range', 'sound-effects'];
+      return ids.map((id) => `${all[id]!.status}: ${all[id]!.message}`);
+    };
+    const jumps = record().levels.musicJumps!;
+    // Just over a limit is named over it; just under, at it.
+    const [jump, bed, range, effects] = checks({
+      musicJumps: { ...jumps, maxDb: 6.006 },
+      musicBelowVoiceDb: 20.006,
+      musicRangeLu: 8.006,
+      effectsBelowVoiceDb: 7.994,
+    });
+    expect(jump).toMatch(/^fail: .*jumps 6\.01 dB/);
+    expect(bed).toMatch(/^warn: .*20\.01 dB/);
+    expect(range).toMatch(/^warn: .*8\.01 LU/);
+    expect(effects).toMatch(/^warn: .*7\.99 dB/);
+    const [jumpAt, bedAt, rangeAt, effectsAt] = checks({
+      musicJumps: { ...jumps, maxDb: 6.004 },
+      musicBelowVoiceDb: 8.996,
+      musicRangeLu: 8.004,
+      effectsBelowVoiceDb: 7.996,
+    });
+    expect(jumpAt).toMatch(/^pass: .*at most 6\.00 dB/);
+    expect(bedAt).toMatch(/^warn: .*9\.00 dB/);
+    expect(rangeAt).toMatch(/^pass: .*8\.00 LU/);
+    expect(effectsAt).toMatch(/^pass: .*8\.00 dB/);
   });
 
   it("warn when the music's loudness range over the narration exceeds 8 LU", () => {

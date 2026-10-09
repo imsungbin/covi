@@ -52,6 +52,11 @@ export interface Component {
    * the narrator points the way its eyes look.
    */
   target?(clock: SceneClock): Rect | undefined;
+  /**
+   * Its target and `focus` items are computed from its layout (a frame's geometry), not measured
+   * as drawn: the canvas camera does not move them, so the stage maps them through it.
+   */
+  laidOut?: boolean;
   /** Whether the component wants the scene header (title and summary draw their own). */
   header?: boolean;
   /** The large fox it draws, for the next scene to take over. */

@@ -45,7 +45,7 @@ Use the `covi` command. With the Claude Code plugin it is already on your PATH; 
 | `covi demo [range] [--plan file]` | Runs the software at base and head; screenshots, flows, command output, API responses |
 | `covi video ...` | Plans, drafts, and renders review videos (see `covi-video`) |
 | `covi render --run <id>` | Renders a storyboard (or a music score) you edited |
-| `covi schema <explanation\|findings\|storyboard\|score\|demo-plan\|config\|evidence\|outcome>` | The JSON Schema for a file you write or read |
+| `covi schema <explanation\|findings\|storyboard\|direction\|score\|demo-plan\|config\|evidence\|subject\|outcome>` | The JSON Schema for a file you write or read |
 | `covi templates` | Storytelling templates for videos |
 | `covi doctor` | What this environment can do (browser, ffmpeg, speech) |
 

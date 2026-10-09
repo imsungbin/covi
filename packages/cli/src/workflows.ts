@@ -944,6 +944,7 @@ export async function videoWorkflow(
       pronunciations: session.config.video.narration.pronunciations,
       evidence: outcome.evidence,
       subject: () => loadSubjectSnapshot(session.run),
+      direction: session.config.video.direction,
     }),
   );
   await applyVideoResult(session, result, produced, {
@@ -961,6 +962,8 @@ export async function applyVideoResult(
 ): Promise<void> {
   const { draft } = options;
   artifact(session, result, 'storyboard', 'video/storyboard.json');
+  if (await session.run.has('video/direction.json'))
+    artifact(session, result, 'direction', 'video/direction.json');
   if (await session.run.has('video/score.json'))
     artifact(session, result, 'score', 'video/score.json');
   if (draft) {
@@ -1074,6 +1077,7 @@ export async function renderWorkflow(
       pronunciations: session.config.video.narration.pronunciations,
       evidence,
       subject: () => loadSubjectSnapshot(run),
+      direction: session.config.video.direction,
     }),
   );
   await applyVideoResult(session, result, produced, { musicDefault: options.musicDefault });

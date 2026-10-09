@@ -1,0 +1,17 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["es2023", "dom", "dom.iterable"]
+  },
+  "include": [
+    "canvas.test.ts",
+    "cold-open.test.ts",
+    "density.test.ts",
+    "drawn-font.test.ts",
+    "marks.test.ts",
+    "morph.test.ts",
+    "motion.test.ts",
+    "narrator.test.ts"
+  ],
+  "exclude": []
+}

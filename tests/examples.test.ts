@@ -14,6 +14,7 @@ import {
   resolveChange,
   resolveConfig,
   runRules,
+  seedFrom,
   understandChange,
 } from '@covi/core';
 import {
@@ -24,9 +25,15 @@ import {
   type Storyboard,
   StoryboardSchema,
   selectTemplate,
+  TRANSITION_MIN,
+  TRANSITION_SHARE,
 } from '@covi/video';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
+import { defaultDirection, entrances } from '../packages/video/src/direction/director.ts';
+import { directionProblems } from '../packages/video/src/direction/refs.ts';
+import { DirectionSchema } from '../packages/video/src/direction/schema.ts';
+import { directionSources } from '../packages/video/src/direction/sources.ts';
 import { groundingCheck, sceneEvidence } from '../packages/video/src/grounding.ts';
 
 const examples = await listExamples();
@@ -133,6 +140,37 @@ describe('example changes', () => {
             expect(scene.narration).not.toMatch(/…|\.\./);
             expect(scene.narration).not.toMatch(/`/);
           }
+        }
+      });
+
+      it('directs its drafted storyboards with shots Covi’s own checks accept', async () => {
+        const { change, context, review, explanation, config } = await analyzeExample(example.name);
+        const templates = await loadTemplates();
+        const evidence = indexEvidence(buildEvidence({ diff: change.files }));
+        const sources = directionSources({ files: change.files, evidence });
+        for (const mode of ['short', 'standard'] as const) {
+          const storyboard = draftStoryboard({
+            change,
+            context,
+            explanation,
+            review,
+            spec: resolveVideoSpec(config, { mode }),
+            templates,
+          });
+          const seed = seedFrom(storyboard.title);
+          const plan = defaultDirection({ scenes: storyboard.scenes, evidence, seed });
+          expect(plan.shots.map((s) => s.scene)).toEqual(storyboard.scenes.map((s) => s.id));
+          expect(DirectionSchema.parse(plan)).toEqual(plan);
+          expect(directionProblems(plan, storyboard.scenes, evidence, sources)).toEqual([]);
+          expect(defaultDirection({ scenes: storyboard.scenes, evidence, seed })).toEqual(plan);
+          // No entrance takes more of the story's moves than the transition-variety check allows.
+          const moves = [...entrances(plan, storyboard.scenes, evidence, seed).values()];
+          if (moves.length >= TRANSITION_MIN)
+            for (const kind of new Set(moves))
+              expect(
+                moves.filter((k) => k === kind).length / moves.length,
+                kind,
+              ).toBeLessThanOrEqual(TRANSITION_SHARE);
         }
       });
     });

@@ -104,6 +104,18 @@ describe('transition whooshes', () => {
       ['transition', 'f', 'zoom-through', 20.3],
     ]);
   });
+
+  it('sound mid-move when the camera pans or zooms to the next stop', () => {
+    const cues = buildCues([
+      scene('a', 0, 4),
+      scene('b', 4, 8, { transition: { kind: 'pan', seconds: 0.7 } }),
+      scene('c', 8, 12, { transition: { kind: 'zoom', seconds: 0.9 } }),
+    ]);
+    expect(cues.map((c) => [c.kind, c.scene, c.detail, +c.t.toFixed(6)])).toEqual([
+      ['transition', 'b', 'pan', 4.35],
+      ['transition', 'c', 'zoom', 8.45],
+    ]);
+  });
 });
 
 describe("a scene's own cues", () => {

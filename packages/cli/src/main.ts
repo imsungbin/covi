@@ -47,6 +47,7 @@ import {
 import { detectPlatform, platformContext } from '@covi/platforms';
 import {
   applyAnswers,
+  DirectionSchema,
   followUpQuestions,
   loadTemplates,
   planVideo,
@@ -263,6 +264,7 @@ function explicitConfig(cmd: Command): ParsedConfigInput {
   if (explicitSource(cmd, 'soundEffects'))
     set('video', 'soundEffects', { enabled: o.soundEffects });
   if (explicitSource(cmd, 'outro')) set('video', 'outro', o.outro);
+  set('video', 'direction', o.direction);
   if (explicitSource(cmd, 'comment')) set('publish', 'comment', o.comment);
   if (explicitSource(cmd, 'annotations')) set('publish', 'annotations', o.annotations);
   if (explicitSource(cmd, 'anchors')) set('publish', 'anchors', o.anchors);
@@ -360,7 +362,13 @@ function addVideo(cmd: Command): Command {
       'no sound effects for clicks, reveals, findings, the verdict, and the outro',
     )
     .option('--outro', 'end with the branded Covi outro (default)')
-    .option('--no-outro', 'no outro: hold the last scene for a second instead');
+    .option('--no-outro', 'no outro: hold the last scene for a second instead')
+    .addOption(
+      new Option(
+        '--direction <mode>',
+        "direct the video on the canvas: auto (the run's video/direction.json, else Covi's default director; the default) or off (no canvas, as Covi 0.2 rendered)",
+      ).choices(['auto', 'off']),
+    );
 }
 
 function selection(cmd: Command, range: string | undefined) {
@@ -662,7 +670,10 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
     .option('--request <text>', 'the request in plain words, e.g. "30-second vertical video"')
     .option('--template <id>', 'storytelling template (see `covi templates`)')
     .option('--storyboard <file>', 'render this storyboard instead of drafting one')
-    .option('--draft', 'write video/storyboard.json and stop, so it can be edited before rendering')
+    .option(
+      '--draft',
+      "write video/storyboard.json and Covi's video/direction.json and stop, so they can be edited before rendering",
+    )
     .option('--dry-run', 'print the resolved video plan and the questions worth asking, then stop')
     .option('--force', 'render even when Covi judges a video unhelpful')
     .option('--workers <n>', 'parallel render workers', int(1, 64))
@@ -1380,7 +1391,7 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
     .command('schema')
     .argument(
       '<name>',
-      'explanation | findings | storyboard | score | demo-plan | config | evidence | subject | outcome',
+      'explanation | findings | storyboard | direction | score | demo-plan | config | evidence | subject | outcome',
     )
     .description('Print the JSON Schema for files agents author or read')
     .action(async (name: string) => {
@@ -1388,6 +1399,7 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
         explanation: ExplanationSchema,
         findings: FindingsFileSchema,
         storyboard: StoryboardSchema,
+        direction: DirectionSchema,
         score: ScoreSchema,
         'demo-plan': DemoPlanSchema,
         config: ConfigInputSchema,

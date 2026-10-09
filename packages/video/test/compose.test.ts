@@ -68,7 +68,7 @@ function stub(answer: () => unknown): ModelProvider & { requests: GenerateReques
   };
 }
 
-const composed = () => {
+const composed = (): Record<string, unknown> => {
   const theme = draftScore();
   return { ...theme, id: 'composed-fix', draft: false, bpm: 104 };
 };

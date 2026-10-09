@@ -553,7 +553,8 @@ describe('mergeSubject', () => {
     );
     // The cut at 119 code units falls inside the 60th fox, which goes whole.
     const label = model.screens[0]!.elements[0]!.label!;
-    expect(label.isWellFormed()).toBe(true);
+    // With the u flag, a surrogate matches only when it is not half of a pair.
+    expect(label).not.toMatch(/\p{Surrogate}/u);
     expect(label).toBe(`${fox.repeat((SUBJECT_LIMITS.label - 2) / 2)}…`);
   });
 

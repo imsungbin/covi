@@ -1221,7 +1221,7 @@ function lowerFirstWord(text: string, language: Language = 'en'): string {
   return trimmed[0]!.toLowerCase() + trimmed.slice(1);
 }
 
-function clipLines(text: string, max: number, language: Language = 'en'): string {
+export function clipLines(text: string, max: number, language: Language = 'en'): string {
   const lines = text.replace(/\r/g, '').split('\n');
   while (lines.length && !lines.at(-1)!.trim()) lines.pop();
   if (lines.length <= max) return lines.map((l) => l.slice(0, 90)).join('\n');

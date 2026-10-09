@@ -614,9 +614,22 @@ export function settledAt(visual: TimelineVisual, duration: number, phases: Phas
 }
 
 /**
+ * How long scene `index` takes to enter, in seconds: its transition's length, or the timeline's
+ * for a scene from before kinds; nothing for the first scene, or past the last.
+ */
+export function entranceSeconds(
+  timeline: Pick<Timeline, 'scenes' | 'transition'>,
+  index: number,
+): number {
+  const scene = timeline.scenes[index];
+  return index === 0 || !scene ? 0 : (scene.transition?.seconds ?? timeline.transition);
+}
+
+/**
  * When scene `index` has settled and is alone on screen, in seconds from the start of the video:
- * from the end of its entrance and its choreography to where the next scene starts to enter. A
- * scene too short to settle before it leaves gives the moment it starts to leave.
+ * from the end of its entrance and its choreography (a directed scene's after its beats too) to
+ * where the next scene starts to enter. A scene too short to settle before it leaves gives the
+ * moment it starts to leave.
  */
 export function settledSpan(
   timeline: Pick<Timeline, 'scenes' | 'transition'>,
@@ -624,12 +637,8 @@ export function settledSpan(
 ): Span | undefined {
   const scene = timeline.scenes[index];
   if (!scene) return undefined;
-  const enter = index === 0 ? 0 : (scene.transition?.seconds ?? timeline.transition);
-  const next = timeline.scenes[index + 1];
-  const leave = next ? (next.transition?.seconds ?? timeline.transition) : 0;
-  const to = scene.end - leave;
-  const done =
-    scene.start + Math.max(enter, settledAt(scene.visual, scene.end - scene.start, scene.phases));
+  const to = scene.end - entranceSeconds(timeline, index + 1);
+  const done = scene.start + Math.max(entranceSeconds(timeline, index), shotSettledAt(scene));
   return [Math.min(done, to), to];
 }
 
@@ -649,6 +658,56 @@ export function settledFrame(
   return Math.max(0, Math.min(timeline.frames - 1, first, last));
 }
 
+/**
+ * The last frame before a directed scene's first camera beat, where its stop is at rest at its
+ * own scale: a beat's zoom magnifies what QC measures at the settled frame, so text sizes are read
+ * here too. None without a camera beat, or when the beat starts before the scene has entered and
+ * the reveals before it have played.
+ */
+export function restFrame(
+  timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames'>,
+  index: number,
+): number | undefined {
+  const scene = timeline.scenes[index];
+  const beats = scene?.direction?.beats ?? [];
+  const camera = beats.find((b) => b.verb === 'camera');
+  if (!scene || !camera) return undefined;
+  const ready = Math.max(
+    entranceSeconds(timeline, index),
+    ...beats.flatMap((b) => (b.verb === 'reveal' && b.t < camera.t ? [b.t + b.seconds] : [])),
+  );
+  const leaves = scene.end - entranceSeconds(timeline, index + 1);
+  const first = Math.ceil((scene.start + ready) * timeline.fps - 1e-6);
+  const last = Math.min(
+    Math.ceil((scene.start + camera.t) * timeline.fps - 1e-6) - 1,
+    Math.floor(leaves * timeline.fps - 1e-6),
+    timeline.frames - 1,
+  );
+  return first <= last ? last : undefined;
+}
+
+/**
+ * When a directed scene's choreography is done: every element has entered and played its own (the
+ * storyboard visual on the scene's phases, the others from their reveal), and every beat has ended.
+ */
+export function shotSettledAt(
+  scene: Pick<TimelineScene, 'visual' | 'direction' | 'phases' | 'start' | 'end'>,
+): number {
+  const duration = scene.end - scene.start;
+  const d = scene.direction;
+  if (!d) return settledAt(scene.visual, duration, scene.phases);
+  const revealedAt = (id: string) =>
+    d.beats.find((b) => b.verb === 'reveal' && b.element === id)?.t ?? 0;
+  const elements = d.elements.map((e) => {
+    if (e.kind === 'visual') return settledAt(scene.visual, duration, scene.phases);
+    const at = revealedAt(e.id);
+    return e.kind === 'node' || e.kind === 'label'
+      ? at + 0.5
+      : at + settledAt(e.visual, Math.max(0.1, duration - at));
+  });
+  return Math.max(0, ...elements, ...d.beats.map((b) => b.t + b.seconds));
+}
+
 /** The summary's verdict badge rises into view. */
 export function verdictEntrance(): Span {
   return [0.3, 0.7];
@@ -665,16 +724,23 @@ export function outroSettle(): number {
 /** The riser swells for this long into the hero's phase, where the hit lands. */
 export const RISER_LEAD = 0.8;
 
-/** Transitions that move the picture, and so get a whoosh. */
-const WHOOSH: ReadonlySet<TransitionKind> = new Set(['push', 'wipe', 'zoom-through']);
+/** Transitions that move the picture, and so get a whoosh: the camera's moves between stops too. */
+const WHOOSH: ReadonlySet<TransitionKind> = new Set([
+  'push',
+  'wipe',
+  'zoom-through',
+  'pan',
+  'zoom',
+]);
 
 /**
  * Every moment with a sound, in time order. A whoosh plays mid-move for a scene that pushes,
- * wipes, or zooms through (unless the riser into the hero carries that move); the hero's hit
- * lands at its phase, the riser swelling into it from 0.8 s before (left out before the video
- * starts); and a scene's own cues play where they ask (a riser ends there; one past the scene's
- * end is not played, and one repeating Covi's is merged). Fades, cuts, code, and terminals make no
- * sound. The outro's moment is where the music's logo lands, or, without music, its own sign-off.
+ * wipes, or zooms through, or that the camera pans or zooms to (unless the riser into the hero
+ * carries that move); the hero's hit lands at its phase, the riser swelling into it from 0.8 s
+ * before (left out before the video starts); and a scene's own cues play where they ask (a riser
+ * ends there; one past the scene's end is not played, and one repeating Covi's is merged). Fades,
+ * cuts, code, and terminals make no sound. The outro's moment is where the music's logo lands, or,
+ * without music, its own sign-off.
  */
 export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
   const cues: TimelineCue[] = [];

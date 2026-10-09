@@ -10,6 +10,7 @@ import { analyzeWithModel, PIPELINE_PREAMBLE } from '../src/intelligence/analyze
 import type { GenerateRequest, ModelProvider } from '../src/intelligence/provider.ts';
 import type { EvidenceItem } from '../src/model/evidence.ts';
 import type { Explanation } from '../src/model/explanation.ts';
+import type { FindingInput } from '../src/model/finding.ts';
 import { Redactor } from '../src/security/redact.ts';
 
 let a: Analysis | undefined;
@@ -25,7 +26,7 @@ const trace: EvidenceItem = {
   refs: ['trace:flow-cart-head#n2'],
 };
 
-const finding = (over: Record<string, unknown>) => ({
+const finding = (over: Partial<FindingInput>): FindingInput => ({
   title: 'Quantity can no longer go negative',
   certainty: 'likely',
   severity: 'low',
@@ -138,13 +139,22 @@ describe('model findings and evidence', () => {
       headline: 'Clamp quantities',
       summary: 's',
       intent: { statement: 's', confidence: 'high', evidence: [], evidenceIds: ['trace:made-up'] },
-      behavior: { after: 'Stops at zero.', evidenceIds: ['trace:flow-cart-head#n2', 'http:9'] },
+      behavior: {
+        userVisible: true,
+        after: 'Stops at zero.',
+        evidenceIds: ['trace:flow-cart-head#n2', 'http:9'],
+      },
       changes: [
         { area: 'Cart', description: 'd', files: ['src/cart.ts'], evidenceIds: ['http:9'] },
         { area: 'Docs', description: 'd', files: [], evidenceIds: ['diff-hunk:src/cart.ts:1'] },
       ],
+      architecture: [],
+      details: [],
+      reviewerNotes: [],
+      readingOrder: [],
+      ambiguities: [],
       generatedBy: { provider: 'command' },
-    } as Explanation;
+    };
     const { explanation: grounded, notes } = groundModelExplanation(explanation, index);
     expect(grounded.intent.evidenceIds).toBeUndefined();
     expect(grounded.behavior?.evidenceIds).toEqual(['trace:flow-cart-head#n2']);

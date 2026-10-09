@@ -119,3 +119,11 @@ export function inset(rect: Rect, by: number): Rect {
     height: rect.height - 2 * by,
   };
 }
+
+/**
+ * The stage's dot grid spacing in px: 30 design units, rounded as the stylesheet writes it, so
+ * the canvas's grid and the stage's line up exactly.
+ */
+export function gridSpacing(unit: number): number {
+  return Number((30 * unit).toFixed(2));
+}

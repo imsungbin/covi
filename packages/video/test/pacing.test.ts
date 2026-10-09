@@ -20,6 +20,7 @@ import {
   TRANSITION,
 } from '../src/timeline/build.ts';
 import { outroSettle } from '../src/timeline/cues.ts';
+import { CAMERA_TRANSITIONS } from '../src/timeline/types.ts';
 
 const scene = (
   id: string,
@@ -303,6 +304,31 @@ describe('the timing grammar', () => {
       // So no scene outstays its line by more than 0.6 s.
       expect(a!.end - a!.speechEnd, kind).toBeLessThanOrEqual(0.6 + 1e-9);
     }
+  });
+
+  it('times a camera move between stops like any transition, by its own length', () => {
+    for (const kind of CAMERA_TRANSITIONS) {
+      const entrances = new Map([['s2', kind]]);
+      const [a, b] = layoutScenes(three(), lines, new Map(), 'en', TIGHT, entrances).scenes;
+      const d = motion.transitions[kind];
+      expect(b!.start, kind).toBeCloseTo(cutStart(a!.speechEnd, a!.speechEnd + LINE_GAP, d), 3);
+      expect(a!.end, kind).toBeCloseTo(b!.start + d, 3);
+      // Longer than a fade: the scene before a camera move ends at most 0.35 + 0.4·d
+      // after its line.
+      expect(a!.end - a!.speechEnd, kind).toBeLessThanOrEqual(LINE_GAP + 0.4 * d + 1e-9);
+    }
+    const storyboard = {
+      schemaVersion: 1,
+      title: 'T',
+      template: 't',
+      draft: false,
+      scenes: three(),
+    } as Storyboard;
+    const spec = resolveVideoSpec(DEFAULT_CONFIG, { mode: 'short' });
+    const zoom = new Map([['s3', 'zoom' as const]]);
+    expect(fitToDuration(storyboard, lines, spec, 'en', TIGHT, zoom).layout).toEqual(
+      layoutScenes(three(), lines, new Map(), 'en', TIGHT, zoom),
+    );
   });
 
   it('cuts on the first word of the next line', () => {

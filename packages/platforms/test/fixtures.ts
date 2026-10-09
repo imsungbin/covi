@@ -25,7 +25,7 @@ export function fixtureFetch(
     headers: Record<string, string>;
     body?: unknown;
     /** How the caller asked fetch to treat a redirect; the fake never follows one. */
-    redirect?: RequestRedirect;
+    redirect?: RequestInit['redirect'];
   }> = [];
   const queues = new Map(
     Object.entries(routes).map(([key, reply]) => [

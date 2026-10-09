@@ -426,6 +426,7 @@ subject:
 | `music.placement` | `auto`, `continuous`, `bookends` | `auto` | Where the music plays. `auto`: continuous, for every kind of video. `continuous`: a bed under the whole video, 12–20 dB under the voice while someone speaks, rising before the first line, in long pauses, and after the last, on ramps that never make it jump (QC's `music-jump` fails a score that jumps on its own). `bookends`: music before the first line and after the last, effectively off under the narration. See [Where the music plays](video.md#where-the-music-plays). |
 | `soundEffects.enabled` | boolean | `true` | Subtle sound effects for what happens on screen: a click, the before/after reveal, a finding card, the verdict, and (without music) the outro's sign-off. |
 | `outro` | boolean | `true` | End with Covi's outro: the fox and the logo, the verdict, and the sign-off, where the music's sonic logo lands. `false` holds the last scene for a second instead. See [The outro](video.md#the-outro). |
+| `direction` | `auto`, `off` | `auto` | `auto`: draw the video on Covi's canvas, directed by the run's `video/direction.json` and Covi's default director (runs without an agent get the same motion). `off`: render as Covi 0.2.0 did, with no canvas. `covi render` does not keep it from the draft. See [Direction and the canvas](video.md#direction-and-the-canvas). |
 
 ```yaml
 video:
@@ -435,6 +436,7 @@ video:
   soundEffects:
     enabled: true
   outro: true
+  direction: auto      # auto | off
 ```
 
 `music` and `soundEffects` are objects rather than plain values because configuration has no version: keys can be added later, never repurposed. Music runs no command and downloads nothing, so it needs no trust; in CI it comes from the base revision like the rest of the file.
@@ -504,6 +506,7 @@ These variables set configuration keys in the explicit layer. Command-line flags
 | `COVI_MUSIC_PLACEMENT` | `video.music.placement`: `auto`, `continuous`, or `bookends` |
 | `COVI_SOUND_EFFECTS` | `video.soundEffects.enabled` (same values as `COVI_NARRATION`) |
 | `COVI_OUTRO` | `video.outro` (same values as `COVI_NARRATION`) |
+| `COVI_VIDEO_DIRECTION` | `video.direction`: `auto` or `off` |
 | `COVI_OUTPUT_DIR` | `output.dir` |
 
 The narration variables combine: `COVI_NARRATION=false` with `COVI_TTS_VOICE=Reed` keeps narration off and records the voice.

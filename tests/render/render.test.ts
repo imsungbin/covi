@@ -29,11 +29,14 @@ import {
   StoryboardSchema,
   syntheticMouth,
   type Timeline,
+  TRANSITION_MIN,
+  TRANSITION_SHARE,
   writeComposition,
 } from '@covi/video';
 import { type Browser, chromium } from 'playwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../../packages/cli/src/examples.ts';
+import { DirectionSchema } from '../../packages/video/src/direction/schema.ts';
 import { contactSheetFrames, sheetColumns } from '../../packages/video/src/render/renderer.ts';
 import { tileLayout } from '../../packages/video/src/render/sheet.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
@@ -97,6 +100,49 @@ const storyboard = StoryboardSchema.parse({
 });
 
 describe.skipIf(!available)('rendering', () => {
+  it('keeps the layout reports in frame order, however the frames are split between workers', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'covi-layouts-'));
+    dirs.push(dir);
+    const { config } = resolveConfig([
+      {
+        name: 'explicit',
+        values: parseConfigInput(
+          { video: { mode: 'custom', width: 426, height: 240, fps: 12, duration: 8 } },
+          't',
+        ),
+      },
+    ]);
+    const spec = resolveVideoSpec(config);
+    const layout = layoutScenes(storyboard.scenes, new Map(), new Map(), 'en', pacingFor(spec));
+    const timeline = buildTimeline({
+      title: storyboard.title,
+      scenes: storyboard.scenes,
+      layout,
+      spec,
+      image: new AssetCollector(dir).image,
+    });
+    await writeComposition(join(dir, 'composition'), timeline, new Map());
+    const media = await Media.locate();
+    // The last frame of the first worker's share and the first of the last's: split three ways,
+    // the later frame is sampled long before the earlier one.
+    const third = Math.floor(timeline.frames / 3);
+    const layoutFrames = [third - 1, third, timeline.frames - 1];
+    const render = (workers: number) =>
+      renderComposition({
+        compositionDir: join(dir, 'composition'),
+        output: join(dir, `video-${workers}.mp4`),
+        timeline,
+        media,
+        workers,
+        layoutFrames,
+      });
+    const split = await render(3);
+    const alone = await render(1);
+    expect(split.layouts.map((l) => l.frame)).toEqual(layoutFrames);
+    // What frames.json keeps of them is byte for byte the same.
+    expect(JSON.stringify(split.layouts)).toBe(JSON.stringify(alone.layouts));
+  });
+
   it('renders a composition to H.264 with captions inside the safe area', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'covi-render-'));
     dirs.push(dir);
@@ -1504,24 +1550,40 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
       expect(qc.checks.map((c) => c.id)).toEqual(
         expect.arrayContaining(['text-size', 'empty-frame', 'monotony', 'transition-variety']),
       );
+      // Drawn on the canvas by Covi's default director: every story scene at a stop, the camera
+      // travelling between them, no fades, and, from four moves, no entrance taking more than
+      // 60% of them.
+      const timeline = JSON.parse(
+        readFileSync(join(result.runDir, 'video', 'timeline.json'), 'utf8'),
+      ) as Timeline;
+      const story = timeline.scenes.filter((s) => s.visual.kind !== 'outro');
+      expect(story.every((s) => s.stop)).toBe(true);
+      const moves = story.slice(1).map((s) => s.transition!.kind);
+      expect(moves).not.toContain('fade');
+      expect(moves.some((k) => k === 'pan' || k === 'zoom')).toBe(true);
+      if (moves.length >= TRANSITION_MIN)
+        for (const kind of new Set(moves))
+          expect(moves.filter((k) => k === kind).length / moves.length, kind).toBeLessThanOrEqual(
+            TRANSITION_SHARE,
+          );
     }, 600_000);
   }
 });
 
-describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)', () => {
-  const root = join(import.meta.dirname, '..', '..');
-  const covi = (args: string[]) =>
-    JSON.parse(
-      execFileSync('node', ['bin/covi.mjs', ...args, '--json'], {
-        cwd: root,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 600_000,
-      }),
-    ) as { runId: string; runDir: string; video: { rendered: boolean; qc: string } };
-  const read = <T>(run: string, rel: string) =>
-    JSON.parse(readFileSync(join(run, rel), 'utf8')) as T;
+// The CLI from this checkout, and a run's JSON files, for the full-pipeline tests below.
+const root = join(import.meta.dirname, '..', '..');
+const covi = (args: string[]) =>
+  JSON.parse(
+    execFileSync('node', ['bin/covi.mjs', ...args, '--json'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 600_000,
+    }),
+  ) as { runId: string; runDir: string; video: { rendered: boolean; qc: string } };
+const read = <T>(run: string, rel: string) => JSON.parse(readFileSync(join(run, rel), 'utf8')) as T;
 
+describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)', () => {
   it('renders a storyboard that uses every timing field', async () => {
     const repo = await materializeExample(
       (await listExamples()).find((e) => e.name === 'ui-comment-composer')!,
@@ -1648,11 +1710,22 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
       `${JSON.stringify(StoryboardSchema.parse(storyboard), null, 2)}\n`,
     );
 
-    const rendered = covi(['render', '--repo', repo, '--run', draft.runId]);
+    // Off reads no direction: a file that is not even JSON, which would refuse the render on the
+    // canvas, is neither read nor rewritten.
+    const unread = '{ "schemaVersion": 1, "draft": false, "shots": [ { "scene": "nowhere" ';
+    writeFileSync(join(run, 'video', 'direction.json'), unread);
+
+    // This test pins 0.2.0's timing grammar (zoom-through into the hero, its music lift 0.6 s
+    // in), which `--direction off` keeps; tests/render/canvas.test.ts covers the canvas.
+    const rendered = covi(['render', '--repo', repo, '--run', draft.runId, '--direction', 'off']);
     expect(rendered.video.rendered).toBe(true);
     expect(rendered.video.qc).not.toBe('fail');
+    expect(readFileSync(join(run, 'video', 'direction.json'), 'utf8')).toBe(unread);
 
     const timeline = read<Timeline>(run, 'video/timeline.json');
+    expect(timeline.scenes.every((s) => s.stop === undefined && s.direction === undefined)).toBe(
+      true,
+    );
     const [open, type, code, compare, pixels] = timeline.scenes;
     expect(timeline.scenes.map((s) => s.transition?.kind)).toEqual([
       undefined,
@@ -2088,4 +2161,68 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
       expect.objectContaining({ kind: 'riser', reason: 'more than 3 per second' }),
     );
   }, 900_000);
+});
+
+describe.skipIf(!available || !fullRenders)('an agent’s direction (full pipeline)', () => {
+  it('renders the shot an agent wrote, code beside a node and a label, and QC reads it', async () => {
+    const repo = await materializeExample(
+      (await listExamples()).find((e) => e.name === 'backend-slim-request')!,
+    );
+    dirs.push(repo);
+    const draft = covi(['video', '--repo', repo, '--short', '--draft']);
+    const run = draft.runDir;
+    const evidence = read<{ items: Array<{ id: string; kind: string }> }>(run, 'evidence.json');
+    const hunk = evidence.items.find((i) => i.kind === 'diff-hunk' && i.id.includes(':src/'));
+    const drafted = read<StoryboardInput>(run, 'video/storyboard.json');
+    const scene = drafted.scenes.find((s) => s.visual.kind === 'code');
+    expect(hunk).toBeDefined();
+    expect(scene?.id).toBeDefined();
+    // The agent's own shot: no longer Covi's draft, so it is checked against the run and kept.
+    const direction = DirectionSchema.parse({
+      schemaVersion: 1,
+      draft: false,
+      shots: [
+        {
+          scene: scene!.id,
+          layout: 'auto',
+          elements: [
+            { id: 'fix', kind: 'code', evidence: hunk!.id, side: 'diff' },
+            { id: 'reader', kind: 'node', label: 'Reader' },
+            { id: 'note', kind: 'label', text: 'Fetches each document', tone: 'success' },
+          ],
+          beats: [
+            { verb: 'reveal', element: 'note', style: 'pop' },
+            { verb: 'camera', move: 'zoom', to: 'reader' },
+          ],
+        },
+      ],
+    });
+    writeFileSync(join(run, 'video', 'direction.json'), `${JSON.stringify(direction, null, 2)}\n`);
+
+    const rendered = covi(['render', '--repo', repo, '--run', draft.runId]);
+    expect(rendered.video.rendered).toBe(true);
+    expect(rendered.video.qc).not.toBe('fail');
+    const qc = read<{ checks: Array<{ id: string; status: string }> }>(run, 'video/qc.json');
+    expect(qc.checks.filter((c) => c.status === 'fail')).toEqual([]);
+    const status = (id: string) => qc.checks.find((c) => c.id === id)?.status;
+    expect(status('text-fits')).toBe('pass');
+    expect(status('captions-clear-of-content')).toBe('pass');
+
+    // The timeline holds the shot as resolved, its beats timed.
+    const timeline = read<Timeline>(run, 'video/timeline.json');
+    const drawn = timeline.scenes.find((s) => s.id === scene!.id)!;
+    expect(drawn.direction!.whole).toBe(false);
+    expect(drawn.direction!.elements.map((e) => [e.id, e.kind])).toEqual([
+      ['fix', 'code'],
+      ['reader', 'node'],
+      ['note', 'label'],
+    ]);
+    expect(drawn.direction!.beats.map((b) => b.verb)).toEqual(['reveal', 'camera']);
+    // And QC read it as drawn: a frame sampled in the scene holds the node's and label's text.
+    const frames = read<{ layouts: LayoutReport[] }>(run, 'video/frames.json');
+    const body = (report: LayoutReport) => report.items.filter((i) => i.text === 'body').length;
+    expect(
+      frames.layouts.some((l) => l.scene === drawn.id && body(l) === 2 + (drawn.heading ? 1 : 0)),
+    ).toBe(true);
+  }, 600_000);
 });

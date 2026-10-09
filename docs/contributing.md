@@ -46,7 +46,7 @@ The packages, their responsibilities, and the dependency direction between them 
 | `npm run lint` | `biome check .` (formatting, lint, import order) |
 | `npm run lint:fix` | `biome check --write .` |
 | `npm run format` | `biome format --write .` |
-| `npm run typecheck` | `tsc -p tsconfig.json`, then `tsc -p packages/video/src/runtime/tsconfig.json` (the browser runtime, with DOM types) |
+| `npm run typecheck` | `tsc -p tsconfig.json` (Node code and its tests), then `tsc -p packages/video/src/runtime/tsconfig.json` (the browser runtime, with DOM types), then `tsc -p packages/video/test/tsconfig.runtime.json` (the tests that import the runtime, with DOM types; a new one goes in its list and in the root's `exclude`) |
 | `npm run agents:check` | `node scripts/sync-agents.ts --check`: skills are well formed, `.claude/skills` and `.agents/skills` link to `skills/`, `CLAUDE.md` imports `AGENTS.md`, and the plugin manifest version matches `package.json` |
 | `npm test` | `vitest run`: every unit and integration test |
 | `npm run test:watch` | Vitest in watch mode |

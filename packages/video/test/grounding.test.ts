@@ -11,6 +11,7 @@ import {
 } from '@covi/core';
 import { afterAll, describe, expect, it } from 'vitest';
 import { writeComposition } from '../src/composition/build.ts';
+import { DirectionSchema } from '../src/direction/schema.ts';
 import {
   groundingCheck,
   sceneEvidence,
@@ -134,6 +135,49 @@ describe('scene evidence', () => {
         index,
       ),
     ).toEqual(['http:1', 'screenshot:cart-desktop-after']);
+  });
+
+  it('counts what a shot shows: its elements’ evidence, and the visual only when the shot keeps it', () => {
+    const scene = {
+      visual: visual({
+        kind: 'screenshot',
+        image: { path: 'demo/screenshots/cart-desktop-after.png' },
+      }),
+    };
+    const shot = (elements: unknown[]) =>
+      DirectionSchema.parse({ shots: [{ scene: 's1', elements }] }).shots[0]!;
+    expect(
+      sceneEvidence(
+        scene,
+        index,
+        [],
+        shot([
+          { id: 'v', kind: 'visual' },
+          { id: 'c', kind: 'code', evidence: 'diff-hunk:src/cart.ts:10' },
+        ]),
+      ),
+    ).toEqual(['screenshot:cart-desktop-after', 'diff-hunk:src/cart.ts:10']);
+    // A shot without the visual replaces it: the capture is not on screen.
+    expect(
+      sceneEvidence(
+        scene,
+        index,
+        [],
+        shot([
+          { id: 'o', kind: 'output', evidence: 'terminal:1' },
+          { id: 'n', kind: 'node', label: 'Cart', evidence: ['http:1', 'not-in-the-run:1'] },
+        ]),
+      ),
+    ).toEqual(['terminal:1', 'http:1']);
+    // Citations always count.
+    expect(
+      sceneEvidence(
+        { ...scene, evidenceIds: ['http:1'] },
+        index,
+        [],
+        shot([{ id: 'l', kind: 'label', text: 'Cart' }]),
+      ),
+    ).toEqual(['http:1']);
   });
 
   it('cites only the ids a findings card has in the run, looked up after its redaction', () => {

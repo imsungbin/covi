@@ -45,6 +45,7 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
   font-family: ${t.fonts.sans}; color: ${c.text}; -webkit-font-smoothing: antialiased; font-feature-settings: 'cv11', 'ss01'; }
 .mono { font-family: ${t.fonts.mono}; font-feature-settings: 'calt' 0; }
 .layer { position: absolute; inset: 0; }
+.canvas-grid { background-color: ${c.background}; background-image: radial-gradient(circle at 1px 1px, ${dot} 1.2px, transparent 0); }
 .scene { position: absolute; inset: 0; will-change: opacity, transform; }
 .scene-header { position: absolute; display: flex; flex-direction: column; justify-content: flex-end; gap: ${u(10)}; }
 .eyebrow { display: inline-flex; align-items: center; gap: ${u(12)}; color: ${c.primary}; font-weight: 700; font-size: ${u(eyebrow)};
@@ -202,5 +203,12 @@ ${languageRules(t)}
 .node .ndetail { color: ${c.textMuted}; }
 .edge-label { position: absolute; padding: ${u(5)} ${u(12)}; border-radius: 999px; background: ${c.surface}; border: 1px solid ${c.line};
   color: ${c.textMuted}; font-weight: 620; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Direction: labels and nodes clip their text and center it safely, so text that cannot fit
+   runs past the end of its box, where text-fits sees it. */
+.dlabel { position: absolute; display: flex; align-items: safe center; justify-content: safe center; text-align: center; overflow: hidden;
+  padding: ${u(12)} ${u(22)}; border-radius: ${u(18)}; border: ${u(3)} solid ${c.line}; background: ${c.surface}; color: ${c.text}; box-shadow: ${c.shadow}; }
+.dlabel .nlabel { font-weight: 720; line-height: 1.15; overflow-wrap: anywhere; }
+.node.dnode { overflow: hidden; justify-content: safe center; align-items: safe center; }
 `;
 }

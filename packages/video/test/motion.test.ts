@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { easeOutCubic } from '../src/runtime/anim.ts';
 import { cameraPlan, cameraPush, heroAccent, heroPunch } from '../src/runtime/camera.ts';
 import { entering, leaving, REST, sceneStyle, transitionOf } from '../src/runtime/transitions.ts';
+import { settledAt, shotSettledAt } from '../src/timeline/cues.ts';
 import type { TimelineScene } from '../src/timeline/types.ts';
 
 const W = 1920;
@@ -72,6 +73,15 @@ describe('scene transitions', () => {
     expect(transitionOf({ transition: { kind: 'cut', seconds: 0 } }, { transition: 0.45 })).toEqual(
       { kind: 'cut', seconds: 0 },
     );
+  });
+
+  it('draw a camera move like the move it resembles when there is no canvas', () => {
+    for (const k of [0, 0.3, 0.7, 1]) {
+      expect(entering('pan', k, U, W)).toEqual(entering('push', k, U, W));
+      expect(leaving('pan', k, U, W)).toEqual(leaving('push', k, U, W));
+      expect(entering('zoom', k, U, W)).toEqual(entering('zoom-through', k, U, W));
+      expect(leaving('zoom', k, U, W)).toEqual(leaving('zoom-through', k, U, W));
+    }
   });
 });
 
@@ -146,11 +156,11 @@ describe('the camera', () => {
       { id: 'a', label: 'A', changed: false },
       { id: 'b', label: 'B', changed: true },
     ];
-    const diagram = {
+    const diagram: TimelineScene['visual'] = {
       kind: 'diagram',
       nodes,
       edges: [{ from: 'a', to: 'b', label: 'calls' }],
-    } as const;
+    };
     const plan = cameraPlan(scene(diagram))!;
     expect(plan.settled).toBeLessThanOrEqual(0.5);
     for (let t = 0.75; t < 1.75; t += 0.25)
@@ -172,7 +182,12 @@ describe('the camera', () => {
 
   it('leaves the outro alone, and lingers on cards and titles over a capture', () => {
     expect(cameraPlan(scene({ kind: 'outro' }))).toBeUndefined();
-    const summary = { kind: 'summary', verdict: 'looks-good', headline: 'H', points: [] } as const;
+    const summary: TimelineScene['visual'] = {
+      kind: 'summary',
+      verdict: 'looks-good',
+      headline: 'H',
+      points: [],
+    };
     expect(cameraPlan(scene(summary))).toMatchObject({ drift: false });
     expect(
       cameraPlan(scene({ kind: 'title', title: 'T', meta: [], background: image })),
@@ -199,5 +214,80 @@ describe('the hero accent', () => {
     expect(heroAccent(motion.flash.seconds).flash).toBe(0);
     expect(heroAccent(0.35).ring).toBeCloseTo(easeOutCubic(0.5), 9);
     expect(heroAccent(0.7)).toEqual({ flash: 0, ring: 0, ringOpacity: 0 });
+  });
+});
+
+describe('the camera in a directed scene', () => {
+  const rect = { x: 0, y: 0, width: 10, height: 10 };
+  const base = {
+    id: 's',
+    beat: 's',
+    eyebrow: 's',
+    start: 0,
+    end: 6,
+    visual: { kind: 'callout', tone: 'info', title: 'C' },
+    expression: 'explaining',
+    narrator: true,
+    speech: { start: 0.3, end: 5, text: 'x' },
+  } as TimelineScene;
+
+  it('pushes in once the shot’s beats are done, not before', () => {
+    expect(cameraPlan(base)!.settled).toBe(0.6);
+    const directed: TimelineScene = {
+      ...base,
+      direction: {
+        whole: true,
+        elements: [{ id: 'visual', kind: 'visual', rect }],
+        beats: [{ verb: 'camera', move: 'zoom', to: 'visual', t: 2, seconds: 0.8 }],
+      },
+    };
+    expect(cameraPlan(directed)!.settled).toBeCloseTo(2.8, 9);
+  });
+
+  it('waits for every element’s own choreography from its reveal', () => {
+    const code = {
+      kind: 'code' as const,
+      path: 'a.js',
+      lines: [
+        { type: 'del' as const, text: 'a' },
+        { type: 'add' as const, text: 'b' },
+      ],
+      highlight: [],
+    };
+    const scene: TimelineScene = {
+      ...base,
+      direction: {
+        whole: false,
+        elements: [
+          { id: 'c', kind: 'code', rect, visual: code },
+          { id: 'l', kind: 'label', rect, text: 'Hi', tone: 'neutral' },
+        ],
+        beats: [
+          { verb: 'reveal', element: 'l', style: 'rise', t: 1, seconds: 0.5 },
+          { verb: 'reveal', element: 'c', style: 'rise', t: 2, seconds: 0.5 },
+        ],
+      },
+    };
+    // The code's lines have entered 0.57 s after its reveal; the label 0.5 s after its own.
+    expect(shotSettledAt(scene)).toBeCloseTo(2 + settledAt(code, 4), 9);
+    expect(shotSettledAt(base)).toBe(settledAt(base.visual, 6, undefined));
+  });
+
+  it('drifts across a capture shown alone, and holds it still beside other elements', () => {
+    const capture = {
+      ...base,
+      visual: {
+        kind: 'screenshot',
+        image: { src: 'a.png', width: 10, height: 10 },
+        device: 'desktop',
+      },
+    } as TimelineScene;
+    const whole = {
+      whole: true,
+      elements: [{ id: 'visual', kind: 'visual' as const, rect }],
+      beats: [],
+    };
+    expect(cameraPlan({ ...capture, direction: whole })!.drift).toBe(true);
+    expect(cameraPlan({ ...capture, direction: { ...whole, whole: false } })!.drift).toBe(false);
   });
 });

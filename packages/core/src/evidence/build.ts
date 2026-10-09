@@ -39,6 +39,14 @@ const scene = (name: string, viewport: string, revision: string) =>
 const citable = (id: string) => id.length <= EVIDENCE_LIMITS.id && EVIDENCE_ID.test(id);
 
 /**
+ * The digest the registry records for a hunk, so whoever shows a hunk under its id can check that
+ * its lines are the ones the evidence names.
+ */
+export function hunkDigest(hunk: Hunk): string {
+  return sha256(renderHunk(hunk));
+}
+
+/**
  * One item per hunk, located on its head lines, or its base lines when it only deletes. A hunk
  * whose id would be too long to cite (a path of hundreds of characters) is left out.
  */
@@ -60,7 +68,7 @@ export function diffHunkEvidence(
         kind: 'diff-hunk',
         path: RUN_PATHS.diff,
         revision: 'both',
-        sha256: sha256(renderHunk(hunk)),
+        sha256: hunkDigest(hunk),
         label: label(`${file.path}:${lines}${head ? '' : ' (base)'}`),
         location: { path: file.path, line, endLine, side: head ? 'head' : 'base' },
       });

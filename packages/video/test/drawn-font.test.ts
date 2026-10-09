@@ -23,8 +23,7 @@ describe('the drawn font', () => {
       try {
         const page = await browser.newPage();
         await page.setContent(PAGE);
-        const read = async (id: string) =>
-          page.evaluate(drawnFont, (await page.$(`#${id}`)) as unknown as HTMLElement);
+        const read = (id: string) => page.$eval(`#${id}`, drawnFont);
         // offsetWidth rounds 100.5 px to a whole pixel, which would read 0.2 px off.
         expect(await read('narrow')).toBeCloseTo(42, 6);
         expect(await read('hidden')).toBe(28);

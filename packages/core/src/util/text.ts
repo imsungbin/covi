@@ -7,6 +7,28 @@ export function truncate(text: string, max: number, ellipsis = '…'): string {
   return text.slice(0, Math.max(0, max - ellipsis.length)).trimEnd() + ellipsis;
 }
 
+/**
+ * What a terminal acts on or hides: control characters (an ANSI escape starts with one), format
+ * and bidi characters, line separators, and lone surrogates.
+ */
+const UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]/gu;
+
+/**
+ * Untrusted text echoed back to a person (a key from a file an agent wrote, a parser's quote of
+ * it): every unprintable character spelled as an escape, and at most `max` characters kept.
+ */
+export function escapeUnprintable(text: string, max = Number.POSITIVE_INFINITY): string {
+  // A code point is at most two code units, so this slice keeps at least `max` of them.
+  const chars = Array.from(text.length > max * 2 ? text.slice(0, max * 2) : text);
+  const cut = chars.length > max || text.length > max * 2;
+  const kept = cut ? chars.slice(0, max).join('') : text;
+  const escaped = kept.replace(UNPRINTABLE, (char) => {
+    const hex = char.codePointAt(0)!.toString(16);
+    return hex.length > 4 ? `\\u{${hex}}` : `\\u${hex.padStart(4, '0')}`;
+  });
+  return cut ? `${escaped}…` : escaped;
+}
+
 export function sentenceCase(text: string): string {
   const t = text.trim();
   return t ? t[0]!.toUpperCase() + t.slice(1) : t;

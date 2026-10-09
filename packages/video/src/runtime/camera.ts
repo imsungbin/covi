@@ -1,5 +1,5 @@
 import { motion } from '@covi/brand';
-import { settledAt } from '../timeline/cues.ts';
+import { settledAt, shotSettledAt } from '../timeline/cues.ts';
 import { HERO_PHASE, type TimelineScene } from '../timeline/types.ts';
 import { easeInOutCubic, easeInOutSine, easeOutCubic, seg } from './anim.ts';
 
@@ -42,12 +42,16 @@ export function cameraPlan(scene: TimelineScene): CameraPlan | undefined {
   if (v.kind === 'outro') return undefined;
   const duration = scene.end - scene.start;
   const hero = scene.hero ? scene.phases?.[HERO_PHASE] : undefined;
-  const settled = settledAt(v, duration, scene.phases);
+  // A directed scene settles once its elements have played and its beats have ended.
+  const settled = scene.direction ? shotSettledAt(scene) : settledAt(v, duration, scene.phases);
   const pinned = Object.keys(scene.phases ?? {}).some((name) => name !== HERO_PHASE);
   const early = pinned || v.kind === 'diagram';
   return {
     duration,
-    drift: CAPTURES.has(v.kind) || (v.kind === 'title' && v.background !== undefined),
+    // A shot that lays the capture out beside other elements holds it still: they move instead.
+    drift:
+      (!scene.direction || scene.direction.whole) &&
+      (CAPTURES.has(v.kind) || (v.kind === 'title' && v.background !== undefined)),
     settled: early ? Math.min(settled, ENTERED) : settled,
     ...(scene.speech ? { speechEnd: scene.speech.end - scene.start } : {}),
     still: scene.camera === 'static',

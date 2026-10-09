@@ -27,6 +27,7 @@
   ],
   "exclude": [
     "packages/video/src/runtime/**",
+    "packages/video/test/canvas.test.ts",
     "packages/video/test/cold-open.test.ts",
     "packages/video/test/density.test.ts",
     "packages/video/test/drawn-font.test.ts",

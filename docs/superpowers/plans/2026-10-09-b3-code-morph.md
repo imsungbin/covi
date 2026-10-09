@@ -1930,8 +1930,10 @@ In `packages/video/src/runtime/direction/elements.ts`:
 2. In `mountShot`, replace the `return { element, layer, ...(reveal ? { reveal } : {}), ...draw(element, sub, drawVisual) };` line with:
 
 ```ts
-    // A morph's beat, on the element's own clock (which starts at its reveal).
-    const beat = direction.beats.find((b) => b.verb === 'morph' && b.element === element.id);
+    // The element's own beat (a morph's), on the element's own clock (which starts at its reveal).
+    const beat = direction.beats.find(
+      (b) => b.verb !== 'reveal' && b.verb !== 'camera' && b.element === element.id,
+    );
     const shift = reveal ? reveal.t : 0;
     const span = beat
       ? ([beat.t - shift, beat.t + beat.seconds - shift] as const)
@@ -1984,7 +1986,7 @@ and after the `capture` case:
       return { component: morph(element.morph, ctx, span) };
 ```
 
-A morph always has a beat once Task 3 resolves it (an implicit one when no beat names it); `[0, 0]` only covers a hand-built timeline without one, which then shows the code after the change from the start.
+A morph always has a beat once Task 3 resolves it (an implicit one when no beat names it); `[0, 0]` only covers a hand-built timeline without one, which then shows the code after the change from the start. The lookup takes any verb that acts on the element itself (everything but `reveal` and `camera`), so B4's `count` beat reaches a metric element through the same `span` without touching `draw` again.
 
 - [ ] **Step 8: Style the morph's pieces**
 
@@ -2183,7 +2185,7 @@ describe('a morph in the direction file', () => {
       'shot 1 (scene s2), element new: the hunk has no lines before the change (a new file); show it as code',
       'shot 1 (scene s2), element big: the hunk changes 13 lines on its head side, and a morph shows at most 12; show it as code, with `lines`',
       'shot 1 (scene s2), element run: cites "terminal:1", which the run\'s evidence does not have (`covi evidence --run <id>` lists it)',
-      'shot 1 (scene s2), beat 1 (morph): morph turns a morph element, and "note" is a label',
+      'shot 1 (scene s2), beat 1 (morph): morph acts on a morph element, and "note" is a label',
       'shot 1 (scene s2), beat 3 (morph): "big" already morphs at an earlier beat; it morphs once',
     ]);
   });
@@ -2402,22 +2404,35 @@ In `packages/video/src/direction/layout.ts`, add `morph: 3,` to `WEIGHT` after `
 
 In `packages/video/src/direction/refs.ts`:
 
-1. Add `import { morphProblem } from './tokens.ts';` after the `./sources.ts` import.
-2. In `directionProblems`' doc comment, replace "lines lie within the side\n * shown, and every `at` is quoted" so the sentence reads "… a requested side exists, lines lie within the side shown, a morph's hunk can morph and its beat names a morph (once), and every `at` is quoted from the scene's narration exactly once (as `sync` phrases are)."
-3. Right before `shot.beats.forEach((beat, k) => {` add `const morphed = new Set<string>();`, and inside that callback, after the "the shot has no element" check:
+1. Add `import { morphProblem } from './tokens.ts';` after the `./sources.ts` import, and `ShotBeat` to the `./schema.ts` type import (`import type { Direction, ShotBeat, ShotElement } from './schema.ts';`).
+2. Before `directionProblems`' doc comment, add the table of verbs that act on one element (spec §4.6.2: a beat references an element of a compatible kind; B4 adds `count: 'metric'` to it):
 
 ```ts
-      if (beat.verb === 'morph') {
+/** The kind of element each verb that acts on an element works on; it acts on each one once. */
+const ACTS_ON: Partial<Record<ShotBeat['verb'], ShotElement['kind']>> = { morph: 'morph' };
+```
+
+3. In `directionProblems`' doc comment, rewrite the end of its sentence to read "… a requested side exists, lines lie within the side shown, a morph's hunk can morph, a verb that acts on an element names one of its kind (once), and every `at` is quoted from the scene's narration exactly once (as `sync` phrases are)."
+4. Right before `shot.beats.forEach((beat, k) => {` add `const acted = new Set<string>();`, and inside that callback, after the "the shot has no element" check:
+
+```ts
+      const needs = ACTS_ON[beat.verb];
+      if (needs) {
         const kind = shot.elements.find((e) => e.id === target)?.kind;
-        if (kind && kind !== 'morph')
-          problems.push(`${name}: morph turns a morph element, and "${target}" is a ${kind}`);
-        else if (morphed.has(target))
-          problems.push(`${name}: "${target}" already morphs at an earlier beat; it morphs once`);
-        morphed.add(target);
+        const key = `${beat.verb}:${target}`;
+        if (kind && kind !== needs)
+          problems.push(
+            `${name}: ${beat.verb} acts on a ${needs} element, and "${target}" is a ${kind}`,
+          );
+        else if (acted.has(key))
+          problems.push(
+            `${name}: "${target}" already ${beat.verb}s at an earlier beat; it ${beat.verb}s once`,
+          );
+        acted.add(key);
       }
 ```
 
-4. In `elementProblems`, before `case 'capture':`:
+5. In `elementProblems`, before `case 'capture':`:
 
 ```ts
     case 'morph': {
@@ -3259,4 +3274,5 @@ Checked against the spec and the owner's scope with fresh eyes, then fixed inlin
 - Ruling: the morph reuses the code card's look (`.code` panel, head with path and language, gutter, marks, line height 1.55, B1's `codeFont` and `cardHeight` over its longer side) and draws absolutely placed spans measured once at mount from two flow layouts of the same rows — exact token boxes with the browser's own text layout, and every frame a pure function of time — about 300 spans for a 14-row morph.
 - Ruling: `DIRECTION_LIMITS.morph` reads at most 400 lines of a hunk, 96 characters a line (as the code element), and 64 tokens a line — every list bounded; a hunk that long fills a card long before its 400th line, because git splits hunks at seven unchanged lines — none expected.
 - Ruling: a shot without the storyboard visual points the narrator at its first element that has a target (a morph's changed lines) — B2 pointed only at the visual, so a morph-only shot would point nowhere — a shot of code and output elements still points by gaze (they report no target).
+- Ruling: the shared extension points B4 (metrics) reuses are generic: `draw` receives the span of an element's own beat (any verb but `reveal` and `camera`, on the element's reveal-shifted clock), and `refs.ts` checks verb–kind compatibility and once-only beats through an `ACTS_ON` table — B4's planner asked for one shape for morph and count instead of two parallel ones — none; a later verb that acts on an element twice by design would opt out of the table.
 - Ruling: the morph render tests build timelines by hand (staging with a morph element and its beats, as the resolver writes them) instead of through B2's `directed()` helper — the runtime is tested apart from the schema and from a helper whose shape B2's execution may change — a little duplicated setup.

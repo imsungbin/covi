@@ -15,15 +15,17 @@ import {
   terminalStarts,
 } from '../../timeline/cues.ts';
 import type { Point, Rect, TimelineVisual } from '../../timeline/types.ts';
-import { clamp, easeOutCubic, fade, lerp, rise, seg, typedPrefix } from '../anim.ts';
+import { easeOutCubic, fade, lerp, rise, seg, typedPrefix } from '../anim.ts';
 import { el, escapeHtml } from '../dom.ts';
 import { center, marksCamera, tourNote } from '../framing.ts';
 import { highlightLine } from '../highlight.ts';
 import { union } from '../narrator.ts';
+import { CARD_FILL, cardHeight, codeFont } from '../sizing.ts';
 import { choreograph, Frame } from './frame.ts';
 import {
   type Component,
   type ComponentContext,
+  drawnFont,
   entered,
   type LayoutItem,
   overflows,
@@ -463,7 +465,7 @@ function morphOrder(lines: V<'code'>['lines']): number[] {
 export function code(v: V<'code'>, ctx: ComponentContext): Component {
   const vertical = ctx.timeline.orientation === 'vertical';
   // The caption sits under the card, inside the media region, so the captions' band stays clear.
-  const band = v.caption ? ctx.u(vertical ? 96 : 72) : 0;
+  const band = v.caption ? ctx.u(vertical ? 96 : 88) : 0;
   const gap = ctx.u(12);
   const box = { ...ctx.regions.media, height: ctx.regions.media.height - band };
   const morph = v.mode === 'morph';
@@ -501,9 +503,16 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
   const typical = Math.max(28, lengths[Math.floor((lengths.length - 1) * 0.9)] ?? 28);
   const fontByWidth = (box.width - ctx.u(40)) / (typical * 0.61);
   const fontByHeight = (box.height - ctx.u(90)) / (v.lines.length * 1.55 + 1.2);
-  const font = clamp(Math.min(fontByWidth, fontByHeight), ctx.u(16), ctx.u(34));
+  const font = codeFont(
+    Math.min(fontByWidth, fontByHeight),
+    ctx.timeline.orientation,
+    ctx.regions.unit,
+  );
   body.style.fontSize = `${font}px`;
-  const height = Math.min(box.height, v.lines.length * font * 1.55 + font * 1.2 + ctx.u(66));
+  // A short block still gets a card that fills most of the region, its lines in the middle.
+  const natural = Math.min(box.height, v.lines.length * font * 1.55 + font * 1.2 + ctx.u(66));
+  const height = cardHeight(box, box.width, natural);
+  body.style.paddingTop = `${ctx.u(14) + (height - natural) / 2}px`;
   Object.assign(panel.style, {
     left: `${box.x}px`,
     top: `${box.y + (box.height - height) / 2}px`,
@@ -517,7 +526,7 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
       top: `${box.y + (box.height + height) / 2 + gap}px`,
       width: `${box.width}px`,
       maxHeight: `${band - gap}px`,
-      fontSize: `${ctx.u(vertical ? 28 : 23)}px`,
+      fontSize: `${ctx.u(28)}px`,
     });
   return {
     update(clock) {
@@ -565,9 +574,17 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
       });
     },
     report: () => [
-      { role: 'media', rect: rectOf(panel) },
+      { role: 'media', rect: rectOf(panel), font: drawnFont(body), text: 'code' },
       ...(caption
-        ? [{ role: 'text' as const, rect: rectOf(caption), overflow: overflows(caption) }]
+        ? [
+            {
+              role: 'text' as const,
+              rect: rectOf(caption),
+              overflow: overflows(caption),
+              font: drawnFont(caption),
+              text: 'body' as const,
+            },
+          ]
         : []),
     ],
     target: () => {
@@ -581,12 +598,36 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
 // Terminal
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * The size of terminal text: one for every window, so a before and an after compare at one scale,
+ * and as large as the longest line and the most lines allow in a window's slot.
+ */
+function terminalFont(
+  slot: Rect,
+  command: string,
+  outputs: readonly string[],
+  ctx: ComponentContext,
+): number {
+  const lines = outputs.map((o) => o.split('\n'));
+  const longest = Math.max(command.length + 2, ...lines.flat().map((l) => l.length), 24);
+  const most = Math.max(...lines.map((l) => l.length));
+  return codeFont(
+    Math.min(
+      (slot.width - ctx.u(40)) / (longest * 0.61),
+      (slot.height - ctx.u(70)) / ((most + 1.5) * 1.5),
+    ),
+    ctx.timeline.orientation,
+    ctx.regions.unit,
+  );
+}
+
 function terminalWindow(
   parent: HTMLElement,
   rect: Rect,
   label: string,
   command: string,
   output: string,
+  font: number,
   ctx: ComponentContext,
 ) {
   const win = el('div', 'term mono', parent);
@@ -596,19 +637,14 @@ function terminalWindow(
   el('span', 'label', head, label);
   const body = el('div', 'term-body', win);
   const lines = output.split('\n');
-  const longest = Math.max(command.length + 2, ...lines.map((l) => l.length), 24);
-  const font = clamp(
-    Math.min(
-      (rect.width - ctx.u(40)) / (longest * 0.61),
-      (rect.height - ctx.u(70)) / ((lines.length + 1.5) * 1.5),
-    ),
-    ctx.u(13),
-    ctx.u(ctx.timeline.orientation === 'vertical' ? 30 : 26),
-  );
   body.style.fontSize = `${font}px`;
-  // The window fits its content (centered in its slot) instead of leaving an empty black box.
+  // The window fits its content, grown to fill most of the region (a terminal keeps its text at
+  // the top, as terminals do), and is centered in its slot.
   const contentHeight = (lines.length + 1) * font * 1.5 + ctx.u(32) + ctx.u(44);
-  const height = Math.min(rect.height, Math.max(ctx.u(180), contentHeight));
+  const height = Math.min(
+    rect.height,
+    Math.max(contentHeight, CARD_FILL * ctx.regions.media.height),
+  );
   win.style.height = `${height}px`;
   win.style.top = `${rect.y + (rect.height - height) / 2}px`;
   const prompt = el('div', '', body);
@@ -617,6 +653,7 @@ function terminalWindow(
   const outLines = lines.map((l) => el('div', 'out', body, l || ' '));
   return {
     win,
+    body,
     play(t: number, start: number) {
       const typed = Math.floor(command.length * seg(t, start, start + 0.6));
       cmd.textContent = command.slice(0, typed);
@@ -632,6 +669,7 @@ function terminalWindow(
 export function terminal(v: V<'terminal'>, ctx: ComponentContext): Component {
   const box = ctx.regions.media;
   const gap = ctx.u(26);
+  const labels = ctx.timeline.labels;
   const windows: Array<ReturnType<typeof terminalWindow>> = [];
   if (v.before !== undefined) {
     const vertical = ctx.timeline.orientation !== 'landscape';
@@ -639,28 +677,15 @@ export function terminal(v: V<'terminal'>, ctx: ComponentContext): Component {
       ? { ...box, height: (box.height - gap) / 2 }
       : { ...box, width: (box.width - gap) / 2 };
     const b = vertical ? { ...a, y: box.y + a.height + gap } : { ...a, x: box.x + a.width + gap };
+    const font = terminalFont(a, v.command, [v.before, v.output], ctx);
     windows.push(
-      terminalWindow(
-        ctx.root,
-        a,
-        ctx.timeline.labels?.before ?? 'Before',
-        v.command,
-        v.before,
-        ctx,
-      ),
-      terminalWindow(ctx.root, b, ctx.timeline.labels?.after ?? 'After', v.command, v.output, ctx),
+      terminalWindow(ctx.root, a, labels?.before ?? 'Before', v.command, v.before, font, ctx),
+      terminalWindow(ctx.root, b, labels?.after ?? 'After', v.command, v.output, font, ctx),
     );
   } else {
-    windows.push(
-      terminalWindow(
-        ctx.root,
-        box,
-        v.title ?? ctx.timeline.labels?.terminal ?? 'Terminal',
-        v.command,
-        v.output,
-        ctx,
-      ),
-    );
+    const font = terminalFont(box, v.command, [v.output], ctx);
+    const label = v.title ?? labels?.terminal ?? 'Terminal';
+    windows.push(terminalWindow(ctx.root, box, label, v.command, v.output, font, ctx));
   }
   return {
     update(clock) {
@@ -673,7 +698,13 @@ export function terminal(v: V<'terminal'>, ctx: ComponentContext): Component {
         w.play(t, start);
       });
     },
-    report: () => windows.map((w) => ({ role: 'media' as const, rect: rectOf(w.win) })),
+    report: () =>
+      windows.map((w) => ({
+        role: 'media' as const,
+        rect: rectOf(w.win),
+        font: drawnFont(w.body),
+        text: 'code' as const,
+      })),
   };
 }
 
@@ -728,6 +759,7 @@ export function api(v: V<'api'>, ctx: ComponentContext): Component {
   const beforeLines = v.before?.body.split('\n') ?? [];
   const marks = v.before ? diffLines(beforeLines, afterLines) : undefined;
   const panels: HTMLDivElement[] = [];
+  const bodies: HTMLPreElement[] = [];
   const make = (rect: Rect, title: string, status: number, lines: string[], kinds?: string[]) => {
     const panel = el('div', 'api-panel card', ctx.root);
     Object.assign(panel.style, {
@@ -742,8 +774,13 @@ export function api(v: V<'api'>, ctx: ComponentContext): Component {
     badge.style.background = status < 300 ? theme.addBackground : theme.delBackground;
     badge.style.color = status < 300 ? theme.success : theme.danger;
     const pre = el('pre', 'mono', panel);
+    bodies.push(pre);
     const longest = Math.max(24, ...lines.map((l) => l.length));
-    pre.style.fontSize = `${clamp(Math.min((rect.width - ctx.u(44)) / (longest * 0.61), (rect.height - ctx.u(80)) / (lines.length * 1.5 + 1)), ctx.u(13), ctx.u(24))}px`;
+    const fit = Math.min(
+      (rect.width - ctx.u(44)) / (longest * 0.61),
+      (rect.height - ctx.u(80)) / (lines.length * 1.5 + 1),
+    );
+    pre.style.fontSize = `${codeFont(fit, ctx.timeline.orientation, ctx.regions.unit)}px`;
     pre.innerHTML = lines
       .map((l, i) => {
         // The "… N more lines" marker from clipping (in any language) is a note, not JSON.
@@ -781,8 +818,13 @@ export function api(v: V<'api'>, ctx: ComponentContext): Component {
         rise(p, i === 0 ? entered(clock, ...spans[0]!) : seg(t, ...spans[i]!), ctx.u(24));
     },
     report: () => [
-      { role: 'media', rect: rectOf(req) },
-      ...panels.map((p) => ({ role: 'media' as const, rect: rectOf(p) })),
+      { role: 'media', rect: rectOf(req), font: drawnFont(req), text: 'code' },
+      ...panels.map((p, i) => ({
+        role: 'media' as const,
+        rect: rectOf(p),
+        font: drawnFont(bodies[i]!),
+        text: 'code' as const,
+      })),
     ],
   };
 }

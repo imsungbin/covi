@@ -15,6 +15,7 @@ import { type Demonstration, parseConfigInput, resolveConfig } from '@covi/core'
 import {
   AssetCollector,
   buildTimeline,
+  densityChecks,
   type LayoutReport,
   layoutChecks,
   layoutScenes,
@@ -42,6 +43,7 @@ import {
   interactionTiming,
   morphTiming,
   screenshotMarks,
+  settledFrame,
 } from '../../packages/video/src/timeline/cues.ts';
 import type { TimelineVisual } from '../../packages/video/src/timeline/types.ts';
 import { canRenderVideo, fullRenders } from '../helpers/env.ts';
@@ -401,16 +403,18 @@ describe.skipIf(!available)('rendering', () => {
   });
 
   /**
-   * Builds a 360×640 composition from storyboard scenes, with one 640×400 capture at demo/a.png,
-   * and opens it. `look` seeks to a frame and evaluates `body`, a function body over `scene` (that
-   * scene's root element). `redact` rewrites every narration after validation, as the redactor
-   * can, so a phrase it hides pins nothing.
+   * Builds a composition from storyboard scenes (360×640 in English unless `options` says
+   * otherwise), with one 640×400 capture at demo/a.png, and opens it. `look` seeks to a frame and
+   * evaluates `body`, a function body over `scene` (that scene's root element). `redact` rewrites
+   * every narration after validation, as the redactor can, so a phrase it hides pins nothing.
    */
   async function compose(
     browser: Browser,
     scenes: StoryboardInput['scenes'],
     redact?: (narration: string) => string,
+    options: { language?: 'en' | 'ko' | 'ja' | 'zh'; width?: number; height?: number } = {},
   ) {
+    const { width = 360, height = 640, language = 'en' } = options;
     const dir = mkdtempSync(join(tmpdir(), 'covi-parts-'));
     dirs.push(dir);
     const capture = await browser.newPage({ viewport: { width: 640, height: 400 } });
@@ -420,15 +424,11 @@ describe.skipIf(!available)('rendering', () => {
     mkdirSync(join(dir, 'demo'));
     await capture.screenshot({ path: join(dir, 'demo', 'a.png') });
     await capture.close();
-    const spec = resolveVideoSpec(resolveConfig([]).config, {
-      mode: 'custom',
-      width: 360,
-      height: 640,
-    });
-    const parsed = StoryboardSchema.parse({ ...storyboard, scenes }).scenes.map((s) =>
+    const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', width, height });
+    const parsed = StoryboardSchema.parse({ ...storyboard, language, scenes }).scenes.map((s) =>
       redact ? { ...s, narration: redact(s.narration) } : s,
     );
-    const layout = layoutScenes(parsed, new Map(), new Map(), 'en', pacingFor(spec));
+    const layout = layoutScenes(parsed, new Map(), new Map(), language, pacingFor(spec));
     const assets = new AssetCollector(dir);
     await assets.prepare(['demo/a.png']);
     const timeline = buildTimeline({
@@ -437,10 +437,11 @@ describe.skipIf(!available)('rendering', () => {
       layout,
       spec,
       image: assets.image,
+      language,
     });
     const composition = join(dir, 'composition');
     await writeComposition(composition, timeline, assets.files);
-    const page = await browser.newPage({ viewport: { width: 360, height: 640 } });
+    const page = await browser.newPage({ viewport: { width, height } });
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(`file://${join(composition, 'index.html')}`);
@@ -465,6 +466,16 @@ describe.skipIf(!available)('rendering', () => {
     narration: 'Here is the cart.',
     visual: { kind: 'callout', tone: 'info', title: 'Cart' },
   } satisfies StoryboardInput['scenes'][number];
+
+  /** A scene's layout report at its settled frame, where QC measures sizes and emptiness. */
+  async function settledReport(c: Awaited<ReturnType<typeof compose>>, id: string) {
+    const frame = settledFrame(
+      c.timeline,
+      c.timeline.scenes.findIndex((s) => s.id === id),
+    )!;
+    await c.look(frame, id, 'return null;');
+    return c.report();
+  }
 
   /** A morph scene's code visual and how far into the scene its morph is done. */
   function morphOf(timeline: Timeline, index: number) {
@@ -1096,6 +1107,116 @@ describe.skipIf(!available)('rendering', () => {
       expect(settled.labels).toEqual([['calls', 1]]);
       expect(settled.drawn[0]).toBeCloseTo(1, 6);
       expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('renders a short code block large, in a card that fills the frame', async () => {
+    const browser = await chromium.launch();
+    try {
+      for (const size of [{}, { width: 640, height: 360 }]) {
+        const c = await compose(browser, storyboard.scenes, undefined, size);
+        const report = await settledReport(c, 's2');
+        const { unit, media } = computeRegions(c.timeline);
+        const card = report.items.find((i) => i.text === 'code')!;
+        // Two short lines reach the ceiling: 48 units in 9:16, 44 in 16:9 (the camera may have
+        // begun to push in).
+        const ceiling = c.timeline.orientation === 'vertical' ? 48 : 44;
+        expect(card.font! / unit).toBeGreaterThanOrEqual(ceiling - 0.5);
+        expect(card.font! / unit).toBeLessThan(ceiling * 1.07);
+        const share = (card.rect.width * card.rect.height) / (media.width * media.height);
+        expect(share).toBeGreaterThan(0.59);
+        const checks = densityChecks(c.timeline, [report]);
+        expect(checks.find((x) => x.id === 'text-size')!.status).toBe('pass');
+        expect(checks.find((x) => x.id === 'empty-frame')!.status).toBe('pass');
+        expect(c.errors).toEqual([]);
+      }
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('shrinks code under the floor only when its lines need it, and QC names the scene', async () => {
+    const browser = await chromium.launch();
+    try {
+      const long =
+        'const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);';
+      const c = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'fix',
+          narration: 'The total now counts the quantity of every item.',
+          visual: {
+            kind: 'code',
+            path: 'src/cart.js',
+            language: 'javascript',
+            lines: [
+              { type: 'del', text: long.replace(' * item.quantity', '') },
+              { type: 'add', text: long },
+            ],
+            highlight: [1],
+          },
+        },
+        storyboard.scenes[2]!,
+      ]);
+      const report = await settledReport(c, 's2');
+      const { unit } = computeRegions(c.timeline);
+      const card = report.items.find((i) => i.text === 'code')!;
+      expect(card.font! / unit).toBeLessThan(24);
+      expect(card.font! / unit).toBeGreaterThanOrEqual(13 - 0.5);
+      const size = densityChecks(c.timeline, [report]).find((x) => x.id === 'text-size')!;
+      expect(size.status).toBe('warn');
+      expect(size.message).toMatch(/code at \d+ px in s2/);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('draws a before and an after terminal at one readable size, and API bodies large', async () => {
+    const browser = await chromium.launch();
+    try {
+      const c = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'proof',
+          narration: 'The request shrinks from seventy kilobytes to ten.',
+          visual: {
+            kind: 'terminal',
+            command: 'node scripts/measure.js',
+            before: 'request bytes: 70406\nchunks: 4\nreader steps: 28\ntimeouts: 1',
+            output: 'request bytes: 9907\nchunks: 1\nreader steps: 10\ntimeouts: 0',
+          },
+        },
+        {
+          id: 's3',
+          beat: 'exchange',
+          narration: 'The response lists the documents.',
+          visual: {
+            kind: 'api',
+            method: 'GET',
+            path: '/api/reviews/1',
+            after: { status: 200, body: '{\n  "refs": 6,\n  "chunks": 1\n}' },
+          },
+        },
+        { ...storyboard.scenes[2]!, id: 's4' },
+      ]);
+      const { unit } = computeRegions(c.timeline);
+      const terminal = await settledReport(c, 's2');
+      const windows = terminal.items.filter((i) => i.text === 'code');
+      expect(windows).toHaveLength(2);
+      expect(windows[0]!.font).toBeCloseTo(windows[1]!.font!, 3);
+      expect(windows[0]!.font! / unit).toBeGreaterThanOrEqual(24);
+      const api = await settledReport(c, 's3');
+      const bodies = api.items.filter((i) => i.text === 'code');
+      expect(bodies).toHaveLength(2);
+      for (const item of bodies) expect(item.font! / unit).toBeGreaterThanOrEqual(24);
+      const checks = densityChecks(c.timeline, [terminal, api]);
+      expect(checks.find((x) => x.id === 'text-size')!.status).toBe('pass');
+      expect(checks.find((x) => x.id === 'empty-frame')!.status).toBe('pass');
+      expect(c.errors).toEqual([]);
     } finally {
       await browser.close();
     }

@@ -85,6 +85,21 @@ export function overflows(node: HTMLElement): boolean {
   );
 }
 
+/**
+ * A node's font size as drawn, in stage pixels: its computed size scaled by the transforms around
+ * it (the camera's push), measured from its box. QC's text-size check reads it.
+ */
+export function drawnFont(node: HTMLElement): number {
+  const font = Number.parseFloat(getComputedStyle(node).fontSize) || 0;
+  const width = node.offsetWidth;
+  return width > 0 ? (font * node.getBoundingClientRect().width) / width : font;
+}
+
+/** The smallest drawn font of these nodes: what a layout item with several texts reports. */
+export function smallestFont(nodes: readonly HTMLElement[]): number {
+  return Math.min(...nodes.map(drawnFont));
+}
+
 /** Entrance progress over [start, end]; the opening scene is already in place at frame 0. */
 export function entered(clock: Pick<SceneClock, 't' | 'open'>, start: number, end: number): number {
   return clock.open ? 1 : seg(clock.t, start, end);

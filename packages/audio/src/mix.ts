@@ -10,11 +10,12 @@ import { type Placement, placementEnvelope } from './placement.ts';
 
 /*
  * The narration-first mix. The voice and the music are each brought to −16 LUFS, the music is
- * shaped by its placement (under speech, in the gaps, at the ends), and effects sit at fixed
- * levels below the voice. The master then gets linear gain to its target and a deterministic
- * lookahead limiter at −1.5 dBFS, up to three times, until it is within ±0.5 LU of the target with
- * a true peak at or below −1 dBTP. A linear gain plus a limiter, rather than ffmpeg's loudnorm,
- * because loudnorm silently turns dynamic when linear gain would break its peak target.
+ * shaped by its placement (under speech, in the gaps, at the ends), effects sit at levels written
+ * against the bed, lowered together if any comes within 8 dB of the voice's peak. The master then
+ * gets linear gain to its target and a deterministic lookahead limiter at −1.5 dBFS, up to three
+ * times, until it is within ±0.5 LU of the target with a true peak at or below −1 dBTP. A linear
+ * gain plus a limiter, rather than ffmpeg's loudnorm, because loudnorm silently turns dynamic when
+ * linear gain would break its peak target.
  */
 
 export const STEM_LUFS = -16;
@@ -22,6 +23,8 @@ export const STEM_LUFS = -16;
 export const MASTER_LUFS = { narrated: -16, music: -20 } as const;
 export const CEILING_DB = -1.5;
 export const TRUE_PEAK_MAX_DB = -1;
+/** Effects stay at least this far under the voice's peak (dB): the mix lowers them together. */
+export const EFFECTS_UNDER_VOICE_DB = 8;
 const TOLERANCE_LU = 0.5;
 const PASSES = 3;
 
@@ -47,6 +50,8 @@ export interface MixLevels {
   musicBelowVoiceDb?: number;
   /** How far the loudest effect sits under the voice's peak (dB). */
   effectsBelowVoiceDb?: number;
+  /** How far the mix lowered every effect together to keep them under the voice's peak (dB). */
+  effectsCutDb?: number;
   master?: { integrated: number; truePeak: number };
 }
 
@@ -118,7 +123,19 @@ export function mixSound(input: MixInput): MixResult {
   if (voice && music && input.speech.length)
     levels.musicBelowVoiceDb =
       weightedLevel([voice, voice], sr, input.speech) - weightedLevel(music, sr, input.speech);
-  if (voice && effects) levels.effectsBelowVoiceDb = samplePeak([voice]) - samplePeak(effects);
+  if (voice && effects) {
+    const voicePeak = samplePeak([voice]);
+    const below = voicePeak - samplePeak(effects);
+    if (Number.isFinite(below)) {
+      if (below < EFFECTS_UNDER_VOICE_DB) {
+        // A tenth of a dB of margin keeps float rounding from landing a hair under the floor.
+        const cut = EFFECTS_UNDER_VOICE_DB + 0.1 - below;
+        scale(effects, dbToGain(-cut));
+        levels.effectsCutDb = cut;
+      }
+      levels.effectsBelowVoiceDb = voicePeak - samplePeak(effects);
+    }
+  }
 
   if (!voice && !music && !effects) return { levels };
   const master = stereo(n);

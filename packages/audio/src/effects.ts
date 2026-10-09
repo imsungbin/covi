@@ -1,21 +1,26 @@
 import { z } from 'zod';
+import { BED_DB } from './placement.ts';
 
 /*
  * Sound effects follow only what happens on screen: a pointer click, the before/after reveal, a
  * finding card landing (heavier for high severity), the verdict appearing, the outro card
  * settling, a scene pushing, wiping, or zooming through (a whoosh), and the hero (a riser into
- * its moment and a hit on it). If an effect is noticeable, it is too loud: they sit well under the
- * voice, swells lower still, and density limits keep a busy stretch from turning into a rattle;
- * when effects crowd, the swells give way first. The outro's sign-off plays only when no music
- * does: with music, the music's own sonic logo lands on that moment.
+ * its moment and a hit on it). If an effect is noticeable, it is too loud: their levels are written
+ * against the music bed (the same with any placement, or with no music), swells lower still, and
+ * density limits keep a busy stretch from turning into a rattle; when effects crowd, the swells
+ * give way first. The outro's sign-off plays only when no music does: with music, the music's own
+ * sonic logo lands on that moment.
  */
 
 const Recipe = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
 
 /** templates/music/sound-effects.yml */
 export const SoundEffectsSchema = z.strictObject({
-  /** Level of every effect relative to the voice-normalized stems (dB), its recipe at −3 dBFS. */
-  gainDb: z.number().min(-40).max(0),
+  /**
+   * Level of every effect relative to the music bed's level under speech (dB; `BED_DB`), its
+   * recipe at −3 dBFS. The mix lowers them all together if any comes within 8 dB of the voice.
+   */
+  gainDb: z.number().min(-20).max(12),
   /** Extra level for the verdict, the one moment the effects mark the story (dB). */
   verdictBoostDb: z.number().min(0).max(6),
   /** Extra level for the outro's sign-off, which plays in the quiet after the narration (dB). */
@@ -59,6 +64,7 @@ export interface PlacedEffect {
   t: number;
   kind: EffectCue['kind'];
   recipe: string;
+  /** Level relative to the voice-normalized stems (dB): the bed's, plus the configured offsets. */
   gainDb: number;
 }
 
@@ -138,6 +144,7 @@ export function placeEffects(
       kind: cue.kind,
       recipe,
       gainDb:
+        BED_DB +
         config.gainDb +
         (cue.kind === 'verdict'
           ? config.verdictBoostDb

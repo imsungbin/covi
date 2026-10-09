@@ -39,7 +39,7 @@ describe('the music library (templates/music)', () => {
       'verdict-needs-changes',
     ]);
     expect(library.soundEffects).toMatchObject({
-      gainDb: -14,
+      gainDb: 1,
       swellCutDb: 4,
       minSpacing: 0.15,
       maxPerSecond: 3,

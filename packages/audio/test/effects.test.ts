@@ -6,9 +6,10 @@ import {
   placeEffects,
   type SoundEffectsConfig,
 } from '../src/effects.ts';
+import { BED_DB } from '../src/placement.ts';
 
 const config: SoundEffectsConfig = {
-  gainDb: -14,
+  gainDb: 1,
   verdictBoostDb: 2,
   outroBoostDb: 2,
   swellCutDb: 4,
@@ -73,7 +74,7 @@ describe('the outro sign-off', () => {
 
   it('plays a little louder, in the quiet after the narration', () => {
     const { placed } = placeEffects([cue(3, 'click'), cue(30, 'outro', 'looks-good')], config);
-    expect(placed.map((p) => p.gainDb)).toEqual([-14, -12]);
+    expect(placed.map((p) => p.gainDb)).toEqual([BED_DB + 1, BED_DB + 3]);
   });
 });
 
@@ -85,9 +86,9 @@ describe('placeEffects', () => {
     );
     expect(dropped).toEqual([]);
     expect(placed).toEqual([
-      { t: 1, kind: 'click', recipe: 'click', gainDb: -14 },
-      { t: 2, kind: 'reveal', recipe: 'reveal', gainDb: -14 },
-      { t: 5, kind: 'verdict', recipe: 'verdict-looks-good', gainDb: -12 },
+      { t: 1, kind: 'click', recipe: 'click', gainDb: BED_DB + 1 },
+      { t: 2, kind: 'reveal', recipe: 'reveal', gainDb: BED_DB + 1 },
+      { t: 5, kind: 'verdict', recipe: 'verdict-looks-good', gainDb: BED_DB + 3 },
     ]);
   });
 
@@ -105,7 +106,9 @@ describe('placeEffects', () => {
 
   it('prefers a high-severity finding over an ordinary one', () => {
     const { placed } = placeEffects([cue(1, 'finding'), cue(1.05, 'finding', 'high')], config);
-    expect(placed).toEqual([{ t: 1.05, kind: 'finding', recipe: 'finding-high', gainDb: -14 }]);
+    expect(placed).toEqual([
+      { t: 1.05, kind: 'finding', recipe: 'finding-high', gainDb: BED_DB + 1 },
+    ]);
   });
 
   it('allows at most three effects in any second', () => {
@@ -116,6 +119,11 @@ describe('placeEffects', () => {
       expect(times[i]! - times[i - 3]!).toBeGreaterThanOrEqual(1 - 1e-9);
     expect(placed.length + dropped.length).toBe(7);
     expect(dropped[0]!.reason).toMatch(/3 per second/);
+  });
+
+  it('writes levels against the music bed, so they move with it', () => {
+    const { placed } = placeEffects([cue(1, 'click')], { ...config, gainDb: -2 });
+    expect(placed[0]!.gainDb).toBe(BED_DB - 2);
   });
 });
 
@@ -148,9 +156,9 @@ describe('the hero stack and the swells', () => {
       config,
     );
     expect(placed.map((p) => [p.kind, p.gainDb])).toEqual([
-      ['transition', -18],
-      ['riser', -18],
-      ['hero', -14],
+      ['transition', BED_DB - 3],
+      ['riser', BED_DB - 3],
+      ['hero', BED_DB + 1],
     ]);
   });
 

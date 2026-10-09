@@ -4,10 +4,12 @@
 # moment and a hit on it). If an effect is noticeable, it is too loud. The outro's sign-off plays
 # only without music: with music, the music's own sonic logo lands on that moment.
 #
-# gainDb is relative to the voice-normalized stems (the voice at −16 LUFS), with every recipe
-# rendered to a −3 dBFS peak: −14 dB puts an effect's peak around 10 dB under the voice's.
+# gainDb is relative to the music bed's level under speech (BED_DB in packages/audio/src/placement.ts:
+# 15 dB under the voice-normalized stems), with every recipe rendered to a −3 dBFS peak. +1 puts an
+# effect's peak about 10 dB under the voice's. Effects keep this level with any placement and
+# without music, and the mix lowers them all together if any comes within 8 dB of the voice's peak.
 
-gainDb: -14
+gainDb: 1
 # The verdict is the one moment the effects mark the story itself.
 verdictBoostDb: 2
 # The sign-off plays in the quiet after the last line, where nothing else sounds.

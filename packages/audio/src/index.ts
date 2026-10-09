@@ -42,6 +42,7 @@ export {
 } from './loudness.ts';
 export {
   CEILING_DB,
+  EFFECTS_UNDER_VOICE_DB,
   MASTER_LUFS,
   type MixInput,
   type MixLevels,

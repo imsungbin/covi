@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hashOf } from '../src/hash.ts';
 import { integratedLoudness, samplePeak, truePeak } from '../src/loudness.ts';
-import { type MixInput, mixSound } from '../src/mix.ts';
+import { EFFECTS_UNDER_VOICE_DB, type MixInput, mixSound } from '../src/mix.ts';
 
 const SR = 48_000;
 const D = 5;
@@ -71,7 +71,7 @@ describe('mixSound', () => {
     expect(r.levels.master!.truePeak).toBeLessThanOrEqual(-1);
     expect(r.levels.voiceLufs).toBeCloseTo(-16, 1);
     expect(r.levels.musicBelowVoiceDb!).toBeGreaterThanOrEqual(18);
-    expect(r.levels.effectsBelowVoiceDb!).toBeGreaterThanOrEqual(6);
+    expect(r.levels.effectsBelowVoiceDb!).toBeGreaterThanOrEqual(8);
     expect(r.master![0]!.length).toBe(D * SR);
     // The voice stem is normalized as heard: the same signal on both channels.
     expect(integratedLoudness([r.voice!, r.voice!], SR)).toBeCloseTo(-16, 1);
@@ -111,5 +111,29 @@ describe('mixSound', () => {
     const a = mixSound(input());
     const b = mixSound(input());
     expect(hashOf(a.master![0]!, a.master![1]!)).toBe(hashOf(b.master![0]!, b.master![1]!));
+  });
+
+  it("lowers every effect together when one comes within 8 dB of the voice's peak", () => {
+    const hot = mixSound(
+      input({
+        effects: [
+          { t: 1, audio: click(), gainDb: 0 },
+          { t: 3.5, audio: click(), gainDb: -6 },
+        ],
+      }),
+    );
+    expect(hot.levels.effectsBelowVoiceDb!).toBeGreaterThanOrEqual(EFFECTS_UNDER_VOICE_DB);
+    expect(hot.levels.effectsBelowVoiceDb!).toBeCloseTo(EFFECTS_UNDER_VOICE_DB + 0.1, 1);
+    expect(hot.levels.effectsCutDb!).toBeGreaterThan(0);
+    const quiet = mixSound(input({ effects: [{ t: 1, audio: click(), gainDb: -40 }] }));
+    expect(quiet.levels.effectsCutDb).toBeUndefined();
+    // A silent effect has no peak: nothing to lower, nothing to report, nothing infinite.
+    const silent = mixSound(
+      input({
+        effects: [{ t: 1, audio: [new Float32Array(100), new Float32Array(100)], gainDb: 0 }],
+      }),
+    );
+    expect(silent.levels.effectsBelowVoiceDb).toBeUndefined();
+    expect(silent.levels.effectsCutDb).toBeUndefined();
   });
 });

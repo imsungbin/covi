@@ -23,11 +23,13 @@ import {
   type FrameMark,
   HERO_PHASE,
   type ImageAsset,
+  type SceneStaging,
   type SceneTransition,
   type Timeline,
   type TimelineLabels,
   type TimelineScene,
   type TimelineVisual,
+  type TransitionKind,
 } from './types.ts';
 
 /** The labels a video draws, from the message catalog of its language. */
@@ -62,9 +64,15 @@ export function timelineLabels(language: Language): TimelineLabels {
 /** Scenes overlap by the brand's transition length. */
 export const TRANSITION = motion.transition;
 
-/** How a scene enters: its own transition, else zoom-through into the hero, else a fade. */
-export function sceneTransition(scene: Pick<Scene, 'transition' | 'hero'>): SceneTransition {
-  const kind = scene.transition ?? (scene.hero ? 'zoom-through' : 'fade');
+/**
+ * How a scene enters: the entrance direction gave it, else its own transition, else zoom-through
+ * into the hero, else a fade.
+ */
+export function sceneTransition(
+  scene: Pick<Scene, 'transition' | 'hero'>,
+  entrance?: TransitionKind,
+): SceneTransition {
+  const kind = entrance ?? scene.transition ?? (scene.hero ? 'zoom-through' : 'fade');
   return { kind, seconds: motion.transitions[kind] };
 }
 
@@ -267,9 +275,10 @@ export interface Layout {
  * and the transition into each scene starts where `cutStart` puts it. A scene stays up for its
  * visual's minimum, and the next line waits for it; the hero holds `HERO_HOLD` after its line. A
  * breath belongs to the scene after it: the transition starts as at any scene change and the new
- * picture holds the breath, so an ordinary scene never outstays its line by more than 0.6 s (the
- * hero's hold, a scene kept up for its minimum, and the last scene's tail can). The video ends
- * with the outro or a short hold.
+ * picture holds the breath, so an ordinary scene never outstays its line by more than 0.6 s, or
+ * 0.71 s before the camera's zoom (the hero's hold, a scene kept up for its minimum, and the last
+ * scene's tail can). The video ends with the outro or a short hold. `entrances`, by scene id, are
+ * the entrances direction gave (R-008): they shape the overlap like a storyboard `transition`.
  */
 export function layoutScenes(
   scenes: readonly Scene[],
@@ -277,6 +286,7 @@ export function layoutScenes(
   extraHold: ReadonlyMap<string, number> = new Map(),
   language: Language = 'en',
   pacing: Pacing = TIGHT,
+  entrances: ReadonlyMap<string, TransitionKind> = new Map(),
 ): Layout {
   // The hero: a scene marked `hero`, else the template's payoff beats (for its breath).
   const hero = heroScene(scenes, pacing.hero);
@@ -302,7 +312,7 @@ export function layoutScenes(
     }
     const previous = out[i - 1]!;
     const before = scenes[i - 1]!;
-    const { seconds } = sceneTransition(scene);
+    const { seconds } = sceneTransition(scene, entrances.get(id));
     // Where the line before ends for the cut: the hero, and any hold asked for, stay a little.
     const lineEnd =
       previous.speechEnd + (before.hero ? HERO_HOLD : 0) + (extraHold.get(previous.id) ?? 0);
@@ -367,10 +377,11 @@ export function fitToDuration(
   spec: VideoSpec,
   language: Language = 'en',
   pacing: Pacing = pacingFor(spec),
+  entrances: ReadonlyMap<string, TransitionKind> = new Map(),
 ): FitResult {
   const notes: string[] = [];
   let scenes = [...storyboard.scenes];
-  let layout = layoutScenes(scenes, speech, new Map(), language, pacing);
+  let layout = layoutScenes(scenes, speech, new Map(), language, pacing, entrances);
   const { max } = spec.duration;
 
   while (layout.duration > max && scenes.length > 3) {
@@ -380,7 +391,7 @@ export function fitToDuration(
     if (index === -1) break;
     notes.push(`Dropped optional scene "${scenes[index]!.beat}" to fit ${Math.round(max)}s.`);
     scenes = scenes.filter((_, i) => i !== index);
-    layout = layoutScenes(scenes, speech, new Map(), language, pacing);
+    layout = layoutScenes(scenes, speech, new Map(), language, pacing, entrances);
   }
   let tempo = 1;
   if (layout.duration > max) {
@@ -423,6 +434,10 @@ export interface BuildTimelineInput {
   language?: Language;
   /** The review's verdict, for the outro when the storyboard has no summary. */
   verdict?: Verdict;
+  /** The entrances direction gave, by scene id (see `layoutScenes`). */
+  entrances?: ReadonlyMap<string, TransitionKind>;
+  /** Each story scene's stop and resolved shot, aligned with `scenes`; absent: no canvas. */
+  staging?: ReadonlyArray<SceneStaging | undefined>;
 }
 
 /** The scenes of the story itself: the timeline's scenes without Covi's outro. */
@@ -445,7 +460,8 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
     const text = line.text;
     const span = emphasisSpan(line);
     if (span) emphasis.set(timing.id, span);
-    const transition = i > 0 ? sceneTransition(scene) : undefined;
+    const transition = i > 0 ? sceneTransition(scene, input.entrances?.get(timing.id)) : undefined;
+    const staged = input.staging?.[i];
     const phases = scenePhases(scene, text, timing, captionOptions, transition?.seconds);
     // Rounded like the phases, so a cue at the scene's very end survives the subtraction.
     const cues = sceneCues(scene, phases, round(timing.end - timing.start));
@@ -469,6 +485,7 @@ export function buildTimeline(input: BuildTimelineInput): Timeline {
       ...(scene.camera === 'static' ? { camera: 'static' as const } : {}),
       ...(scene.evidenceIds?.length ? { evidenceIds: [...scene.evidenceIds] } : {}),
       ...(cues ? { cues } : {}),
+      ...(staged ? { stop: staged.stop, direction: staged.direction } : {}),
     };
   });
   if (layout.outro) {

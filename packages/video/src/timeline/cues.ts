@@ -665,16 +665,23 @@ export function outroSettle(): number {
 /** The riser swells for this long into the hero's phase, where the hit lands. */
 export const RISER_LEAD = 0.8;
 
-/** Transitions that move the picture, and so get a whoosh. */
-const WHOOSH: ReadonlySet<TransitionKind> = new Set(['push', 'wipe', 'zoom-through']);
+/** Transitions that move the picture, and so get a whoosh: the camera's moves between stops too. */
+const WHOOSH: ReadonlySet<TransitionKind> = new Set([
+  'push',
+  'wipe',
+  'zoom-through',
+  'pan',
+  'zoom',
+]);
 
 /**
  * Every moment with a sound, in time order. A whoosh plays mid-move for a scene that pushes,
- * wipes, or zooms through (unless the riser into the hero carries that move); the hero's hit
- * lands at its phase, the riser swelling into it from 0.8 s before (left out before the video
- * starts); and a scene's own cues play where they ask (a riser ends there; one past the scene's
- * end is not played, and one repeating Covi's is merged). Fades, cuts, code, and terminals make no
- * sound. The outro's moment is where the music's logo lands, or, without music, its own sign-off.
+ * wipes, or zooms through, or that the camera pans or zooms to (unless the riser into the hero
+ * carries that move); the hero's hit lands at its phase, the riser swelling into it from 0.8 s
+ * before (left out before the video starts); and a scene's own cues play where they ask (a riser
+ * ends there; one past the scene's end is not played, and one repeating Covi's is merged). Fades,
+ * cuts, code, and terminals make no sound. The outro's moment is where the music's logo lands, or,
+ * without music, its own sign-off.
  */
 export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
   const cues: TimelineCue[] = [];

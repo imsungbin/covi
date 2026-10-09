@@ -73,6 +73,15 @@ describe('scene transitions', () => {
       { kind: 'cut', seconds: 0 },
     );
   });
+
+  it('draw a camera move like the move it resembles when there is no canvas', () => {
+    for (const k of [0, 0.3, 0.7, 1]) {
+      expect(entering('pan', k, U, W)).toEqual(entering('push', k, U, W));
+      expect(leaving('pan', k, U, W)).toEqual(leaving('push', k, U, W));
+      expect(entering('zoom', k, U, W)).toEqual(entering('zoom-through', k, U, W));
+      expect(leaving('zoom', k, U, W)).toEqual(leaving('zoom-through', k, U, W));
+    }
+  });
 });
 
 const image = { src: 'a.png', width: 100, height: 100 };

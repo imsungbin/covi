@@ -37,7 +37,9 @@ export function entering(kind: TransitionKind, k: number, unit: number, width: n
   switch (kind) {
     case 'cut':
       return REST;
-    case 'push': {
+    // Without a canvas (a timeline with no stops), a camera move draws as the move it resembles.
+    case 'push':
+    case 'pan': {
       const e = easeInOutCubic(k);
       return { ...REST, x: (1 - e) * width };
     }
@@ -45,7 +47,8 @@ export function entering(kind: TransitionKind, k: number, unit: number, width: n
       const e = easeInOutCubic(k);
       return { ...REST, clipRight: 1 - e };
     }
-    case 'zoom-through': {
+    case 'zoom-through':
+    case 'zoom': {
       const e = easeOutCubic(k);
       return { ...REST, opacity: e, scale: 0.92 + 0.08 * e };
     }
@@ -67,8 +70,10 @@ export function leaving(kind: TransitionKind, k: number, unit: number, width: nu
       // one has come: their clips meet at the wipe's edge.
       return { ...REST, opacity: k >= 1 ? 0 : 1, clipLeft: easeInOutCubic(k) };
     case 'push':
+    case 'pan':
       return { ...REST, x: -easeInOutCubic(k) * width };
-    case 'zoom-through': {
+    case 'zoom-through':
+    case 'zoom': {
       const e = easeInCubic(k);
       return { ...REST, opacity: 1 - e, scale: 1 + 0.12 * e };
     }

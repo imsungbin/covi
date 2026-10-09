@@ -11,6 +11,7 @@ import {
   pacingFor,
   sceneTransition,
 } from '../src/timeline/build.ts';
+import { CAMERA_TRANSITIONS } from '../src/timeline/types.ts';
 
 const spec = resolveVideoSpec(DEFAULT_CONFIG, { mode: 'short' });
 const callout = { kind: 'callout', tone: 'info', title: 'C' } as const;
@@ -42,7 +43,18 @@ describe('transitions in the timeline', () => {
     expect(sceneTransition({ hero: true, transition: 'cut' })).toEqual({ kind: 'cut', seconds: 0 });
     for (const kind of TRANSITION_KINDS)
       expect(sceneTransition({ transition: kind }).seconds).toBe(motion.transitions[kind]);
-    expect(Object.keys(motion.transitions).sort()).toEqual([...TRANSITION_KINDS].sort());
+    expect(Object.keys(motion.transitions).sort()).toEqual(
+      [...TRANSITION_KINDS, ...CAMERA_TRANSITIONS].sort(),
+    );
+  });
+
+  it('take the entrance direction gives over the scene’s own transition and the hero default', () => {
+    expect(sceneTransition({ hero: true }, 'zoom')).toEqual({ kind: 'zoom', seconds: 0.9 });
+    expect(sceneTransition({ transition: 'push' }, 'pan')).toEqual({ kind: 'pan', seconds: 0.7 });
+    expect(sceneTransition({ transition: 'wipe' }, undefined)).toEqual({
+      kind: 'wipe',
+      seconds: 0.55,
+    });
   });
 
   it('give every scene but the first its transition, and the outro its fade', () => {

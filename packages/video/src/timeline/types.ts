@@ -26,7 +26,73 @@ export interface Point {
 }
 
 /** How a scene enters: the transition into it (see `motion.transitions` for their lengths). */
-export type TransitionKind = 'fade' | 'cut' | 'push' | 'wipe' | 'zoom-through';
+export type TransitionKind = 'fade' | 'cut' | 'push' | 'wipe' | 'zoom-through' | 'pan' | 'zoom';
+
+/**
+ * Entrances that move the canvas camera from the scene before to this scene's stop: `pan` glides
+ * there, `zoom` pulls back to show both stops and pushes into the next. Only direction gives them.
+ */
+export const CAMERA_TRANSITIONS = ['pan', 'zoom'] as const satisfies readonly TransitionKind[];
+
+/** A scene's stop on the canvas: the top-left corner of its frame-sized region, in world pixels. */
+export interface Stop {
+  x: number;
+  y: number;
+}
+
+/** How a revealed element enters. */
+export type RevealStyle = 'rise' | 'pop' | 'wipe' | 'type';
+/** How a camera beat moves inside a stop. */
+export type CameraMove = 'zoom' | 'pan' | 'follow';
+
+/**
+ * An element of a directed scene, resolved: content from the run's evidence (never from the
+ * agent, labels excepted) and its slot in stop-local stage pixels. Code, output, and captures are
+ * drawn by the components that draw those visuals, inside their slot.
+ */
+export type DirectionElement =
+  | { id: string; kind: 'visual'; rect: Rect }
+  | { id: string; kind: 'code'; rect: Rect; visual: Extract<TimelineVisual, { kind: 'code' }> }
+  | {
+      id: string;
+      kind: 'output';
+      rect: Rect;
+      visual: Extract<TimelineVisual, { kind: 'terminal' }>;
+    }
+  | {
+      id: string;
+      kind: 'capture';
+      rect: Rect;
+      visual: Extract<TimelineVisual, { kind: 'screenshot' }>;
+    }
+  | { id: string; kind: 'node'; rect: Rect; label: string }
+  | {
+      id: string;
+      kind: 'label';
+      rect: Rect;
+      text: string;
+      tone: 'neutral' | 'warning' | 'success';
+    };
+
+/** A beat, resolved: when it starts (seconds since the scene started) and how long it takes. */
+export type DirectionBeat =
+  | { verb: 'reveal'; element: string; style: RevealStyle; t: number; seconds: number }
+  | { verb: 'camera'; move: CameraMove; to: string; zoom?: number; t: number; seconds: number };
+
+/** A scene's shot, resolved. */
+export interface SceneDirection {
+  /** The shot shows only the storyboard's visual, laid out exactly as it is without direction. */
+  whole: boolean;
+  elements: DirectionElement[];
+  /** In time order. */
+  beats: DirectionBeat[];
+}
+
+/** What direction adds to a story scene: its stop on the canvas and its resolved shot. */
+export interface SceneStaging {
+  stop: Stop;
+  direction: SceneDirection;
+}
 
 /** The phase every hero scene has: its `sync.hero` phrase, else the start of its line. */
 export const HERO_PHASE = 'hero';

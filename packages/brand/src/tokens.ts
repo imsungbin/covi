@@ -160,10 +160,20 @@ export const motion = {
   /** The default scene transition (a fade) in seconds; consecutive scenes overlap by it. */
   transition: 0.45,
   /**
-   * Each scene transition's length in seconds; a cut has none. All stay under 0.625 s, so the
-   * scene before a transition ends at most 0.6 s after its line (see the video timeline).
+   * Each scene transition's length in seconds; a cut has none. The storyboard's kinds stay under
+   * 0.625 s, so the scene before them ends at most 0.6 s after its line (see the video timeline).
+   * The canvas camera's moves take longer: a pan glides to the next stop, and a zoom pulls back to
+   * show both stops and pushes into the next one.
    */
-  transitions: { fade: 0.45, cut: 0, push: 0.5, wipe: 0.55, 'zoom-through': 0.6 },
+  transitions: {
+    fade: 0.45,
+    cut: 0,
+    push: 0.5,
+    wipe: 0.55,
+    'zoom-through': 0.6,
+    pan: 0.7,
+    zoom: 0.9,
+  },
   /** A capture's camera drift through its scene: a slow push-in of at most 2%, eased in and out. */
   drift: 0.02,
   /** The push-in once a visual has finished while its line continues, so it never holds still. */

@@ -1,4 +1,4 @@
-import type { EvidenceIndex } from '@covi/core';
+import { type EvidenceIndex, hunksOf } from '@covi/core';
 import { sceneEvidence } from '../grounding.ts';
 import { highlightGroups } from '../storyboard/grammar.ts';
 import type { Scene } from '../storyboard/schema.ts';
@@ -82,21 +82,30 @@ function cameraBeats(scene: Scene): ShotBeat[] {
 }
 
 /**
- * A code scene that shows one hunk small enough to morph (code on both sides, every changed
- * line on the card) morphs it instead of showing it: the camera follows the changed lines, and
- * the morph lands on the phrase that lights its highlights, else spread through its line. A scene
- * the storyboard set apart keeps its visual: the line morph (`mode: "morph"`), or a caption the
- * morph would not draw, and so does one that shows only unchanged lines (it is about them, not
- * about the change beside them). It reads what the scene shows, never what it cites.
+ * A code scene morphs the hunk whose changed lines it shows, and only that one, when the hunk is
+ * small enough (code on both sides, every changed line on the card): the camera follows the
+ * changed lines, and the morph lands on the phrase that lights its highlights, else spread through
+ * its line. A scene whose changed lines lie in no hunk, or in more than one, or that shows only
+ * unchanged lines, keeps its visual: morphing code it did not show could contradict its narration.
+ * So does a scene the storyboard set apart: the line morph (`mode: "morph"`), or a caption the
+ * morph would not draw. It reads what the scene shows, never what it cites.
  */
 function morphShot(scene: Scene, id: string, input: DirectorInput): Shot | undefined {
   const v = scene.visual;
   const { evidence, sources } = input;
   if (v.kind !== 'code' || v.mode === 'morph' || v.caption || !evidence || !sources)
     return undefined;
-  if (v.lines.every((l) => l.type === 'context')) return undefined;
-  const hunks = sceneEvidence({ visual: v }, evidence).filter(
-    (ref) => evidence.find(ref)?.kind === 'diff-hunk',
+  // A storyboard numbers a deleted line as before the change and an added one as after it, as a
+  // hunk's own lines are numbered; context lines say nothing about which change the scene shows.
+  const changed = v.lines.filter((l) => l.type !== 'context' && l.number !== undefined);
+  const hunks = hunksOf(evidence, v.path).filter((ref) =>
+    sources
+      .hunk(ref)
+      ?.lines.some((h) =>
+        changed.some(
+          (l) => l.type === h.kind && l.number === (h.kind === 'del' ? h.oldLine : h.newLine),
+        ),
+      ),
   );
   const hunk = hunks.length === 1 ? sources.hunk(hunks[0]!) : undefined;
   if (!hunk || morphProblem(hunk.lines)) return undefined;

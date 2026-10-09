@@ -614,9 +614,22 @@ export function settledAt(visual: TimelineVisual, duration: number, phases: Phas
 }
 
 /**
+ * How long scene `index` takes to enter, in seconds: its transition's length, or the timeline's
+ * for a scene from before kinds; nothing for the first scene, or past the last.
+ */
+export function entranceSeconds(
+  timeline: Pick<Timeline, 'scenes' | 'transition'>,
+  index: number,
+): number {
+  const scene = timeline.scenes[index];
+  return index === 0 || !scene ? 0 : (scene.transition?.seconds ?? timeline.transition);
+}
+
+/**
  * When scene `index` has settled and is alone on screen, in seconds from the start of the video:
- * from the end of its entrance and its choreography to where the next scene starts to enter. A
- * scene too short to settle before it leaves gives the moment it starts to leave.
+ * from the end of its entrance and its choreography (a directed scene's after its beats too) to
+ * where the next scene starts to enter. A scene too short to settle before it leaves gives the
+ * moment it starts to leave.
  */
 export function settledSpan(
   timeline: Pick<Timeline, 'scenes' | 'transition'>,
@@ -624,12 +637,8 @@ export function settledSpan(
 ): Span | undefined {
   const scene = timeline.scenes[index];
   if (!scene) return undefined;
-  const enter = index === 0 ? 0 : (scene.transition?.seconds ?? timeline.transition);
-  const next = timeline.scenes[index + 1];
-  const leave = next ? (next.transition?.seconds ?? timeline.transition) : 0;
-  const to = scene.end - leave;
-  const done =
-    scene.start + Math.max(enter, settledAt(scene.visual, scene.end - scene.start, scene.phases));
+  const to = scene.end - entranceSeconds(timeline, index + 1);
+  const done = scene.start + Math.max(entranceSeconds(timeline, index), shotSettledAt(scene));
   return [Math.min(done, to), to];
 }
 
@@ -647,6 +656,34 @@ export function settledFrame(
   const first = Math.ceil(span[0] * timeline.fps - 1e-6);
   const last = Math.floor(span[1] * timeline.fps - 1e-6);
   return Math.max(0, Math.min(timeline.frames - 1, first, last));
+}
+
+/**
+ * The last frame before a directed scene's first camera beat, where its stop is at rest at its
+ * own scale: a beat's zoom magnifies what QC measures at the settled frame, so text sizes are read
+ * here too. None without a camera beat, or when the beat starts before the scene has entered and
+ * the reveals before it have played.
+ */
+export function restFrame(
+  timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames'>,
+  index: number,
+): number | undefined {
+  const scene = timeline.scenes[index];
+  const beats = scene?.direction?.beats ?? [];
+  const camera = beats.find((b) => b.verb === 'camera');
+  if (!scene || !camera) return undefined;
+  const ready = Math.max(
+    entranceSeconds(timeline, index),
+    ...beats.flatMap((b) => (b.verb === 'reveal' && b.t < camera.t ? [b.t + b.seconds] : [])),
+  );
+  const leaves = scene.end - entranceSeconds(timeline, index + 1);
+  const first = Math.ceil((scene.start + ready) * timeline.fps - 1e-6);
+  const last = Math.min(
+    Math.ceil((scene.start + camera.t) * timeline.fps - 1e-6) - 1,
+    Math.floor(leaves * timeline.fps - 1e-6),
+    timeline.frames - 1,
+  );
+  return first <= last ? last : undefined;
 }
 
 /**

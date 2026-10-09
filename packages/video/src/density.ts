@@ -3,8 +3,15 @@ import { computeRegions } from './runtime/layout.ts';
 import { union } from './runtime/narrator.ts';
 import { TEXT_FLOOR } from './runtime/sizing.ts';
 import { storyScenes } from './timeline/build.ts';
-import { settledFrame, settledSpan } from './timeline/cues.ts';
-import type { LayoutReport, Rect, Timeline, TimelineScene } from './timeline/types.ts';
+import { restFrame, settledFrame, settledSpan } from './timeline/cues.ts';
+import type {
+  DirectionElement,
+  LayoutReport,
+  Rect,
+  Timeline,
+  TimelineScene,
+  TimelineVisual,
+} from './timeline/types.ts';
 
 /*
  * Density and monotony checks: is the text large enough to read, does the content use the frame,
@@ -47,7 +54,10 @@ const tenths = (share: number) => `${Math.floor(1000 * share + 1e-9) / 10}%`;
 const listed = (names: readonly string[]) =>
   `${names.slice(0, 3).join(', ')}${names.length > 3 ? ', …' : ''}`;
 
-/** Reports sampled while a story scene had settled and was alone on screen. */
+/**
+ * Reports sampled while a story scene had settled and was alone on screen, and at the frame before
+ * a directed scene's first camera beat, where its stop is at rest at its own scale.
+ */
 function settledReports(
   timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps'>,
   layouts: readonly LayoutReport[],
@@ -62,7 +72,9 @@ function settledReports(
     const [from, to] = settledSpan(timeline, index)!;
     const t = report.frame / timeline.fps;
     // The renderer's sample of a span shorter than a frame lies just before it.
-    const sampled = report.frame === settledFrame(unclamped, index);
+    const sampled =
+      report.frame === settledFrame(unclamped, index) ||
+      report.frame === restFrame(unclamped, index);
     if (sampled || (t >= from - 1e-6 && t <= to + 1e-6)) out.push({ scene, report });
   }
   return out;
@@ -73,8 +85,8 @@ const units = (size: number) => Math.round(10 * size) / 10;
 
 /**
  * Code and terminal text at least 24 px and body text at least 28 px at 1080p, as drawn at the
- * settled frames, relative to the frame's short side. Chips, file paths, and small labels are
- * exempt.
+ * settled frames and before a camera beat zooms in, relative to the frame's short side. Chips,
+ * file paths, and small labels are exempt.
  */
 export function textSizeCheck(
   timeline: DensityTimeline,
@@ -139,7 +151,8 @@ export function emptyFrameCheck(
   const media = computeRegions(timeline).media;
   const best = new Map<string, number>();
   for (const { scene, report } of settledReports(timeline, layouts)) {
-    if (!CARDS.has(scene.visual.kind)) continue;
+    // A shot that replaced its visual is judged by what it leads with.
+    if (!CARDS.has(leadKind(scene))) continue;
     // Boxes mostly inside the region: the header's heading above it is not content.
     const inside = report.items.flatMap((item) => {
       const part = clip(item.rect, media);
@@ -172,9 +185,24 @@ export const TRANSITION_SHARE = 0.6;
 /** …once there are at least this many. */
 export const TRANSITION_MIN = 4;
 
-/** The kind of picture a scene leads with: its visual's kind. */
-export function leadKind(scene: Pick<TimelineScene, 'visual'>): string {
-  return scene.visual.kind;
+/** What each element of a shot looks like on screen: the visual kind it reads as. */
+const LOOKS_LIKE = {
+  code: 'code',
+  output: 'terminal',
+  capture: 'screenshot',
+  node: 'diagram',
+  label: 'callout',
+} as const satisfies Record<Exclude<DirectionElement['kind'], 'visual'>, TimelineVisual['kind']>;
+
+/**
+ * The kind of picture a scene leads with: its shot's first element, counted as the visual it
+ * looks like (an output reads as a terminal), else its visual's kind.
+ */
+export function leadKind(
+  scene: Pick<TimelineScene, 'visual' | 'direction'>,
+): TimelineVisual['kind'] {
+  const first = scene.direction?.elements[0];
+  return !first || first.kind === 'visual' ? scene.visual.kind : LOOKS_LIKE[first.kind];
 }
 
 /** No more than two story scenes in a row lead with the same kind of visual. */

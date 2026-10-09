@@ -941,11 +941,9 @@ describe.skipIf(!available)('a shot’s elements', () => {
       );
       const index = v.timeline.scenes.findIndex((s) => s.id === 's3');
       const s3 = v.timeline.scenes[index]!;
-      // Where QC reads it once the shot's own choreography is done too.
-      const frame = Math.max(
-        settledFrame(v.timeline, index)!,
-        Math.ceil((s3.start + shotSettledAt(s3)) * v.timeline.fps),
-      );
+      // Where QC reads it: once the shot's own choreography is done too.
+      const frame = settledFrame(v.timeline, index)!;
+      expect(frame / v.timeline.fps).toBeGreaterThanOrEqual(s3.start + shotSettledAt(s3) - 1e-6);
       expect(frame / v.timeline.fps).toBeLessThanOrEqual(settledSpan(v.timeline, index)![1]);
       const report = await v.report(frame);
       expect(report.scene).toBe('s3');

@@ -29,6 +29,8 @@ import {
   StoryboardSchema,
   syntheticMouth,
   type Timeline,
+  TRANSITION_MIN,
+  TRANSITION_SHARE,
   writeComposition,
 } from '@covi/video';
 import { type Browser, chromium } from 'playwright';
@@ -1505,6 +1507,22 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
       expect(qc.checks.map((c) => c.id)).toEqual(
         expect.arrayContaining(['text-size', 'empty-frame', 'monotony', 'transition-variety']),
       );
+      // Drawn on the canvas by Covi's default director: every story scene at a stop, the camera
+      // travelling between them, no fades, and, from four moves, no entrance taking more than
+      // 60% of them.
+      const timeline = JSON.parse(
+        readFileSync(join(result.runDir, 'video', 'timeline.json'), 'utf8'),
+      ) as Timeline;
+      const story = timeline.scenes.filter((s) => s.visual.kind !== 'outro');
+      expect(story.every((s) => s.stop)).toBe(true);
+      const moves = story.slice(1).map((s) => s.transition!.kind);
+      expect(moves).not.toContain('fade');
+      expect(moves.some((k) => k === 'pan' || k === 'zoom')).toBe(true);
+      if (moves.length >= TRANSITION_MIN)
+        for (const kind of new Set(moves))
+          expect(moves.filter((k) => k === kind).length / moves.length, kind).toBeLessThanOrEqual(
+            TRANSITION_SHARE,
+          );
     }, 600_000);
   }
 });

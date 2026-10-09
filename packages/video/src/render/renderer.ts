@@ -4,7 +4,7 @@ import { availableParallelism } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
 import { serveStatic, sha256 } from '@covi/core';
 import { type Browser, chromium, type Page } from 'playwright';
-import { settledFrame } from '../timeline/cues.ts';
+import { entranceSeconds, restFrame, settledFrame } from '../timeline/cues.ts';
 import {
   type CompositionApi,
   HERO_PHASE,
@@ -144,7 +144,7 @@ export function contactSheetFrames(
   const frames = new Set([frame(OPENING)]);
   timeline.scenes.forEach((s, i) => {
     frames.add(frame((s.start + s.end) / 2));
-    const seconds = i === 0 ? 0 : (s.transition?.seconds ?? timeline.transition);
+    const seconds = entranceSeconds(timeline, i);
     if (seconds > 0) frames.add(frame(s.start + seconds / 2));
     const hero = s.phases?.[HERO_PHASE];
     if (s.hero && hero !== undefined) frames.add(frame(s.start + hero + HERO_TILE));
@@ -155,7 +155,8 @@ export function contactSheetFrames(
 /**
  * Frames the layout checks read: 35% and 70% of the way through every scene, and the frame where
  * each story scene has settled, at which QC measures text sizes and how much of the frame the
- * content fills. The outro is Covi's own card, so it is not held to those checks.
+ * content fills, with the frame before a directed scene's first camera beat, where its text is
+ * read at its own scale. The outro is Covi's own card, so it is not held to those checks.
  */
 export function layoutSampleFrames(
   timeline: Pick<Timeline, 'fps' | 'frames' | 'scenes' | 'transition'>,
@@ -170,8 +171,8 @@ export function layoutSampleFrames(
   );
   timeline.scenes.forEach((s, i) => {
     if (s.visual.kind === 'outro') return;
-    const frame = settledFrame(timeline, i);
-    if (frame !== undefined) frames.add(frame);
+    for (const frame of [settledFrame(timeline, i), restFrame(timeline, i)])
+      if (frame !== undefined) frames.add(frame);
   });
   return [...frames].sort((a, b) => a - b);
 }

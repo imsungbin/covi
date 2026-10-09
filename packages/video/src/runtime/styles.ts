@@ -143,7 +143,7 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
 .code.tokens .mlive { clip-path: inset(0 1em 0 0); }
 .code.tokens .mbar { background: ${c.addBackground}; } .code.tokens .mbar.del { background: ${c.delBackground}; }
 .code.tokens .mmark.add { color: ${c.addText}; } .code.tokens .mmark.del { color: ${c.delText}; }
-.code.tokens .mnum { color: ${c.codeMuted}; }
+.code.tokens .mnum, .code.tokens .mcut { color: ${c.codeMuted}; }
 .code.tokens .elided { color: ${c.codeMuted}; font-style: italic; }
 .code-caption { position: absolute; color: ${c.textMuted}; font-weight: 560; line-height: 1.3; overflow: hidden;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }

@@ -49,6 +49,8 @@ interface Phase {
 const SLIDE = 0.6;
 /** Removed tokens and marks tint over this share of the morph, from its start. */
 const TINT = 0.12;
+/** Line numbers are this faint, as a code card's gutter is (`.code .ln .gutter`). */
+const GUTTER = 0.8;
 
 /** The morph's phases `k` (0–1) of the way through it. */
 const phaseAt = (k: number): Phase => ({
@@ -77,6 +79,8 @@ function layOut(rows: readonly MorphRow[], body: HTMLElement, panel: HTMLElement
       row.type === 'add' ? '+' : row.type === 'del' ? '−' : ' ',
     );
     const txt = el('span', 'txt', line);
+    // Measured uncut: an ellipsis here would widen the box of the token it cuts.
+    txt.style.textOverflow = 'clip';
     const tokens = row.tokens.map((t) => el('span', classes(t, row), txt, t.text));
     if (!tokens.length) txt.textContent = ' ';
     return { line, number, mark, txt, tokens };
@@ -182,8 +186,24 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
   });
   const before = layOut(v.base, body, panel);
   const after = layOut(v.head, body, panel);
+  // A character's width, so a cut line keeps whole characters before its ellipsis.
+  const probe = el('span', '', body, '0'.repeat(10));
+  const advance = probe.getBoundingClientRect().width / 10;
   body.remove();
 
+  // The text stops where a code card's lines end (`.mlive` is clipped there). A line running past
+  // it ends in an ellipsis after its last whole character, as a code card's lines do, and its
+  // tokens stop where the ellipsis starts.
+  const edge = box.width - font;
+  const textX = (before[0] ?? after[0])?.text.x ?? 0;
+  const ellipsisX = textX + Math.floor((edge - advance - textX) / advance + 1e-6) * advance;
+  const blank = (text: string) => /^\s*$/u.test(text);
+  const cutOf = (rows: readonly MorphRow[], laid: readonly Laid[]) =>
+    laid.map((row, r) =>
+      rows[r]!.tokens.some(
+        (t, i) => !blank(t.text) && row.tokens[i]!.x + row.tokens[i]!.width > edge + 0.5,
+      ),
+    );
   const forward = new Map(v.rows);
   const backward = new Map(v.rows.map(([b, h]) => [h, b] as const));
   const sides = [
@@ -195,6 +215,7 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
       links: forward,
       twins: { rows: v.head, laid: after },
       kept: new Set(v.tokens.map(([b, i]) => `${b}:${i}`)),
+      cut: cutOf(v.base, before),
     },
     {
       base: false,
@@ -204,9 +225,30 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
       links: backward,
       twins: { rows: v.base, laid: before },
       kept: new Set(v.tokens.map(([, , h, j]) => `${h}:${j}`)),
+      cut: cutOf(v.head, after),
     },
   ];
-  // Row tints and marks lie under the text; the text stops where a code card's lines end.
+  /**
+   * How much of a row's ellipsis shows: one cut on both sides stays as the row travels; one cut
+   * on one side goes, or comes, with that side's tokens.
+   */
+  const ellipsis = (s: 0 | 1, r: number, f: Phase) => {
+    const { cut, links, base } = sides[s]!;
+    if (!cut[r]) return 0;
+    const twin = links.get(r);
+    if (twin !== undefined && sides[1 - s]!.cut[twin]) return 1;
+    return base ? 1 - f.gone : f.arrive;
+  };
+  /**
+   * Hides the part of a token at `x` under its row's ellipsis. A kept token, which stays while an
+   * ellipsis comes or goes, is hidden only as far as the ellipsis shows.
+   */
+  const clip = (node: HTMLElement, x: number, width: number, shown: number) => {
+    const over = x + width - lerp(edge, ellipsisX, shown);
+    node.style.clipPath = shown > 0 && over > 0 ? `inset(0 ${over.toFixed(2)}px 0 0)` : '';
+  };
+
+  // Row tints and marks lie under the text.
   const tints = el('div', 'mrows', panel);
   const live = el('div', 'mlive', panel);
   for (const layer of [tints, live]) layer.style.fontSize = `${font}px`;
@@ -214,8 +256,9 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
   // Each piece draws itself at the morph's phase; `settle` (0–1) follows the morph.
   const draws: Array<(f: Phase, settle: number) => void> = [];
 
-  for (const { base, rows, laid, path, links, twins, kept } of sides)
+  for (const [s, { base, rows, laid, path, links, twins, kept, cut }] of sides.entries())
     laid.forEach((row, r) => {
+      const side = s as 0 | 1;
       const p = path[r]!;
       const { number, tokens, type } = rows[r]!;
       // A removed row's tint shows as the morph starts, an added row's as it arrives.
@@ -231,7 +274,7 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
         });
       }
       // A number both sides share travels once (drawn from the base); others go and come as
-      // tokens do.
+      // tokens do. Numbers are as faint as a code card's gutter.
       const other = links.get(r);
       const twin = other === undefined ? undefined : twins.rows[other]!.number;
       const shared = twin !== undefined && twin === number;
@@ -240,15 +283,16 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
         const from = row.number.x;
         const to = shared ? (twins.laid[other!]!.number?.x ?? from) : from;
         draws.push((f) => {
-          n.style.opacity = (shared ? 1 : base ? 1 - f.gone : f.arrive).toFixed(3);
+          const shown = shared ? 1 : base ? 1 - f.gone : f.arrive;
+          n.style.opacity = (GUTTER * shown).toFixed(3);
           position(n, lerp(from, to, f.travel), p, f.travel);
         });
       }
       // A marker for lines left out is no change: it fades, untinted, when its count changes.
       const tinted = type !== 'elided';
       tokens.forEach((t, i) => {
-        if (/^\s*$/u.test(t.text) || kept.has(`${r}:${i}`)) return;
-        const x = row.tokens[i]!.x;
+        if (blank(t.text) || kept.has(`${r}:${i}`)) return;
+        const { x, width } = row.tokens[i]!;
         const node = piece(live, classes(t, rows[r]!), t.text, row.box.height);
         node.dataset.token = base ? 'removed' : 'added';
         draws.push((f, settle) => {
@@ -257,14 +301,25 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
             node.style.color =
               tinted && f.tint > 0 ? mix(color(t.tone), theme.delText, f.tint) : '';
             position(node, x, p, f.travel);
+            clip(node, x, width, cut[r] ? 1 : 0);
           } else {
+            const at = x - (1 - f.arrive) * SLIDE * font;
             node.style.opacity = f.arrive.toFixed(3);
             node.style.color =
               tinted && settle < 1 ? mix(theme.addText, color(t.tone), settle) : '';
-            position(node, x - (1 - f.arrive) * SLIDE * font, p, f.travel);
+            position(node, at, p, f.travel);
+            clip(node, at, width, cut[r] ? 1 : 0);
           }
         });
       });
+      // One ellipsis for a row cut on both sides, drawn from the base, else one per side.
+      if (cut[r] && (base || !(other !== undefined && sides[0]!.cut[other]))) {
+        const more = piece(live, 'mcut', '…', row.box.height);
+        draws.push((f) => {
+          more.style.opacity = ellipsis(side, r, f).toFixed(3);
+          position(more, ellipsisX, p, f.travel);
+        });
+      }
     });
 
   // Kept tokens last, over everything: drawn once, from the base, travelling to their head box.
@@ -274,12 +329,16 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
     const node = piece(live, classes(token, v.base[b]!), token.text, before[b]!.box.height);
     node.dataset.token = 'kept';
     const p = sides[0]!.path[b]!;
-    draws.push((f) => position(node, lerp(from.x, to.x, f.travel), p, f.travel));
+    draws.push((f) => {
+      const x = lerp(from.x, to.x, f.travel);
+      position(node, x, p, f.travel);
+      clip(node, x, from.width, Math.max(ellipsis(0, b, f), ellipsis(1, h, f)));
+    });
   }
 
   /**
    * The changed lines of one side, relative to the card: from the row's start (its number) to the
-   * end of its longest text, so a zoomed camera keeps the start of the lines in view.
+   * end of its longest text as shown, so a zoomed camera keeps the start of the lines in view.
    */
   const changed = (laid: readonly Laid[], rows: readonly MorphRow[], type: 'del' | 'add') => {
     const boxes = laid.flatMap((row, r) =>
@@ -289,7 +348,10 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
               x: row.box.x,
               y: row.box.y,
               width:
-                Math.max(row.text.x + font, ...row.tokens.map((t) => t.x + t.width)) - row.box.x,
+                Math.min(
+                  edge,
+                  Math.max(row.text.x + font, ...row.tokens.map((t) => t.x + t.width)),
+                ) - row.box.x,
               height: row.box.height,
             },
           ]

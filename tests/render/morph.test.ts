@@ -7,6 +7,7 @@ import {
   type DirectionBeat,
   type LayoutReport,
   layoutScenes,
+  type MorphRow,
   pacingFor,
   resolveVideoSpec,
   type SceneStaging,
@@ -17,6 +18,7 @@ import { type Browser, chromium } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { morphHunk } from '../../packages/video/src/direction/tokens.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
+import { codeCard, TEXT_FLOOR } from '../../packages/video/src/runtime/sizing.ts';
 import { canUseBrowser } from '../helpers/env.ts';
 
 /*
@@ -39,7 +41,7 @@ afterAll(async () => {
 
 const W = 640;
 const H = 360;
-const { media } = computeRegions({ width: W, height: H, orientation: 'landscape' });
+const { media, unit } = computeRegions({ width: W, height: H, orientation: 'landscape' });
 const context = (text: string, oldLine: number, newLine = oldLine): DiffLine => ({
   kind: 'context',
   text,
@@ -145,17 +147,31 @@ async function morphed(lines: DiffLine[], beats: DirectionBeat[] = [MORPH]) {
   const at = (seconds: number) => Math.round((s2.start + seconds) * timeline.fps);
   const seek = (frame: number, body: string) =>
     page.evaluate(`(() => { window.covi.seek(${frame}); ${body} })()`);
-  /** The morph's tokens at a frame: what each is, its place in the card, its fold, its opacity. */
-  const pieces = (frame: number) =>
+  /**
+   * The morph's tokens at a frame (or other pieces of the card, by selector): what each is, its
+   * place in the card, its width, how much of its end is hidden, its fold, and its opacity.
+   */
+  const pieces = (frame: number, selector = '[data-token]') =>
     seek(
       frame,
-      `return [...document.querySelectorAll('[data-element="m"] .mlive [data-token]')].map((n) => {
+      `return [...document.querySelectorAll('[data-element="m"] .mlive ${selector}')].map((n) => {
          const m = /translate\\(([-\\d.]+)px, ([-\\d.]+)px\\)(?: scaleY\\(([\\d.]+)\\))?/.exec(n.style.transform);
+         const clip = /inset\\(\\S+ ([\\d.]+)px/.exec(n.style.clipPath);
          return { token: n.dataset.token, text: n.textContent, x: Number(m[1]), y: Number(m[2]),
+           width: Number.parseFloat(getComputedStyle(n).width), clip: clip ? Number(clip[1]) : 0,
            fold: m[3] === undefined ? 1 : Number(m[3]), opacity: Number(n.style.opacity || '1') };
        });`,
     ) as Promise<
-      Array<{ token: string; text: string; x: number; y: number; fold: number; opacity: number }>
+      Array<{
+        token: string;
+        text: string;
+        x: number;
+        y: number;
+        width: number;
+        clip: number;
+        fold: number;
+        opacity: number;
+      }>
     >;
   /** The canvas camera on the morphing scene: its layer's offset and scale. */
   const camera = async (frame: number) => {
@@ -172,7 +188,7 @@ async function morphed(lines: DiffLine[], beats: DirectionBeat[] = [MORPH]) {
     await page.evaluate(`window.covi.seek(${frame})`);
     return page.screenshot({ type: 'png' });
   };
-  return { timeline, at, seek, pieces, camera, report, shot, errors };
+  return { timeline, model, at, seek, pieces, camera, report, shot, errors };
 }
 
 type Pieces = Awaited<ReturnType<Awaited<ReturnType<typeof morphed>>['pieces']>>;
@@ -210,7 +226,18 @@ describe.skipIf(!available)('the token morph', () => {
     const v = await morphed(refs);
     const frame = v.at(MORPH.t + MORPH.seconds + 0.6);
     const card = (await v.report(frame)).items.find((i) => i.text === 'code')!;
-    expect(card.font).toBeGreaterThan(0);
+    // Its text is the size a code card holding both sides gets, above the floor where it fits.
+    const text = (row: MorphRow) => row.tokens.map((t) => t.text).join('');
+    const { base, head } = v.model;
+    const sized = codeCard(
+      [...base, ...head].map(text),
+      Math.max(base.length, head.length),
+      media,
+      'landscape',
+      unit,
+    );
+    expect(card.font).toBeCloseTo(sized.font, 1);
+    expect(sized.font).toBeGreaterThanOrEqual(TEXT_FLOOR.code * unit);
     const shown = (await v.pieces(frame)).filter((p) => p.opacity > 0).map((p) => p.text);
     expect(shown).toEqual(expect.arrayContaining(['refs', 'byteLength', 'buildReviewRequest']));
     expect(shown).not.toContain('documents');
@@ -251,6 +278,35 @@ describe.skipIf(!available)('the token morph', () => {
     const below = (all: Pieces) => all.filter((p) => p.token === 'kept' && p.text === '1').at(-1)!;
     expect(below(after).y).toBeGreaterThan(below(before).y + 1);
     expect(find(after, 'added', 'if').opacity).toBe(1);
+    expect(v.errors).toEqual([]);
+  });
+
+  it('ends a line too long for the card in an ellipsis, as a code card does', async () => {
+    const long = `  return '${'x'.repeat(80)}';`;
+    const v = await morphed([
+      context('function take() {', 10),
+      del('  return 1;', 11),
+      add(long, 11),
+      context('}', 12),
+    ]);
+    const shown = (all: Pieces) => all.filter((p) => p.opacity > 0);
+    // The old line fits; the new one runs past the card and gets its ellipsis as it arrives.
+    expect(shown(await v.pieces(v.at(1), '.mcut'))).toEqual([]);
+    const settled = v.at(MORPH.t + MORPH.seconds + 0.6);
+    const [more, ...others] = shown(await v.pieces(settled, '.mcut'));
+    expect(others).toEqual([]);
+    expect(more).toMatchObject({ text: '…', opacity: 1 });
+    // Its tokens run on past the ellipsis, hidden from where it starts.
+    const line = shown(await v.pieces(settled)).filter((p) => p.y === more!.y);
+    expect(Math.max(...line.map((p) => p.x + p.width))).toBeGreaterThan(more!.x + more!.width);
+    for (const p of line) expect(p.x + p.width - p.clip).toBeLessThanOrEqual(more!.x + 0.5);
+    // The ellipsis sits inside the text column, which ends 1em short of the card's edge.
+    const column = (await v.seek(
+      settled,
+      `const live = document.querySelector('[data-element="m"] .mlive');
+       return live.offsetWidth - Number.parseFloat(getComputedStyle(live).fontSize);`,
+    )) as number;
+    expect(more!.x + more!.width).toBeLessThanOrEqual(column + 0.5);
     expect(v.errors).toEqual([]);
   });
 

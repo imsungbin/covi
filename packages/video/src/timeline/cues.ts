@@ -649,6 +649,28 @@ export function settledFrame(
   return Math.max(0, Math.min(timeline.frames - 1, first, last));
 }
 
+/**
+ * When a directed scene's choreography is done: every element has entered and played its own (the
+ * storyboard visual on the scene's phases, the others from their reveal), and every beat has ended.
+ */
+export function shotSettledAt(
+  scene: Pick<TimelineScene, 'visual' | 'direction' | 'phases' | 'start' | 'end'>,
+): number {
+  const duration = scene.end - scene.start;
+  const d = scene.direction;
+  if (!d) return settledAt(scene.visual, duration, scene.phases);
+  const revealedAt = (id: string) =>
+    d.beats.find((b) => b.verb === 'reveal' && b.element === id)?.t ?? 0;
+  const elements = d.elements.map((e) => {
+    if (e.kind === 'visual') return settledAt(scene.visual, duration, scene.phases);
+    const at = revealedAt(e.id);
+    return e.kind === 'node' || e.kind === 'label'
+      ? at + 0.5
+      : at + settledAt(e.visual, Math.max(0.1, duration - at));
+  });
+  return Math.max(0, ...elements, ...d.beats.map((b) => b.t + b.seconds));
+}
+
 /** The summary's verdict badge rises into view. */
 export function verdictEntrance(): Span {
   return [0.3, 0.7];

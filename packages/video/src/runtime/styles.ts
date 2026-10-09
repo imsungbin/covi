@@ -45,6 +45,7 @@ html, body { width: ${t.width}px; height: ${t.height}px; overflow: hidden; backg
   font-family: ${t.fonts.sans}; color: ${c.text}; -webkit-font-smoothing: antialiased; font-feature-settings: 'cv11', 'ss01'; }
 .mono { font-family: ${t.fonts.mono}; font-feature-settings: 'calt' 0; }
 .layer { position: absolute; inset: 0; }
+.canvas-grid { background-color: ${c.background}; background-image: radial-gradient(circle at 1px 1px, ${dot} 1.2px, transparent 0); }
 .scene { position: absolute; inset: 0; will-change: opacity, transform; }
 .scene-header { position: absolute; display: flex; flex-direction: column; justify-content: flex-end; gap: ${u(10)}; }
 .eyebrow { display: inline-flex; align-items: center; gap: ${u(12)}; color: ${c.primary}; font-weight: 700; font-size: ${u(eyebrow)};

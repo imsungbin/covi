@@ -1,13 +1,35 @@
 import { blendPoses, type FoxOptions, foxPose, foxSvg, type Pose } from '@covi/brand';
 import {
+  type DirectionElement,
   HERO_PHASE,
   type LayoutReport,
+  type Point,
   type Rect,
   type Timeline,
   type TimelineScene,
 } from '../timeline/types.ts';
 import { clamp, easeInOutCubic, easeOutCubic, lerp, seeded, seg, spring } from './anim.ts';
 import { type CameraPlan, cameraPlan, cameraPush, heroAccent } from './camera.ts';
+import {
+  beatView,
+  between,
+  type CameraKind,
+  type CameraStep,
+  clampView,
+  clipRect,
+  gridStyle,
+  insetOf,
+  isCameraMove,
+  layerTransform,
+  lerpRect,
+  PULL_MARGIN,
+  pullBack,
+  restView,
+  toWorld,
+  type View,
+  viewAt,
+  withPush,
+} from './canvas.ts';
 import { summary, title, titleOver } from './components/cards.ts';
 import {
   api,
@@ -32,7 +54,7 @@ import {
   type SceneClock,
 } from './components/types.ts';
 import { el, fitText, place } from './dom.ts';
-import { computeRegions, type Regions } from './layout.ts';
+import { computeRegions, gridSpacing, type Regions } from './layout.ts';
 import {
   aimAt,
   clearAim,
@@ -63,6 +85,25 @@ interface MountedScene {
   heading?: LayoutItem;
   /** When the next scene takes over this scene's large fox (it is hidden from then on). */
   foxTaken?: number;
+  /** On the canvas: the viewport that clips the media layer to the region the scene owns. */
+  viewport?: HTMLDivElement;
+  /** The region the scene owns: the media region, or the full frame for a card without a header. */
+  region: Rect;
+  /** The component that draws the storyboard visual; absent when a shot replaces it. */
+  visual?: Component;
+  /** The camera's beats inside the stop, each toward its target. */
+  steps: CameraStep[];
+}
+
+/** The camera travelling from one stop to the next, in progress. */
+interface Travel {
+  from: MountedScene;
+  to: MountedScene;
+  kind: CameraKind;
+  /** How far through the move the camera is, 0–1. */
+  k: number;
+  /** When the move ends, in seconds from the start of the video. */
+  end: number;
 }
 
 /**
@@ -166,11 +207,17 @@ export class Stage {
   private drawn?: { fox: FoxOptions; placement: NarratorPlacement };
   /** The hero's flash and ring, when a scene is the hero. */
   private accent?: { flash: HTMLDivElement; ring: HTMLDivElement; hero: MountedScene };
+  /** The canvas's dot grid, which moves with the camera; absent without a canvas. */
+  private grid?: HTMLDivElement;
+  /** Where a view's focus is drawn: the media region's center, as the push-in always scaled from. */
+  private readonly pivot: Point;
 
   constructor(root: HTMLElement, timeline: Timeline) {
     this.root = root;
     this.timeline = timeline;
     this.regions = computeRegions(timeline);
+    const m = this.regions.media;
+    this.pivot = { x: m.x + m.width / 2, y: m.y + m.height / 2 };
     const style = document.createElement('style');
     style.textContent = stylesheet(timeline, this.regions);
     document.head.appendChild(style);
@@ -206,12 +253,20 @@ export class Stage {
       this.progress.push(el('div', 'fill', segEl));
     }
 
+    // The canvas's dots, under every scene: they travel with the camera (see `gridStyle`).
+    if (t.scenes.some((s) => s.stop)) this.grid = el('div', 'layer canvas-grid', this.root);
+
     for (const [index, scene] of t.scenes.entries()) {
       const root = el('div', 'scene', this.root);
       root.dataset.scene = scene.id;
-      const media = el('div', 'layer', root);
+      // On the canvas the media layer sits in a viewport that clips it to the scene's region; the
+      // camera moves the layer (from its origin), never the viewport.
+      const viewport = scene.stop ? el('div', 'layer stop-view', root) : undefined;
+      const media = el('div', 'layer', viewport ?? root);
       const center = { x: r.media.x + r.media.width / 2, y: r.media.y + r.media.height / 2 };
-      media.style.transformOrigin = `${center.x.toFixed(2)}px ${center.y.toFixed(2)}px`;
+      media.style.transformOrigin = scene.stop
+        ? '0 0'
+        : `${center.x.toFixed(2)}px ${center.y.toFixed(2)}px`;
       // The outro takes over the large fox of the card before it (the summary's, usually).
       const before = this.scenes.at(-1);
       const handoff =
@@ -267,8 +322,16 @@ export class Stage {
         headerText,
         ...(heading ? { heading } : {}),
         camera: cameraPlan(scene),
+        ...(viewport ? { viewport } : {}),
+        region: component.header === false ? r.full : r.media,
+        visual: component,
+        steps: [],
       });
     }
+
+    // Camera beats aim at what their target shows when they end, measured before any frame is
+    // drawn: every scene is still displayed and untransformed, so rects are the stop's own pixels.
+    for (const m of this.scenes) m.steps = this.cameraSteps(m);
 
     // The hero's flash and ring: over the scenes, under the narrator and the captions, and only
     // inside the media region, so they never cover the header or the captions.
@@ -414,10 +477,13 @@ export class Stage {
       m.root.style.display = 'block';
       const unit = this.regions.unit;
       const enterWith = transitionOf(scene, t);
-      const next = this.scenes[i + 1]?.scene;
-      const leaveWith = next ? transitionOf(next, t) : undefined;
+      const next = this.scenes[i + 1];
+      const leaveWith = next ? transitionOf(next.scene, t) : undefined;
+      // A camera move carries both pictures across the canvas: neither fades nor slides.
+      const cameraIn = !first && this.travels(this.scenes[i - 1], m);
+      const cameraOut = !last && this.travels(m, next);
       const enter =
-        first || m.component.entrance === false
+        first || m.component.entrance === false || cameraIn
           ? REST
           : entering(
               enterWith.kind,
@@ -426,7 +492,7 @@ export class Stage {
               t.width,
             );
       const leave =
-        last || !leaveWith
+        last || !leaveWith || cameraOut
           ? REST
           : leaving(
               leaveWith.kind,
@@ -452,7 +518,11 @@ export class Stage {
       m.component.update(clock);
       const push = m.camera ? cameraPush(local, m.camera) : 0;
       if (m.component.camera) m.component.camera(push);
-      else m.media.style.transform = push > 1e-6 ? `scale(${(1 + push).toFixed(5)})` : '';
+      if (m.viewport && scene.stop) {
+        m.media.style.transform = layerTransform(this.cameraAt(i, time), scene.stop, this.pivot);
+        m.viewport.style.clipPath = insetOf(this.clipAt(i, time), t.width, t.height);
+      } else if (!m.component.camera)
+        m.media.style.transform = push > 1e-6 ? `scale(${(1 + push).toFixed(5)})` : '';
       if (m.component.fox && m.foxTaken !== undefined)
         m.component.fox.element.style.visibility = time >= m.foxTaken - 1e-6 ? 'hidden' : 'visible';
       // The opening scene's header is in place at frame 0, like the rest of it.
@@ -465,8 +535,35 @@ export class Stage {
           heading.style.opacity = e.toFixed(3);
           heading.style.transform = `translateY(${((1 - e) * 14 * this.regions.unit).toFixed(2)}px)`;
         }
+        // Across a camera move only the outgoing header fades; the picture travels.
+        m.header.style.opacity =
+          cameraOut && leaveWith
+            ? (
+                1 -
+                easeInOutCubic(
+                  seg(time, scene.end - leaveWith.seconds, scene.end - 0.4 * leaveWith.seconds),
+                )
+              ).toFixed(3)
+            : '';
       }
     });
+
+    if (this.grid) {
+      const front = this.scenes.findLast((m) => m.viewport && m.root.style.display === 'block');
+      if (front) {
+        const { position, size } = gridStyle(
+          this.cameraAt(front.index, time),
+          this.pivot,
+          gridSpacing(this.regions.unit),
+        );
+        Object.assign(this.grid.style, {
+          display: 'block',
+          backgroundPosition: position,
+          backgroundSize: size,
+          clipPath: insetOf(this.clipAt(front.index, time), t.width, t.height),
+        });
+      } else this.grid.style.display = 'none';
+    }
 
     if (this.accent) {
       const { flash, ring, hero } = this.accent;
@@ -586,6 +683,13 @@ export class Stage {
     const shown =
       Boolean(this.captionBox.textContent) && Number(this.captionBox.style.opacity) > 0.05;
     const active = this.scenes.find((m) => time >= m.scene.start && time < m.scene.end);
+    // On the canvas, what lies outside the viewport is not drawn, so it is not reported either.
+    const clip = active?.viewport ? this.drawnClip(active, time) : undefined;
+    const drawn = (active?.component.report() ?? []).flatMap((item) => {
+      if (!clip) return [item];
+      const rect = clipRect(item.rect, clip);
+      return rect ? [{ ...item, rect }] : [];
+    });
     // The fox as drawn, tail included: it can reach past its box when it points.
     const parts =
       this.drawn && Number(this.narrator.style.opacity) > 0.05
@@ -599,14 +703,145 @@ export class Stage {
         ? [...this.captionBox.children].some((line) => line.scrollWidth > line.clientWidth + 2) ||
           this.captionBox.scrollWidth > this.captionBox.clientWidth + 2
         : undefined,
-      items: active
-        ? [...active.component.report(), ...(active.heading ? [active.heading] : [])]
-        : [],
+      items: active ? [...drawn, ...(active.heading ? [active.heading] : [])] : [],
       narrator: parts ? union(parts) : undefined,
       narratorParts: parts,
       headerText: active?.headerText.length ? active.headerText : undefined,
       imagesLoaded: this.imagesOk,
       fontsFailed: this.fontsFailed.length ? this.fontsFailed : undefined,
     };
+  }
+
+  /** Whether the camera travels the canvas from scene `a` to scene `b`: `b` enters by pan or zoom. */
+  private travels(a: MountedScene | undefined, b: MountedScene | undefined): boolean {
+    return Boolean(
+      a?.scene.stop && b?.scene.stop && isCameraMove(transitionOf(b.scene, this.timeline).kind),
+    );
+  }
+
+  /** The camera move into scene `i` from the one before, while it is in progress at `time`. */
+  private moveAt(i: number, time: number): Travel | undefined {
+    const from = this.scenes[i - 1];
+    const to = this.scenes[i];
+    if (!from || !to || !this.travels(from, to)) return undefined;
+    const { kind, seconds } = transitionOf(to.scene, this.timeline);
+    const end = to.scene.start + seconds;
+    if (!isCameraMove(kind) || time < to.scene.start || time > end) return undefined;
+    return { from, to, kind, k: seg(time, to.scene.start, end), end };
+  }
+
+  /**
+   * The scene the camera is on its way to when it draws scene `i` at `time`: `i` itself, or the
+   * last of the moves in progress that leave from it, one after another. So every scene on screen
+   * is drawn by the same camera, even when a scene is too short to settle between two moves.
+   */
+  private headedTo(i: number, time: number): number {
+    let j = i;
+    while (this.moveAt(j + 1, time)) j++;
+    return j;
+  }
+
+  /** Where the camera looks in a scene's own stop at `time` (world coordinates): beats, then push. */
+  private stopView(m: MountedScene, time: number): View {
+    const local = Math.max(0, time - m.scene.start);
+    const push = m.camera && !m.component.camera ? cameraPush(local, m.camera) : 0;
+    const view = viewAt(m.steps, local, restView(this.pivot));
+    return toWorld(clampView(withPush(view, push), m.region, this.pivot), m.scene.stop!);
+  }
+
+  /** Where the camera looks at `time` as it arrives at scene `j`'s stop, or rests there. */
+  private viewInto(j: number, time: number): View {
+    const move = this.moveAt(j, time);
+    if (!move) return this.stopView(this.scenes[j]!, time);
+    const back = pullBack(move.from.scene.stop!, move.to.scene.stop!, this.regions.media);
+    // The move lands on the next stop's view as it is when the move ends, beats and push
+    // included, so the stop's own camera takes over without a jump.
+    return between(
+      move.kind,
+      this.viewInto(j - 1, time),
+      this.stopView(move.to, move.end),
+      move.k,
+      back * PULL_MARGIN,
+    );
+  }
+
+  /** The camera that draws scene `i` at `time`: its stop's view, or the move it is part of. */
+  private cameraAt(i: number, time: number): View {
+    return this.viewInto(this.headedTo(i, time), time);
+  }
+
+  /** The region the camera's viewport shows as it arrives at scene `j`, or rests there. */
+  private clipInto(j: number, time: number): Rect {
+    const move = this.moveAt(j, time);
+    return move
+      ? lerpRect(this.clipInto(j - 1, time), move.to.region, easeInOutCubic(move.k))
+      : this.scenes[j]!.region;
+  }
+
+  /** The region scene `i` is clipped to at `time`: its own, or one passing between two regions. */
+  private clipAt(i: number, time: number): Rect {
+    return this.clipInto(this.headedTo(i, time), time);
+  }
+
+  /**
+   * Scene `m`'s clip where it is drawn: its entrance or exit (a push, a fade's rise) moves and
+   * scales the viewport with the rest of the scene.
+   */
+  private drawnClip(m: MountedScene, time: number): Rect {
+    const clip = this.clipAt(m.index, time);
+    const box = m.viewport!.getBoundingClientRect();
+    const sx = box.width / this.timeline.width;
+    const sy = box.height / this.timeline.height;
+    return {
+      x: box.x + clip.x * sx,
+      y: box.y + clip.y * sy,
+      width: clip.width * sx,
+      height: clip.height * sy,
+    };
+  }
+
+  /** The camera's beats in a directed scene, each toward its target as drawn when the beat ends. */
+  private cameraSteps(m: MountedScene): CameraStep[] {
+    const d = m.scene.direction;
+    if (!d || !m.scene.stop) return [];
+    // `viewAt` reads steps in time order; the sort is stable, so beats at one moment keep theirs.
+    const beats = d.beats
+      .flatMap((b) => (b.verb === 'camera' ? [b] : []))
+      .sort((a, b) => a.t - b.t);
+    const steps: CameraStep[] = [];
+    let from = restView(this.pivot);
+    for (const beat of beats) {
+      const element = d.elements.find((e) => e.id === beat.to);
+      if (!element) continue;
+      // A beat frames its target as drawn when it ends: what the visual highlights then (its
+      // lines, its focus), or the element's box.
+      const measured = this.targetAt(m, element, beat.t + beat.seconds);
+      const target =
+        measured && measured.width >= 1 && measured.height >= 1 ? measured : element.rect;
+      const to = beatView(beat.move, target, beat.zoom, from, m.region, this.pivot);
+      steps.push({ t: beat.t, seconds: beat.seconds, to });
+      from = to;
+    }
+    return steps;
+  }
+
+  /**
+   * Where a beat's target is drawn `t` seconds into its scene, in stage pixels (before any
+   * transform). Components draw as pure functions of their clock, so drawing one at a later moment
+   * here leaves nothing behind: a scene is drawn for its own frame before it is shown.
+   */
+  private targetAt(m: MountedScene, element: DirectionElement, t: number): Rect | undefined {
+    const duration = m.scene.end - m.scene.start;
+    const clock: SceneClock = {
+      t,
+      duration,
+      p: clamp(t / duration),
+      frame: Math.round((m.scene.start + t) * this.timeline.fps),
+      fox: { mouth: 0, blink: 0 },
+      open: m.index === 0,
+    };
+    m.component.update(clock);
+    // Other elements are framed by their slot.
+    return element.kind === 'visual' ? m.visual?.target?.(clock) : undefined;
   }
 }

@@ -101,6 +101,7 @@ Details:
 | `--music-placement <placement>` | Where the music plays: `auto` (continuous, default), `continuous` (a bed under the whole video, ducked under the narration), or `bookends` (before the first line and after the last only). See [Video](video.md#where-the-music-plays). |
 | `--no-sound-effects` | No sound effects for clicks, the before/after reveal, findings, the verdict, and the outro. |
 | `--outro`, `--no-outro` | End with Covi's branded outro (default), or hold the last scene for a second instead. See [Video](video.md#the-outro). |
+| `--direction <mode>` | `auto` (default): draw the video on Covi's canvas, directed by the run's `video/direction.json` and Covi's default director. `off`: no canvas, as Covi 0.2.0 rendered. See [Video](video.md#direction-and-the-canvas). |
 
 Every flag maps to a configuration key. On the command line it is the highest-precedence layer; see [Configuration](configuration.md#precedence).
 
@@ -196,7 +197,7 @@ Makes a review video when seeing the change helps. Covi first decides whether a 
 | `--request <text>` | The request in plain words, e.g. `"30-second vertical video"`. Covi infers mode, length, size, narration, captions, theme, music, and sound from it. |
 | `--template <id>` | Storytelling template (see `covi templates`). |
 | `--storyboard <file>` | Render this storyboard instead of drafting one. This implies `--force`. |
-| `--draft` | Write `video/storyboard.json` and stop, so it can be edited before `covi render`. |
+| `--draft` | Write `video/storyboard.json` and Covi's `video/direction.json` (`"draft": true`; not with `--direction off`, and never over a direction the agent wrote), and stop, so they can be edited before `covi render`. |
 | `--dry-run` | Print the resolved video plan and the questions worth asking, then stop. See [Video planning](#video-planning). |
 | `--force` | Render even when Covi judges a video unhelpful. |
 | `--workers <n>` | Parallel render workers, 1–64. |
@@ -259,6 +260,8 @@ Renders, or re-renders, a run's storyboard into a video. It uses the run's expla
 Plus video options. Without a storyboard, it exits 2 and suggests `covi video --draft`.
 
 `covi render` keeps the settings chosen when the storyboard was drafted (the spec in `video/decision.json`, music, its placement, and the outro included), so `covi video --standard --draft` followed by `covi render` renders a standard video. Video flags change those settings; a different mode also resets the size, length, and style that came with the old one. Rendering updates only the video part of the run's outcome in `run.json`.
+
+`covi render` also reads the run's `video/direction.json` unless `video.direction` is `off`; an agent's direction that does not fit the storyboard or the evidence exits 2 with every problem listed. The direction mode itself is not kept from the draft: pass `--direction off` (or set `video.direction`) at each command. The result lists the direction as `artifacts.direction`.
 
 With `--music compose`, `covi render` plays `video/score.json` when the run has one (an agent wrote it; an invalid score exits 2), composes one with the configured model provider when it does not, and otherwise uses the Covi theme with a warning.
 
@@ -440,7 +443,7 @@ How a finding is counted is described in [Learning from outcomes](github-action.
 
 ### `covi schema <name>`
 
-Prints the JSON Schema of a file agents author or read: `explanation`, `findings`, `storyboard`, `score`, `demo-plan`, `config`, `evidence` (what `covi evidence` prints), `subject` (what `covi subject` prints), or `outcome` (what `covi outcomes collect` writes).
+Prints the JSON Schema of a file agents author or read: `explanation`, `findings`, `storyboard`, `direction`, `score`, `demo-plan`, `config`, `evidence` (what `covi evidence` prints), `subject` (what `covi subject` prints), or `outcome` (what `covi outcomes collect` writes).
 
 ### `covi templates`
 
@@ -632,6 +635,7 @@ See [Video](video.md).
 | `COVI_MUSIC_PLACEMENT` | `video.music.placement` (`auto`, `continuous`, or `bookends`) |
 | `COVI_SOUND_EFFECTS` | `video.soundEffects.enabled` (`1`, `true`, `yes`, `on` mean on) |
 | `COVI_OUTRO` | `video.outro` (`1`, `true`, `yes`, `on` mean on) |
+| `COVI_VIDEO_DIRECTION` | `video.direction` (`auto` or `off`) |
 | `COVI_OUTPUT_DIR` | `output.dir` |
 | `ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN`) | Enables the `anthropic` provider; `auto` picks it when set. |
 | `OPENAI_API_KEY`, `ELEVENLABS_API_KEY` | Hosted narration voices; `auto` prefers ElevenLabs, then OpenAI, then the system voice. |

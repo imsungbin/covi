@@ -189,10 +189,11 @@ Where questions are asked:
 | Capture | Runs the software at base and head when a video will be made, the project is runnable, and the change has something to show (the same demonstration as `covi demo`, at desktop and mobile unless `demo.viewports` says otherwise) | `demo/captures.json`, `demo/screenshots/`, `demo/diffs/`, `demo/recordings/`, `demo/traces/`, `demo/behavior-diff.json`, `demo/demo.md` |
 | Review | Explains and reviews the change; the story's review note comes from here | `explanation.json`, `review.json`, `review.md`, `summary.md`, … |
 | Storyboard | Drafts scenes from the evidence with a storytelling template, or validates the one you supply, then redacts it | `video/storyboard.json` |
+| Direction | Checks the run's `video/direction.json` (unless it is still Covi's draft) against the storyboard and the evidence, lays its shots over Covi's default director's, and decides how each scene enters; with `--draft`, writes Covi's direction for the agent to rewrite. Nothing when `video.direction` is `off` | `video/direction.json` (with `--draft`) |
 | Narration | Picks the narration language and the voice, rewrites each scene's spoken text for that voice (acronyms spelled out, your pronunciations applied), then synthesizes and measures one take per scene and places them on the voice stem, at −16 LUFS | `video/speech.json`, `video/narration.wav` |
 | Timing | Lays scenes out line by line from the measured speech (transitions start just before the next line, the hero holds, narrated standard reviews breathe, the outro ends it) and keeps the video under the duration window's maximum; it never pads | (inside the timeline) |
 | Captions | Splits the narration into cues timed to the speech | `video/captions.vtt`, `video/captions.srt` |
-| Timeline | Freezes everything the renderer needs: scenes (Covi's outro last), timings, captions, mouth movement, the moments that carry a sound (`cues`), theme, the language, and the labels the runtime draws (verdicts, stats, Before/After, the sign-off) in that language | `video/timeline.json`, `video/narration.md` |
+| Timeline | Freezes everything the renderer needs: scenes (Covi's outro last; on the canvas, each story scene's stop and resolved shot), timings, captions, mouth movement, the moments that carry a sound (`cues`), theme, the language, and the labels the runtime draws (verdicts, stats, Before/After, the sign-off) in that language | `video/timeline.json`, `video/narration.md` |
 | Sound | Picks the music (the theme, the run's score, a model's score, or none), fits it to the timeline, renders it (cached), places the sound effects, and mixes everything under the narration (see [Sound](#sound)) | `video/audio.json`, `video/music.wav`, `video/score.json` |
 | Composition | Writes a self-contained HTML page that can draw any frame | `video/composition/` |
 | Render | Captures every frame in headless Chromium, encodes H.264, and muxes the mix; or, when only the sound changed, keeps the frames and muxes the new mix | `video/covi-review.mp4`, `video/poster.png`, `video/contact-sheet.jpg`, `video/frames.json` |
@@ -252,7 +253,7 @@ How beats become scenes:
 
 | Field | Meaning |
 |---|---|
-| `id` | Optional; defaults to `s1`, `s2`, … |
+| `id` | Optional (`s1`, `s2`, … by default), and each scene's own: timing, entrances, and direction find a scene by it |
 | `beat` | The template beat this scene plays |
 | `eyebrow`, `heading` | Section label (up to 40 characters) and heading (up to 90) |
 | `narration` | What Covi says, also used for captions (up to 600 characters). `[[…]]` marks its key phrase (at most one), which the caption sweeps as it is spoken; the voice, reports, and subtitle files get the text without the brackets |
@@ -262,8 +263,8 @@ How beats become scenes:
 | `minSeconds` | Overrides the visual's minimum time on screen (1–30) |
 | `optional` | May be dropped to fit the duration (never the hero) |
 | `sync` | Pins moments of the visual to phrases of `narration`: a phase name → a phrase that appears exactly once (see [Timing](#timing)) |
-| `transition` | How the scene enters: `fade` (default), `cut`, `push`, `wipe`, or `zoom-through` (the hero's default) |
-| `hero` | The one scene where the change clicks: it holds 0.4 s after its line, enters with `zoom-through` unless it sets `transition`, plays the hero accent with a riser into it and a hit on it, and carries the music's lift |
+| `transition` | How the scene enters: `fade`, `cut`, `push`, `wipe`, or `zoom-through`. Without one, Covi picks the entrance on the canvas (see [Direction and the canvas](#direction-and-the-canvas)); with `video.direction: off`, the scene fades in, and the hero zooms through |
+| `hero` | The one scene where the change clicks: it holds 0.4 s after its line, enters with the canvas camera's `zoom` (`zoom-through` with `video.direction: off`) unless it sets `transition`, plays the hero accent with a riser into it and a hit on it, and carries the music's lift |
 | `camera` | `drift` (default) or `static`: a static scene neither drifts nor pushes in |
 | `evidenceIds` | Optional: evidence ids from the run that the scene rests on (see [Evidence](artifacts.md#evidence)). A scene that shows a capture, code from the diff, a request, a command, or findings cites them without listing them; `covi render` exits 2 on an id the run does not have. `video/timeline.json` records each scene's evidence. |
 | `cues` | Up to 4 sound effects of the scene's own: `at` (a phase the scene pins, or seconds into the scene) and `kind` (`click`, `reveal`, `finding`, `transition`, and on the hero `riser`, which ends at `at`, or `hero`). See [Sound effects](#sound-effects) |
@@ -287,7 +288,7 @@ Image paths are relative to the run directory (for example `demo/screenshots/hom
 
 A `focus`, on a screenshot, a before-after, an interaction step, or a mark, is a region in image pixels or a reference to an element of the [subject model](artifacts.md#the-subject-model): `"focus": "subject:home#start-trial"`. Covi places each reference right after it reads the storyboard, before anything is written, at the element's box in the head capture it focuses (the screenshot's or step's `image`, the before-after's `after`), from the run's `demo/subject.json`. `covi subject --run <id>` lists the elements each capture shows. A reference that cannot be placed stops the render with a usage error (exit 2) that names the scene, the reference, and what exists: a screen or element the model does not have, an element outside the capture or not visible in it, a base image, or a run with no `demo/subject.json`. `video/storyboard.json` keeps the references as written, so a render places them again; `video/timeline.json` gets the rects.
 
-Validation also checks what the JSON Schema cannot express, and stops with a usage error (exit 2) that names the scene: a `sync` phrase missing from its narration or appearing more than once, a phase the visual does not have, interaction steps synced out of order, `sync.hero` on a scene that is not the hero, a second hero, a second, empty, or unbalanced `[[…]]`, `marks` together with `focus`, two marks sharing a phase or synced out of order, a highlight group or mark naming a phase that `sync` does not define, a cue at a phase the scene does not pin, and a `riser` or `hero` cue off the hero.
+Validation also checks what the JSON Schema cannot express, and stops with a usage error (exit 2) that names the scene: two scenes with one id (a scene without an `id` is `s` and its number, so `s2` and an unnamed second scene collide), a `sync` phrase missing from its narration or appearing more than once, a phase the visual does not have, interaction steps synced out of order, `sync.hero` on a scene that is not the hero, a second hero, a second, empty, or unbalanced `[[…]]`, `marks` together with `focus`, two marks sharing a phase or synced out of order, a highlight group or mark naming a phase that `sync` does not define, a cue at a phase the scene does not pin, and a `riser` or `hero` cue off the hero.
 
 The narrator, Covi's fox, appears in the header corner of content scenes. Title cards (without a `background`) and summary cards draw it large instead, and the outro takes the summary's fox over (see [The outro](#the-outro)). See [Visual system](visual-system.md).
 
@@ -338,12 +339,54 @@ covi video --short --duration 30s --draft --json   # capture, review, write vide
 covi render --run latest --json                    # narrate, compose, render, check
 ```
 
-- `--draft` stops after writing `video/storyboard.json`. The result's `video.reason` says so.
-- `covi render` reuses the spec saved in `video/decision.json` when the storyboard was drafted: mode, size, length, style, captions, narration on or off, theme, frame rate, voice, music and its placement, sound effects, and the outro. Flags you pass now (and `COVI_*` variables) change only what they name; a different mode (`--short`, `--standard`, `--custom`, `--mode`) resets the size, length, and style that came with the old one.
-- `covi render` reads `explanation.json`, `review.json`, and `demo/captures.json` from the run.
+- `--draft` stops after writing `video/storyboard.json` and, unless `video.direction` is `off`, Covi's `video/direction.json` (see [Direction and the canvas](#direction-and-the-canvas)). The result's `video.reason` says so.
+- `covi render` reuses the spec saved in `video/decision.json` when the storyboard was drafted: mode, size, length, style, captions, narration on or off, theme, frame rate, voice, music and its placement, sound effects, and the outro. Flags you pass now (and `COVI_*` variables) change only what they name; a different mode (`--short`, `--standard`, `--custom`, `--mode`) resets the size, length, and style that came with the old one. `video.direction` is not saved: it comes from flags and configuration at each command, so pass `--direction off` again to render without the canvas.
+- `covi render` reads `explanation.json`, `review.json`, `demo/captures.json`, and `video/direction.json` from the run.
 - `covi render --storyboard <file>` renders a storyboard stored elsewhere. Image paths inside it are still relative to the run directory.
 - `covi video --storyboard <file>` skips drafting and renders the given storyboard.
 - Re-rendering after an edit only synthesizes the lines that changed; the rest come from the narration cache.
+
+### Direction and the canvas
+
+Evidence decides what a video shows; direction decides how. Every video is drawn on one large canvas. Each story scene sits at its stop, a frame-sized region on a path that runs to the right and turns down every two to four stops (a seed from the title picks where, so a different change travels differently); the hero's stop drops half a frame below its row (less when a stop sits right below it), so the camera pulls back to reach it. The camera travels between stops instead of fading: `pan` glides to the next stop (0.7 s), and `zoom` pulls back until both stops show, then pushes into the next (0.9 s). Both pictures stay fully opaque while it travels; the outro still fades in. Inside a stop, the push-in and the shot's `camera` beats move the camera.
+
+- **What stays put.** The narrator, the captions, the progress bar, and the hero's flash keep their places in the frame. The header hands over across a move: the old one fades out over the move's first 40%, then the new one comes in, so two headers are never both shown. The narrator eases in or out over a move to or from a scene without it.
+- **Clipping.** At rest a stop is drawn whole, as without the canvas. While the camera travels, or a beat magnifies the stop, the picture is clipped to the rows of the scene's region (the media region, or the whole frame for a card without a header) across the frame's full width, so a move or a zoom never covers the header or the captions. A magnified view never shows past the region's edges.
+- **One dot grid** lies under the scenes and travels with the camera. Stops sit on its spacing, so at every stop its dots are where the stage's own would be.
+
+`video/direction.json` (optional, `schemaVersion: 1`, `covi schema direction`) directs the video shot by shot. Without one, and for every scene it leaves out, Covi's default director directs the video, so runs in CI or with `--json` move the same way as the ones an agent directs.
+
+```json
+{
+  "schemaVersion": 1,
+  "draft": false,
+  "shots": [
+    {
+      "scene": "s3",
+      "enter": "pan",
+      "layout": "row",
+      "elements": [
+        { "id": "req", "kind": "code", "evidence": "diff-hunk:src/request.js:12", "side": "head" },
+        { "id": "out", "kind": "output", "evidence": "terminal:1" },
+        { "id": "note", "kind": "label", "text": "Ids only", "tone": "success" }
+      ],
+      "beats": [
+        { "verb": "reveal", "element": "note", "style": "pop", "at": "only the ids" },
+        { "verb": "camera", "move": "zoom", "to": "req", "at": "the request" }
+      ]
+    }
+  ]
+}
+```
+
+- **Shots.** At most one per storyboard scene, 24 at most; a scene without one gets the default director's. `scene` names the storyboard scene (`s1`, `s2`, … for a scene without an `id`). `enter` is how the scene enters: `pan` or `zoom`, or any storyboard transition. It shapes the timing exactly like a storyboard `transition`; nothing else in a direction moves a scene in time. `layout`: `auto` (the default), `single`, `row`, `column`, or `split`.
+- **Elements** (1–8 a shot; ids are a lowercase letter, then lowercase letters, digits, or dashes, 24 characters at most) take their content only from the run's evidence: `visual` (the scene's storyboard visual, drawn as without direction; a title or summary card only alone and without a reveal, since it draws its own header and fox); `code` (a `diff-hunk:` id, read from the run's `diff.patch`; `side` `head` (the default), `base`, or `diff`; `lines: [from, to]` within the side shown, at most 40; without it, the 14 lines richest in changes, 18 on tall frames); `output` (a `terminal:` id: a demo command's output at `head` or `base`, or the app's start-up log); `capture` (a `screenshot:` id); `node` (a short `label`, and up to four evidence ids it stands for); and `label` (`text`, with `tone` `neutral`, `warning`, or `success`). A shot without a `visual` element replaces the storyboard visual for that scene, and the scene's evidence is then what its elements cite.
+- **Beats** (0–12 a shot): `place` (the element is there from the start: the default, made explicit; it takes no `at`); `reveal` (0.5 s; `style` `rise`, `pop`, `wipe`, or `type`); and `camera` (0.8 s; `move` `zoom`, `pan`, or `follow` toward an element; `zoom` 1–2.5, by default fitted). A beat's `at` quotes a phrase of the scene's narration that occurs exactly once, as a `sync` phrase does, and the beat lands as it is spoken; beats without one spread through the line from 15% of it. A camera beat aimed at the visual frames what the visual highlights then (its lines, its focus); `follow` frames its target the same way. A camera beat toward a revealed element waits until it is in place.
+- **Labels** are the only text the agent writes: 1–32 characters of letters and marks of any script, spaces, `-–—·,.'’:()/&+?!`, and the CJK punctuation `、。・「」『』（）！？：`. No digits (numbers come from evidence), no markup or other symbols, no invisible characters (joiners, variation selectors, bidi controls), and no links: `://`, a word starting with `www.`, the `javascript:` and `vbscript:` schemes, and `data:` followed directly by text are looked for in the label's NFKC form, with ideographic full stops read as dots, so full-width look-alikes count too. The check is a heuristic: labels are only ever drawn as text, and numbers spelled as words (or in CJK numerals) cannot be caught in code, so the methodology forbids them. Labels are redacted like the storyboard.
+- **Checks.** `covi render` refuses (exit 2) a direction that names a scene the storyboard does not have, gives a scene two shots, uses an element id twice in a shot, aims a beat at an element its shot does not have, cites evidence the run does not have or of the wrong kind, asks for a side or lines the evidence lacks, shows a title or summary card beside other elements, gives a `single` layout more than one element, quotes a phrase that is not in the line exactly once, or breaks a bound, and lists every problem at once. Only a regular file is read, and one over 256 KB is refused before it is read.
+- **Drafts.** `covi video --draft` writes Covi's direction beside the storyboard, with `"draft": true`, unless the run already has one the agent wrote. Rewrite it and set `"draft": false`: a direction still marked as Covi's draft is not read for its shots but derived again at render from the storyboard as it is then, so a stale draft never blocks a render.
+- **The default director** keeps every scene's visual, zooms a code scene 1.25× toward the lines it highlights as they light, and picks every entrance the storyboard left open: the hero (`hero: true`) zooms, a before/after wipes, a scene that shows what the one before it showed cuts, and the rest alternate pan and push. It reads what scenes show, never what they cite, so editing citations never moves a frame.
+- **Off.** `video.direction: off` (`--direction off`, `COVI_VIDEO_DIRECTION=off`) draws the video as Covi 0.2.0 did: no canvas, no direction (`video/direction.json` is not read), and the storyboard's own transitions (a fade by default, `zoom-through` into the hero).
 
 ### Narration
 
@@ -431,7 +474,7 @@ Line breaking follows the [narration language](#narration-language):
 Timing starts from the narration. Covi measures each scene's take (or, when there is no audio, estimates it from the text plus 0.25 s: 2.5 words per second in English, 4.3 syllables per second in Korean, 4 characters per second in Japanese, and 3 in Chinese) and lays the scenes out:
 
 - Lines are 0.35 s apart at an ordinary scene change. The transition into the next scene (length d) starts at `max(line end − 0.5·d, next line − 0.6·d)`: at most half of it plays over the end of the line before, and the next line starts within its first 60%. So an ordinary scene outlasts its line by at most 0.6 s, and the picture changes with the words.
-- Transition lengths are the brand's `motion.transitions`: fade 0.45 s, cut 0, push 0.5 s, wipe 0.55 s, zoom-through 0.6 s. The first scene has none; the outro fades in over 0.45 s.
+- Transition lengths are the brand's `motion.transitions`: fade 0.45 s, cut 0, push 0.5 s, wipe 0.55 s, zoom-through 0.6 s, and the canvas camera's pan 0.7 s and zoom 0.9 s (only direction gives those; a scene outlasts its line by up to 0.63 s before a pan and 0.71 s before a zoom). The first scene has none; the outro fades in over 0.45 s.
 - The first line starts 0.2 s in (0.3 s in narrated standard reviews), so the hook is heard by 0.5 s.
 - A scene stays up for at least its visual's minimum (below), and the next line waits for it. The hero holds 0.4 s after its line. The last scene lingers 0.8 s after its last word before the outro.
 - The video ends with [the outro](#the-outro), which enters like a scene. With `video.outro: false` (`--no-outro`), the last scene lingers 0.5 s and the video holds it for 1 s more: room for the sonic logo after the last line.
@@ -442,7 +485,7 @@ Timing starts from the narration. Covi measures each scene's take (or, when ther
 | Breath | Where | How long |
 |---|---|---|
 | After the hook | A breath before the second line | 1.25 s more lead-in: a pause of about 1.6 s |
-| The hero | The hero scene (`hero: true`, else the story's payoff, see [Fitting the music](#fitting-the-music-to-the-picture)) settles as its transition ends; its line waits 1.4 s more, so the music's lift lands clear of speech | a pause of about 2 s between lines (1.9 s with a fade, 2.0 s with `zoom-through`) |
+| The hero | The hero scene (`hero: true`, else the story's payoff, see [Fitting the music](#fitting-the-music-to-the-picture)) settles as its transition ends; its line waits 1.4 s more, so the music's lift lands clear of speech | a pause of about 2 s between lines (1.9 s with a fade, 2.0 s with `zoom-through`, 2.1 s with the canvas's `zoom`) |
 | After the hero | The line after the hero's breathes again | 1.25 s more lead-in |
 | The verdict | The summary's verdict lands before its line | 1.25 s more lead-in: a pause of about 1.6 s |
 | Long talk | A line that would start more than 24 s after the last breath (or a pause as long as one, 1.5 s) waits for a breath at that scene change | 1.25 s more lead-in |
@@ -496,7 +539,7 @@ What the viewer hears, besides the narration:
 
 - **Music:** the Covi theme (the default), a score composed for this video, or none. It lifts on a downbeat at the story's payoff, and its ending follows the review's verdict and rings out over the outro.
 - **The sonic logo:** three notes Covi adds after the last line whenever music plays, landing as the outro card settles.
-- **Sound effects** for what happens on screen: a pointer click, the before/after reveal, a finding card landing (heavier for high severity), the verdict appearing, a soft whoosh when a scene pushes, wipes, or zooms through, a riser into the hero and a hit on it, and, when no music plays, the outro's sign-off. Fades, cuts, code, terminal output, API panels, and diagrams make no sound of their own; a scene's `cues` can add one. If an effect is noticeable, it is too loud.
+- **Sound effects** for what happens on screen: a pointer click, the before/after reveal, a finding card landing (heavier for high severity), the verdict appearing, a soft whoosh when a scene pushes, wipes, or zooms through, or the camera pans or zooms to it, a riser into the hero and a hit on it, and, when no music plays, the outro's sign-off. Fades, cuts, code, terminal output, API panels, and diagrams make no sound of their own; a scene's `cues` can add one. If an effect is noticeable, it is too loud.
 
 The narration stays the product. All of it is synthesized from data in `templates/music/` by `@covi/audio`: nothing is sampled or downloaded, so the sound is license-clean (people post these videos publicly), exactly as long as the video, and the same bytes every time.
 
@@ -530,7 +573,7 @@ Where someone speaks, a continuous bed sits 12–20 dB under the voice. WCAG 1.4
 
 Music fits the picture, never the reverse: the narration fixed every frame before the music is chosen, so changing only the music never moves a frame. The fitter (`fitMusic` in `packages/audio/src/music/fit.ts`) takes the video's length D, the hero moment H, the end of the last narration line L (without narration, the last story scene's start plus 0.45 s), the moment the outro card settles O, and the verdict (the summary scene's, else the review's):
 
-- **Hero.** The hero scene is the scene marked `hero: true`; without one, each storytelling template names its payoff beats (`hero`), and the hero scene is the first scene playing one of them, taking the list in order. H is the hero scene's start plus its own transition's length (0.6 s for `zoom-through`, 0.45 s for a fade), the moment it has settled.
+- **Hero.** The hero scene is the scene marked `hero: true`; without one, each storytelling template names its payoff beats (`hero`), and the hero scene is the first scene playing one of them, taking the list in order. H is the hero scene's start plus its own transition's length (0.9 s for the canvas's `zoom`, 0.6 s for `zoom-through`, 0.45 s for a fade), the moment it has settled.
 - **Bars.** Bar j starts at `start + j·bar`, where the music may start partway into its first bar (then it fades in over 0.3 s). The form is intro → loop sections → hero section → loop sections → ending; loops cycle and are cut at boundaries, and the intro is dropped when the hero comes too early for it.
 - **Constraints, in priority order:** the logo's first note starts at least 0.1 s after L; the logo lands (on the ending's first downbeat, T) at least 0.8 s before the end; T is exactly O when the video has an outro (the outro leaves the logo at least 1.35 s after the last line, room for its pickup at any tempo); the tempo stays within ±6% of the score's (±10% when nothing else fits, recorded); and the hero section's first downbeat is exactly H. The fitter searches whole numbers of bars from H to T and picks the tempo closest to the score's. Without an outro it also chooses T, preferring a landing about a second before the end. When no tempo within ±10% reaches H, the hero starts on the nearest bar and the fallback is recorded. Without a hero, the score's tempo holds exactly. Should the last line leave no room before O, the landing follows the rule for videos without an outro, and the fallback is recorded.
 - **The end.** The ending rings over the outro and past the video's end, then fades to silence: over 45% of its ring after the landing, between half a second and a second (0.81 s in a standard review's outro).
@@ -558,7 +601,7 @@ The logo plays on `form.logo.track` and, when given, `form.logo.double` (the the
 | The before/after reveal | `reveal` | as the after state starts to appear |
 | A finding card landing | `finding`, or `finding-high` for high severity | as the card arrives |
 | The summary's verdict | `verdict-looks-good`, `verdict-needs-attention`, `verdict-needs-changes` | as the badge rises |
-| A scene entering with `push`, `wipe`, or `zoom-through` | `transition` | its peak mid-transition; none when the riser into the hero already carries that move |
+| A scene entering with `push`, `wipe`, `zoom-through`, `pan`, or `zoom` | `transition` | its peak mid-transition; none when the riser into the hero already carries that move |
 | The hero | `riser`, `hero` | the riser swells over the 0.8 s before the hero's moment (left out when the hero comes in a video's first 0.8 s); the hit lands on it, with the accent |
 | A storyboard cue (`cues`) | its kind's recipe | at its `at` (a riser ends there); one past its scene's end is not played, one repeating Covi's own is merged, and a `riser` or `hero` cue elsewhere in the hero scene adds a second |
 | The outro card settling, when no music plays | `outro-looks-good`, `outro-needs-attention`, `outro-needs-changes` | its landing as the card settles |
@@ -649,8 +692,8 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | `text-fits` | No text element overflows its box | warn |
 | `narrator-clear-of-content` | The narrator, measured as drawn with its tail, never covers demonstrated content, the media region, captions, or header text | warn |
 | `text-size` | Code, terminal, and API text is at least 24 px and body text (headings, titles, notes, code captions, callout and summary text, node labels, area names) at least 28 px at 1080p wherever a story scene has settled, measured as drawn and relative to the frame's short side. Chips, mark glosses, step labels, file paths, counts, and edge labels are exempt | warn, naming the scene, the kind of text, and its size |
-| `empty-frame` | Where each card scene (code, terminal, API, findings, change map, callout, diagram) has settled, its content covers at least 40% of the media region. Captures keep their own aspect ratio, and title and summary cards are not checked | warn, naming the scene and its share |
-| `monotony` | No more than two story scenes in a row show the same kind of visual, compared by the visual's `kind`, so code and terminal differ (the outro is not counted) | warn, naming up to three runs |
+| `empty-frame` | Where each card scene (code, terminal, API, findings, change map, callout, diagram, or a directed shot that leads with one) has settled, its content covers at least 40% of the media region. Captures keep their own aspect ratio, and title and summary cards are not checked | warn, naming the scene and its share |
+| `monotony` | No more than two story scenes in a row show the same kind of visual, compared by the visual's `kind`, so code and terminal differ (the outro is not counted). A directed shot counts as what it leads with: an `output` element as a terminal, a `capture` as a screenshot, a `node` as a diagram, a `label` as a callout | warn, naming up to three runs |
 | `transition-variety` | With four or more story transitions (into each story scene after the first), no one kind covers more than 60% of them | warn, naming the kind and its share |
 | `images` | Every image loaded in the composition | fail |
 | `fonts` | Every bundled font face loaded, so no text fell back to the machine's fonts (boxes on a runner without CJK fonts) | fail |
@@ -662,7 +705,7 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | `voice-language` | The system voice's locale matches the narration language (hosted voices are not checked) | warn, with a voice to choose instead; also warn when the system voice list could not be read, so the voice's language is unknown |
 | `grounding` | Every story scene with narration that is not framing (title, change map, summary) cites evidence, counting what its visual shows from the run, and every explanation statement (the intent, a behavior with a before or after, each change) cites evidence | warn, naming the scenes and statements |
 
-Covi samples the layout checks at two frames per scene, 35% and 70% of the way through, and once more where each story scene has settled: its entrance and choreography are done and the next scene has not begun to enter. `text-size` and `empty-frame` read only settled frames.
+Covi samples the layout checks at two frames per scene, 35% and 70% of the way through, and once more where each story scene has settled: its entrance and choreography are done and the next scene has not begun to enter. `text-size` and `empty-frame` read only settled frames. A directed scene settles after its beats (every element revealed, every camera beat done); one with a camera beat is also sampled just before its first, at its stop's own scale, when it has entered (and played the reveals before it) by then, and `text-size` keeps the smaller size. On the canvas a frame reports what the camera draws: each box where it is drawn, and only what lies inside the scene's clip while it has one.
 
 Cards size their text to their content: code, terminal, and API body text is as large as its lines allow, from 24 px up to 44 px at 1080p (48 px in 9:16), and shrinks below 24 px (to 13 at least) only when its lines would not fit otherwise, which `text-size` reports. Code, terminal, API, findings, and callout cards cover at least 60% of the media region (a before and after terminal pair in 16:9 about 59%, for the gap between them), with short code, findings, and callouts in their middle and a terminal's text at the top; diagram nodes and change-map rows grow toward it.
 
@@ -678,6 +721,7 @@ After a render, read `qc.json`, then open `contact-sheet.jpg` (each tile is labe
 - **Capture.** It demonstrates whenever the recommendation is screenshots or video and the project is runnable, at desktop and mobile by default, whether or not a video is rendered. Under `pull_request_target` it runs no project command, so only static sites (or an app already running at `app.url`) are captured.
 - **Spec.** It builds the spec from configuration, which CI reads from the base revision, and from flags such as `--mode` (or `--short`), `--duration`, and `--music`.
 - **Music.** The theme by default. With `video.music.use: compose`, the configured model provider writes the score; without one, the theme plays and the run says so.
+- **Direction.** Covi's default director draws the video on the canvas, with the same motion an interactive run gets; `video.direction: off` renders without it.
 - **Failures.** If rendering fails, the run records a warning and the review still completes.
 
 The review comment links the video according to `publish.video`:

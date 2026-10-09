@@ -40,7 +40,7 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
 - **The domain model is platform-independent.** Core speaks of a `CodeChange` (repository, base and head revisions, changed files, commits, metadata), never of pull requests. GitHub and GitLab specifics live only in `packages/platforms` and `integrations/`. Core never reads CI environment variables.
 - **One methodology source.** Skills are read by agents and also loaded into model prompts (`methodologyOf` in `packages/core/src/resources.ts`). Sections named `Run it`, `Commands`, `Tools`, `Workflow with the CLI`, `Asking the user`, `Output files`, `Related skills`, or `When not to use` are agent-only and are left out of model prompts; everything else is methodology. Change methodology in the skill, not in code.
 - **Deterministic tools, judgment in skills.** If something must be computed the same way every time (resolution, rules, timing, rendering, QC), it belongs in code with tests. If it needs judgment (intent, findings, narration), it belongs in a skill, with a schema for the result.
-- **Artifacts are the interface.** Every stage reads and writes files in a run directory (`.covi/runs/<run-id>/`), so stages can run independently and agents can author the inputs Covi validates: `explanation.json` and `findings.json` in the run, a demo plan passed with `--plan` (kept as `demo/plan.json`), `video/storyboard.json`, and `video/score.json`. Findings, explanations, and storyboard scenes cite evidence ids from `evidence.json`, which Covi derives from the run's own files. Paths are defined once, in code.
+- **Artifacts are the interface.** Every stage reads and writes files in a run directory (`.covi/runs/<run-id>/`), so stages can run independently and agents can author the inputs Covi validates: `explanation.json` and `findings.json` in the run, a demo plan passed with `--plan` (kept as `demo/plan.json`), `video/storyboard.json`, `video/direction.json`, and `video/score.json`. Findings, explanations, storyboard scenes, and direction elements cite evidence ids from `evidence.json`, which Covi derives from the run's own files. Paths are defined once, in code.
 - **Interactive and non-interactive parity.** Every choice an agent may ask the user about has a configuration key and a default. CI never waits for input.
 
 ## Using the CLI as a tool
@@ -48,7 +48,7 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
 - Run `./bin/covi.mjs` (or `npm run covi --`) from this checkout. It runs the TypeScript sources directly on Node 22.18+, so edits apply without a build. `./bin/covi` is the launcher the Claude Code plugin puts on PATH: it installs the locked dependencies on its first run, then runs `bin/covi.mjs`.
 - Pass `--json` to get a stable result object on stdout; progress goes to stderr.
 - Exit codes: `0` ok · `1` review gate failed · `2` usage or invalid input (including schema errors in agent-authored files) · `3` environment (not a repo, missing ffmpeg or browser) · `4` internal error.
-- `covi schema <explanation|findings|storyboard|score|demo-plan|config|evidence|subject|outcome>` prints the JSON Schema for files agents author or read.
+- `covi schema <explanation|findings|storyboard|direction|score|demo-plan|config|evidence|subject|outcome>` prints the JSON Schema for files agents author or read.
 - `covi outcomes collect` reads what became of Covi's comments from GitHub or GitLab into `.covi/outcomes/`; `covi outcomes report --json` turns it into precision by certainty.
 - `covi evidence --run <id> --json` lists the run's evidence ids (read-only).
 - `covi examples create <name>` builds a real git repository for an example change; point any command at it with `--repo <dir>`.
@@ -65,10 +65,10 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
   tests.log            test command and output tail (when tests ran)
   demo/                plan.json (when given), captures.json, subject.json, screenshots/, diffs/, recordings/,
                        traces/, behavior-diff.json, app-<revision>.log (when the app did not start), demo.md
-  video/               decision.json, storyboard.json, speech.json, timeline.json, narration.wav,
-                       score.json (composed music), audio.json, music.wav, captions.vtt/.srt,
-                       composition/, covi-review.mp4, frames.json, poster.png, contact-sheet.jpg,
-                       qc.json
+  video/               decision.json, storyboard.json, direction.json (drafted, or the agent's), speech.json,
+                       timeline.json, narration.wav, score.json (composed music), audio.json, music.wav,
+                       captions.vtt/.srt, composition/, covi-review.mp4, frames.json, poster.png,
+                       contact-sheet.jpg, qc.json
 ```
 
 The runs directory ignores itself (it contains a `.gitignore` with `*`); Covi never edits the user's `.gitignore`. The subject model, `.covi/subject/subject.json` (`subject.store`), is the one file Covi keeps outside its ignored directories: what demonstrations saw of the software, small and meant to be committed. `covi subject` prints it.
@@ -84,7 +84,7 @@ Collected outcomes live next to the runs, in `.covi/outcomes/<run-id>.json` (one
 
 ## Changing workflows safely
 
-- **Schemas** (`packages/core/src/model/*`, `packages/video/src/storyboard/schema.ts`, `packages/audio/src/schema/score.ts`, `packages/capture/src/plan.ts`, `packages/core/src/config/schema.ts`): agent-authored files are validated with Zod. Additive changes are fine. A breaking change to a versioned file (one with `schemaVersion`) bumps the version; the configuration and the demo plan have no version, so they only grow (add keys, never repurpose one). Either way, update the skills that describe the file.
+- **Schemas** (`packages/core/src/model/*`, `packages/video/src/storyboard/schema.ts`, `packages/video/src/direction/schema.ts`, `packages/audio/src/schema/score.ts`, `packages/capture/src/plan.ts`, `packages/core/src/config/schema.ts`): agent-authored files are validated with Zod. Additive changes are fine. A breaking change to a versioned file (one with `schemaVersion`) bumps the version; the configuration and the demo plan have no version, so they only grow (add keys, never repurpose one). Either way, update the skills that describe the file.
 - **Rules** (`packages/core/src/review/rules/`): add a positive and a negative test in `packages/core/test/rules.test.ts`. Classify certainty honestly; only `confirmed` and `likely` findings can fail a CI gate.
 - **Templates** (`templates/stories/*.yml`): validated on load; tests draft and validate a storyboard with each. Each beat's `eyebrows` carries its label in Korean, Japanese, and Chinese.
 - **Text for people** goes through the message catalogs (`templates/i18n/<language>.yml`, `t()` in `packages/core/src/i18n/catalog.ts`), never as a literal in code. Add the key to all four catalogs with the same placeholders (a test checks it); Korean particles after a placeholder are written as pairs such as `{을/를}`. English output is pinned by `tests/english-baseline.test.ts`. CLI log messages stay in English.
@@ -113,6 +113,7 @@ Repositories under review are untrusted input.
 - In CI, configuration is read from the **base** revision (an explicit `--config` inside the repository too), so a change cannot rewrite the commands its own review runs.
 - Under `pull_request_target`, no project command runs (`ExecutionPolicy`); static pages can still be captured.
 - Every artifact, log line, command record, model prompt, and video storyboard (the source of narration, captions, and frames) passes through the `Redactor`.
+- A direction file (`video/direction.json`; `packages/video/src/direction/`) is untrusted agent input: a strict, bounded schema (`DIRECTION_LIMITS`) read only from a regular file, content only from evidence ids the run has, labels from a character allowlist (no digits, markup, invisible characters, or links), echoed problems escaped, everything resolved redacted, and text set with `textContent` in the runtime. Nothing in it is code, CSS, HTML, a selector, or a URL.
 - The subject model (`.covi/subject/subject.json`; `packages/core/src/model/subject.ts`) is repository data: it holds no command line, its selectors are strings Covi builds from attributes, every string and list is bounded, it is redacted when written and schema-checked when read (a file Covi cannot read is ignored and never overwritten), a flow that types into a secret field is never kept, and in CI it is read from the base revision and never written.
 - Sound comes only from bundled data and validated scores; nothing runs and nothing is downloaded. A score is bounded (size, tracks, patterns, sections, note values, chord voicings and changes, tones per step, notes and seconds of sound per second of video) and scheduled for the video before anything is synthesized, and names resolve only to the score's own entries.
 - PR/MR comments are re-rendered from schema-validated artifacts with all dynamic text escaped.

@@ -33,9 +33,9 @@ export interface VideoSpec {
   /** Background music: what plays, and where. */
   music: {
     use: MusicChoice;
-    /** Where it plays in this video: the placement chosen, or the one the kind of video implies. */
+    /** Where it plays in this video: the placement chosen, or continuous for `auto`. */
     placement: MusicPlacement;
-    /** The placement as chosen; `auto` lets the kind of video decide. Older specs lack it. */
+    /** The placement as chosen; `auto` is continuous. Older specs lack it. */
     setting?: MusicPlacementSetting;
   };
   /** Subtle sound effects for what happens on screen. */
@@ -45,10 +45,9 @@ export interface VideoSpec {
 }
 
 /**
- * Where music plays. Feed formats (short-form, vertical, square) keep a quiet bed under the whole
- * video; standard reviews play it at the start, in the breaths between lines, and at the end,
- * because a two-minute bed under technical narration is tiring. `video.music.placement` chooses
- * one explicitly.
+ * Where music plays. A continuous bed under the whole video, ducked while someone speaks, for
+ * every kind of video (`video.music.placement: auto`); bookends play it before the first line and
+ * after the last, effectively off under the narration.
  */
 export type MusicPlacement = 'continuous' | 'bookends';
 
@@ -500,13 +499,8 @@ export function resolveVideoSpec(config: CoviConfig, request: VideoRequest = {})
   }
 
   const setting = request.musicPlacement ?? v.music.placement ?? 'auto';
-  // `auto`: the kind of video decides, with the same mapping the timing presets use.
-  const placement: MusicPlacement =
-    setting !== 'auto'
-      ? setting
-      : (request.narration ?? v.narration.enabled) && base === MODE_PRESETS.standard
-        ? 'bookends'
-        : 'continuous';
+  // `auto` is continuous for every kind of video: a bed that ducks under the voice, never jumps.
+  const placement: MusicPlacement = setting === 'auto' ? 'continuous' : setting;
   return {
     mode,
     width,
@@ -622,10 +616,7 @@ export interface VideoPlan {
 export interface MusicQuestionContext {
   narration: boolean;
   soundEffects: boolean;
-  /**
-   * Where music would play; undefined while the kind of video is still being asked and the kind
-   * decides (the placement is `auto`).
-   */
+  /** Where music would play (continuous unless a placement was chosen). */
   placement?: MusicPlacement;
 }
 
@@ -646,9 +637,8 @@ export function videoQuestion(
       : sound.soundEffects
         ? 'noneDescriptionNoNarration'
         : 'noneDescriptionSilent';
-    // Say where the music plays: under bookends a standard review hears it mostly around the
-    // narration, which is worth knowing before choosing to compose.
-    const where = !sound.narration ? 'throughout' : (sound.placement ?? 'byMode');
+    // Say where the music plays, which is worth knowing before choosing to compose.
+    const where = !sound.narration ? 'throughout' : (sound.placement ?? 'continuous');
     return {
       id,
       header: say('header'),
@@ -783,17 +773,13 @@ export function planVideo(
       questions.push(ask('duration'));
     if (missing.includes('size')) questions.push(ask('size'));
     // Music is worth a question only while Covi is asking anyway; otherwise the default applies
-    // and the result says how to change it. While the kind of video is asked too, it may still
-    // decide where the music plays.
+    // and the result says how to change it.
     if (questions.length && missing.includes('music'))
       questions.push(
         videoQuestion('music', asking, {
           narration: spec.narration.enabled,
           soundEffects: spec.soundEffects,
-          placement:
-            missing.includes('mode') && spec.music.setting === 'auto'
-              ? undefined
-              : spec.music.placement,
+          placement: spec.music.placement,
         }),
       );
   }

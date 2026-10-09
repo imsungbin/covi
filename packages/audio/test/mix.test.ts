@@ -115,6 +115,14 @@ describe('mixSound', () => {
     expect(r.levels.musicBelowVoiceDb!).toBeGreaterThanOrEqual(30);
   });
 
+  it('measures no level under the voice when the music is silent wherever someone speaks', () => {
+    // The music starts after the last line, so nothing of it plays under the voice.
+    const late = music().map((c) => c.fill(0, 0, Math.round(4.55 * SR)));
+    const r = mixSound(input({ music: late, effects: [] }));
+    expect(r.music).toBeDefined();
+    expect(r.levels.musicBelowVoiceDb).toBeUndefined();
+  });
+
   it("carves the voice's band out of the music while someone speaks", () => {
     const below = (freq: number) =>
       mixSound(input({ music: sineMusic(freq), effects: [] })).levels.musicBelowVoiceDb!;

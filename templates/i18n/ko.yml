@@ -867,10 +867,9 @@ question:
     noneDescriptionNoEffects: 내레이션만
     noneDescriptionSilent: 소리 없이
     where:
-      bookends: '{what}. 주로 도입부, 쉬는 틈, 핵심 장면, 마지막에 들림'
+      bookends: '{what}. 도입부와 마지막에 들리고, 내레이션 중에는 낮게 깔림'
       continuous: '{what}. 내레이션 밑에 잔잔하게 깔리고 쉬는 틈에 커짐'
       throughout: '{what}. 영상 전체에 깔림'
-      byMode: '{what}. 숏폼은 내레이션 밑에 잔잔하게, 일반 리뷰는 내레이션 사이에 들림'
 
 outcomes:
   empty: 아직 수집한 결과가 없습니다. Covi가 변경에 댓글을 단 뒤 `covi outcomes collect`로 그 결과를 모으세요.

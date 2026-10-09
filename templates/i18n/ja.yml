@@ -866,10 +866,9 @@ question:
     noneDescriptionNoEffects: ナレーションだけ
     noneDescriptionSilent: 音なし
     where:
-      bookends: '{what}。主に冒頭、ナレーションの間、見せ場、最後に流れます'
+      bookends: '{what}。冒頭と最後に流れ、ナレーション中は控えめになります'
       continuous: '{what}。ナレーションの下で静かに流れ、間で少し大きくなります'
       throughout: '{what}。動画全体に流れます'
-      byMode: '{what}。ショート動画ではナレーションの下で静かに、標準レビューではナレーションの間に流れます'
 
 outcomes:
   empty: まだ結果がありません。Covi が変更にコメントしたあと、`covi outcomes collect` でその結果を集めてください。

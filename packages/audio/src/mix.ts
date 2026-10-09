@@ -270,9 +270,12 @@ export function mixSound(input: MixInput): MixResult {
     }
   }
 
-  if (voice && music && input.speech.length)
-    levels.musicBelowVoiceDb =
+  if (voice && music && input.speech.length) {
+    // Music silent wherever someone speaks sits infinitely far under the voice: none plays there.
+    const below =
       weightedLevel([voice, voice], sr, input.speech) - weightedLevel(music, sr, input.speech);
+    if (Number.isFinite(below)) levels.musicBelowVoiceDb = below;
+  }
 
   if (!voice && !music && !effects) return { levels };
   const master = stereo(n);

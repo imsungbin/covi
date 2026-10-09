@@ -424,6 +424,7 @@ export async function produceSound(
       voice: input.voice,
       speech: input.speech,
       placement: spec.music.placement,
+      hero: music.hero?.downbeat,
       ...layers,
     });
   let mixed: MixResult;
@@ -456,11 +457,12 @@ export async function produceSound(
       thresholdDbfs: AUDIBLE.thresholdDbfs,
       window: AUDIBLE.window,
     };
-    // Whether the lift is heard at full level: speech (and the ramps around it) holds it down.
+    // Whether the lift is heard at full level: speech, a pause held down, and the ramps around
+    // them hold it down.
     if (music.hero)
       music.hero.clear = clearOfSpeech(
         music.hero.downbeat,
-        input.voice ? input.speech : [],
+        input.voice ? (mixed.musicLines ?? input.speech) : [],
         spec.music.placement,
       );
     writeWav(run.path(AUDIO_PATHS.music), mixed.music, SAMPLE_RATE, 'pcm16');
@@ -501,23 +503,32 @@ function round(n: number, digits: number): number {
   return Math.round(n * k) / k;
 }
 
+/** The levels as written: rounded, and only finite numbers (JSON would write the rest as null). */
 function roundLevels(levels: MixLevels): MixLevels {
-  const r = (n: number | undefined) => (n === undefined ? undefined : round(n, 2));
+  const r = (n: number) => round(n, 2);
+  const ok = (n: number | undefined): n is number => n !== undefined && Number.isFinite(n);
+  const jumps = levels.musicJumps;
+  const master = levels.master;
   return {
-    ...(levels.voiceLufs === undefined ? {} : { voiceLufs: r(levels.voiceLufs) }),
-    ...(levels.musicBelowVoiceDb === undefined
-      ? {}
-      : { musicBelowVoiceDb: r(levels.musicBelowVoiceDb) }),
-    ...(levels.effectsBelowVoiceDb === undefined
-      ? {}
-      : { effectsBelowVoiceDb: r(levels.effectsBelowVoiceDb) }),
-    ...(levels.master
+    ...(ok(levels.voiceLufs) ? { voiceLufs: r(levels.voiceLufs) } : {}),
+    ...(ok(levels.musicBelowVoiceDb) ? { musicBelowVoiceDb: r(levels.musicBelowVoiceDb) } : {}),
+    ...(ok(levels.musicRangeLu) ? { musicRangeLu: r(levels.musicRangeLu) } : {}),
+    ...(jumps && ok(jumps.maxDb) && ok(jumps.at)
       ? {
-          master: {
-            integrated: r(levels.master.integrated)!,
-            truePeak: r(levels.master.truePeak)!,
+          musicJumps: {
+            maxDb: r(jumps.maxDb),
+            at: r(jumps.at),
+            exempt: jumps.exempt.map(([s, e]) => [round(s, 4), round(e, 4)] as [number, number]),
           },
         }
+      : {}),
+    ...(levels.pausesHeld ? { pausesHeld: levels.pausesHeld } : {}),
+    ...(ok(levels.effectsBelowVoiceDb)
+      ? { effectsBelowVoiceDb: r(levels.effectsBelowVoiceDb) }
+      : {}),
+    ...(ok(levels.effectsCutDb) ? { effectsCutDb: r(levels.effectsCutDb) } : {}),
+    ...(master && ok(master.integrated) && ok(master.truePeak)
+      ? { master: { integrated: r(master.integrated), truePeak: r(master.truePeak) } }
       : {}),
   };
 }

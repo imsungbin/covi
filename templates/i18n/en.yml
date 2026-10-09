@@ -883,10 +883,9 @@ question:
     noneDescriptionSilent: No sound at all
     # Where the music plays, after the theme's or the score's description ({what}).
     where:
-      bookends: '{what}. Plays mainly at the opening, in the pauses, under the key moment, and at the end'
+      bookends: '{what}. Plays at the opening and the end, and stays low under the narration'
       continuous: '{what}. A quiet bed under the narration that rises in the pauses'
       throughout: '{what}. Plays under the whole video'
-      byMode: '{what}. Quietly under short-form narration; around the narration in standard reviews'
 
 outcomes:
   empty: No outcomes yet. Once Covi has commented on a change, `covi outcomes collect` gathers what became of it.

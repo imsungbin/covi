@@ -352,7 +352,7 @@ function addVideo(cmd: Command): Command {
     .addOption(
       new Option(
         '--music-placement <placement>',
-        'where music plays: auto (by the kind of video, default), continuous (a quiet bed under the narration), bookends (around the narration only)',
+        'where music plays: auto (continuous, default), continuous (a bed under the whole video, ducked under the narration), bookends (before the first line and after the last only)',
       ).choices(['auto', 'continuous', 'bookends']),
     )
     .option(

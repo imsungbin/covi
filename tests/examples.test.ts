@@ -59,9 +59,10 @@ async function analyzeExample(name: string) {
 }
 
 describe('example changes', () => {
-  it('ships the five reference scenarios', () => {
+  it('ships the six reference scenarios', () => {
     expect(examples.map((e) => e.name)).toEqual([
       'api-users-pagination',
+      'backend-slim-request',
       'bugfix-cli-slugify',
       'refactor-retry-helper',
       'ui-comment-composer',

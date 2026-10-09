@@ -3,6 +3,7 @@ import {
   type FrameMark,
   HERO_PHASE,
   type HighlightGroup,
+  type Timeline,
   type TimelineCue,
   type TimelineScene,
   type TimelineVisual,
@@ -610,6 +611,42 @@ export function settledAt(visual: TimelineVisual, duration: number, phases: Phas
     case 'outro':
       return outroSettle();
   }
+}
+
+/**
+ * When scene `index` has settled and is alone on screen, in seconds from the start of the video:
+ * from the end of its entrance and its choreography to where the next scene starts to enter. A
+ * scene too short to settle before it leaves gives the moment it starts to leave.
+ */
+export function settledSpan(
+  timeline: Pick<Timeline, 'scenes' | 'transition'>,
+  index: number,
+): Span | undefined {
+  const scene = timeline.scenes[index];
+  if (!scene) return undefined;
+  const enter = index === 0 ? 0 : (scene.transition?.seconds ?? timeline.transition);
+  const next = timeline.scenes[index + 1];
+  const leave = next ? (next.transition?.seconds ?? timeline.transition) : 0;
+  const to = scene.end - leave;
+  const done =
+    scene.start + Math.max(enter, settledAt(scene.visual, scene.end - scene.start, scene.phases));
+  return [Math.min(done, to), to];
+}
+
+/**
+ * The frame QC reads a settled scene at: the first frame of its settled span, or, when the span is
+ * shorter than a frame, the last frame before the next scene enters (at its very end, the next
+ * scene is the one on screen).
+ */
+export function settledFrame(
+  timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames'>,
+  index: number,
+): number | undefined {
+  const span = settledSpan(timeline, index);
+  if (!span) return undefined;
+  const first = Math.ceil(span[0] * timeline.fps - 1e-6);
+  const last = Math.floor(span[1] * timeline.fps - 1e-6);
+  return Math.max(0, Math.min(timeline.frames - 1, first, last));
 }
 
 /** The summary's verdict badge rises into view. */

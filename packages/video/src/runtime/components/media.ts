@@ -15,20 +15,23 @@ import {
   terminalStarts,
 } from '../../timeline/cues.ts';
 import type { Point, Rect, TimelineVisual } from '../../timeline/types.ts';
-import { clamp, easeOutCubic, fade, lerp, rise, seg, typedPrefix } from '../anim.ts';
+import { easeOutCubic, fade, lerp, rise, seg, typedPrefix } from '../anim.ts';
 import { el, escapeHtml } from '../dom.ts';
 import { center, marksCamera, tourNote } from '../framing.ts';
 import { highlightLine } from '../highlight.ts';
 import { union } from '../narrator.ts';
+import { CARD_FILL, cardHeight, codeFont } from '../sizing.ts';
 import { choreograph, Frame } from './frame.ts';
 import {
   type Component,
   type ComponentContext,
+  drawnFont,
   entered,
   type LayoutItem,
   overflows,
   rectOf,
   type SceneClock,
+  smallestFont,
 } from './types.ts';
 
 type V<K extends TimelineVisual['kind']> = Extract<TimelineVisual, { kind: K }>;
@@ -160,7 +163,14 @@ export function screenshot(v: V<'screenshot'>, ctx: ComponentContext): Component
       ...frameItems([frame]),
       { role: 'focus' as const, rect: frame.map(framed) },
       ...(gloss
-        ? [{ role: 'text' as const, rect: rectOf(gloss), overflow: overflows(gloss) }]
+        ? [
+            {
+              role: 'text' as const,
+              rect: rectOf(gloss),
+              overflow: overflows(gloss),
+              text: 'meta' as const,
+            },
+          ]
         : []),
     ],
     target(clock) {
@@ -392,7 +402,12 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
     },
     report: () => [
       ...frameItems(frames.slice(0, 1)),
-      { role: 'text' as const, rect: rectOf(label), overflow: overflows(label) },
+      {
+        role: 'text' as const,
+        rect: rectOf(label),
+        overflow: overflows(label),
+        text: 'meta' as const,
+      },
     ],
     target({ t, duration }) {
       const timing = timingOf(duration);
@@ -463,7 +478,7 @@ function morphOrder(lines: V<'code'>['lines']): number[] {
 export function code(v: V<'code'>, ctx: ComponentContext): Component {
   const vertical = ctx.timeline.orientation === 'vertical';
   // The caption sits under the card, inside the media region, so the captions' band stays clear.
-  const band = v.caption ? ctx.u(vertical ? 96 : 72) : 0;
+  const band = v.caption ? ctx.u(vertical ? 96 : 88) : 0;
   const gap = ctx.u(12);
   const box = { ...ctx.regions.media, height: ctx.regions.media.height - band };
   const morph = v.mode === 'morph';
@@ -501,9 +516,16 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
   const typical = Math.max(28, lengths[Math.floor((lengths.length - 1) * 0.9)] ?? 28);
   const fontByWidth = (box.width - ctx.u(40)) / (typical * 0.61);
   const fontByHeight = (box.height - ctx.u(90)) / (v.lines.length * 1.55 + 1.2);
-  const font = clamp(Math.min(fontByWidth, fontByHeight), ctx.u(16), ctx.u(34));
+  const font = codeFont(
+    Math.min(fontByWidth, fontByHeight),
+    ctx.timeline.orientation,
+    ctx.regions.unit,
+  );
   body.style.fontSize = `${font}px`;
-  const height = Math.min(box.height, v.lines.length * font * 1.55 + font * 1.2 + ctx.u(66));
+  // A short block still gets a card that fills most of the region, its lines in the middle.
+  const natural = Math.min(box.height, v.lines.length * font * 1.55 + font * 1.2 + ctx.u(66));
+  const height = cardHeight(box, box.width, natural);
+  body.style.paddingTop = `${ctx.u(14) + (height - natural) / 2}px`;
   Object.assign(panel.style, {
     left: `${box.x}px`,
     top: `${box.y + (box.height - height) / 2}px`,
@@ -517,7 +539,7 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
       top: `${box.y + (box.height + height) / 2 + gap}px`,
       width: `${box.width}px`,
       maxHeight: `${band - gap}px`,
-      fontSize: `${ctx.u(vertical ? 28 : 23)}px`,
+      fontSize: `${ctx.u(28)}px`,
     });
   return {
     update(clock) {
@@ -565,9 +587,17 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
       });
     },
     report: () => [
-      { role: 'media', rect: rectOf(panel) },
+      { role: 'media', rect: rectOf(panel), font: drawnFont(body), text: 'code' },
       ...(caption
-        ? [{ role: 'text' as const, rect: rectOf(caption), overflow: overflows(caption) }]
+        ? [
+            {
+              role: 'text' as const,
+              rect: rectOf(caption),
+              overflow: overflows(caption),
+              font: drawnFont(caption),
+              text: 'body' as const,
+            },
+          ]
         : []),
     ],
     target: () => {
@@ -581,12 +611,36 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
 // Terminal
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * The size of terminal text: one for every window, so a before and an after compare at one scale,
+ * and as large as the longest line and the most lines allow in a window's slot.
+ */
+function terminalFont(
+  slot: Rect,
+  command: string,
+  outputs: readonly string[],
+  ctx: ComponentContext,
+): number {
+  const lines = outputs.map((o) => o.split('\n'));
+  const longest = Math.max(command.length + 2, ...lines.flat().map((l) => l.length), 24);
+  const most = Math.max(...lines.map((l) => l.length));
+  return codeFont(
+    Math.min(
+      (slot.width - ctx.u(40)) / (longest * 0.61),
+      (slot.height - ctx.u(70)) / ((most + 1.5) * 1.5),
+    ),
+    ctx.timeline.orientation,
+    ctx.regions.unit,
+  );
+}
+
 function terminalWindow(
   parent: HTMLElement,
   rect: Rect,
   label: string,
   command: string,
   output: string,
+  font: number,
   ctx: ComponentContext,
 ) {
   const win = el('div', 'term mono', parent);
@@ -596,19 +650,14 @@ function terminalWindow(
   el('span', 'label', head, label);
   const body = el('div', 'term-body', win);
   const lines = output.split('\n');
-  const longest = Math.max(command.length + 2, ...lines.map((l) => l.length), 24);
-  const font = clamp(
-    Math.min(
-      (rect.width - ctx.u(40)) / (longest * 0.61),
-      (rect.height - ctx.u(70)) / ((lines.length + 1.5) * 1.5),
-    ),
-    ctx.u(13),
-    ctx.u(ctx.timeline.orientation === 'vertical' ? 30 : 26),
-  );
   body.style.fontSize = `${font}px`;
-  // The window fits its content (centered in its slot) instead of leaving an empty black box.
+  // The window fits its content, grown to fill most of the region (a terminal keeps its text at
+  // the top, as terminals do), and is centered in its slot.
   const contentHeight = (lines.length + 1) * font * 1.5 + ctx.u(32) + ctx.u(44);
-  const height = Math.min(rect.height, Math.max(ctx.u(180), contentHeight));
+  const height = Math.min(
+    rect.height,
+    Math.max(contentHeight, CARD_FILL * ctx.regions.media.height),
+  );
   win.style.height = `${height}px`;
   win.style.top = `${rect.y + (rect.height - height) / 2}px`;
   const prompt = el('div', '', body);
@@ -617,6 +666,7 @@ function terminalWindow(
   const outLines = lines.map((l) => el('div', 'out', body, l || ' '));
   return {
     win,
+    body,
     play(t: number, start: number) {
       const typed = Math.floor(command.length * seg(t, start, start + 0.6));
       cmd.textContent = command.slice(0, typed);
@@ -632,6 +682,7 @@ function terminalWindow(
 export function terminal(v: V<'terminal'>, ctx: ComponentContext): Component {
   const box = ctx.regions.media;
   const gap = ctx.u(26);
+  const labels = ctx.timeline.labels;
   const windows: Array<ReturnType<typeof terminalWindow>> = [];
   if (v.before !== undefined) {
     const vertical = ctx.timeline.orientation !== 'landscape';
@@ -639,28 +690,15 @@ export function terminal(v: V<'terminal'>, ctx: ComponentContext): Component {
       ? { ...box, height: (box.height - gap) / 2 }
       : { ...box, width: (box.width - gap) / 2 };
     const b = vertical ? { ...a, y: box.y + a.height + gap } : { ...a, x: box.x + a.width + gap };
+    const font = terminalFont(a, v.command, [v.before, v.output], ctx);
     windows.push(
-      terminalWindow(
-        ctx.root,
-        a,
-        ctx.timeline.labels?.before ?? 'Before',
-        v.command,
-        v.before,
-        ctx,
-      ),
-      terminalWindow(ctx.root, b, ctx.timeline.labels?.after ?? 'After', v.command, v.output, ctx),
+      terminalWindow(ctx.root, a, labels?.before ?? 'Before', v.command, v.before, font, ctx),
+      terminalWindow(ctx.root, b, labels?.after ?? 'After', v.command, v.output, font, ctx),
     );
   } else {
-    windows.push(
-      terminalWindow(
-        ctx.root,
-        box,
-        v.title ?? ctx.timeline.labels?.terminal ?? 'Terminal',
-        v.command,
-        v.output,
-        ctx,
-      ),
-    );
+    const font = terminalFont(box, v.command, [v.output], ctx);
+    const label = v.title ?? labels?.terminal ?? 'Terminal';
+    windows.push(terminalWindow(ctx.root, box, label, v.command, v.output, font, ctx));
   }
   return {
     update(clock) {
@@ -673,7 +711,13 @@ export function terminal(v: V<'terminal'>, ctx: ComponentContext): Component {
         w.play(t, start);
       });
     },
-    report: () => windows.map((w) => ({ role: 'media' as const, rect: rectOf(w.win) })),
+    report: () =>
+      windows.map((w) => ({
+        role: 'media' as const,
+        rect: rectOf(w.win),
+        font: drawnFont(w.body),
+        text: 'code' as const,
+      })),
   };
 }
 
@@ -728,6 +772,7 @@ export function api(v: V<'api'>, ctx: ComponentContext): Component {
   const beforeLines = v.before?.body.split('\n') ?? [];
   const marks = v.before ? diffLines(beforeLines, afterLines) : undefined;
   const panels: HTMLDivElement[] = [];
+  const bodies: HTMLPreElement[] = [];
   const make = (rect: Rect, title: string, status: number, lines: string[], kinds?: string[]) => {
     const panel = el('div', 'api-panel card', ctx.root);
     Object.assign(panel.style, {
@@ -742,8 +787,13 @@ export function api(v: V<'api'>, ctx: ComponentContext): Component {
     badge.style.background = status < 300 ? theme.addBackground : theme.delBackground;
     badge.style.color = status < 300 ? theme.success : theme.danger;
     const pre = el('pre', 'mono', panel);
+    bodies.push(pre);
     const longest = Math.max(24, ...lines.map((l) => l.length));
-    pre.style.fontSize = `${clamp(Math.min((rect.width - ctx.u(44)) / (longest * 0.61), (rect.height - ctx.u(80)) / (lines.length * 1.5 + 1)), ctx.u(13), ctx.u(24))}px`;
+    const fit = Math.min(
+      (rect.width - ctx.u(44)) / (longest * 0.61),
+      (rect.height - ctx.u(80)) / (lines.length * 1.5 + 1),
+    );
+    pre.style.fontSize = `${codeFont(fit, ctx.timeline.orientation, ctx.regions.unit)}px`;
     pre.innerHTML = lines
       .map((l, i) => {
         // The "… N more lines" marker from clipping (in any language) is a note, not JSON.
@@ -781,8 +831,13 @@ export function api(v: V<'api'>, ctx: ComponentContext): Component {
         rise(p, i === 0 ? entered(clock, ...spans[0]!) : seg(t, ...spans[i]!), ctx.u(24));
     },
     report: () => [
-      { role: 'media', rect: rectOf(req) },
-      ...panels.map((p) => ({ role: 'media' as const, rect: rectOf(p) })),
+      { role: 'media', rect: rectOf(req), font: drawnFont(req), text: 'code' },
+      ...panels.map((p, i) => ({
+        role: 'media' as const,
+        rect: rectOf(p),
+        font: drawnFont(bodies[i]!),
+        text: 'code' as const,
+      })),
     ],
   };
 }
@@ -829,15 +884,20 @@ export function findings(v: V<'findings'>, ctx: ComponentContext): Component {
     title.style.fontSize = `${ctx.u(vertical ? 38 : 32)}px`;
     if (f.location)
       el('div', 'loc mono', body, f.location).style.fontSize = `${ctx.u(vertical ? 22 : 20)}px`;
-    if (f.note) el('div', 'note', body, f.note).style.fontSize = `${ctx.u(vertical ? 27 : 23)}px`;
-    return { card, body };
+    const note = f.note ? el('div', 'note', body, f.note) : undefined;
+    if (note) note.style.fontSize = `${ctx.u(vertical ? 32 : 28)}px`;
+    return { card, body, read: note ? [title, note] : [title] };
   });
-  // Cards size to their content and the stack is centered in the media region.
-  const heights = cards.map(({ card }) => Math.min(maxCard, card.offsetHeight));
+  // Cards size to their content, then grow alike until the stack fills most of the region, each
+  // card's text in its middle; the stack is centered in the region.
+  const natural = cards.map(({ card }) => Math.min(maxCard, card.offsetHeight));
+  const sum = natural.reduce((a, b) => a + b, 0) + gap * (cards.length - 1);
+  const grow = Math.max(0, (cardHeight(box, box.width, sum) - sum) / cards.length);
+  const heights = natural.map((h) => Math.min(maxCard, h + grow));
   const total = heights.reduce((a, b) => a + b, 0) + gap * (cards.length - 1);
   let y = box.y + Math.max(0, (box.height - total) / 2);
   cards.forEach(({ card }, i) => {
-    card.style.top = `${y}px`;
+    Object.assign(card.style, { top: `${y}px`, height: `${heights[i]}px` });
     y += heights[i]! + gap;
   });
   return {
@@ -849,10 +909,12 @@ export function findings(v: V<'findings'>, ctx: ComponentContext): Component {
       });
     },
     report: () =>
-      cards.map(({ card, body }) => ({
+      cards.map(({ card, body, read }) => ({
         role: 'text' as const,
         rect: rectOf(card),
         overflow: overflows(body),
+        font: smallestFont(read),
+        text: 'body' as const,
       })),
     // The first finding is the one the narration leads with.
     target: () => (cards[0] ? rectOf(cards[0].card) : undefined),
@@ -866,10 +928,14 @@ export function findings(v: V<'findings'>, ctx: ComponentContext): Component {
 export function changeMap(v: V<'change-map'>, ctx: ComponentContext): Component {
   const box = ctx.regions.media;
   const theme = ctx.timeline.theme;
+  const vertical = ctx.timeline.orientation === 'vertical';
   const rows = v.areas.slice(0, 6);
+  // Rows grow, up to twice their height, until the map fills most of the region.
+  const base = ctx.u(vertical ? 150 : 96);
   const rowHeight = Math.min(
-    ctx.u(ctx.timeline.orientation === 'vertical' ? 150 : 96),
     box.height / rows.length,
+    Math.max(base, (CARD_FILL * box.height) / rows.length),
+    base * 2,
   );
   const top = box.y + (box.height - rowHeight * rows.length) / 2;
   const max = Math.max(1, ...rows.map((a) => a.additions + a.deletions));
@@ -883,8 +949,8 @@ export function changeMap(v: V<'change-map'>, ctx: ComponentContext): Component 
       padding: `0 ${ctx.u(26)}px`,
     });
     const name = el('div', 'name mono', row, area.name);
-    name.style.fontSize = `${ctx.u(ctx.timeline.orientation === 'vertical' ? 28 : 24)}px`;
-    name.style.width = `${box.width * (ctx.timeline.orientation === 'vertical' ? 0.42 : 0.3)}px`;
+    name.style.fontSize = `${ctx.u(vertical ? 32 : 28)}px`;
+    name.style.width = `${box.width * (vertical ? 0.42 : 0.3)}px`;
     if (area.surface) chip(row, area.surface, 'soft');
     const bars = el('div', 'bars', row);
     const plus = el('div', 'plus', bars);
@@ -894,7 +960,7 @@ export function changeMap(v: V<'change-map'>, ctx: ComponentContext): Component 
     const nums = el('div', 'nums mono', row);
     nums.innerHTML = `<span style="color:${theme.success}">+${area.additions}</span> <span style="color:${theme.danger}">−${area.deletions}</span>`;
     nums.style.fontSize = `${ctx.u(22)}px`;
-    return { row, plus, minus };
+    return { row, name, plus, minus };
   });
   return {
     update(clock) {
@@ -905,7 +971,13 @@ export function changeMap(v: V<'change-map'>, ctx: ComponentContext): Component 
         minus.style.transform = `scaleX(${g.toFixed(4)})`;
       });
     },
-    report: () => items.map(({ row }) => ({ role: 'media' as const, rect: rectOf(row) })),
+    report: () =>
+      items.map(({ row, name }) => ({
+        role: 'media' as const,
+        rect: rectOf(row),
+        font: drawnFont(name),
+        text: 'body' as const,
+      })),
   };
 }
 
@@ -916,9 +988,10 @@ export function changeMap(v: V<'change-map'>, ctx: ComponentContext): Component 
 export function callout(v: V<'callout'>, ctx: ComponentContext): Component {
   const box = ctx.regions.media;
   const theme = ctx.timeline.theme;
+  const vertical = ctx.timeline.orientation === 'vertical';
   const tone = { info: theme.primary, warning: theme.accent, success: theme.success }[v.tone];
   const card = el('div', 'callout card', ctx.root);
-  const width = Math.min(box.width, ctx.u(ctx.timeline.orientation === 'vertical' ? 940 : 1100));
+  const width = Math.min(box.width, ctx.u(vertical ? 940 : 1400));
   Object.assign(card.style, { left: `${box.x + (box.width - width) / 2}px`, width: `${width}px` });
   const icon = el(
     'div',
@@ -934,10 +1007,15 @@ export function callout(v: V<'callout'>, ctx: ComponentContext): Component {
     fontSize: `${size * 0.5}px`,
   });
   const title = el('div', 'ctitle', card, v.title);
-  title.style.fontSize = `${ctx.u(ctx.timeline.orientation === 'vertical' ? 46 : 40)}px`;
+  title.style.fontSize = `${ctx.u(vertical ? 46 : 40)}px`;
   const body = v.body ? el('div', 'cbody', card, v.body) : undefined;
-  if (body) body.style.fontSize = `${ctx.u(ctx.timeline.orientation === 'vertical' ? 30 : 26)}px`;
-  card.style.top = `${box.y + (box.height - card.offsetHeight) / 2}px`;
+  if (body) body.style.fontSize = `${ctx.u(vertical ? 32 : 28)}px`;
+  // The card fills most of the region, its content in the middle.
+  const height = cardHeight(box, width, card.offsetHeight);
+  Object.assign(card.style, {
+    height: `${height}px`,
+    top: `${box.y + (box.height - height) / 2}px`,
+  });
   return {
     update(clock) {
       const e = easeOutCubic(entered(clock, 0, 0.55));
@@ -945,7 +1023,15 @@ export function callout(v: V<'callout'>, ctx: ComponentContext): Component {
       card.style.transform = `scale(${lerp(0.94, 1, e).toFixed(4)})`;
       icon.style.transform = `scale(${lerp(0.6, 1, easeOutCubic(entered(clock, 0.15, 0.6))).toFixed(4)})`;
     },
-    report: () => [{ role: 'text', rect: rectOf(card), overflow: overflows(card) }],
+    report: () => [
+      {
+        role: 'text',
+        rect: rectOf(card),
+        overflow: overflows(card),
+        font: smallestFont(body ? [title, body] : [title]),
+        text: 'body',
+      },
+    ],
   };
 }
 
@@ -960,7 +1046,12 @@ export function diagram(v: V<'diagram'>, ctx: ComponentContext): Component {
   const gapX = ctx.u(70);
   const gapY = ctx.u(80);
   const nodeW = (box.width - gapX * (perRow - 1)) / perRow;
-  const nodeH = Math.min(ctx.u(170), (box.height - gapY * (rowsCount - 1)) / rowsCount);
+  // Nodes grow from 170 units toward filling most of the region, never taller than wide.
+  const nodeH = Math.min(
+    (box.height - gapY * (rowsCount - 1)) / rowsCount,
+    nodeW,
+    Math.max(ctx.u(170), (CARD_FILL * box.height - gapY * (rowsCount - 1)) / rowsCount),
+  );
   const totalH = rowsCount * nodeH + (rowsCount - 1) * gapY;
   const vertical = ctx.timeline.orientation === 'vertical';
   const positions = new Map<string, Rect>();
@@ -974,6 +1065,7 @@ export function diagram(v: V<'diagram'>, ctx: ComponentContext): Component {
     overflow: 'visible',
   });
   ctx.root.appendChild(svgLayer);
+  const nodeLabels: HTMLElement[] = [];
   const nodes = v.nodes.map((n, i) => {
     const row = Math.floor(i / perRow);
     const inRow = Math.min(perRow, v.nodes.length - row * perRow);
@@ -993,7 +1085,8 @@ export function diagram(v: V<'diagram'>, ctx: ComponentContext): Component {
       height: `${rect.height}px`,
     });
     const label = el('div', 'nlabel mono', node, n.label);
-    label.style.fontSize = `${ctx.u(vertical ? 28 : 24)}px`;
+    label.style.fontSize = `${ctx.u(vertical ? 32 : 28)}px`;
+    nodeLabels.push(label);
     if (n.detail) el('div', 'ndetail mono', node, n.detail).style.fontSize = `${ctx.u(19)}px`;
     return node;
   });
@@ -1048,9 +1141,24 @@ export function diagram(v: V<'diagram'>, ctx: ComponentContext): Component {
       }
     },
     report: () => [
-      ...nodes.map((n) => ({ role: 'text' as const, rect: rectOf(n), overflow: overflows(n) })),
+      ...nodes.map((n, i) => ({
+        role: 'text' as const,
+        rect: rectOf(n),
+        overflow: overflows(n),
+        font: drawnFont(nodeLabels[i]!),
+        text: 'body' as const,
+      })),
       ...edges.flatMap(({ label }) =>
-        label ? [{ role: 'text' as const, rect: rectOf(label), overflow: overflows(label) }] : [],
+        label
+          ? [
+              {
+                role: 'text' as const,
+                rect: rectOf(label),
+                overflow: overflows(label),
+                text: 'meta' as const,
+              },
+            ]
+          : [],
       ),
     ],
     target: () => {

@@ -15,6 +15,7 @@ import { type Demonstration, parseConfigInput, resolveConfig } from '@covi/core'
 import {
   AssetCollector,
   buildTimeline,
+  densityChecks,
   type LayoutReport,
   layoutChecks,
   layoutScenes,
@@ -36,12 +37,14 @@ import { listExamples, materializeExample } from '../../packages/cli/src/example
 import { contactSheetFrames, sheetColumns } from '../../packages/video/src/render/renderer.ts';
 import { tileLayout } from '../../packages/video/src/render/sheet.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
+import { TEXT_FLOOR } from '../../packages/video/src/runtime/sizing.ts';
 import {
   edgeEntrance,
   edgeLabelEntrance,
   interactionTiming,
   morphTiming,
   screenshotMarks,
+  settledFrame,
 } from '../../packages/video/src/timeline/cues.ts';
 import type { TimelineVisual } from '../../packages/video/src/timeline/types.ts';
 import { canRenderVideo, fullRenders } from '../helpers/env.ts';
@@ -147,6 +150,10 @@ describe.skipIf(!available)('rendering', () => {
     });
     const failing = qc.checks.filter((c) => c.status === 'fail' && c.id !== 'duration');
     expect(failing).toEqual([]);
+    // Every render is checked for small text, empty frames, and monotony.
+    expect(qc.checks.map((c) => c.id)).toEqual(
+      expect.arrayContaining(['text-size', 'empty-frame', 'monotony', 'transition-variety']),
+    );
     expect(readFileSync(result.contactSheet!).length).toBeGreaterThan(1000);
     // Each tile is the frame with its label in a band below it: the label never covers the
     // captions, and the sheet is as tall as frames plus bands.
@@ -397,16 +404,18 @@ describe.skipIf(!available)('rendering', () => {
   });
 
   /**
-   * Builds a 360×640 composition from storyboard scenes, with one 640×400 capture at demo/a.png,
-   * and opens it. `look` seeks to a frame and evaluates `body`, a function body over `scene` (that
-   * scene's root element). `redact` rewrites every narration after validation, as the redactor
-   * can, so a phrase it hides pins nothing.
+   * Builds a composition from storyboard scenes (360×640 in English unless `options` says
+   * otherwise), with one 640×400 capture at demo/a.png, and opens it. `look` seeks to a frame and
+   * evaluates `body`, a function body over `scene` (that scene's root element). `redact` rewrites
+   * every narration after validation, as the redactor can, so a phrase it hides pins nothing.
    */
   async function compose(
     browser: Browser,
     scenes: StoryboardInput['scenes'],
     redact?: (narration: string) => string,
+    options: { language?: 'en' | 'ko' | 'ja' | 'zh'; width?: number; height?: number } = {},
   ) {
+    const { width = 360, height = 640, language = 'en' } = options;
     const dir = mkdtempSync(join(tmpdir(), 'covi-parts-'));
     dirs.push(dir);
     const capture = await browser.newPage({ viewport: { width: 640, height: 400 } });
@@ -416,15 +425,11 @@ describe.skipIf(!available)('rendering', () => {
     mkdirSync(join(dir, 'demo'));
     await capture.screenshot({ path: join(dir, 'demo', 'a.png') });
     await capture.close();
-    const spec = resolveVideoSpec(resolveConfig([]).config, {
-      mode: 'custom',
-      width: 360,
-      height: 640,
-    });
-    const parsed = StoryboardSchema.parse({ ...storyboard, scenes }).scenes.map((s) =>
+    const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', width, height });
+    const parsed = StoryboardSchema.parse({ ...storyboard, language, scenes }).scenes.map((s) =>
       redact ? { ...s, narration: redact(s.narration) } : s,
     );
-    const layout = layoutScenes(parsed, new Map(), new Map(), 'en', pacingFor(spec));
+    const layout = layoutScenes(parsed, new Map(), new Map(), language, pacingFor(spec));
     const assets = new AssetCollector(dir);
     await assets.prepare(['demo/a.png']);
     const timeline = buildTimeline({
@@ -433,10 +438,11 @@ describe.skipIf(!available)('rendering', () => {
       layout,
       spec,
       image: assets.image,
+      language,
     });
     const composition = join(dir, 'composition');
     await writeComposition(composition, timeline, assets.files);
-    const page = await browser.newPage({ viewport: { width: 360, height: 640 } });
+    const page = await browser.newPage({ viewport: { width, height } });
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(`file://${join(composition, 'index.html')}`);
@@ -461,6 +467,16 @@ describe.skipIf(!available)('rendering', () => {
     narration: 'Here is the cart.',
     visual: { kind: 'callout', tone: 'info', title: 'Cart' },
   } satisfies StoryboardInput['scenes'][number];
+
+  /** A scene's layout report at its settled frame, where QC measures sizes and emptiness. */
+  async function settledReport(c: Awaited<ReturnType<typeof compose>>, id: string) {
+    const frame = settledFrame(
+      c.timeline,
+      c.timeline.scenes.findIndex((s) => s.id === id),
+    )!;
+    await c.look(frame, id, 'return null;');
+    return c.report();
+  }
 
   /** A morph scene's code visual and how far into the scene its morph is done. */
   function morphOf(timeline: Timeline, index: number) {
@@ -1097,6 +1113,319 @@ describe.skipIf(!available)('rendering', () => {
     }
   });
 
+  it('renders a short code block large, in a card that fills the frame', async () => {
+    const browser = await chromium.launch();
+    try {
+      for (const size of [{}, { width: 640, height: 360 }]) {
+        const c = await compose(browser, storyboard.scenes, undefined, size);
+        const report = await settledReport(c, 's2');
+        const { unit, media } = computeRegions(c.timeline);
+        const card = report.items.find((i) => i.text === 'code')!;
+        // Two short lines reach the ceiling: 48 units in 9:16, 44 in 16:9 (the camera may have
+        // begun to push in).
+        const ceiling = c.timeline.orientation === 'vertical' ? 48 : 44;
+        expect(card.font! / unit).toBeGreaterThanOrEqual(ceiling - 0.5);
+        expect(card.font! / unit).toBeLessThan(ceiling * 1.07);
+        const share = (card.rect.width * card.rect.height) / (media.width * media.height);
+        expect(share).toBeGreaterThan(0.59);
+        const checks = densityChecks(c.timeline, [report]);
+        expect(checks.find((x) => x.id === 'text-size')!.status).toBe('pass');
+        expect(checks.find((x) => x.id === 'empty-frame')!.status).toBe('pass');
+        expect(c.errors).toEqual([]);
+      }
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('shrinks code under the floor only when its lines need it, and QC names the scene', async () => {
+    const browser = await chromium.launch();
+    try {
+      const long =
+        'const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);';
+      const c = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'fix',
+          narration: 'The total now counts the quantity of every item.',
+          visual: {
+            kind: 'code',
+            path: 'src/cart.js',
+            language: 'javascript',
+            lines: [
+              { type: 'del', text: long.replace(' * item.quantity', '') },
+              { type: 'add', text: long },
+            ],
+            highlight: [1],
+          },
+        },
+        storyboard.scenes[2]!,
+      ]);
+      const report = await settledReport(c, 's2');
+      const { unit } = computeRegions(c.timeline);
+      const card = report.items.find((i) => i.text === 'code')!;
+      expect(card.font! / unit).toBeLessThan(24);
+      expect(card.font! / unit).toBeGreaterThanOrEqual(13 - 0.5);
+      const size = densityChecks(c.timeline, [report]).find((x) => x.id === 'text-size')!;
+      expect(size.status).toBe('warn');
+      expect(size.message).toMatch(/code at \d+(\.\d)? px in s2/);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('draws a before and an after terminal at one readable size, and API bodies large', async () => {
+    const browser = await chromium.launch();
+    try {
+      const c = await compose(browser, [
+        cart,
+        {
+          id: 's2',
+          beat: 'proof',
+          narration: 'The request shrinks from seventy kilobytes to ten.',
+          visual: {
+            kind: 'terminal',
+            command: 'node scripts/measure.js',
+            before: [
+              'request bytes: 70406',
+              'chunks: 4',
+              'reader steps: 28',
+              'timeouts: 1',
+              'retries: 3',
+              'cache misses: 12',
+              'queue depth: 5',
+              'warnings: 2',
+              'elapsed: 840 ms',
+            ].join('\n'),
+            output: 'request bytes: 9907\nchunks: 1',
+          },
+        },
+        {
+          id: 's3',
+          beat: 'exchange',
+          narration: 'The response lists the documents.',
+          visual: {
+            kind: 'api',
+            method: 'GET',
+            path: '/api/reviews/1',
+            after: { status: 200, body: '{\n  "refs": 6,\n  "chunks": 1\n}' },
+          },
+        },
+        { ...storyboard.scenes[2]!, id: 's4' },
+      ]);
+      const { unit } = computeRegions(c.timeline);
+      const terminal = await settledReport(c, 's2');
+      const windows = terminal.items.filter((i) => i.text === 'code');
+      expect(windows).toHaveLength(2);
+      // The before's nine lines set one size for both windows (27.8 units in 9:16); sized alone,
+      // the after's two lines would grow to the ceiling.
+      expect(windows[0]!.font).toBeCloseTo(windows[1]!.font!, 3);
+      expect(windows[0]!.font! / unit).toBeGreaterThanOrEqual(24);
+      const api = await settledReport(c, 's3');
+      const [request, ...responses] = api.items.filter((i) => i.text === 'code');
+      expect(request!.font! / unit).toBeGreaterThanOrEqual(24);
+      // A four-line body reaches the 48-unit ceiling.
+      expect(responses).toHaveLength(1);
+      expect(responses[0]!.font! / unit).toBeGreaterThanOrEqual(48 - 0.5);
+      const checks = densityChecks(c.timeline, [terminal, api]);
+      expect(checks.find((x) => x.id === 'text-size')!.status).toBe('pass');
+      expect(checks.find((x) => x.id === 'empty-frame')!.status).toBe('pass');
+      expect(c.errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('holds body text to 28 px and grows short cards to fill the frame, in both shapes and Korean', async () => {
+    const browser = await chromium.launch();
+    try {
+      const words = {
+        en: {
+          problem: 'One reader call ran past its step budget.',
+          heading: 'Why the reader timed out',
+          title: 'The reader timed out',
+          body: 'One chunk took nine steps; the budget is eight.',
+          review: 'One thing to check before merging.',
+          finding: 'Nothing tests a document that changed',
+          note: 'The size check throws, but no test reaches it.',
+          nodes: ['Request builder', 'Reader worker', 'Document store', 'Chunk cache'],
+        },
+        ko: {
+          problem: '리더 호출 하나가 단계 예산을 넘겼습니다.',
+          heading: '리더가 멈춘 이유',
+          title: '리더가 시간 초과로 멈췄습니다',
+          body: '청크 하나가 아홉 단계를 썼고, 예산은 여덟 단계입니다.',
+          review: '병합 전에 확인할 것이 하나 있습니다.',
+          finding: '바뀐 문서를 다루는 테스트가 없습니다',
+          note: '크기 검사가 예외를 던지지만, 그 경로를 지나는 테스트는 없습니다.',
+          // Long enough to wrap in its node: Korean breaks between words, never inside one.
+          nodes: ['요청 빌더', '바뀐 문서를 다시 읽는 리더 워커', '문서 저장소', '청크 캐시'],
+        },
+      } as const;
+      // 9:16 sets body text at 32 units; 16:9 sets it at the 28-unit floor, in landscape layouts.
+      for (const size of [{}, { width: 640, height: 360 }])
+        for (const language of ['en', 'ko'] as const) {
+          const w = words[language];
+          const c = await compose(
+            browser,
+            [
+              {
+                id: 's1',
+                beat: 'problem',
+                eyebrow: 'Problem',
+                heading: w.heading,
+                narration: w.problem,
+                visual: { kind: 'callout', tone: 'warning', title: w.title, body: w.body },
+              },
+              {
+                id: 's2',
+                beat: 'review',
+                eyebrow: 'Review',
+                narration: w.review,
+                visual: {
+                  kind: 'findings',
+                  findings: [
+                    {
+                      title: w.finding,
+                      certainty: 'risk',
+                      severity: 'low',
+                      location: 'src/reader.js:24',
+                      note: w.note,
+                    },
+                  ],
+                },
+              },
+              {
+                id: 's3',
+                beat: 'architecture',
+                eyebrow: 'How it flows',
+                narration: 'The builder sends a list, and the reader fetches each document.',
+                visual: {
+                  kind: 'diagram',
+                  nodes: [
+                    { id: 'builder', label: w.nodes[0] },
+                    { id: 'reader', label: w.nodes[1], changed: true },
+                    { id: 'store', label: w.nodes[2] },
+                    { id: 'cache', label: w.nodes[3] },
+                  ],
+                  edges: [
+                    { from: 'builder', to: 'reader', label: 'list' },
+                    { from: 'reader', to: 'store', label: 'fetch' },
+                    { from: 'store', to: 'cache', label: 'miss' },
+                  ],
+                },
+              },
+              {
+                id: 's4',
+                beat: 'map',
+                eyebrow: 'Where',
+                narration: 'Two areas changed, the source and its tests.',
+                visual: {
+                  kind: 'change-map',
+                  areas: [
+                    { name: 'src', additions: 20, deletions: 12, files: 2 },
+                    { name: 'test', additions: 30, deletions: 10, files: 2 },
+                  ],
+                },
+              },
+              { ...storyboard.scenes[2]!, id: 's5' },
+            ],
+            undefined,
+            { ...size, language },
+          );
+          const vertical = c.timeline.orientation === 'vertical';
+          const at = `${language} ${c.timeline.orientation}`;
+          const ids = ['s1', 's2', 's3', 's4', 's5'];
+          const reports: LayoutReport[] = [];
+          for (const id of ids) reports.push(await settledReport(c, id));
+          const { unit, media } = computeRegions(c.timeline);
+          const body = reports.map((r) => r.items.filter((i) => i.text === 'body'));
+          // The callout and the heading, the finding, four nodes, two areas, and the summary.
+          expect(
+            body.map((items) => items.length),
+            at,
+          ).toEqual([2, 1, 4, 2, 1]);
+          for (const [i, items] of body.entries())
+            for (const item of items)
+              expect(item.font! / unit, `${at} ${ids[i]}`).toBeGreaterThanOrEqual(
+                TEXT_FLOOR.body - 0.1,
+              );
+          // The callout and the finding card cover 60% of the media region.
+          const [callout, finding] = [body[0]![0]!, body[1]![0]!];
+          for (const card of [callout, finding])
+            expect(
+              (card.rect.width * card.rect.height) / (media.width * media.height),
+              at,
+            ).toBeGreaterThan(0.59);
+          // The layouts of each shape: a 1400-unit callout in 16:9; rows grown to twice their
+          // base height (150 or 96 units, less the 14-unit gap); four nodes in one row in 16:9.
+          expect(callout.rect.width / unit, at).toBeCloseTo(
+            vertical ? media.width / unit : 1400,
+            0,
+          );
+          for (const row of body[3]!)
+            expect(row.rect.height / unit, at).toBeCloseTo(vertical ? 286 : 178, 0);
+          expect(new Set(body[2]!.map((n) => Math.round(n.rect.y))).size, at).toBe(
+            vertical ? 2 : 1,
+          );
+          // Short content sits in the middle of its grown card.
+          for (const [id, selector] of [
+            ['s1', '.callout'],
+            ['s2', '.finding .body'],
+          ] as const) {
+            const frame = settledFrame(c.timeline, ids.indexOf(id))!;
+            const [above, below] = await c.look<[number, number]>(
+              frame,
+              id,
+              `const box = scene.querySelector('${selector}').getBoundingClientRect();
+               const first = scene.querySelector('${selector}').firstElementChild.getBoundingClientRect();
+               const last = scene.querySelector('${selector}').lastElementChild.getBoundingClientRect();
+               return [first.top - box.top, box.bottom - last.bottom];`,
+            );
+            expect(Math.abs(above - below), `${at} ${id}`).toBeLessThan(1.5);
+          }
+          // Every word of a node label stays on one line; the long Korean label wraps.
+          const labels = await c.look<Array<{ lines: number; words: number[] }>>(
+            settledFrame(c.timeline, 2)!,
+            's3',
+            `const range = document.createRange();
+             const lines = (text, from, to) => {
+               range.setStart(text, from);
+               range.setEnd(text, to);
+               const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+               return new Set(rects.map((r) => Math.round(r.top))).size;
+             };
+             return [...scene.querySelectorAll('.nlabel')].map((label) => {
+               const text = label.firstChild;
+               let from = 0;
+               const words = text.data.split(' ').map((word) => {
+                 const n = lines(text, from, from + word.length);
+                 from += word.length + 1;
+                 return n;
+               });
+               return { lines: lines(text, 0, text.data.length), words };
+             });`,
+          );
+          for (const label of labels) expect(label.words, at).toEqual(label.words.map(() => 1));
+          if (language === 'ko') expect(labels[1]!.lines, at).toBeGreaterThan(1);
+          const checks = [
+            ...layoutChecks(c.timeline, reports),
+            ...densityChecks(c.timeline, reports),
+          ];
+          const status = Object.fromEntries(checks.map((x) => [x.id, x.status]));
+          expect(status, at).toMatchObject({
+            'text-fits': 'pass',
+            'text-size': 'pass',
+            'empty-frame': 'pass',
+          });
+          expect(c.errors).toEqual([]);
+        }
+    } finally {
+      await browser.close();
+    }
+  });
+
   it('is deterministic: the same timeline renders the same frame bytes', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'covi-det-'));
     dirs.push(dir);
@@ -1151,6 +1480,8 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
   for (const [example, flags] of [
     ['ui-comment-composer', ['--short', '--duration', '30s']],
     ['api-users-pagination', ['--standard']],
+    // The benchmark for changes with nothing to see: a command's output before and after, and code.
+    ['backend-slim-request', ['--standard']],
   ] as const) {
     it(`renders ${example}`, async () => {
       const dir = await materializeExample((await listExamples()).find((e) => e.name === example)!);
@@ -1161,10 +1492,18 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 600_000 },
       );
       const result = JSON.parse(out) as {
+        runDir: string;
         video: { rendered: boolean; qc: string; seconds: number };
       };
       expect(result.video.rendered).toBe(true);
       expect(result.video.qc).not.toBe('fail');
+      // Every render is checked for small text, empty frames, and monotony.
+      const qc = JSON.parse(readFileSync(join(result.runDir, 'video', 'qc.json'), 'utf8')) as {
+        checks: Array<{ id: string }>;
+      };
+      expect(qc.checks.map((c) => c.id)).toEqual(
+        expect.arrayContaining(['text-size', 'empty-frame', 'monotony', 'transition-variety']),
+      );
     }, 600_000);
   }
 });

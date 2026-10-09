@@ -25,6 +25,7 @@ import { outro } from './components/outro.ts';
 import {
   type Component,
   type ComponentContext,
+  drawnFont,
   type LayoutItem,
   overflows,
   rectOf,
@@ -238,14 +239,21 @@ export class Stage {
           const h = el('div', 'heading', header, scene.heading);
           fitText(h, {
             max: u(t.orientation === 'vertical' ? 50 : 42),
-            min: u(26),
+            min: u(28),
             maxHeight: r.header.height - u(50),
             maxWidth: r.header.width,
           });
           const lines = textBoxes(h);
           headerText.push(...lines);
           // A heading that still does not fit is clipped at two lines: QC's text-fit check sees it.
-          if (lines.length) heading = { role: 'text', rect: union(lines), overflow: overflows(h) };
+          if (lines.length)
+            heading = {
+              role: 'text',
+              rect: union(lines),
+              overflow: overflows(h),
+              font: drawnFont(h),
+              text: 'body',
+            };
         }
         headerText.push(...textBoxes(eyebrow, true));
       }

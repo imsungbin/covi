@@ -164,7 +164,7 @@ covi summarize                      # a summary for the PR/MR description
 To try Covi without a change of your own, build one of the example changes into a scratch repository:
 
 ```bash
-covi examples                                           # the five example changes
+covi examples                                           # the six example changes
 covi examples create ui-comment-composer --into /tmp/covi-ui
 covi review --repo /tmp/covi-ui --demo                  # review, and capture the app at both revisions
 covi video --repo /tmp/covi-ui --short

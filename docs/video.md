@@ -637,6 +637,10 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | `captions-in-frame` | The caption band stays inside the frame, and no caption line is wider than its box | fail |
 | `text-fits` | No text element overflows its box | warn |
 | `narrator-clear-of-content` | The narrator, measured as drawn with its tail, never covers demonstrated content, the media region, captions, or header text | warn |
+| `text-size` | Code, terminal, and API text is at least 24 px and body text (headings, titles, notes, code captions, callout and summary text, node labels, area names) at least 28 px at 1080p wherever a story scene has settled, measured as drawn and relative to the frame's short side. Chips, mark glosses, step labels, file paths, counts, and edge labels are exempt | warn, naming the scene, the kind of text, and its size |
+| `empty-frame` | Where each card scene (code, terminal, API, findings, change map, callout, diagram) has settled, its content covers at least 40% of the media region. Captures keep their own aspect ratio, and title and summary cards are not checked | warn, naming the scene and its share |
+| `monotony` | No more than two story scenes in a row show the same kind of visual, compared by the visual's `kind`, so code and terminal differ (the outro is not counted) | warn, naming up to three runs |
+| `transition-variety` | With four or more story transitions (into each story scene after the first), no one kind covers more than 60% of them | warn, naming the kind and its share |
 | `images` | Every image loaded in the composition | fail |
 | `fonts` | Every bundled font face loaded, so no text fell back to the machine's fonts (boxes on a runner without CJK fonts) | fail |
 | `caption-timing` | No cue overlaps the next, reads faster than the language's limit, or lasts less than 0.7 s. Limits, in characters per second: English 24 (counting spaces), Korean 17, Chinese 13, Japanese 8 (not counting spaces; a half-width character such as a Latin letter counts half) | fail on overlap; warn on fast or short cues |
@@ -647,7 +651,9 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | `voice-language` | The system voice's locale matches the narration language (hosted voices are not checked) | warn, with a voice to choose instead; also warn when the system voice list could not be read, so the voice's language is unknown |
 | `grounding` | Every story scene with narration that is not framing (title, change map, summary) cites evidence, counting what its visual shows from the run, and every explanation statement (the intent, a behavior with a before or after, each change) cites evidence | warn, naming the scenes and statements |
 
-Covi samples the layout checks at two frames per scene, 35% and 70% of the way through.
+Covi samples the layout checks at two frames per scene, 35% and 70% of the way through, and once more where each story scene has settled: its entrance and choreography are done and the next scene has not begun to enter. `text-size` and `empty-frame` read only settled frames.
+
+Cards size their text to their content: code, terminal, and API body text is as large as its lines allow, from 24 px up to 44 px at 1080p (48 px in 9:16), and shrinks below 24 px (to 13 at least) only when its lines would not fit otherwise, which `text-size` reports. Code, terminal, API, findings, and callout cards cover at least 60% of the media region (a before and after terminal pair in 16:9 about 59%, for the gap between them), with short code, findings, and callouts in their middle and a terminal's text at the top; diagram nodes and change-map rows grow toward it.
 
 The overall status is `fail` if any check fails, `warn` if any warns, and `pass` otherwise. QC never deletes the video and never changes the exit code. Failed and warning checks are added to the run's warnings. The result object carries `video.qc`, and a failed QC adds the warning "Video QC failed; see video/qc.json."
 

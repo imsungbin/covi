@@ -4,6 +4,7 @@ import { availableParallelism } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
 import { serveStatic, sha256 } from '@covi/core';
 import { type Browser, chromium, type Page } from 'playwright';
+import { settledFrame } from '../timeline/cues.ts';
 import {
   type CompositionApi,
   HERO_PHASE,
@@ -25,7 +26,7 @@ export interface RenderOptions {
   /** The mixed sound to mux (a stereo WAV), when anything plays. */
   audio?: string;
   workers?: number;
-  /** Frames to sample for layout QC (defaults to a few per scene). */
+  /** Frames to sample for layout QC (defaults to `layoutSampleFrames`). */
   layoutFrames?: number[];
   /** Frames for the contact sheet (defaults to `contactSheetFrames`). */
   sheetFrames?: number[];
@@ -151,6 +152,30 @@ export function contactSheetFrames(
   return [...frames].sort((a, b) => a - b);
 }
 
+/**
+ * Frames the layout checks read: 35% and 70% of the way through every scene, and the frame where
+ * each story scene has settled, at which QC measures text sizes and how much of the frame the
+ * content fills. The outro is Covi's own card, so it is not held to those checks.
+ */
+export function layoutSampleFrames(
+  timeline: Pick<Timeline, 'fps' | 'frames' | 'scenes' | 'transition'>,
+): number[] {
+  const last = Math.max(0, timeline.frames - 1);
+  const frames = new Set(
+    timeline.scenes.flatMap((s) =>
+      [0.35, 0.7].map((k) =>
+        Math.min(last, Math.round((s.start + (s.end - s.start) * k) * timeline.fps)),
+      ),
+    ),
+  );
+  timeline.scenes.forEach((s, i) => {
+    if (s.visual.kind === 'outro') return;
+    const frame = settledFrame(timeline, i);
+    if (frame !== undefined) frames.add(frame);
+  });
+  return [...frames].sort((a, b) => a - b);
+}
+
 /** Contact sheet columns: six narrow tiles for vertical video; three wide ones, four past twelve. */
 export function sheetColumns(tiles: number, vertical: boolean): number {
   return Math.max(1, Math.min(tiles, vertical ? 6 : tiles > 12 ? 4 : 3));
@@ -259,14 +284,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
     const from = Math.floor((total * i) / workers);
     return { from, to: Math.floor((total * (i + 1)) / workers) };
   });
-  const layoutFrames = new Set(
-    options.layoutFrames ??
-      timeline.scenes.flatMap((s) =>
-        [0.35, 0.7].map((k) =>
-          Math.min(total - 1, Math.round((s.start + (s.end - s.start) * k) * timeline.fps)),
-        ),
-      ),
-  );
+  const layoutFrames = new Set(options.layoutFrames ?? layoutSampleFrames(timeline));
   const sheetFrames = new Set(options.sheetFrames ?? contactSheetFrames(timeline));
   const posterFrame =
     options.posterFrame ??

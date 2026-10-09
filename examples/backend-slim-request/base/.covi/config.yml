@@ -1,0 +1,8 @@
+demo:
+  commands:
+    - name: Measure the review request
+      run: node scripts/measure.js
+test:
+  command: node --test
+video:
+  mode: standard

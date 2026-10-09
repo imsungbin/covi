@@ -1,4 +1,5 @@
 import { LANGUAGE_NAME } from '@covi/core';
+import { densityChecks } from './density.ts';
 import { localeLanguage, type SpeechRecord, unspokenAcronyms } from './narration/speech.ts';
 import { suggestedVoice } from './narration/tts.ts';
 import type { Media } from './render/ffmpeg.ts';
@@ -822,6 +823,7 @@ export async function runQc(input: QcInput): Promise<QcReport> {
 
   checks.push(
     ...layoutChecks(input.timeline, input.layouts),
+    ...densityChecks(input.timeline, input.layouts),
     ...timingChecks(input.timeline, input.speech),
     ...speechChecks(input.speech),
   );

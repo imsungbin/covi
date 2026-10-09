@@ -389,7 +389,7 @@ describe('covi CLI', () => {
     expect(
       (covi(['skills', '--json']).json() as unknown as Array<{ name: string }>).map((s) => s.name),
     ).toContain('covi-review');
-    expect(covi(['examples', '--json']).json()).toHaveLength(5);
+    expect(covi(['examples', '--json']).json()).toHaveLength(6);
     expect(covi(['mascot', '--expression', 'success']).stdout).toMatch(/^<svg/);
     // Files frame the pointing tail; marks step their detail down with size.
     expect(covi(['mascot', '--expression', 'reviewing']).stdout).toContain(

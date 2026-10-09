@@ -1480,6 +1480,8 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
   for (const [example, flags] of [
     ['ui-comment-composer', ['--short', '--duration', '30s']],
     ['api-users-pagination', ['--standard']],
+    // The benchmark for changes with nothing to see: a command's output before and after, and code.
+    ['backend-slim-request', ['--standard']],
   ] as const) {
     it(`renders ${example}`, async () => {
       const dir = await materializeExample((await listExamples()).find((e) => e.name === example)!);
@@ -1490,10 +1492,18 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 600_000 },
       );
       const result = JSON.parse(out) as {
+        runDir: string;
         video: { rendered: boolean; qc: string; seconds: number };
       };
       expect(result.video.rendered).toBe(true);
       expect(result.video.qc).not.toBe('fail');
+      // Every render is checked for small text, empty frames, and monotony.
+      const qc = JSON.parse(readFileSync(join(result.runDir, 'video', 'qc.json'), 'utf8')) as {
+        checks: Array<{ id: string }>;
+      };
+      expect(qc.checks.map((c) => c.id)).toEqual(
+        expect.arrayContaining(['text-size', 'empty-frame', 'monotony', 'transition-variety']),
+      );
     }, 600_000);
   }
 });

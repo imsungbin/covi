@@ -63,6 +63,7 @@ import {
   rectOf,
   type SceneClock,
 } from './components/types.ts';
+import { mountShot, type ShotComponent } from './direction/elements.ts';
 import { el, fitText, place } from './dom.ts';
 import { computeRegions, gridSpacing, type Regions } from './layout.ts';
 import {
@@ -101,6 +102,8 @@ interface MountedScene {
   region: Rect;
   /** The component that draws the storyboard visual; absent when a shot replaces it. */
   visual?: Component;
+  /** The shot drawing its elements, when it lays out more than the storyboard visual. */
+  shot?: ShotComponent;
   /** The camera's beats inside the stop, each toward its target. */
   steps: CameraStep[];
   /** How much of the narrator the scene shows in the frame drawn last (0–1). */
@@ -299,7 +302,13 @@ export class Stage {
         phases: scene.phases ?? {},
         ...(handoff ? { previousFox: handoff } : {}),
       };
-      const component = mountComponent(scene, ctx);
+      // A shot that lays out more than the storyboard visual draws its elements; one that shows the
+      // visual alone draws it exactly as without direction.
+      const shot =
+        scene.direction && !scene.direction.whole
+          ? mountShot(scene, ctx, (sub) => mountComponent(scene, sub))
+          : undefined;
+      const component = shot ?? mountComponent(scene, ctx);
       let header: HTMLDivElement | undefined;
       const headerText: Rect[] = [];
       let heading: LayoutItem | undefined;
@@ -341,7 +350,9 @@ export class Stage {
         camera: cameraPlan(scene),
         ...(viewport ? { viewport } : {}),
         region: component.header === false ? r.full : r.media,
-        visual: component,
+        ...(shot
+          ? { shot, ...(shot.visual ? { visual: shot.visual } : {}) }
+          : { visual: component }),
         steps: [],
         presence: 0,
       });
@@ -939,7 +950,6 @@ export class Stage {
       open: m.index === 0,
     };
     m.component.update(clock);
-    // Other elements are framed by their slot.
-    return element.kind === 'visual' ? m.visual?.target?.(clock) : undefined;
+    return element.kind === 'visual' ? m.visual?.target?.(clock) : m.shot?.frame(element.id);
   }
 }

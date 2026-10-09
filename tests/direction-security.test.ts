@@ -1,8 +1,26 @@
-import { indexEvidence } from '@covi/core';
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { indexEvidence, resolveConfig } from '@covi/core';
+import {
+  buildTimeline,
+  layoutScenes,
+  pacingFor,
+  resolveVideoSpec,
+  type SceneStaging,
+  StoryboardSchema,
+  writeComposition,
+} from '@covi/video';
+import { chromium } from 'playwright';
+import { afterAll, describe, expect, it } from 'vitest';
 import { directionProblems } from '../packages/video/src/direction/refs.ts';
-import { DIRECTION_LIMITS, DirectionSchema } from '../packages/video/src/direction/schema.ts';
+import {
+  DIRECTION_LIMITS,
+  DirectionSchema,
+  LabelSchema,
+} from '../packages/video/src/direction/schema.ts';
 import { directionSources } from '../packages/video/src/direction/sources.ts';
+import { canUseBrowser } from './helpers/env.ts';
 
 /*
  * A direction file is untrusted: an agent writes it, and the repository it read can steer the
@@ -220,5 +238,133 @@ describe('a direction citing evidence the run does not have', () => {
     expect(found[1]).toContain('x…"');
     expect(found[2]).toContain('"\\u001b]8;;https://evil\\u0007"');
     expect(found[3]).toContain('quotes "One \\u001b[31mline\\u2028."');
+  });
+});
+
+describe.skipIf(!(await canUseBrowser()))('text from a direction, on the page', () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+
+  it('is drawn as text: no element, no script, exactly the characters it holds', async () => {
+    // One label passes validation with characters markup would read (& ’ ( ) /). The others are
+    // put straight into a timeline, as if they had slipped past the schema, and a code line from
+    // the diff carries markup too.
+    const passing = LabelSchema.parse('Tom & Jerry (it’s &amp / fine)');
+    const smuggled = '<img src=x onerror="window.__pwned=1">';
+    const script = '</script><script>window.__pwned=2</script>';
+    const line = '<b onmouseover="window.__pwned=3">bold</b>';
+    const dir = mkdtempSync(join(tmpdir(), 'covi-direction-security-'));
+    dirs.push(dir);
+    const spec = resolveVideoSpec(resolveConfig([]).config, {
+      mode: 'custom',
+      width: 640,
+      height: 360,
+    });
+    const scenes = StoryboardSchema.parse({
+      title: 'Security',
+      template: 'bug-fix',
+      scenes: [
+        { id: 's1', beat: 'a', narration: 'One line.', visual: { kind: 'callout', title: 'A' } },
+        {
+          id: 's2',
+          beat: 'b',
+          narration: 'Another line here.',
+          visual: { kind: 'callout', title: 'B' },
+        },
+      ],
+    }).scenes;
+    const layout = layoutScenes(scenes, new Map(), new Map(), 'en', pacingFor(spec));
+    const slot = (x: number) => ({ x, y: 80, width: 140, height: 120 });
+    const staging: SceneStaging[] = [
+      {
+        stop: { x: 0, y: 0 },
+        direction: {
+          whole: true,
+          elements: [{ id: 'visual', kind: 'visual', rect: slot(40) }],
+          beats: [],
+        },
+      },
+      {
+        stop: { x: 800, y: 0 },
+        direction: {
+          whole: false,
+          elements: [
+            { id: 'a', kind: 'label', rect: slot(20), text: passing, tone: 'neutral' },
+            { id: 'b', kind: 'node', rect: slot(170), label: smuggled },
+            { id: 'c', kind: 'label', rect: slot(320), text: script, tone: 'warning' },
+            {
+              id: 'd',
+              kind: 'code',
+              rect: slot(470),
+              visual: {
+                kind: 'code',
+                path: 'x.js',
+                lines: [{ type: 'add', text: line }],
+                highlight: [],
+              },
+            },
+          ],
+          beats: [],
+        },
+      },
+    ];
+    const timeline = buildTimeline({
+      title: 'Security',
+      scenes,
+      layout,
+      spec,
+      image: () => ({ src: '', width: 1, height: 1 }),
+      staging,
+    });
+    const composition = join(dir, 'composition');
+    await writeComposition(composition, timeline, new Map());
+    // The timeline is inlined as JSON with every `<` escaped: it cannot close its script element.
+    const html = readFileSync(join(composition, 'index.html'), 'utf8');
+    expect(html).not.toContain('<img src=x');
+    expect(html).not.toContain('</script><script>window');
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      await page.goto(`file://${join(composition, 'index.html')}`);
+      await page.waitForFunction('window.covi !== undefined');
+      await page.evaluate('window.covi.ready');
+      const s2 = timeline.scenes.find((s) => s.id === 's2')!;
+      const seen = (await page.evaluate(
+        `(() => {
+           window.covi.seek(${Math.round((s2.start + 1) * timeline.fps)});
+           const labels = [...document.querySelectorAll('[data-element] .nlabel')];
+           return {
+             pwned: window.__pwned ?? null,
+             scripts: document.querySelectorAll('script').length,
+             injected: document.querySelectorAll('[data-element] img, [data-element] script, [data-element] b').length,
+             texts: labels.map((n) => n.textContent),
+             children: labels.map((n) => n.children.length),
+             code: document.querySelector('[data-element="d"] .ln .txt').textContent,
+           };
+         })()`,
+      )) as {
+        pwned: unknown;
+        scripts: number;
+        injected: number;
+        texts: string[];
+        children: number[];
+        code: string;
+      };
+      expect(seen).toEqual({
+        pwned: null,
+        scripts: 2,
+        injected: 0,
+        texts: [passing, smuggled, script],
+        children: [0, 0, 0],
+        code: line,
+      });
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
   });
 });

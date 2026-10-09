@@ -1,7 +1,14 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConfig, seedFrom } from '@covi/core';
+import {
+  buildEvidence,
+  type Demonstration,
+  type Hunk,
+  indexEvidence,
+  resolveConfig,
+  seedFrom,
+} from '@covi/core';
 import {
   AssetCollector,
   buildTimeline,
@@ -586,5 +593,268 @@ describe.skipIf(!available)('the canvas', () => {
     const [ox, oy] = page.origin.split(' ').map((v) => Number.parseFloat(v));
     expect(ox).toBeCloseTo(pivot.x, 1);
     expect(oy).toBeCloseTo(pivot.y, 1);
+  });
+});
+
+// A run with one hunk and one demo command, for shots that show them.
+const hunk: Hunk = {
+  oldStart: 1,
+  oldLines: 1,
+  newStart: 1,
+  newLines: 1,
+  lines: [
+    { kind: 'del', text: 'send(docs);', oldLine: 1 },
+    { kind: 'add', text: 'send(ids);', newLine: 1 },
+  ],
+};
+const files = [{ path: 'src/request.js', language: 'javascript', hunks: [hunk] }];
+const demo = {
+  commands: [
+    {
+      name: 'measure',
+      command: 'node measure.js',
+      before: { exitCode: 0, output: 'request bytes: 120000' },
+      after: { exitCode: 0, output: 'request bytes: 9000' },
+      changed: true,
+    },
+  ],
+  shots: [],
+  requests: [],
+  skipped: [],
+  findings: [],
+} as unknown as Demonstration;
+const run: SourcesInput = {
+  files,
+  demo,
+  evidence: indexEvidence(buildEvidence({ diff: files, demo })),
+};
+const elements: DirectionInput['shots'][number]['elements'] = [
+  { id: 'req', kind: 'code', evidence: 'diff-hunk:src/request.js:1', side: 'diff' },
+  { id: 'note', kind: 'label', text: 'Much smaller', tone: 'success' },
+  { id: 'out', kind: 'output', evidence: 'terminal:1' },
+];
+const elementState = (v: Awaited<ReturnType<typeof directed>>, frame: number, id: string) =>
+  v.seek(
+    frame,
+    `const e = document.querySelector('[data-element="${id}"]');
+     const r = e.querySelector('.code, .term, .dlabel, .node').getBoundingClientRect();
+     return {
+       opacity: Number.parseFloat(e.style.opacity || '1'),
+       transform: e.style.transform,
+       clip: e.style.clipPath,
+       text: e.querySelector('.nlabel')?.textContent ?? null,
+       box: { x: r.x, y: r.y, width: r.width, height: r.height },
+     };`,
+  ) as Promise<{
+    opacity: number;
+    transform: string;
+    clip: string;
+    text: string | null;
+    box: { x: number; y: number; width: number; height: number };
+  }>;
+
+describe.skipIf(!available)('a shot’s elements', () => {
+  it('draws code, a label, and output from the run in their slots', async () => {
+    const v = await directed(story, [{ scene: 's3', layout: 'row', elements }], { sources: run });
+    const s3 = v.scene('s3');
+    expect(s3.direction!.whole).toBe(false);
+    const frame = v.frameAt('s3', 1.2);
+    for (const element of s3.direction!.elements) {
+      const drawn = await elementState(v, frame, element.id);
+      const center = drawn.box.x + drawn.box.width / 2;
+      expect(center, element.id).toBeGreaterThan(element.rect.x);
+      expect(center, element.id).toBeLessThan(element.rect.x + element.rect.width);
+    }
+    expect((await elementState(v, frame, 'note')).text).toBe('Much smaller');
+    const shown = (await v.seek(
+      frame,
+      `return [document.querySelector('[data-element="req"] .ln.add .txt').textContent,
+               document.querySelector('[data-element="out"] .out').textContent];`,
+    )) as string[];
+    expect(shown).toEqual(['send(ids);', 'request bytes: 9000']);
+    expect(v.errors).toEqual([]);
+  });
+
+  it('reveals an element on its phrase: absent before, popping in, then in place', async () => {
+    const v = await directed(
+      story,
+      [
+        {
+          scene: 's3',
+          layout: 'row',
+          elements,
+          beats: [{ verb: 'reveal', element: 'note', style: 'pop', at: 'and nothing else' }],
+        },
+      ],
+      { sources: run },
+    );
+    const reveal = v.scene('s3').direction!.beats.find((b) => b.verb === 'reveal')!;
+    const texts = async (frame: number) =>
+      (await v.report(frame)).items.filter((i) => i.role === 'text').length;
+    const before = v.frameAt('s3', reveal.t - 0.1);
+    expect((await elementState(v, before, 'note')).opacity).toBe(0);
+    const during = await elementState(v, v.frameAt('s3', reveal.t + reveal.seconds / 4), 'note');
+    expect(during.opacity).toBeGreaterThan(0);
+    expect(during.transform).toMatch(/scale\(0\.\d+\)/);
+    const after = v.frameAt('s3', reveal.t + reveal.seconds + 0.1);
+    expect(await elementState(v, after, 'note')).toMatchObject({ opacity: 1, transform: '' });
+    // Not on screen, not reported: the label's text joins the report once it is revealed.
+    expect(await texts(after)).toBeGreaterThan(await texts(before));
+  });
+
+  it('wipes and types elements in', async () => {
+    const v = await directed(
+      story,
+      [
+        {
+          scene: 's3',
+          layout: 'row',
+          elements,
+          beats: [
+            { verb: 'reveal', element: 'out', style: 'wipe', at: 'only the ids' },
+            { verb: 'reveal', element: 'note', style: 'type', at: 'and nothing else' },
+          ],
+        },
+      ],
+      { sources: run },
+    );
+    const beats = v.scene('s3').direction!.beats;
+    const wipe = beats.find((b) => b.verb === 'reveal' && b.element === 'out')!;
+    const type = beats.find((b) => b.verb === 'reveal' && b.element === 'note')!;
+    expect((await elementState(v, v.frameAt('s3', wipe.t + wipe.seconds / 2), 'out')).clip).toMatch(
+      /^inset\(/,
+    );
+    expect((await elementState(v, v.frameAt('s3', wipe.t + wipe.seconds + 0.1), 'out')).clip).toBe(
+      '',
+    );
+    const typing = (await elementState(v, v.frameAt('s3', type.t + type.seconds / 2), 'note'))
+      .text!;
+    expect(typing.length).toBeGreaterThan(0);
+    expect(typing.length).toBeLessThan('Much smaller'.length);
+    expect('Much smaller'.startsWith(typing)).toBe(true);
+    expect((await elementState(v, v.frameAt('s3', type.t + type.seconds + 0.1), 'note')).text).toBe(
+      'Much smaller',
+    );
+  });
+
+  it('moves the camera onto an element: the label lands in the middle of the frame', async () => {
+    const v = await directed(
+      story,
+      [
+        {
+          scene: 's3',
+          layout: 'row',
+          elements,
+          beats: [{ verb: 'camera', move: 'zoom', to: 'note', at: 'and nothing else' }],
+        },
+      ],
+      { sources: run },
+    );
+    const beat = v.scene('s3').direction!.beats[0]!;
+    const frame = v.frameAt('s3', beat.t + beat.seconds + 0.1);
+    const { box } = await elementState(v, frame, 'note');
+    expect(Math.abs(box.x + box.width / 2 - pivot.x)).toBeLessThan(3);
+    expect(Math.abs(box.y + box.height / 2 - pivot.y)).toBeLessThan(3);
+    expect(camera(v.of(await v.state(frame), 's3').transform).scale).toBeGreaterThan(1.5);
+  });
+
+  it('plays a revealed element’s own choreography from its reveal, already in place', async () => {
+    const v = await directed(
+      story,
+      [
+        {
+          scene: 's3',
+          layout: 'row',
+          elements,
+          beats: [{ verb: 'reveal', element: 'out', at: 'and nothing else' }],
+        },
+      ],
+      { sources: run },
+    );
+    const reveal = v.scene('s3').direction!.beats[0]!;
+    // On the scene's clock the command would have been typed long before its reveal.
+    expect(reveal.t).toBeGreaterThan(1);
+    const window = (seconds: number) =>
+      v.seek(
+        v.frameAt('s3', seconds),
+        `const w = document.querySelector('[data-element="out"] .term');
+         return { opacity: w.style.opacity, typed: w.querySelector('.cmd').textContent };`,
+      ) as Promise<{ opacity: string; typed: string }>;
+    // The reveal brings the window in, so it does not rise a second time.
+    expect(await window(reveal.t + 0.1)).toEqual({ opacity: '1', typed: '' });
+    expect((await window(reveal.t + 1)).typed).toBe('node measure.js');
+  });
+
+  it('reports a label’s text at body size, and as clipped when it cannot fit its box', async () => {
+    const texts = async (edit?: (timeline: Timeline) => void) => {
+      const v = await directed(story, [{ scene: 's3', layout: 'row', elements }], {
+        sources: run,
+        ...(edit ? { edit } : {}),
+      });
+      // The scene has no heading and its code no caption: the label's is the only text.
+      return (await v.report(v.frameAt('s3', 1.2))).items.filter((i) => i.role === 'text');
+    };
+    const fits = await texts();
+    expect(fits).toHaveLength(1);
+    expect(fits[0]!.overflow).toBe(false);
+    expect(fits[0]!.text).toBe('body');
+    expect(fits[0]!.font! / regions.unit).toBeGreaterThanOrEqual(28 - 0.1);
+    const cramped = await texts((timeline) => {
+      const shot = timeline.scenes.find((s) => s.id === 's3')!.direction!;
+      const note = shot.elements.find((e) => e.id === 'note')!;
+      // Too short for one line at the smallest size, padding included.
+      note.rect = { ...note.rect, height: 12 };
+    });
+    expect(cramped).toHaveLength(1);
+    expect(cramped[0]!.overflow).toBe(true);
+  });
+
+  it('reports a capture’s focus where the camera draws it, in a shot as in a whole scene', async () => {
+    const page = {
+      id: 's2',
+      beat: 'fix',
+      eyebrow: 'The page',
+      narration: 'First look here, then at the save button.',
+      visual: {
+        kind: 'screenshot',
+        image: { path: 'demo/a.png' },
+        focus: { x: 540, y: 0, width: 100, height: 60 },
+        device: 'desktop',
+      },
+    } satisfies StoryboardInput['scenes'][number];
+    const v = await directed(
+      [story[0]!, page, story[3]!],
+      [
+        {
+          scene: 's2',
+          layout: 'row',
+          elements: [
+            { id: 'visual', kind: 'visual' },
+            { id: 'note', kind: 'label', text: 'Saved' },
+          ],
+          beats: [{ verb: 'camera', move: 'zoom', to: 'visual', zoom: 2, at: 'First look here' }],
+        },
+      ],
+      { capture: true },
+    );
+    const s2 = v.scene('s2');
+    expect(s2.direction!.whole).toBe(false);
+    const frame = v.frameAt('s2', 0.8 * (s2.end - s2.start));
+    const ring = (await v.seek(
+      frame,
+      `const f = document.querySelector('[data-scene="s2"] .focus-ring');
+       const r = f.getBoundingClientRect();
+       return { x: r.x, y: r.y, width: r.width, height: r.height, opacity: Number(f.style.opacity) };`,
+    )) as Rect & { opacity: number };
+    expect(ring.opacity).toBeGreaterThan(0.5);
+    const focus = (await v.report(frame)).items.find((i) => i.role === 'focus')!;
+    const inside = (x: number, y: number) =>
+      x >= ring.x - 1 &&
+      x <= ring.x + ring.width + 1 &&
+      y >= ring.y - 1 &&
+      y <= ring.y + ring.height + 1;
+    expect(inside(focus.rect.x, focus.rect.y)).toBe(true);
+    expect(inside(focus.rect.x + focus.rect.width, focus.rect.y + focus.rect.height)).toBe(true);
+    expect(v.errors).toEqual([]);
   });
 });

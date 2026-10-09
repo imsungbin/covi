@@ -310,6 +310,27 @@ describe('effects', () => {
     expect(20 * Math.log10(rmsOf(y[0]!, 24000) / Math.SQRT1_2)).toBeLessThan(-10);
   });
 
+  it("compressor's output is pinned (it shares its gain computer with the glue)", () => {
+    // Quiet, inside the knee, and well over: every branch of the knee, attack and release.
+    const random = mulberry32(5);
+    const swell = (i: number) => [0.02, 0.1, 0.25, 0.9, 0.3][Math.floor((5 * i) / SR)]!;
+    const input = () => {
+      const l = Float32Array.from({ length: SR }, (_, i) => swell(i) * Math.sin(i * 0.031));
+      const r = Float32Array.from(l, (v) => v + 0.05 * (random() * 2 - 1));
+      return [l, r];
+    };
+    const a = compressor(input(), { threshold: -18, ratio: 4, attack: 0.005, release: 0.08 });
+    const b = compressor(input(), {
+      threshold: -12,
+      ratio: 2.5,
+      attack: 0.02,
+      release: 0.3,
+      makeup: 3,
+      knee: 10,
+    });
+    expect(hashOf(a[0]!, a[1]!, b[0]!, b[1]!)).toBe('d9ad428ce2352cd8');
+  });
+
   it('lookahead limiter holds the ceiling and leaves quiet audio untouched', () => {
     const loud = [tone(100, 1, 2), tone(150, 1, 1.5)];
     const y = limiter(loud, -1);

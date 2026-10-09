@@ -3,7 +3,7 @@ import { sceneEvidence } from '../grounding.ts';
 import { highlightGroups } from '../storyboard/grammar.ts';
 import type { Scene } from '../storyboard/schema.ts';
 import type { TransitionKind } from '../timeline/types.ts';
-import type { Direction, Shot, ShotBeat } from './schema.ts';
+import { DIRECTION_LIMITS, type Direction, type Shot, type ShotBeat } from './schema.ts';
 
 /** How far the camera zooms toward the lines a code scene highlights. */
 export const CODE_ZOOM = 1.25;
@@ -24,18 +24,26 @@ const sceneId = (scene: Pick<Scene, 'id'>, i: number) => scene.id ?? `s${i + 1}`
  * highlights lines zooms toward them as they light, and each scene after the first gets its
  * entrance from the rotation unless the storyboard set its `transition`. Pure and deterministic.
  * It never invents content: what it adds later (morphs, metrics, flows) comes from evidence too.
+ * What it returns reads back unchanged through `DirectionSchema`: Covi never writes a direction
+ * file it would then refuse.
  */
 export function defaultDirection(input: DirectorInput): Direction {
-  const shots: Shot[] = input.scenes.map((scene, i) => ({
-    scene: sceneId(scene, i),
+  // Storyboard scene ids have no length limit, and a shot names one of at most `sceneIdChars`: a
+  // scene with a longer id gets no shot, so it shows its visual, and still enters by the rotation.
+  const directed = input.scenes.flatMap((scene, i) => {
+    const id = sceneId(scene, i);
+    return id.length > DIRECTION_LIMITS.sceneIdChars ? [] : [{ scene, id }];
+  });
+  const shots: Shot[] = directed.map(({ scene, id }) => ({
+    scene: id,
     elements: [{ id: 'visual', kind: 'visual' }],
     beats: cameraBeats(scene),
   }));
   const entered = entrances({ shots }, input.scenes, input.evidence, input.seed);
-  input.scenes.forEach((scene, i) => {
-    const kind = entered.get(sceneId(scene, i));
+  directed.forEach(({ scene, id }, k) => {
+    const kind = entered.get(id);
     // A transition the storyboard chose stays the storyboard's: the shot does not repeat it.
-    if (kind && !scene.transition) shots[i]!.enter = kind;
+    if (kind && !scene.transition) shots[k]!.enter = kind;
   });
   return { schemaVersion: 1, draft: true, shots };
 }
@@ -52,15 +60,10 @@ function cameraBeats(scene: Scene): ShotBeat[] {
   const phase = [highlightGroups(v.highlight)[0]?.phase, 'highlight'].find(
     (name): name is string => name !== undefined && Object.hasOwn(sync, name),
   );
-  return [
-    {
-      verb: 'camera',
-      move: 'zoom',
-      to: 'visual',
-      zoom: CODE_ZOOM,
-      ...(phase ? { at: sync[phase]! } : {}),
-    },
-  ];
+  // Trimmed as the direction schema trims a phrase, so the file reads back as written; phrases
+  // match up to whitespace, so the beat still lands where the storyboard's phrase is spoken.
+  const at = phase && sync[phase]!.trim();
+  return [{ verb: 'camera', move: 'zoom', to: 'visual', zoom: CODE_ZOOM, ...(at ? { at } : {}) }];
 }
 
 /**

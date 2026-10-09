@@ -1,5 +1,6 @@
 import { type EvidenceItem, indexEvidence } from '@covi/core';
 import { describe, expect, it } from 'vitest';
+import { TRANSITION_MIN, TRANSITION_SHARE } from '../src/density.ts';
 import {
   CODE_ZOOM,
   defaultDirection,
@@ -7,7 +8,7 @@ import {
   mergeDirection,
 } from '../src/direction/director.ts';
 import { directionProblems } from '../src/direction/refs.ts';
-import { DirectionSchema } from '../src/direction/schema.ts';
+import { DIRECTION_LIMITS, DirectionSchema } from '../src/direction/schema.ts';
 import { directionSources } from '../src/direction/sources.ts';
 import { type Scene, SceneSchema } from '../src/storyboard/schema.ts';
 
@@ -35,6 +36,11 @@ const evidence = indexEvidence({
     item('screenshot:cart-before', 'screenshot', 'demo/screenshots/cart-before.png', {
       revision: 'base',
     }),
+    item('diff-hunk:src/total.ts:3', 'diff-hunk', 'diff.patch', {
+      revision: 'both',
+      location: { path: 'src/total.ts', line: 3, endLine: 6, side: 'head' },
+    }),
+    item('terminal:1', 'terminal', 'demo/demo.md', { label: 'npm test' }),
   ],
 });
 const scene = (id: string, visual: unknown, extra: Record<string, unknown> = {}): Scene =>
@@ -57,6 +63,9 @@ const code = {
 };
 const kinds = (scenes: Scene[], seed = 0) =>
   defaultDirection({ scenes, evidence, seed }).shots.map((s) => s.enter);
+/** How many moves the most frequent kind takes. */
+const most = (moves: readonly string[]) =>
+  Math.max(...[...new Set(moves)].map((kind) => moves.filter((k) => k === kind).length));
 
 describe('the default director', () => {
   it('keeps every scene’s visual, and alternates pan and push from where the seed says', () => {
@@ -140,6 +149,106 @@ describe('the default director', () => {
     const scenes = [scene('s1', callout), scene('s2', code), scene('s3', capture, { hero: true })];
     const plan = defaultDirection({ scenes, evidence, seed: 3 });
     expect(defaultDirection({ scenes, evidence, seed: 3 })).toEqual(plan);
+    expect(DirectionSchema.parse(plan)).toEqual(plan);
     expect(directionProblems(plan, scenes, evidence, directionSources({ evidence }))).toEqual([]);
+  });
+
+  it('writes only what the direction schema reads back unchanged', () => {
+    // A storyboard scene id has no length limit; a shot names one of at most `sceneIdChars`.
+    const long = 'a'.repeat(DIRECTION_LIMITS.sceneIdChars + 1);
+    const pinned = scene('s3', code, {
+      narration: 'The fix clamps the quantity at zero.',
+      sync: { highlight1: '  clamps the quantity ' },
+    });
+    const scenes = [scene('s1', callout), scene(long, callout), pinned];
+    const plan = defaultDirection({ scenes, evidence, seed: 0 });
+    expect(plan.shots.map((s) => [s.scene, s.enter])).toEqual([
+      ['s1', undefined],
+      ['s3', 'push'],
+    ]);
+    expect(plan.shots[1]!.beats).toMatchObject([{ at: 'clamps the quantity' }]);
+    expect(DirectionSchema.parse(plan)).toEqual(plan);
+    // The scene without a shot still enters by the rotation, which runs on through it.
+    expect([...entrances(plan, scenes, evidence, 0)]).toEqual([
+      [long, 'pan'],
+      ['s3', 'push'],
+    ]);
+    expect(directionProblems(plan, scenes, evidence, directionSources({ evidence }))).toEqual([]);
+  });
+
+  it('keeps a long, mixed story varied', () => {
+    const scenes = [
+      scene('s1', { kind: 'title', title: 'Cart quantity' }),
+      scene('s2', { kind: 'screenshot', image: { path: 'demo/screenshots/cart-before.png' } }),
+      scene('s3', code),
+      scene('s4', {
+        kind: 'code',
+        path: 'src/cart.ts',
+        lines: [{ type: 'context', text: 'return qty;', number: 12 }],
+      }),
+      scene('s5', { kind: 'terminal', command: 'npm test', output: '12 passed' }),
+      scene('s6', capture, { hero: true }),
+      scene('s7', { ...capture, label: 'After the fix' }),
+      scene('s8', compare),
+      scene('s9', {
+        kind: 'code',
+        path: 'src/total.ts',
+        lines: [{ type: 'add', text: 'return Math.max(0, sum);', number: 4 }],
+        highlight: [0],
+      }),
+      scene('s10', {
+        kind: 'terminal',
+        command: 'npm test',
+        output: '12 passed',
+        before: '1 failed',
+      }),
+      scene('s11', {
+        kind: 'findings',
+        findings: [{ title: 'Totals can still go negative', certainty: 'risk', severity: 'low' }],
+      }),
+      scene('s12', { kind: 'summary', verdict: 'looks-good', headline: 'Quantities stop at zero' }),
+    ];
+    // The same hunk and the same capture cut; the hero zooms and the compare wipes between them.
+    expect(kinds(scenes, 0)).toEqual([
+      undefined,
+      'pan',
+      'push',
+      'cut',
+      'pan',
+      'zoom',
+      'cut',
+      'wipe',
+      'push',
+      'pan',
+      'push',
+      'pan',
+    ]);
+    for (const seed of [0, 1, 2, 3]) {
+      const plan = defaultDirection({ scenes, evidence, seed });
+      expect(DirectionSchema.parse(plan)).toEqual(plan);
+      expect(directionProblems(plan, scenes, evidence, directionSources({ evidence }))).toEqual([]);
+      const moves = [...entrances(plan, scenes, evidence, seed).values()];
+      expect(moves.length).toBeGreaterThanOrEqual(TRANSITION_MIN);
+      expect(most(moves) / moves.length).toBeLessThanOrEqual(TRANSITION_SHARE);
+    }
+  });
+
+  it('gives pan and push half of a plain story each, the odd move to the one that starts', () => {
+    const twelve = Array.from({ length: 12 }, (_, i) => scene(`s${i + 1}`, callout));
+    for (const seed of [0, 1]) {
+      const moves = [
+        ...entrances(
+          defaultDirection({ scenes: twelve, evidence, seed }),
+          twelve,
+          evidence,
+          seed,
+        ).values(),
+      ];
+      expect(moves).toHaveLength(11);
+      expect(new Set(moves)).toEqual(new Set(['pan', 'push']));
+      expect(most(moves)).toBe(Math.ceil(moves.length / 2));
+      expect(moves.filter((k) => k === (seed % 2 === 0 ? 'pan' : 'push'))).toHaveLength(6);
+      expect(most(moves) / moves.length).toBeLessThanOrEqual(TRANSITION_SHARE);
+    }
   });
 });

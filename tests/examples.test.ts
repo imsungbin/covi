@@ -25,11 +25,14 @@ import {
   type Storyboard,
   StoryboardSchema,
   selectTemplate,
+  TRANSITION_MIN,
+  TRANSITION_SHARE,
 } from '@covi/video';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { defaultDirection, entrances } from '../packages/video/src/direction/director.ts';
 import { directionProblems } from '../packages/video/src/direction/refs.ts';
+import { DirectionSchema } from '../packages/video/src/direction/schema.ts';
 import { directionSources } from '../packages/video/src/direction/sources.ts';
 import { groundingCheck, sceneEvidence } from '../packages/video/src/grounding.ts';
 
@@ -157,16 +160,17 @@ describe('example changes', () => {
           const seed = seedFrom(storyboard.title);
           const plan = defaultDirection({ scenes: storyboard.scenes, evidence, seed });
           expect(plan.shots.map((s) => s.scene)).toEqual(storyboard.scenes.map((s) => s.id));
+          expect(DirectionSchema.parse(plan)).toEqual(plan);
           expect(directionProblems(plan, storyboard.scenes, evidence, sources)).toEqual([]);
           expect(defaultDirection({ scenes: storyboard.scenes, evidence, seed })).toEqual(plan);
-          // No entrance takes more than 60% of the story's moves (the transition-variety check).
+          // No entrance takes more of the story's moves than the transition-variety check allows.
           const moves = [...entrances(plan, storyboard.scenes, evidence, seed).values()];
-          if (moves.length >= 4)
+          if (moves.length >= TRANSITION_MIN)
             for (const kind of new Set(moves))
               expect(
                 moves.filter((k) => k === kind).length / moves.length,
                 kind,
-              ).toBeLessThanOrEqual(0.6);
+              ).toBeLessThanOrEqual(TRANSITION_SHARE);
         }
       });
     });

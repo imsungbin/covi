@@ -962,7 +962,7 @@ export function swellingPauses(
   placement: Placement,
 ): Array<[number, number]> {
   const lines = placementLines(speech, PLACEMENT[placement]);
-  return lines.slice(1).map(([start], i) => [lines[i]![1], start]);
+  return lines.slice(1).map(([start], i): [number, number] => [lines[i]![1], start]);
 }
 
 /** The music's level in dB, one value per sample. */
@@ -1677,7 +1677,7 @@ function placeWithoutJumps(
   placement: Placement,
   options: { duration: number; sr: number; exempt: ReadonlyArray<readonly [number, number]> },
 ): { music: Float32Array[]; momentary: Float64Array; lines: Array<[number, number]>; held: number } {
-  let lines: Array<[number, number]> = speech.map(([s, e]) => [s, e]);
+  let lines = speech.map(([s, e]): [number, number] => [s, e]);
   let held = 0;
   for (;;) {
     const music = placeMusic(bus, lines, placement, options.duration, options.sr);
@@ -2225,7 +2225,7 @@ In `packages/video/test/sound-qc.test.ts`:
         at: 12.3,
         exempt: [
           [0, 1.3],
-          [8.95, 11.95],
+          [9, 12],
           [28, 30],
         ],
       },

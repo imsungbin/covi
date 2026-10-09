@@ -7,15 +7,15 @@ Spec: `specs/2026-10-09-covi-0.3.0-program-design.md`. Plans: `plans/`.
 
 | PR | Branch | Plan | PR # | State |
 |---|---|---|---|---|
-| A1 Broadcast mix | broadcast-mix | plans/2026-10-09-a1-broadcast-mix.md | — | task 7 of 9 |
+| A1 Broadcast mix | broadcast-mix | plans/2026-10-09-a1-broadcast-mix.md | — | task 9 of 9 |
 | B1 Density and monotony | density-checks | plans/2026-10-09-b1-density-checks.md | #10 | merged 4ccbdb6 |
-| B2 Direction and canvas | direction-canvas | plans/2026-10-09-b2-direction-canvas.md | — | planned |
+| B2 Direction and canvas | direction-canvas | plans/2026-10-09-b2-direction-canvas.md | — | executing (task 2 of 11 + 1b) |
 | B3 Code morph | code-morph | plans/2026-10-09-b3-code-morph.md | — | planned |
 | B4 Numbers | metrics | plans/2026-10-09-b4-metrics.md | — | planned |
 | B5 Flow verbs | flow-verbs | plans/2026-10-09-b5-flow-verbs.md | — | planned |
-| B6 Draft and critique | draft-critique | — | — | planning |
-| B7 Direction methodology | direction-method | — | — | not started |
-| A2 Sound from motion | sound-from-motion | — | — | not started |
+| B6 Draft and critique | draft-critique | plans/2026-10-09-b6-draft-critique.md | — | planned |
+| B7 Direction methodology | direction-method | plans/2026-10-09-b7-direction-method.md | — | planned |
+| A2 Sound from motion | sound-from-motion | plans/2026-10-09-a2-sound-from-motion.md | — | planned |
 | R Release 0.3.0 | release-0.3.0 | — | — | not started |
 
 ## Program-level rulings
@@ -84,3 +84,4 @@ Plan rulings: see the plan's `## Rulings` section (15). Execution rulings:
 - R-028 Ruling: B2 gains Task 1b: `npm run typecheck` also typechecks `packages/*/test/**` (≈ 30 errors on main 4ccbdb6 fixed in the tests, DOM types for tests that import browser runtime code) — the gap let a missing interface field pass every check in B2 Task 1, and every later task relies on typecheck — adds one task to B2; A1's branch will see the stricter check after it rebases.
 - R-029 Ruling: B6 plan approved (7 tasks: camera fix moving `cameraPlan` to DOM-free `timeline/motion.ts`, timeline motion checks incl. dropped beats, layout checks `overlap`/`out-of-frame` with the camera undone, deterministic poster + `empty-opening`, `covi render --draft` into `video/draft/`, full-pipeline pins, skill loop), and R-026 is amended to the plan's order: the poster is where the key number's count lands (+0.3 s, so the percent shows), else the hero after its accent has settled, else the old rule — the number landing is the clearest single frame of what changed — an agent's minor count can take the poster from a UI hero.
 - R-030 Ruling: B7 plan approved (5 tasks: template `verbs` (agent-only data), benchmark default-direction test helper, `references/direction.md` with a validated worked example staging the timeout with a warning label, a short SKILL.md rule with a prompt-methodology word cap, docs) with one amendment: the writing-skills RED/GREEN evaluation runs (3 subagents each) are dispatched by the controller, not by the implementer — implementers never dispatch subagents (contract) — the controller carries the run prompts from the plan.
+- R-031 Ruling: A2 plan approved (7 tasks: tick trains on the counter's ease, four recipes pitched in C (`tick`, `thump`, `accent`, `camera`), cue kinds `camera`/`count`/`merge`/`appear`, `beatCues` from resolved beats, timeline byte-identical across sound choices, `covi-audio-5`, en/ko acceptance measurement) — matches the owner's cue list; morph/flow/split/stack stay silent; stop-to-stop moves keep the transition whoosh and in-stop camera beats get a softer one — executes after B7 merges, with a fresh pre-flight scan against post-B7 `main` (Tasks 4–5 assume B2–B5 names as planned).

@@ -1,3 +1,4 @@
+import { EFFECTS_UNDER_VOICE_DB, MUSIC_JUMP_DB } from '@covi/audio';
 import { LANGUAGE_NAME } from '@covi/core';
 import { densityChecks } from './density.ts';
 import { localeLanguage, type SpeechRecord, unspokenAcronyms } from './narration/speech.ts';
@@ -309,11 +310,19 @@ export function speechShareCheck(timeline: Pick<Timeline, 'scenes'>): QcCheck {
       };
 }
 
+/** The music's loudness range over the narration above which QC warns (LU). */
+export const MUSIC_RANGE_LU = 8;
 /**
- * Checks on the mix itself, read from `video/audio.json`: the music under the narration, the
- * music's fit to the picture (the logo after the last line, the landing before the end, the hero
- * on its downbeat, the tempo, a silent end), how much of the music is heard at all, and the
- * effects' spacing and level.
+ * Where a continuous bed sits under the voice (dB): passes inside, warns outside, fails under
+ * `fail`.
+ */
+export const BED_UNDER_VOICE = { min: 12, max: 20, fail: 9 } as const;
+
+/**
+ * Checks on the mix itself, read from `video/audio.json`: the music under the narration, whether
+ * it jumps or ranges too widely, its fit to the picture (the logo after the last line, the landing
+ * before the end, the hero on its downbeat, the tempo, a silent end), how much of it is heard at
+ * all, and the effects' spacing and level.
  */
 export function soundChecks(
   record: AudioRecord,
@@ -331,20 +340,63 @@ export function soundChecks(
   else {
     const continuous = music.placement === 'continuous';
     const status: QcStatus = continuous
-      ? below >= 18
-        ? 'pass'
-        : below >= 12
-          ? 'warn'
-          : 'fail'
+      ? below < BED_UNDER_VOICE.fail
+        ? 'fail'
+        : below >= BED_UNDER_VOICE.min && below <= BED_UNDER_VOICE.max
+          ? 'pass'
+          : 'warn'
       : below >= 30
         ? 'pass'
         : 'warn';
     checks.push({
       id: 'music-under-speech',
       status,
-      message: `Music sits ${below.toFixed(1)} dB under the voice where it speaks (${music.placement}: ${continuous ? 'at least 18' : 'at least 30'} dB; WCAG 1.4.7 asks for 20).`,
+      message: `Music sits ${below.toFixed(1)} dB under the voice where it speaks (${continuous ? `continuous: ${BED_UNDER_VOICE.min}–${BED_UNDER_VOICE.max} dB wanted` : 'bookends: at least 30 dB'}).`,
     });
   }
+
+  const jumps = record.levels.musicJumps;
+  if (!jumps)
+    checks.push({
+      id: 'music-jump',
+      status: 'pass',
+      message: 'Not measured: no music under narration.',
+    });
+  else {
+    const windows = jumps.exempt.map(([s, e]) => `${s.toFixed(1)}–${e.toFixed(1)} s`).join(', ');
+    const held = record.levels.pausesHeld
+      ? `; ${record.levels.pausesHeld} pause(s) held at the bed's level so it would not jump`
+      : '';
+    const wanted = `(at most ${MUSIC_JUMP_DB} wanted outside the opening, the hero, and the ending: ${windows})${held}`;
+    checks.push(
+      jumps.maxDb > MUSIC_JUMP_DB + 1e-9
+        ? {
+            id: 'music-jump',
+            status: 'fail',
+            message: `The music jumps ${jumps.maxDb.toFixed(1)} dB within 1 s at ${jumps.at.toFixed(2)} s ${wanted}.`,
+          }
+        : {
+            id: 'music-jump',
+            status: 'pass',
+            message: `The music's momentary loudness changes by at most ${jumps.maxDb.toFixed(1)} dB within 1 s ${wanted}.`,
+          },
+    );
+  }
+
+  const range = record.levels.musicRangeLu;
+  checks.push(
+    range === undefined
+      ? {
+          id: 'music-range',
+          status: 'pass',
+          message: 'Not measured: no music under at least 3 s of narration.',
+        }
+      : {
+          id: 'music-range',
+          status: range > MUSIC_RANGE_LU + 1e-9 ? 'warn' : 'pass',
+          message: `The music's loudness range over the narration is ${range.toFixed(1)} LU (at most ${MUSIC_RANGE_LU} wanted${range > MUSIC_RANGE_LU + 1e-9 && music.placement === 'bookends' ? '; bookends swell around the narration, continuous keeps one bed' : ''}).`,
+        },
+  );
 
   if (music.error)
     checks.push({
@@ -418,7 +470,13 @@ export function soundChecks(
     const dense = times.some((t, i) => i >= max && t - times[i - max]! < 1 - 1e-6);
     const level = record.levels.effectsBelowVoiceDb;
     const quiet: QcStatus =
-      level === undefined ? 'pass' : level >= 6 ? 'pass' : level >= 3 ? 'warn' : 'fail';
+      level === undefined
+        ? 'pass'
+        : level >= EFFECTS_UNDER_VOICE_DB
+          ? 'pass'
+          : level >= 3
+            ? 'warn'
+            : 'fail';
     const status = crowded || dense ? 'fail' : quiet;
     // With music, the outro's sign-off gives way to the music's own logo: not a crowding drop.
     const logo = effects.dropped.filter((d) => d.kind === 'outro').length;
@@ -429,7 +487,7 @@ export function soundChecks(
         ? `Two effects are closer than ${limits.minSpacing} s.`
         : dense
           ? `More than ${max} effects play within one second.`
-          : `${effects.placed.length} effect(s) placed, ${effects.dropped.length - logo} dropped to keep them apart${logo ? "; the music's sonic logo marks the outro" : ''}${level === undefined ? '' : `; their peaks sit ${level.toFixed(1)} dB under the voice's (at least 6 wanted)`}.`,
+          : `${effects.placed.length} effect(s) placed, ${effects.dropped.length - logo} dropped to keep them apart${logo ? "; the music's sonic logo marks the outro" : ''}${level === undefined ? '' : `; their peaks sit ${level.toFixed(1)} dB under the voice's (at least ${EFFECTS_UNDER_VOICE_DB} wanted)`}.`,
     });
   }
   return checks;

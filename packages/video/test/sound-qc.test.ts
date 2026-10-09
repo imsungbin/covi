@@ -38,7 +38,17 @@ function record(overrides: Partial<AudioRecord> = {}): AudioRecord {
     },
     levels: {
       voiceLufs: -16,
-      musicBelowVoiceDb: 20.4,
+      musicBelowVoiceDb: 16.2,
+      musicRangeLu: 3.1,
+      musicJumps: {
+        maxDb: 3.4,
+        at: 12.3,
+        exempt: [
+          [0, 1.3],
+          [9, 12],
+          [28, 30],
+        ],
+      },
       effectsBelowVoiceDb: 11.2,
       master: { integrated: -16, truePeak: -1.4 },
     },
@@ -109,6 +119,8 @@ describe('sound checks', () => {
     const checks = byId(soundChecks(record(), LIMITS));
     expect(Object.keys(checks)).toEqual([
       'music-under-speech',
+      'music-jump',
+      'music-range',
       'music-fit',
       'music-audible',
       'sound-effects',
@@ -199,7 +211,7 @@ describe('sound checks', () => {
     expect(short.message).toMatch(/too short for music/);
   });
 
-  it('grade music under speech by placement', () => {
+  it('grade music under speech by placement: a bed 12–20 dB under the voice, bookends 30', () => {
     const under = (db: number, placement: 'continuous' | 'bookends') =>
       byId(
         soundChecks(
@@ -210,12 +222,62 @@ describe('sound checks', () => {
           LIMITS,
         ),
       )['music-under-speech']!.status;
-    expect([under(19, 'continuous'), under(14, 'continuous'), under(10, 'continuous')]).toEqual([
-      'pass',
+    expect([12, 16, 20].map((db) => under(db, 'continuous'))).toEqual(['pass', 'pass', 'pass']);
+    expect([21, 11.9, 9, 8.9].map((db) => under(db, 'continuous'))).toEqual([
+      'warn',
+      'warn',
       'warn',
       'fail',
     ]);
     expect([under(31, 'bookends'), under(25, 'bookends')]).toEqual(['pass', 'warn']);
+  });
+
+  it('fail music that jumps more than 6 dB within a second outside the exempt windows', () => {
+    const jump = (maxDb: number | undefined, pausesHeld?: number) =>
+      byId(
+        soundChecks(
+          record({
+            levels: {
+              ...record().levels,
+              musicJumps:
+                maxDb === undefined ? undefined : { ...record().levels.musicJumps!, maxDb },
+              ...(pausesHeld ? { pausesHeld } : {}),
+            },
+          }),
+          LIMITS,
+        ),
+      )['music-jump']!;
+    expect(jump(6).status).toBe('pass');
+    expect(jump(6.4).status).toBe('fail');
+    expect(jump(6.4).message).toMatch(/6\.4 dB within 1 s at 12\.30 s/);
+    expect(jump(6.4).message).toMatch(/0\.0–1\.3 s, 9\.0–12\.0 s, 28\.0–30\.0 s/);
+    expect(jump(3.4, 2).message).toMatch(/2 pause\(s\) held/);
+    // Not measured (no narration, or a 0.2.0 record): nothing to fail.
+    expect(jump(undefined).status).toBe('pass');
+  });
+
+  it("warn when the music's loudness range over the narration exceeds 8 LU", () => {
+    const range = (lu: number | undefined, placement: 'continuous' | 'bookends' = 'continuous') =>
+      byId(
+        soundChecks(
+          record({
+            music: { ...record().music, placement },
+            levels: { ...record().levels, musicRangeLu: lu },
+          }),
+          LIMITS,
+        ),
+      )['music-range']!;
+    expect(range(8).status).toBe('pass');
+    expect(range(8.6).status).toBe('warn');
+    expect(range(8.6, 'bookends').message).toMatch(/continuous keeps one bed/);
+    expect(range(undefined).status).toBe('pass');
+  });
+
+  it('pass a record written before these checks existed', () => {
+    const { musicJumps: _j, musicRangeLu: _r, ...old } = record().levels;
+    const checks = byId(soundChecks(record({ levels: old }), LIMITS));
+    expect(checks['music-jump']!.status).toBe('pass');
+    expect(checks['music-range']!.status).toBe('pass');
   });
 
   it('fail a logo that overlaps the last line, and a tail that does not fade out', () => {
@@ -279,6 +341,8 @@ describe('sound checks', () => {
       )['sound-effects']!.status;
     expect(effects([1, 1.1], 10)).toBe('fail');
     expect(effects([1, 1.2, 1.4, 1.6], 10)).toBe('fail');
+    expect(effects([1, 2], 8)).toBe('pass');
+    expect(effects([1, 2], 7)).toBe('warn');
     expect(effects([1, 2], 4)).toBe('warn');
     expect(effects([1, 2], 2)).toBe('fail');
     expect(effects([1, 2], undefined)).toBe('pass');

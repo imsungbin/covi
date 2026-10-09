@@ -118,3 +118,4 @@ Plan rulings: see the plan's `## Rulings` (R-A1-1…12). Execution rulings:
 - Final fix wave: Ruling (implementer): en where.continuous says "louder before the first line and at the end" (not "a little fuller") — the 9 dB lift must not be understated — none.
 - Final fix wave: Ruling (implementer): the music-fit precision fix also covers logo start/landing/tail checks (−59.96 dBFS tail failed while printing −60.0) — same class — none.
 - Final fix wave: re-review clean (9 addressed; commits 4199ab3..295f77e). Parked minors: qc.ts:333 hero window end not clamped to duration; qc.ts:392 `hundredth(...)!` remains; qc.ts:396 nested parentheses — Ruling: cosmetic, can wait — none.
+B3 PF-7 note for B4/B5 pre-flights: morphShot signature is morphShot(scene, id, input) over B2's `directed` list.

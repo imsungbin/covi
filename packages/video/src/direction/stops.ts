@@ -8,11 +8,11 @@ export const HERO_DROP = 0.5;
 
 /**
  * Where each story scene's stop sits on the canvas: a path that runs to the right and turns down
- * every 2–4 stops (the seed decides where, so a different change travels differently), with the
- * hero's stop dropped off the row so the camera pulls back to reach it. The drop never reaches
- * into the frame of a stop below (the path turns down under the last stop of a row), so no two
- * stops' frames overlap, and no later stop moves. Coordinates are multiples of the dot grid
- * (`grid` px), so at every stop the canvas's dots line up with the stage's.
+ * after 2–4 steps, so a row holds 3–5 stops (the seed decides where, so a different change travels
+ * differently), with the hero's stop dropped off the row so the camera pulls back to reach it. The
+ * drop never reaches into the frame of a stop below (the path turns down under the last stop of a
+ * row), so no two stops' frames overlap, and no later stop moves. Coordinates are multiples of the
+ * dot grid (`grid` px), so at every stop the canvas's dots line up with the stage's.
  */
 export function canvasStops(input: {
   count: number;

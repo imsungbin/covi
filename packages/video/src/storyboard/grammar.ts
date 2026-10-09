@@ -225,6 +225,12 @@ export interface StoryboardIssue {
   message: string;
 }
 
+/** 1st, 2nd, 3rd, 4th, …, 11th, 12th, 13th, …, 21st. */
+function ordinal(n: number): string {
+  const last = n % 100 >= 11 && n % 100 <= 13 ? 0 : n % 10;
+  return `${n}${['th', 'st', 'nd', 'rd'][last] ?? 'th'}`;
+}
+
 /**
  * What the schema alone cannot check: one id per scene, one hero, sound markup, and phrases that
  * pin a moment.
@@ -242,11 +248,12 @@ export function storyboardIssues(storyboard: { scenes: readonly Scene[] }): Stor
     const first = named.get(name);
     if (first === undefined) named.set(name, i);
     else {
+      // Positions as ordinals: an id can be a number too, and the path counts from 0.
       const implied = scene.id === undefined || storyboard.scenes[first]!.id === undefined;
-      issue(
-        ['id'],
-        `scene ${first + 1} has this id too; give each scene its own id${implied ? ` (a scene without one is s and its number, here ${name})` : ''}`,
-      );
+      issues.push({
+        path: ['scenes', i, 'id'],
+        message: `the ${ordinal(i + 1)} scene repeats the id "${name}" of the ${ordinal(first + 1)} scene${implied ? ' (a scene without an id is s and its number)' : ''}; give each scene its own id`,
+      });
     }
     const line = parseEmphasis(scene.narration);
     if (line.error) issue(['narration'], line.error);

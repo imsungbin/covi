@@ -100,6 +100,49 @@ const storyboard = StoryboardSchema.parse({
 });
 
 describe.skipIf(!available)('rendering', () => {
+  it('keeps the layout reports in frame order, however the frames are split between workers', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'covi-layouts-'));
+    dirs.push(dir);
+    const { config } = resolveConfig([
+      {
+        name: 'explicit',
+        values: parseConfigInput(
+          { video: { mode: 'custom', width: 426, height: 240, fps: 12, duration: 8 } },
+          't',
+        ),
+      },
+    ]);
+    const spec = resolveVideoSpec(config);
+    const layout = layoutScenes(storyboard.scenes, new Map(), new Map(), 'en', pacingFor(spec));
+    const timeline = buildTimeline({
+      title: storyboard.title,
+      scenes: storyboard.scenes,
+      layout,
+      spec,
+      image: new AssetCollector(dir).image,
+    });
+    await writeComposition(join(dir, 'composition'), timeline, new Map());
+    const media = await Media.locate();
+    // The last frame of the first worker's share and the first of the last's: split three ways,
+    // the later frame is sampled long before the earlier one.
+    const third = Math.floor(timeline.frames / 3);
+    const layoutFrames = [third - 1, third, timeline.frames - 1];
+    const render = (workers: number) =>
+      renderComposition({
+        compositionDir: join(dir, 'composition'),
+        output: join(dir, `video-${workers}.mp4`),
+        timeline,
+        media,
+        workers,
+        layoutFrames,
+      });
+    const split = await render(3);
+    const alone = await render(1);
+    expect(split.layouts.map((l) => l.frame)).toEqual(layoutFrames);
+    // What frames.json keeps of them is byte for byte the same.
+    expect(JSON.stringify(split.layouts)).toBe(JSON.stringify(alone.layouts));
+  });
+
   it('renders a composition to H.264 with captions inside the safe area', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'covi-render-'));
     dirs.push(dir);
@@ -1667,13 +1710,22 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
       `${JSON.stringify(StoryboardSchema.parse(storyboard), null, 2)}\n`,
     );
 
+    // Off reads no direction: a file that is not even JSON, which would refuse the render on the
+    // canvas, is neither read nor rewritten.
+    const unread = '{ "schemaVersion": 1, "draft": false, "shots": [ { "scene": "nowhere" ';
+    writeFileSync(join(run, 'video', 'direction.json'), unread);
+
     // This test pins 0.2.0's timing grammar (zoom-through into the hero, its music lift 0.6 s
     // in), which `--direction off` keeps; tests/render/canvas.test.ts covers the canvas.
     const rendered = covi(['render', '--repo', repo, '--run', draft.runId, '--direction', 'off']);
     expect(rendered.video.rendered).toBe(true);
     expect(rendered.video.qc).not.toBe('fail');
+    expect(readFileSync(join(run, 'video', 'direction.json'), 'utf8')).toBe(unread);
 
     const timeline = read<Timeline>(run, 'video/timeline.json');
+    expect(timeline.scenes.every((s) => s.stop === undefined && s.direction === undefined)).toBe(
+      true,
+    );
     const [open, type, code, compare, pixels] = timeline.scenes;
     expect(timeline.scenes.map((s) => s.transition?.kind)).toEqual([
       undefined,

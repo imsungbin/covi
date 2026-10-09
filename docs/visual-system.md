@@ -219,7 +219,7 @@ Text styles:
 
 | Token | Value | Use |
 |---|---|---|
-| `transition` | 0.45 s | The default scene transition (a fade), and the outro's fade |
+| `transition` | 0.45 s | The default scene transition without the canvas (a fade), and the outro's fade |
 | `transitions` | fade 0.45 s, cut 0, push 0.5 s, wipe 0.55 s, zoom-through 0.6 s, pan 0.7 s, zoom 0.9 s | Each scene transition's length. The storyboard's kinds stay under 0.625 s, so an ordinary scene ends at most 0.6 s after its line; the canvas camera's moves between stops take longer |
 | `drift` | 0.02 | A capture's camera drift through its scene |
 | `linger` | 0.02 | The push-in on a visual that has settled (or entered, when a moment is pinned) while its line continues |

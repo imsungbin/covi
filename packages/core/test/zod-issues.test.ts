@@ -21,14 +21,14 @@ describe('schema issues echoed from an untrusted file', () => {
   });
 
   it('escape control, ANSI, and bidi characters in keys and paths, and cut them short', () => {
-    const hostile = `\u001b]0;pwned\u0007\u001b[2J‮${'k'.repeat(100_000)}`;
+    const hostile = `\u001b]0;pwned\u0007\u001b[2J\u202e${'k'.repeat(100_000)}`;
     const [line] = issuesOf(strict, { name: 'a', [hostile]: 1 });
-    expect(line).not.toMatch(/[\u0000-\u001f\u007f-\u009f‪-‮]/);
+    expect(line).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e]/);
     expect(line).toContain('\\u001b]0;pwned\\u0007\\u001b[2J\\u202e');
     expect(line!.length).toBeLessThan(150);
     const record = z.strictObject({ sync: z.record(z.string(), z.number()) });
     const [path] = issuesOf(record, { sync: { [hostile]: 'x' } });
-    expect(path).not.toMatch(/[\u0000-\u001f‮]/);
+    expect(path).not.toMatch(/[\u0000-\u001f\u202e]/);
     expect(path!.length).toBeLessThan(200);
   });
 
@@ -61,7 +61,7 @@ describe('escapeUnprintable', () => {
   });
 
   it('spells control, format, separator, and lone surrogate characters as escapes', () => {
-    expect(escapeUnprintable('a\u0000b\u007f\u009b​ ﻿\u{e0001}\ud800')).toBe(
+    expect(escapeUnprintable('a\u0000b\u007f\u009b\u200b\u2028\ufeff\u{e0001}\ud800')).toBe(
       'a\\u0000b\\u007f\\u009b\\u200b\\u2028\\ufeff\\u{e0001}\\ud800',
     );
   });

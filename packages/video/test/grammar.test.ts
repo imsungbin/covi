@@ -208,13 +208,26 @@ describe('the storyboard schema', () => {
     const twice = storyboard();
     twice.scenes[3]!.id = 'fix';
     expect(issues(twice)).toEqual([
-      'scenes.3.id: scene fix: scene 2 has this id too; give each scene its own id',
+      'scenes.3.id: the 4th scene repeats the id "fix" of the 2nd scene; give each scene its own id',
     ]);
     const implied = storyboard();
     delete implied.scenes[0]!.id;
     implied.scenes[2]!.id = 's1';
     expect(issues(implied)).toEqual([
-      'scenes.2.id: scene s1: scene 1 has this id too; give each scene its own id (a scene without one is s and its number, here s1)',
+      'scenes.2.id: the 3rd scene repeats the id "s1" of the 1st scene (a scene without an id is s and its number); give each scene its own id',
+    ]);
+    // Positions read as ordinals, teens included: an id may itself be a number.
+    const long = {
+      ...storyboard(),
+      scenes: Array.from({ length: 22 }, (_, i) => ({
+        id: i === 21 ? '12' : `${i + 1}`,
+        beat: 'b',
+        narration: 'x',
+        visual: callout,
+      })),
+    };
+    expect(issues(long)).toEqual([
+      'scenes.21.id: the 22nd scene repeats the id "12" of the 12th scene; give each scene its own id',
     ]);
   });
 

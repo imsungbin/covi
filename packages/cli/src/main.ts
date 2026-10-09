@@ -670,7 +670,10 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
     .option('--request <text>', 'the request in plain words, e.g. "30-second vertical video"')
     .option('--template <id>', 'storytelling template (see `covi templates`)')
     .option('--storyboard <file>', 'render this storyboard instead of drafting one')
-    .option('--draft', 'write video/storyboard.json and stop, so it can be edited before rendering')
+    .option(
+      '--draft',
+      "write video/storyboard.json and Covi's video/direction.json and stop, so they can be edited before rendering",
+    )
     .option('--dry-run', 'print the resolved video plan and the questions worth asking, then stop')
     .option('--force', 'render even when Covi judges a video unhelpful')
     .option('--workers <n>', 'parallel render workers', int(1, 64))

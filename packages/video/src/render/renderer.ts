@@ -38,6 +38,7 @@ export interface RenderResult {
   output: string;
   frames: number;
   renderMs: number;
+  /** The layout reports sampled while rendering, in frame order. */
   layouts: LayoutReport[];
   poster?: string;
   contactSheet?: string;
@@ -368,7 +369,9 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
       output: options.output,
       frames: total,
       renderMs: Date.now() - started,
-      layouts,
+      // Workers finish in any order; in frame order, the same composition writes the same
+      // frames.json however the frames were split.
+      layouts: layouts.sort((a, b) => a.frame - b.frame),
       pageErrors,
     };
     if (poster) {

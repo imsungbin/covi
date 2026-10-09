@@ -105,6 +105,12 @@ describe('a hostile direction file', () => {
       'https:\ufe0f//evil.example',
       'w\u034fww.evil.example',
       '\u3164\u3164\u3164',
+      // Combining marks that letters and marks let in: a joiner that draws nothing, an accent.
+      'https:\u2d7f//evil.example',
+      'https:\u0301//evil.example',
+      'https:\u{1107f}//evil.example',
+      'w\u0301ww.evil.example',
+      'javascript\u0301:alert',
       // Ideographic full stops, which address parsing reads as dots.
       'www。evil。example',
       // Bidi controls, which reorder what is drawn.
@@ -114,8 +120,19 @@ describe('a hostile direction file', () => {
       expect(rejected(withLabel(text)), text).toBe(true);
       expect(rejected(withNode(text)), text).toBe(true);
     }
-    expect(rejected(withLabel('「요청」이 큼！'))).toBe(false);
-    expect(rejected(withLabel('Stale data: refetch'))).toBe(false);
+    // Scripts written with marks keep their labels: the marks come off only to look for links.
+    for (const text of [
+      '「요청」이 큼！',
+      // Korean in conjoining jamo, and Japanese with its voiced marks apart, as NFD writes them.
+      '요청이 너무 큼'.normalize('NFD'),
+      'データ。'.normalize('NFD'),
+      'अनुरोध बड़ा',
+      'ข้อมูลเก่า',
+      'Stale data: refetch',
+    ]) {
+      expect(rejected(withLabel(text)), text).toBe(false);
+      expect(rejected(withNode(text)), text).toBe(false);
+    }
     expect(rejected(withNode('タイム・アウト。'))).toBe(false);
   });
 

@@ -1,10 +1,10 @@
-import type {
+import {
   CAMERA_TRANSITIONS,
-  CameraMove,
-  Point,
-  Rect,
-  Stop,
-  TransitionKind,
+  type CameraMove,
+  type Point,
+  type Rect,
+  type Stop,
+  type TransitionKind,
 } from '../timeline/types.ts';
 import { clamp, easeInOutCubic, lerp } from './anim.ts';
 
@@ -38,7 +38,7 @@ const FIT = 0.9;
 export const PULL_MARGIN = 0.92;
 
 export function isCameraMove(kind: TransitionKind): kind is CameraKind {
-  return kind === 'pan' || kind === 'zoom';
+  return (CAMERA_TRANSITIONS as readonly TransitionKind[]).includes(kind);
 }
 
 /** The view at rest in a stop, in stop-local coordinates: its own region, unmagnified. */
@@ -110,7 +110,8 @@ export function beatView(
 
 /**
  * The view at `t` (seconds since the scene started): each beat eases from where the camera was
- * when it started, which is where the beat before it had got to by then.
+ * when it started, which is where the beat before it had got to by then. `steps` must be in time
+ * order: the walk stops at the first step that has not started.
  */
 export function viewAt(steps: readonly CameraStep[], t: number, rest: View): View {
   let view = rest;

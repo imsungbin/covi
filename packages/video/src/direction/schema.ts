@@ -70,14 +70,20 @@ const LABEL_CHARS = /^[\p{L}\p{M} \-–—·,.'’:()/&+?!、。・「」『』�
 const INVISIBLE = /\p{Default_Ignorable_Code_Point}/u;
 /**
  * Links and script-running URL schemes, which the allowed characters could otherwise spell. They
- * are looked for in the NFKC form, so full-width letters and colons (`ｗｗｗ.`, `ｈｔｔｐｓ：//`)
- * count as the ASCII they fold to, with the ideographic full stops NFKC keeps read as dots, as
- * address parsing reads them. `data` counts only with something right after its colon, so
- * "Stale data: refetch" is a label.
+ * are looked for without combining marks (a joiner that draws nothing, or an accent, sits between
+ * two characters as a mark and would split `://`), in the NFKC form, so full-width letters and
+ * colons (`ｗｗｗ.`, `ｈｔｔｐｓ：//`) count as the ASCII they fold to, with the ideographic full
+ * stops NFKC keeps read as dots, as address parsing reads them. `data` counts only with something
+ * right after its colon, so "Stale data: refetch" is a label.
  */
 const LINK = /:\/\/|\bwww\./i;
 const SCRIPT_SCHEME = /\b(?:javascript|vbscript)\s*:|\bdata:\S/i;
+const MARKS = /\p{M}/gu;
 const FULL_STOPS = /[。｡．]/g;
+
+/** A label as the link checks read it: marks off, compatibility forms and full stops folded. */
+const linkForm = (text: string) =>
+  text.normalize('NFKD').replace(MARKS, '').normalize('NFKC').replace(FULL_STOPS, '.');
 
 /**
  * Text an agent writes for the screen (a node's name, a label). Numbers must come from evidence,
@@ -95,7 +101,7 @@ export const LabelSchema = z
   )
   .refine((text) => !INVISIBLE.test(text), 'a label holds no invisible characters')
   .refine((text) => {
-    const folded = text.normalize('NFKC').replace(FULL_STOPS, '.');
+    const folded = linkForm(text);
     return !LINK.test(folded) && !SCRIPT_SCHEME.test(folded);
   }, 'a label holds no links');
 

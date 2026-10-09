@@ -1566,6 +1566,16 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
           expect(moves.filter((k) => k === kind).length / moves.length, kind).toBeLessThanOrEqual(
             TRANSITION_SHARE,
           );
+      // The benchmark has nothing to see: its code changes on screen, and the sheet shows it.
+      if (example === 'backend-slim-request') {
+        const morphs = story.flatMap((s) =>
+          (s.direction?.beats ?? []).flatMap((b) => (b.verb === 'morph' ? [{ s, b }] : [])),
+        );
+        expect(morphs.length).toBeGreaterThan(0);
+        const tiles = contactSheetFrames(timeline);
+        for (const { s, b } of morphs)
+          expect(tiles).toContain(Math.round((s.start + b.t + b.seconds / 2) * timeline.fps));
+      }
     }, 600_000);
   }
 });

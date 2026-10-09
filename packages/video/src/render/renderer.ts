@@ -131,11 +131,13 @@ function encodeSegment(media: Media, fps: number, out: string, encoderArgs: stri
 const OPENING = 0.3;
 /** The hero's tile, a beat after its phase, while its accent plays. */
 const HERO_TILE = 0.1;
+/** A morph's tile, halfway through it: kept tokens on their way, old lines folding, new arriving. */
+const MORPH_TILE = 0.5;
 
 /**
  * Frames for the contact sheet, in time order: the opening, every scene's middle, the middle of
- * every transition (a cut has none; timelines without kinds faded over `transition`), and the
- * hero's accent.
+ * every transition (a cut has none; timelines without kinds faded over `transition`), the hero's
+ * accent, and the middle of every morph, so the sheet shows the code changing.
  */
 export function contactSheetFrames(
   timeline: Pick<Timeline, 'fps' | 'frames' | 'scenes' | 'transition'>,
@@ -149,6 +151,8 @@ export function contactSheetFrames(
     if (seconds > 0) frames.add(frame(s.start + seconds / 2));
     const hero = s.phases?.[HERO_PHASE];
     if (s.hero && hero !== undefined) frames.add(frame(s.start + hero + HERO_TILE));
+    for (const beat of s.direction?.beats ?? [])
+      if (beat.verb === 'morph') frames.add(frame(s.start + beat.t + beat.seconds * MORPH_TILE));
   });
   return [...frames].sort((a, b) => a - b);
 }

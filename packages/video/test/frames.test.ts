@@ -85,6 +85,30 @@ describe('the contact sheet', () => {
     expect(frames).toEqual([9, 52, 97, 123, 150, 240, 263, 278]);
   });
 
+  it('samples the middle of every morph, where its tokens are on their way', () => {
+    const frames = contactSheetFrames({
+      fps: 30,
+      frames: 300,
+      transition: 0.45,
+      scenes: [
+        s('s1', 0, 4),
+        s('s2', 4, 10, {
+          transition: { kind: 'cut', seconds: 0 },
+          direction: {
+            whole: false,
+            elements: [],
+            beats: [
+              { verb: 'camera', move: 'follow', to: 'm', t: 1, seconds: 0.8 },
+              { verb: 'morph', element: 'm', t: 2, seconds: 1.6 },
+            ],
+          },
+        }),
+      ],
+    });
+    // 0.3 s; middles 2 and 7; the morph 4 + 2 + 0.8 s in. A camera beat gets no tile.
+    expect(frames).toEqual([9, 60, 204, 210]);
+  });
+
   it('samples transitions of timelines written before they had kinds', () => {
     const frames = contactSheetFrames({
       fps: 10,

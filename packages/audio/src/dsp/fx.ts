@@ -254,30 +254,138 @@ export interface CompressorOptions {
   sr?: number;
 }
 
-/** Feed-forward stereo-linked peak compressor with a soft knee. */
-export function compressor(buf: Float32Array[], o: CompressorOptions): Float32Array[] {
-  const sr = o.sr ?? DEFAULT_SR;
-  const n = buf[0]!.length;
-  const att = Math.exp(-1 / (Math.max(1e-4, o.attack) * sr));
-  const rel = Math.exp(-1 / (Math.max(1e-4, o.release) * sr));
-  const knee = o.knee ?? 6;
+/** One-pole smoothing coefficient for a time constant of `seconds`. */
+function pole(seconds: number, sr: number): number {
+  return Math.exp(-1 / (Math.max(1e-4, seconds) * sr));
+}
+
+/**
+ * The gain computer both compressors share: a detected level (dB) in, the gain reduction (dB) out.
+ * Nothing below a soft knee `knee` dB wide around the threshold, 1 − 1/ratio dB per dB above it;
+ * the reduction moves there with the attack while it grows and the release while it falls.
+ */
+function gainComputer(o: {
+  threshold: number;
+  ratio: number;
+  knee: number;
+  attack: number;
+  release: number;
+  sr: number;
+}): (levelDb: number) => number {
+  const { threshold, knee } = o;
   const slope = 1 - 1 / Math.max(1, o.ratio);
-  const makeup = o.makeup ?? 0;
-  let env = 0;
+  const att = pole(o.attack, o.sr);
+  const rel = pole(o.release, o.sr);
   let gr = 0;
-  for (let i = 0; i < n; i++) {
-    let lvl = 0;
-    for (const ch of buf) lvl = Math.max(lvl, Math.abs(ch[i]!));
-    env = lvl > env ? lvl : lvl + (env - lvl) * rel;
-    const db = 20 * Math.log10(Math.max(env, 1e-9));
-    const over = db - o.threshold;
+  return (levelDb) => {
+    const over = levelDb - threshold;
     let target: number;
     if (over <= -knee / 2) target = 0;
     else if (over >= knee / 2) target = over * slope;
     else target = (slope * (over + knee / 2) ** 2) / (2 * knee);
     gr = target > gr ? target + (gr - target) * att : target + (gr - target) * rel;
+    return gr;
+  };
+}
+
+/** Feed-forward stereo-linked peak compressor with a soft knee. */
+export function compressor(buf: Float32Array[], o: CompressorOptions): Float32Array[] {
+  const sr = o.sr ?? DEFAULT_SR;
+  const n = buf[0]!.length;
+  const rel = pole(o.release, sr);
+  const reduction = gainComputer({ ...o, knee: o.knee ?? 6, sr });
+  const makeup = o.makeup ?? 0;
+  let env = 0;
+  for (let i = 0; i < n; i++) {
+    let lvl = 0;
+    for (const ch of buf) lvl = Math.max(lvl, Math.abs(ch[i]!));
+    env = lvl > env ? lvl : lvl + (env - lvl) * rel;
+    const gr = reduction(20 * Math.log10(Math.max(env, 1e-9)));
     const g = 10 ** ((makeup - gr) / 20);
     for (const ch of buf) ch[i]! *= g;
+  }
+  return buf;
+}
+
+export interface GlueOptions {
+  /** Threshold on the RMS level (dB: 10·log10 of the mean square across channels). */
+  threshold?: number;
+  ratio?: number;
+  /** Soft-knee width (dB). */
+  knee?: number;
+  /** Attack and release of the gain reduction (s). */
+  attack?: number;
+  release?: number;
+  /** Time constant of the RMS detector (s). */
+  rms?: number;
+  sr?: number;
+}
+
+/** The music bus's glue: dense passages come down 1–3 dB together, quiet ones not at all. */
+export const GLUE = {
+  threshold: -24,
+  ratio: 2,
+  knee: 6,
+  attack: 0.03,
+  release: 0.4,
+  rms: 0.05,
+} as const;
+
+/**
+ * Bus compressor: a stereo-linked RMS detector, a soft knee, and smoothed gain reduction,
+ * feed-forward and without makeup (the caller brings the bus back to its loudness).
+ */
+export function glueCompressor(buf: Float32Array[], o: GlueOptions = {}): Float32Array[] {
+  const sr = o.sr ?? DEFAULT_SR;
+  const n = buf[0]?.length ?? 0;
+  const detect = 1 - pole(o.rms ?? GLUE.rms, sr);
+  const reduction = gainComputer({
+    threshold: o.threshold ?? GLUE.threshold,
+    ratio: o.ratio ?? GLUE.ratio,
+    knee: o.knee ?? GLUE.knee,
+    attack: o.attack ?? GLUE.attack,
+    release: o.release ?? GLUE.release,
+    sr,
+  });
+  let ms = 0;
+  for (let i = 0; i < n; i++) {
+    let sum = 0;
+    for (const ch of buf) sum += ch[i]! * ch[i]!;
+    ms += detect * (sum / buf.length - ms);
+    if (ms < TINY) ms = 0;
+    const gr = reduction(10 * Math.log10(ms + TINY));
+    // No reduction yet, or a release's inaudible tail: the samples stay exactly as they were.
+    if (gr < 1e-12) continue;
+    const g = 10 ** (-gr / 20);
+    for (const ch of buf) ch[i]! *= g;
+  }
+  return buf;
+}
+
+/** The voice's band, carved out of the music while someone speaks. */
+export const CARVE = { freq: 2000, q: 0.7, depth: 0.5 } as const;
+
+/**
+ * Carves the voice's band out of a bus in place: y = x − depth·amount·BP(x), with an RBJ
+ * band-pass of constant 0 dB peak. Where `amount` (one value per sample, 0..1) is 1, the centre
+ * sits `depth` lower (0.5: −6 dB) and frequencies far from it pass; where it is 0, the bus is
+ * untouched. The filter runs on every sample, so the carve fades in and out without a click.
+ */
+export function voiceCarve(
+  buf: Float32Array[],
+  amount: Float32Array,
+  o: { freq?: number; q?: number; depth?: number; sr?: number } = {},
+): Float32Array[] {
+  const sr = o.sr ?? DEFAULT_SR;
+  const depth = o.depth ?? CARVE.depth;
+  for (const ch of buf) {
+    const band = new Biquad('bandpass', o.freq ?? CARVE.freq, o.q ?? CARVE.q, sr);
+    for (let i = 0; i < ch.length; i++) {
+      const x = ch[i]!;
+      const b = band.process(x);
+      const k = amount[i] ?? 0;
+      if (k > 0) ch[i] = x - depth * k * b;
+    }
   }
   return buf;
 }

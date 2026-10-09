@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { glueCompressor } from '../src/dsp/fx.ts';
 import { hashOf } from '../src/hash.ts';
 import {
   AUDIO_ENGINE_VERSION,
@@ -7,6 +8,7 @@ import {
   loadMusicLibrary,
   musicCacheKey,
 } from '../src/library.ts';
+import { integratedLoudness } from '../src/loudness.ts';
 import { fitMusic } from '../src/music/fit.ts';
 import { logoNotes, noteLimit, renderMusic, scheduleArrangement } from '../src/music/render.ts';
 import { parseScore, ScoreError } from '../src/music/score.ts';
@@ -337,5 +339,25 @@ describe('the music cache key', () => {
       { fingerprint: 'other' },
     ])
       expect(musicCacheKey({ ...input, ...change }), JSON.stringify(change)).not.toBe(key);
+  });
+});
+
+describe('the music bus', () => {
+  it("glues the theme's dense passages a few dB, the bed kept steady but not squashed", () => {
+    const score = theme();
+    const arrangement = fitMusic(score, {
+      duration: 20,
+      hero: 9,
+      lastLine: 17,
+      verdict: 'looks-good',
+    })!;
+    const music = renderMusic(score, arrangement, library, { verdict: 'looks-good' });
+    const gain = 10 ** ((-16 - integratedLoudness(music, 48_000)) / 20);
+    for (const c of music) for (let i = 0; i < c.length; i++) c[i]! *= gain;
+    glueCompressor(music, { sr: 48_000 });
+    // Measured 3.4 dB on 20, 60, and 90 s renders of the theme.
+    const drop = -16 - integratedLoudness(music, 48_000);
+    expect(drop).toBeGreaterThanOrEqual(0.5);
+    expect(drop).toBeLessThanOrEqual(4);
   });
 });

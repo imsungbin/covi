@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { adsr } from '../src/dsp/env.ts';
 import { Biquad, Svf } from '../src/dsp/filter.ts';
 import { fm2 } from '../src/dsp/fm.ts';
-import { chorus, compressor, delay, limiter, reverb, softClip } from '../src/dsp/fx.ts';
+import {
+  chorus,
+  compressor,
+  delay,
+  glueCompressor,
+  limiter,
+  reverb,
+  softClip,
+  voiceCarve,
+} from '../src/dsp/fx.ts';
 import { karplusStrong } from '../src/dsp/ks.ts';
 import { modal } from '../src/dsp/modal.ts';
 import { noise } from '../src/dsp/noise.ts';
@@ -350,5 +359,49 @@ describe('effects', () => {
     expect(softClip(-0.3)).toBeCloseTo(-softClip(0.3), 9);
     for (const x of [1, 2, 5, 50]) expect(Math.abs(softClip(x))).toBeLessThan(1);
     expect(softClip(2)).toBeGreaterThan(softClip(1));
+  });
+});
+
+describe('the music bus', () => {
+  it('glue takes a steady loud sine down by half its excess over the threshold', () => {
+    // A sine at −10 dBFS peak has a mean square of −13 dB: 11 dB over −24, so 2:1 takes 5.5 dB.
+    const x = [tone(1000, 2, 10 ** (-10 / 20)), tone(1000, 2, 10 ** (-10 / 20))];
+    const before = rmsOf(x[0]!, SR, 2 * SR);
+    glueCompressor(x, { sr: SR });
+    expect(20 * Math.log10(rmsOf(x[0]!, SR, 2 * SR) / before)).toBeCloseTo(-5.5, 1);
+  });
+
+  it('glue leaves quiet passages exactly as they were', () => {
+    const x = [tone(1000, 1, 0.01), tone(1000, 1, 0.01)]; // −40 dBFS
+    const copy = x.map((c) => c.slice());
+    glueCompressor(x, { sr: SR });
+    expect(x).toEqual(copy);
+  });
+
+  it('glue is deterministic', () => {
+    const noisy = () => {
+      const random = mulberry32(3);
+      const c = Float32Array.from({ length: SR }, () => 0.5 * (random() * 2 - 1));
+      return [c, c.slice()];
+    };
+    const a = glueCompressor(noisy(), { sr: SR });
+    const b = glueCompressor(noisy(), { sr: SR });
+    expect(hashOf(a[0]!, a[1]!)).toBe(hashOf(b[0]!, b[1]!));
+  });
+
+  it('carves −6 dB at 2 kHz while ducked, about 1–4 kHz in all, and nothing at amount 0', () => {
+    const carved = (freq: number, amount: number) => {
+      const x = tone(freq, 0.5);
+      const y = [x.slice()];
+      voiceCarve(y, new Float32Array(x.length).fill(amount), { sr: SR });
+      const from = Math.round(0.25 * SR);
+      return 20 * Math.log10(rmsOf(y[0]!, from) / rmsOf(x, from));
+    };
+    expect(carved(2000, 1)).toBeCloseTo(-6.02, 1);
+    expect(carved(1000, 1)).toBeLessThan(-1);
+    expect(carved(4000, 1)).toBeLessThan(-1);
+    expect(Math.abs(carved(150, 1))).toBeLessThan(0.2);
+    expect(carved(8000, 1)).toBeGreaterThan(-1);
+    expect(carved(2000, 0)).toBe(0);
   });
 });

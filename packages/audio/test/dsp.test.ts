@@ -337,6 +337,8 @@ describe('effects', () => {
       makeup: 3,
       knee: 10,
     });
+    // A mismatch means the output changed (bump AUDIO_ENGINE_VERSION), or a new Node changed the
+    // float math with fx.ts untouched (measure again before re-pinning).
     expect(hashOf(a[0]!, a[1]!, b[0]!, b[1]!)).toBe('d9ad428ce2352cd8');
   });
 

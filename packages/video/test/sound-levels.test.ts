@@ -123,7 +123,8 @@ describe('the sound record', () => {
     expect(Number.isFinite(levels.musicJumps.maxDb)).toBe(true);
     expect(levels.musicJumps.maxDb).toBeGreaterThan(6);
     expect(Number.isFinite(levels.musicJumps.at)).toBe(true);
-    expect(levels.musicRangeLu === undefined || Number.isFinite(levels.musicRangeLu)).toBe(true);
+    expect(levels.musicRangeLu).toBeTypeOf('number');
+    expect(Number.isFinite(levels.musicRangeLu)).toBe(true);
     for (const n of numbers(levels)) expect(Number.isFinite(n), JSON.stringify(levels)).toBe(true);
   });
 

@@ -271,7 +271,9 @@ describe('sound checks', () => {
     expect(jump(6).status).toBe('pass');
     expect(jump(6.4).status).toBe('fail');
     expect(jump(6.4).message).toMatch(/6\.40 dB within 1 s at 12\.30 s/);
-    expect(jump(6.4).message).toMatch(/0\.0–1\.3 s, 9\.0–12\.0 s, 28\.0–30\.0 s/);
+    expect(jump(6.4).message).toMatch(
+      /outside the opening \(0\.0–1\.3 s\), the hero \(9\.0–12\.0 s\), and the ending \(28\.0–30\.0 s\)/,
+    );
     expect(jump(3.4, 2).message).toMatch(/2 pause\(s\) held/);
     // Not measured: nothing to fail.
     expect(jump(undefined).status).toBe('pass');
@@ -286,6 +288,32 @@ describe('sound checks', () => {
       ),
     )['music-jump']!;
     expect(silent.message).toMatch(/no music under narration/);
+  });
+
+  it('name only the exempt windows the video has', () => {
+    const jump = (exempt: Array<[number, number]>) =>
+      byId(
+        soundChecks(
+          record({
+            levels: { ...record().levels, musicJumps: { maxDb: 3.4, at: 12.3, exempt } },
+          }),
+          LIMITS,
+        ),
+      )['music-jump']!.message;
+    const noHero = jump([
+      [0, 1.3],
+      [28, 30],
+    ]);
+    expect(noHero).toMatch(/outside the opening \(0\.0–1\.3 s\) and the ending \(28\.0–30\.0 s\)/);
+    expect(noHero).not.toMatch(/hero/);
+    // A hero in the first 1.5 s: its window starts with the video.
+    expect(
+      jump([
+        [0, 1.3],
+        [-0.7, 2.3],
+        [28, 30],
+      ]),
+    ).toMatch(/the hero \(0\.0–2\.3 s\)/);
   });
 
   it('print every graded level to the hundredth it is graded at', () => {
@@ -370,6 +398,29 @@ describe('sound checks', () => {
     });
     expect(off.status).toBe('warn');
     expect(off.message).toMatch(/cannot land on the outro/);
+  });
+
+  it('grade the music fit at the precision it prints', () => {
+    const music = record().music;
+    const fit = (m: Partial<AudioRecord['music']>) => {
+      const c = byId(soundChecks(record({ music: { ...music, ...m } }), LIMITS))['music-fit']!;
+      return `${c.status}: ${c.message}`;
+    };
+    // Just over a limit is named over it; just under, at it.
+    expect(fit({ bpm: 106.04 })).toMatch(/^pass: .*at 106\.0 bpm/);
+    expect(fit({ bpm: 106.06 })).toMatch(/^warn: .*moved 6\.1% from the score's/);
+    expect(fit({ logo: { start: 28.5951, landing: 29.2 } })).toMatch(/^pass: /);
+    expect(fit({ logo: { start: 28.594, landing: 29.2 } })).toMatch(
+      /^fail: .*starts at 28\.59 s, over the last line \(ends 28\.50 s\)/,
+    );
+    expect(fit({ logo: { start: 28.76, landing: 29.2049 } })).toMatch(
+      /^pass: .*lands 0\.80 s before the end/,
+    );
+    expect(fit({ logo: { start: 28.76, landing: 29.206 } })).toMatch(
+      /^warn: .*lands 0\.79 s before the end/,
+    );
+    expect(fit({ tailDb: -59.96 })).toMatch(/^fail: .*peak at -59\.96 dBFS/);
+    expect(fit({ tailDb: -60.004 })).toMatch(/^pass: /);
   });
 
   it('pass when there is no music, or no narration to sit under', () => {

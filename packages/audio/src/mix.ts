@@ -23,15 +23,16 @@ import {
  * The narration-first mix. The voice is brought to −16 LUFS. The music becomes a bus: brought to
  * −16 LUFS, glued by a gentle compressor, and brought to −16 LUFS again; then, while someone
  * speaks, the voice's band (about 1–4 kHz) is carved out of it, and its level follows the
- * placement. The music never jumps: outside the opening, the hero, and the ending, its momentary
- * loudness changes by at most 6 dB within a second. A pause whose swell, added to the music's own
- * movement, would come within half a dB of that stays at the speech level, and the music is
- * placed again. Effects sit at levels written against the bed, lowered together if any comes
- * within 8 dB of the voice's peak. The master then gets linear gain to its target and a
- * deterministic lookahead limiter at −1.5 dBFS, up to three times, until it is within ±0.5 LU of
- * the target with a true peak at or below −1 dBTP. A linear gain plus a limiter, rather than
- * ffmpeg's loudnorm, because loudnorm silently turns dynamic when linear gain would break its
- * peak target.
+ * placement. The placement never makes the music jump: outside the opening, the hero, and the
+ * ending, its ramps move at most 5 dB within a second, and a pause whose swell, added to the
+ * music's own movement, would bring the momentary loudness within half a dB of 6 dB in a second
+ * stays at the speech level, and the music is placed again. A score that jumps on its own is only
+ * measured (`musicJumps`), and QC fails it. Effects sit at levels written against the bed,
+ * lowered together if any comes within 8 dB of the voice's peak. The master then gets linear gain
+ * to its target and a deterministic lookahead limiter at −1.5 dBFS, up to three times, until it is
+ * within ±0.5 LU of the target with a true peak at or below −1 dBTP. A linear gain plus a
+ * limiter, rather than ffmpeg's loudnorm, because loudnorm silently turns dynamic when linear gain
+ * would break its peak target.
  */
 
 export const STEM_LUFS = -16;
@@ -99,7 +100,11 @@ export interface MixResult {
   voice?: Float32Array;
   /** The music stem after placement (stereo). */
   music?: Float32Array[];
-  /** What the music was placed under as speech: the narration's lines and any pause held down. */
+  /**
+   * What the music was placed under as speech: the narration's windows as given (not validated),
+   * then any pause held down. Unsorted, with the held pauses last: readers validate and sort, as
+   * placement does.
+   */
   musicLines?: Array<[number, number]>;
   levels: MixLevels;
   /** The master's loudness target, when it has one. */

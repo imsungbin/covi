@@ -868,7 +868,7 @@ question:
     noneDescriptionSilent: 소리 없이
     where:
       bookends: '{what}. 도입부와 마지막에 들리고, 내레이션 중에는 거의 들리지 않음'
-      continuous: '{what}. 내레이션 밑에 잔잔하게 깔리고 쉬는 틈에 커짐'
+      continuous: '{what}. 내레이션 밑에 잔잔하게 깔리고, 시작과 끝에서 커짐'
       throughout: '{what}. 영상 전체에 깔림'
 
 outcomes:

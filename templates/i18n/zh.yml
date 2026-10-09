@@ -866,8 +866,8 @@ question:
     noneDescriptionNoEffects: 只有旁白
     noneDescriptionSilent: 完全无声
     where:
-      bookends: '{what}；在开头和结尾播放，在旁白下几乎听不到'
-      continuous: '{what}；在旁白下方轻轻铺底，停顿时稍稍抬起'
+      bookends: '{what}；在开头和结尾播放，旁白期间几乎听不到'
+      continuous: '{what}；在旁白下方轻轻铺底，开头和结尾音量更大'
       throughout: '{what}；贯穿整个视频'
 
 outcomes:

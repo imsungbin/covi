@@ -327,6 +327,20 @@ export const BED_UNDER_VOICE = { min: 12, max: 20, fail: 9 } as const;
 const hundredth = (n: number | undefined) => (n === undefined ? n : round(n, 2));
 
 /**
+ * The windows where the music may move faster, by name: the opening first, the ending last, and
+ * the hero, when there is one, between them. A hero in the first 1.5 s starts with the video.
+ */
+function exemptWindows(exempt: ReadonlyArray<readonly [number, number]>): string {
+  const named = exempt.map(([s, e], i) => {
+    const name = i === 0 ? 'the opening' : i === exempt.length - 1 ? 'the ending' : 'the hero';
+    return `${name} (${Math.max(0, s).toFixed(1)}–${e.toFixed(1)} s)`;
+  });
+  return named.length < 3
+    ? named.join(' and ')
+    : `${named.slice(0, -1).join(', ')}, and ${named.at(-1)}`;
+}
+
+/**
  * Checks on the mix itself, read from `video/audio.json`: the music under the narration, whether
  * it jumps or ranges too widely, its fit to the picture (the logo after the last line, the landing
  * before the end, the hero on its downbeat, the tempo, a silent end), how much of it is heard at
@@ -376,11 +390,10 @@ export function soundChecks(
     });
   else {
     const maxDb = hundredth(jumps.maxDb)!;
-    const windows = jumps.exempt.map(([s, e]) => `${s.toFixed(1)}–${e.toFixed(1)} s`).join(', ');
     const held = record.levels.pausesHeld
       ? `; ${record.levels.pausesHeld} pause(s) held at the bed's level so it would not jump`
       : '';
-    const wanted = `(at most ${MUSIC_JUMP_DB} wanted outside the opening, the hero, and the ending: ${windows})${held}`;
+    const wanted = `(at most ${MUSIC_JUMP_DB} wanted outside ${exemptWindows(jumps.exempt)})${held}`;
     checks.push(
       maxDb > MUSIC_JUMP_DB + 1e-9
         ? {
@@ -422,15 +435,16 @@ export function soundChecks(
   else {
     const fails: string[] = [];
     const warns: string[] = [];
-    const lastLine = music.lastLine ?? 0;
-    if (music.logo.start < lastLine + 0.1 - 1e-6)
+    // Graded at the precision the message prints: hundredths of a second, a tenth of a percent.
+    const lastLine = round(music.lastLine ?? 0, 2);
+    const logoStart = round(music.logo.start, 2);
+    const beforeEnd = round(record.duration - music.logo.landing, 2);
+    if (logoStart < lastLine + 0.1 - 1e-6)
       fails.push(
-        `the logo starts at ${music.logo.start.toFixed(2)} s, over the last line (ends ${lastLine.toFixed(2)} s)`,
+        `the logo starts at ${logoStart.toFixed(2)} s, over the last line (ends ${lastLine.toFixed(2)} s)`,
       );
-    if (music.logo.landing > record.duration - 0.8 + 1e-6)
-      warns.push(
-        `the logo lands ${(record.duration - music.logo.landing).toFixed(2)} s before the end (0.8 s wanted)`,
-      );
+    if (beforeEnd < 0.8 - 1e-6)
+      warns.push(`the logo lands ${beforeEnd.toFixed(2)} s before the end (0.8 s wanted)`);
     if (
       music.outro !== undefined &&
       Math.abs(music.logo.landing - music.outro) > 1 / limits.fps + 1e-6
@@ -444,13 +458,12 @@ export function soundChecks(
         music.fallbacks?.find((f) => /hero/.test(f)) ??
           `the hero downbeat is ${(music.hero.downbeat - music.hero.moment).toFixed(2)} s off the payoff`,
       );
-    const tempo = music.scoreBpm ? music.bpm / music.scoreBpm - 1 : 0;
-    if (Math.abs(tempo) > 0.06 + 1e-9)
-      warns.push(`the tempo moved ${(tempo * 100).toFixed(1)}% from the score's, beyond ±6%`);
-    if ((music.tailDb ?? -120) > -60)
-      fails.push(
-        `the music's last 10 ms peak at ${music.tailDb!.toFixed(1)} dBFS (below −60 wanted)`,
-      );
+    const tempo = round(music.scoreBpm ? 100 * (music.bpm / music.scoreBpm - 1) : 0, 1);
+    if (Math.abs(tempo) > 6 + 1e-9)
+      warns.push(`the tempo moved ${tempo.toFixed(1)}% from the score's, beyond ±6%`);
+    const tail = round(music.tailDb ?? -120, 2);
+    if (tail > -60)
+      fails.push(`the music's last 10 ms peak at ${tail.toFixed(2)} dBFS (below −60 wanted)`);
     checks.push(
       fails.length || warns.length
         ? {
@@ -461,7 +474,7 @@ export function soundChecks(
         : {
             id: 'music-fit',
             status: 'pass',
-            message: `${music.id} at ${music.bpm.toFixed(1)} bpm (score ${music.scoreBpm}): the logo follows the last line and lands ${music.outro === undefined ? '' : 'as the outro settles, '}${(record.duration - music.logo.landing).toFixed(2)} s before the end${music.hero ? '; the hero is on its downbeat' : ''}.`,
+            message: `${music.id} at ${music.bpm.toFixed(1)} bpm (score ${music.scoreBpm}): the logo follows the last line and lands ${music.outro === undefined ? '' : 'as the outro settles, '}${beforeEnd.toFixed(2)} s before the end${music.hero ? '; the hero is on its downbeat' : ''}.`,
           },
     );
   }
@@ -518,8 +531,8 @@ function musicAudibleCheck(record: AudioRecord): QcCheck {
   if (!music.audible)
     return { id: 'music-audible', status: 'pass', message: `No music to hear: ${music.reason}` };
   // Graded at the hundredth the message prints.
-  const seconds = hundredth(music.audible.seconds)!;
-  const wanted = hundredth(audibleMusicWanted(record.duration))!;
+  const seconds = round(music.audible.seconds, 2);
+  const wanted = round(audibleMusicWanted(record.duration), 2);
   const share = `${(100 * music.audible.share).toFixed(1)}% of the video`;
   const problems: string[] = [];
   if (seconds < wanted - 1e-9)

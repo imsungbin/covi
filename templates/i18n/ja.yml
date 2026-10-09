@@ -867,7 +867,7 @@ question:
     noneDescriptionSilent: 音なし
     where:
       bookends: '{what}。冒頭と最後に流れ、ナレーション中はほとんど聞こえません'
-      continuous: '{what}。ナレーションの下で静かに流れ、間で少し大きくなります'
+      continuous: '{what}。ナレーションの下で静かに流れ、冒頭と最後で大きくなります'
       throughout: '{what}。動画全体に流れます'
 
 outcomes:

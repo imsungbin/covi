@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Broadcast mix: music is a continuous bed by default, 12–20 dB under the voice with its 1–4 kHz band carved out, glued by a bus compressor, and smoothed so it never jumps more than 6 dB in a second; effects follow the bed and stay 8 dB under the voice's peak; `bookends` ramps are slope-limited; QC adds `music-jump` and `music-range`; the audio engine is `covi-audio-4`, so cached music renders again.
+- Broadcast mix: music is a continuous bed by default, 12–20 dB under the voice with its 1–4 kHz band carved out, glued by a bus compressor, and placed on ramps that never make it jump; effects follow the bed and stay 8 dB under the voice's peak; `bookends` ramps are slope-limited; QC adds `music-jump`, which fails music that still moves more than 6 dB in a second (a composed score's sudden entry), and `music-range`; the audio engine is `covi-audio-4`, so cached music renders again.
 
 ## [0.2.0] - 2026-10-09
 

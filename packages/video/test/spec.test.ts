@@ -384,12 +384,12 @@ describe('planVideo (the question protocol)', () => {
       [
         'theme',
         'Covi theme (default)',
-        'Arranged to the story and the verdict. A quiet bed under the narration that rises in the pauses',
+        'Arranged to the story and the verdict. A quiet bed under the narration, louder before the first line and at the end',
       ],
       [
         'compose',
         'Compose for this video',
-        'A new score written for this change; takes a little longer. A quiet bed under the narration that rises in the pauses',
+        'A new score written for this change; takes a little longer. A quiet bed under the narration, louder before the first line and at the end',
       ],
       ['none', 'No music', 'Narration and subtle sound effects only'],
     ]);
@@ -617,12 +617,12 @@ describe('respecVideo', () => {
     expect(
       where({ explicit: { mode: 'custom', width: 1920, height: 1080 }, interactive: true }),
     ).toBe(
-      'Arranged to the story and the verdict. A quiet bed under the narration that rises in the pauses',
+      'Arranged to the story and the verdict. A quiet bed under the narration, louder before the first line and at the end',
     );
     expect(
       where({ explicit: { mode: 'custom', width: 1080, height: 1080 }, interactive: true }),
     ).toBe(
-      'Arranged to the story and the verdict. A quiet bed under the narration that rises in the pauses',
+      'Arranged to the story and the verdict. A quiet bed under the narration, louder before the first line and at the end',
     );
     expect(
       where({

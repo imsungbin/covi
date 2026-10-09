@@ -499,7 +499,7 @@ export function resolveVideoSpec(config: CoviConfig, request: VideoRequest = {})
   }
 
   const setting = request.musicPlacement ?? v.music.placement ?? 'auto';
-  // `auto` is continuous for every kind of video: a bed that ducks under the voice, never jumps.
+  // `auto` is continuous for every kind of video: a bed that ducks under the voice on gentle ramps.
   const placement: MusicPlacement = setting === 'auto' ? 'continuous' : setting;
   return {
     mode,

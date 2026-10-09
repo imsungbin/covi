@@ -195,6 +195,7 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
     expect(audio.music.placement).toBe('continuous');
     expect(audio.levels.musicBelowVoiceDb).toBeGreaterThanOrEqual(12);
     expect(audio.levels.musicBelowVoiceDb).toBeLessThanOrEqual(20);
+    expect(audio.levels.musicRangeLu).toBeTypeOf('number');
     expect(audio.levels.musicRangeLu).toBeLessThanOrEqual(8);
     expect(audio.levels.musicJumps.maxDb).toBeLessThanOrEqual(6);
     if (audio.levels.effectsBelowVoiceDb !== undefined)

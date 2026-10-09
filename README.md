@@ -88,7 +88,7 @@ We asked Covi to explain its own first commit, the one that adds this whole repo
 - **Platforms and CLI (packages/platforms, packages/cli)**: Map GitHub and GitLab CI context onto a `CodeChange`; publish comments, inline annotations, SARIF, Code Quality reports, and step outputs; and compose everything into the `covi` commands with fixed exit codes.
 - **Skills and templates**: Eight skills hold the review methodology for agents and are also loaded into model prompts; seven storytelling templates shape the videos.
 - **CI integrations**: A composite GitHub Action with a fork-safe comment workflow, and a GitLab CI template. Both build Covi from its own source.
-- **Examples, tests, and docs**: Six example changes with expected results (one of them a backend change with nothing to see, which Covi demonstrates with a command's output at both revisions), unit and integration tests (236 test cases), fourteen documentation pages, and agent packaging (`AGENTS.md`, `CLAUDE.md`, a Claude Code plugin manifest).
+- **Examples, tests, and docs**: Five example changes with expected results, unit and integration tests (236 test cases), fourteen documentation pages, and agent packaging (`AGENTS.md`, `CLAUDE.md`, a Claude Code plugin manifest).
 
 #### Architecture
 

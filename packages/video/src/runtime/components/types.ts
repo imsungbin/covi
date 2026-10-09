@@ -90,14 +90,21 @@ export function overflows(node: HTMLElement): boolean {
  * it (the camera's push), measured from its box. QC's text-size check reads it.
  */
 export function drawnFont(node: HTMLElement): number {
-  const font = Number.parseFloat(getComputedStyle(node).fontSize) || 0;
-  const width = node.offsetWidth;
-  return width > 0 ? (font * node.getBoundingClientRect().width) / width : font;
+  const style = getComputedStyle(node);
+  const font = Number.parseFloat(style.fontSize) || 0;
+  if (!node.offsetWidth) return font;
+  // The computed width is unrounded (offsetWidth's whole pixels misread text at its floor on a
+  // narrow box) and, like every box here, border-box, as the drawn box is. Inline boxes have none.
+  const width = Number.parseFloat(style.width) || node.offsetWidth;
+  return (font * node.getBoundingClientRect().width) / width;
 }
 
-/** The smallest drawn font of these nodes: what a layout item with several texts reports. */
-export function smallestFont(nodes: readonly HTMLElement[]): number {
-  return Math.min(...nodes.map(drawnFont));
+/**
+ * The smallest drawn font of these nodes: what a layout item with several texts reports. None
+ * without nodes, so the item omits `font` (frames.json would keep Infinity as null).
+ */
+export function smallestFont(nodes: readonly HTMLElement[]): number | undefined {
+  return nodes.length ? Math.min(...nodes.map(drawnFont)) : undefined;
 }
 
 /** Entrance progress over [start, end]; the opening scene is already in place at frame 0. */

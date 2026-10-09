@@ -86,9 +86,12 @@ export function textSizeCheck(
   const small = new Map<string, { scene: string; text: 'code' | 'body'; size: number }>();
   for (const { scene, report } of settledReports(timeline, layouts)) {
     for (const item of report.items) {
-      if (item.font === undefined || (item.text !== 'code' && item.text !== 'body')) continue;
+      // A size that is not finite measured nothing; frames.json reads one back as null.
+      const font = item.font;
+      if (typeof font !== 'number' || !Number.isFinite(font)) continue;
+      if (item.text !== 'code' && item.text !== 'body') continue;
       measured++;
-      const size = item.font / unit;
+      const size = font / unit;
       if (size >= TEXT_FLOOR[item.text] - SIZE_TOLERANCE) continue;
       const key = `${scene.id} ${item.text}`;
       const seen = small.get(key);

@@ -240,6 +240,19 @@ describe('the text-size check', () => {
     expect(check.status).toBe('warn');
     expect(check.message).toMatch(/in s2/);
   });
+
+  it('measures no text whose size frames.json could not keep', () => {
+    const t = story();
+    // JSON writes a size that is not finite as null, and frames reused for new sound come back
+    // from frames.json.
+    const kept = JSON.parse(
+      JSON.stringify(report(at(t, 's1'), 's1', [codeAt(Number.POSITIVE_INFINITY)])),
+    ) as LayoutReport;
+    expect(kept.items[0]!.font).toBeNull();
+    const check = textSizeCheck(t, [kept, report(at(t, 's2'), 's2', [bodyAt(Number.NaN)])]);
+    expect(check.status).toBe('pass');
+    expect(check.message).toMatch(/^No code or body text was measured/);
+  });
 });
 
 describe('the empty-frame check', () => {

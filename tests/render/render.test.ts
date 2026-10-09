@@ -1168,7 +1168,7 @@ describe.skipIf(!available)('rendering', () => {
       expect(card.font! / unit).toBeGreaterThanOrEqual(13 - 0.5);
       const size = densityChecks(c.timeline, [report]).find((x) => x.id === 'text-size')!;
       expect(size.status).toBe('warn');
-      expect(size.message).toMatch(/code at \d+ px in s2/);
+      expect(size.message).toMatch(/code at \d+(\.\d)? px in s2/);
     } finally {
       await browser.close();
     }
@@ -1186,8 +1186,18 @@ describe.skipIf(!available)('rendering', () => {
           visual: {
             kind: 'terminal',
             command: 'node scripts/measure.js',
-            before: 'request bytes: 70406\nchunks: 4\nreader steps: 28\ntimeouts: 1',
-            output: 'request bytes: 9907\nchunks: 1\nreader steps: 10\ntimeouts: 0',
+            before: [
+              'request bytes: 70406',
+              'chunks: 4',
+              'reader steps: 28',
+              'timeouts: 1',
+              'retries: 3',
+              'cache misses: 12',
+              'queue depth: 5',
+              'warnings: 2',
+              'elapsed: 840 ms',
+            ].join('\n'),
+            output: 'request bytes: 9907\nchunks: 1',
           },
         },
         {
@@ -1207,12 +1217,16 @@ describe.skipIf(!available)('rendering', () => {
       const terminal = await settledReport(c, 's2');
       const windows = terminal.items.filter((i) => i.text === 'code');
       expect(windows).toHaveLength(2);
+      // The before's nine lines set one size for both windows (27.8 units in 9:16); sized alone,
+      // the after's two lines would grow to the ceiling.
       expect(windows[0]!.font).toBeCloseTo(windows[1]!.font!, 3);
       expect(windows[0]!.font! / unit).toBeGreaterThanOrEqual(24);
       const api = await settledReport(c, 's3');
-      const bodies = api.items.filter((i) => i.text === 'code');
-      expect(bodies).toHaveLength(2);
-      for (const item of bodies) expect(item.font! / unit).toBeGreaterThanOrEqual(24);
+      const [request, ...responses] = api.items.filter((i) => i.text === 'code');
+      expect(request!.font! / unit).toBeGreaterThanOrEqual(24);
+      // A four-line body reaches the 48-unit ceiling.
+      expect(responses).toHaveLength(1);
+      expect(responses[0]!.font! / unit).toBeGreaterThanOrEqual(48 - 0.5);
       const checks = densityChecks(c.timeline, [terminal, api]);
       expect(checks.find((x) => x.id === 'text-size')!.status).toBe('pass');
       expect(checks.find((x) => x.id === 'empty-frame')!.status).toBe('pass');

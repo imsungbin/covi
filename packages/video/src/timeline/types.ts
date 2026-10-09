@@ -301,6 +301,17 @@ export interface LayoutItem {
   rect: Rect;
   /** Text that does not fit its box. */
   overflow?: boolean;
+  /**
+   * The size of the item's smallest text that QC holds to a floor, in stage pixels as drawn (the
+   * camera's scale included). Absent: the item has no such text.
+   */
+  font?: number;
+  /**
+   * What that text is: `code` (code, terminal output, request lines and response bodies), `body`
+   * (headings, titles, notes, labels a viewer must read), or `meta` (chips, file paths, small
+   * labels), which QC does not hold to a floor.
+   */
+  text?: 'code' | 'body' | 'meta';
 }
 
 export interface LayoutReport {

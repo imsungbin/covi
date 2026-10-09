@@ -9,7 +9,7 @@ import type { LayoutReport, Rect, Timeline, TimelineScene } from './timeline/typ
 /*
  * Density and monotony checks: is the text large enough to read, does the content use the frame,
  * and does the picture vary from scene to scene. They warn rather than fail: they judge taste,
- * not broken output (R-007).
+ * not broken output.
  */
 
 /** What the density checks read of a timeline. */

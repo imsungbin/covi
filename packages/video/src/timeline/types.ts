@@ -264,6 +264,10 @@ export interface TimelineScene {
   evidenceIds?: string[];
   /** The storyboard's own sound cues, at seconds since the scene started. */
   cues?: Array<{ at: number; kind: SceneCueKind }>;
+  /** Its stop on the canvas; absent when `video.direction` is off (no canvas) and on the outro. */
+  stop?: Stop;
+  /** Its shot: from `video/direction.json` or Covi's default director, resolved. */
+  direction?: SceneDirection;
 }
 
 /**

@@ -276,9 +276,10 @@ export interface Layout {
  * visual's minimum, and the next line waits for it; the hero holds `HERO_HOLD` after its line. A
  * breath belongs to the scene after it: the transition starts as at any scene change and the new
  * picture holds the breath, so an ordinary scene never outstays its line by more than 0.6 s, or
- * 0.71 s before the camera's zoom (the hero's hold, a scene kept up for its minimum, and the last
- * scene's tail can). The video ends with the outro or a short hold. `entrances`, by scene id, are
- * the entrances direction gave (R-008): they shape the overlap like a storyboard `transition`.
+ * 0.63 s before a camera pan and 0.71 s before a camera zoom (the hero's hold, a scene kept up for
+ * its minimum, and the last scene's tail can). The video ends with the outro or a short hold.
+ * `entrances`, by scene id, are the entrances direction gave: they shape the overlap like a
+ * storyboard `transition`.
  */
 export function layoutScenes(
   scenes: readonly Scene[],

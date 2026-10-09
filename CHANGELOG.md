@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Video cards size their text to their content and fill the frame (code and terminal text up to 44 px at 1080p, 48 in 9:16), QC warns on text under 24 px (code) or 28 px (body), empty frames, more than two scenes of one kind in a row, and one transition kind over 60%, and `examples/backend-slim-request` is the benchmark for videos of changes without a UI.
+
+### Fixed
+
+- Drafted explanations and narration no longer name a function whose only nearby change was the next function's doc comment.
+
 ## [0.2.0] - 2026-10-09
 
 ### Added

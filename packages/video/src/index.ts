@@ -5,6 +5,12 @@ export { AssetCollector, fontFiles, writeComposition } from './composition/build
 export { imageSize } from './composition/images.ts';
 export { runtimeScript } from './composition/runtime-bundle.ts';
 export {
+  type DensityTimeline,
+  EMPTY_SHARE,
+  emptyFrameCheck,
+  textSizeCheck,
+} from './density.ts';
+export {
   localeLanguage,
   normalizeSpeech,
   type Pronunciations,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { emptyFrameCheck, textSizeCheck } from '../src/density.ts';
 import { layoutSampleFrames } from '../src/render/renderer.ts';
 import {
   CARD_FILL,
@@ -10,6 +11,8 @@ import {
 } from '../src/runtime/sizing.ts';
 import { settledAt, settledFrame, settledSpan } from '../src/timeline/cues.ts';
 import type {
+  LayoutItem,
+  LayoutReport,
   SceneTransition,
   Timeline,
   TimelineScene,
@@ -127,5 +130,163 @@ describe('settled frames', () => {
     expect(frames).not.toContain(settledFrame(t, 3));
     expect(frames).toContain(Math.round((3.5 + 4.5 * 0.35) * 30));
     expect(frames).toEqual([...frames].sort((a, b) => a - b));
+  });
+});
+
+const findings: TimelineVisual = {
+  kind: 'findings',
+  findings: [{ title: 'F', certainty: 'risk', severity: 'low' }],
+};
+
+/** A code scene, a findings scene that pushes in, and the outro, at `width` × `height`. */
+const story = (width = 1920, height = 1080) =>
+  video(width, height, [
+    scene('s1', 0, 4, code),
+    scene('s2', 3.5, 8, findings, { kind: 'push', seconds: 0.5 }),
+    scene('covi:outro', 7.55, 10, { kind: 'outro' }, { kind: 'fade', seconds: 0.45 }),
+  ]);
+const at = (t: Timeline, id: string) =>
+  settledFrame(
+    t,
+    t.scenes.findIndex((s) => s.id === id),
+  )!;
+const report = (frame: number, scene: string, items: LayoutItem[]): LayoutReport => ({
+  frame,
+  scene,
+  items,
+  imagesLoaded: true,
+});
+/** A band across the landscape media region at 1080p (1728 × 662 from 96, 206), `height` tall. */
+const band = (height: number) => ({ x: 96, y: 206 + (662 - height) / 2, width: 1728, height });
+const codeAt = (font: number, rect = band(420)): LayoutItem => ({
+  role: 'media',
+  rect,
+  font,
+  text: 'code',
+});
+const bodyAt = (font: number): LayoutItem => ({
+  role: 'text',
+  rect: band(420),
+  font,
+  text: 'body',
+});
+
+describe('the text-size check', () => {
+  it('passes code at 24 px and body text at 28 px at 1080p, and names smaller text', () => {
+    const t = story();
+    const ok = textSizeCheck(t, [
+      report(at(t, 's1'), 's1', [codeAt(24)]),
+      report(at(t, 's2'), 's2', [bodyAt(28)]),
+    ]);
+    expect(ok).toMatchObject({ id: 'text-size', status: 'pass' });
+    const small = textSizeCheck(t, [
+      report(at(t, 's1'), 's1', [codeAt(19)]),
+      report(at(t, 's2'), 's2', [bodyAt(23)]),
+    ]);
+    expect(small.status).toBe('warn');
+    expect(small.message).toMatch(/code at 19 px in s1/);
+    expect(small.message).toMatch(/body at 23 px in s2/);
+  });
+
+  it('allows only the rounding of drawn boxes under the floor', () => {
+    const t = story();
+    const near = textSizeCheck(t, [report(at(t, 's1'), 's1', [codeAt(23.8)])]);
+    expect(near.status).toBe('warn');
+    // Named as drawn, so the message never claims text at its floor is too small.
+    expect(near.message).toMatch(/code at 23\.8 px in s1/);
+    expect(textSizeCheck(t, [report(at(t, 's1'), 's1', [codeAt(23.95)])]).status).toBe('pass');
+  });
+
+  it('measures against the frame’s short side', () => {
+    // At 4K a design unit is 2 px; at 360 × 640 it is a third of one.
+    const k4 = story(3840, 2160);
+    expect(textSizeCheck(k4, [report(at(k4, 's1'), 's1', [codeAt(40)])]).status).toBe('warn');
+    expect(textSizeCheck(k4, [report(at(k4, 's1'), 's1', [codeAt(48)])]).status).toBe('pass');
+    const phone = story(360, 640);
+    expect(textSizeCheck(phone, [report(at(phone, 's1'), 's1', [codeAt(8)])]).status).toBe('pass');
+    expect(textSizeCheck(phone, [report(at(phone, 's1'), 's1', [codeAt(7)])]).status).toBe('warn');
+  });
+
+  it('reads settled frames of story scenes only, and never holds chips or paths to a floor', () => {
+    const t = story();
+    const tiny = codeAt(6);
+    const check = textSizeCheck(t, [
+      // Still entering; s1 settles 0.535 s in, a sliver after frame 16.
+      report(3, 's1', [tiny]),
+      report(16, 's1', [tiny]),
+      report(at(t, 's1'), 's1', [
+        { ...tiny, text: 'meta' },
+        { role: 'media', rect: tiny.rect },
+      ]),
+      report(280, 'covi:outro', [tiny]),
+    ]);
+    expect(check.status).toBe('pass');
+  });
+
+  it('reads a scene too short to settle at the moment it starts to leave', () => {
+    const t = video(1920, 1080, [
+      scene('s1', 0, 4, callout),
+      scene('s2', 3.5, 6, terminal, { kind: 'push', seconds: 0.5 }),
+      scene('s3', 5.55, 9, callout, { kind: 'fade', seconds: 0.45 }),
+    ]);
+    const check = textSizeCheck(t, [report(166, 's2', [codeAt(10)])]);
+    expect(check.status).toBe('warn');
+    expect(check.message).toMatch(/in s2/);
+  });
+});
+
+describe('the empty-frame check', () => {
+  it('warns when a card scene’s content covers under 40% of the media region', () => {
+    const t = story();
+    const thin = emptyFrameCheck(t, [report(at(t, 's1'), 's1', [codeAt(44, band(180))])]);
+    expect(thin).toMatchObject({ id: 'empty-frame', status: 'warn' });
+    expect(thin.message).toMatch(/s1 \(27%\)/);
+    const full = emptyFrameCheck(t, [report(at(t, 's1'), 's1', [codeAt(44, band(400))])]);
+    expect(full.status).toBe('pass');
+  });
+
+  it('counts only content inside the media region, at the fullest settled frame', () => {
+    const t = story();
+    const heading: LayoutItem = {
+      role: 'text',
+      rect: { x: 96, y: 74, width: 900, height: 110 },
+      font: 42,
+      text: 'body',
+    };
+    // The header's heading sits above the region: it does not stretch the content's box.
+    const withHeading = emptyFrameCheck(t, [
+      report(at(t, 's1'), 's1', [heading, codeAt(44, band(180))]),
+    ]);
+    expect(withHeading.status).toBe('warn');
+    // One settled frame where the content fills the frame is enough (90 is 3 s in, still settled).
+    const later = emptyFrameCheck(t, [
+      report(at(t, 's1'), 's1', [codeAt(44, band(180))]),
+      report(90, 's1', [codeAt(44, band(420))]),
+    ]);
+    expect(later.status).toBe('pass');
+  });
+
+  it('leaves captures and the title and summary cards to their own layout', () => {
+    const t = video(1920, 1080, [
+      scene('s1', 0, 4, {
+        kind: 'screenshot',
+        image: { src: 'a.png', width: 390, height: 844 },
+        device: 'mobile',
+      }),
+      scene(
+        's2',
+        3.5,
+        8,
+        { kind: 'summary', verdict: 'looks-good', headline: 'H', points: [] },
+        { kind: 'push', seconds: 0.5 },
+      ),
+    ]);
+    // A phone capture in a landscape frame is narrow by its aspect ratio, not by choice.
+    const narrow: LayoutItem = { role: 'media', rect: { x: 807, y: 206, width: 306, height: 662 } };
+    const check = emptyFrameCheck(t, [
+      report(at(t, 's1'), 's1', [narrow]),
+      report(at(t, 's2'), 's2', [narrow]),
+    ]);
+    expect(check.status).toBe('pass');
   });
 });

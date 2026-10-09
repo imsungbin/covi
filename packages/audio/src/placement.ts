@@ -155,9 +155,10 @@ export function placementLevels(
   const lines = placementLines(speech, p);
   if (!lines.length) return levels;
   const ramps = gapRamps(p);
-  // The samples from the first line's start to the last line's end.
-  const from = Math.max(0, Math.ceil(lines[0]![0] * sr));
-  const to = Math.min(n, Math.floor(lines.at(-1)![1] * sr) + 1);
+  // The samples from the first line's start to the last line's end, kept within [0, n] so a span
+  // wholly outside the video is empty: `fill` counts a negative end back from the array's end.
+  const from = Math.min(n, Math.max(0, Math.ceil(lines[0]![0] * sr)));
+  const to = Math.min(n, Math.max(from, Math.floor(lines.at(-1)![1] * sr) + 1));
   levels.fill(p.gapDb, from, to);
   lines.forEach(([start, end], j) => {
     const opening = j === 0;

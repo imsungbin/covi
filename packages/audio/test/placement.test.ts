@@ -161,6 +161,25 @@ describe('music placement', () => {
     }
   });
 
+  it('holds the ends level when every line falls before the video or after it', () => {
+    const options = { duration: 10, sampleRate: SR };
+    const outside: Array<Array<[number, number]>> = [
+      [
+        [-5, -4],
+        [-3, -2],
+      ],
+      [
+        [12, 13],
+        [15, 16],
+      ],
+    ];
+    for (const placement of ['continuous', 'bookends'] as const)
+      for (const speech of outside)
+        expect(placementLevels(speech, placement, options), `${placement} ${speech}`).toEqual(
+          placementLevels([], placement, options),
+        );
+  });
+
   it('takes speech unsorted, overlapping, empty, or past either end', () => {
     const messy: Array<[number, number]> = [
       [10, 12],

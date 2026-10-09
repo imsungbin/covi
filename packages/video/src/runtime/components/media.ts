@@ -116,6 +116,7 @@ export function screenshot(v: V<'screenshot'>, ctx: ComponentContext): Component
         ...(v.focus ? [{ role: 'focus' as const, rect: frame.map(v.focus) }] : []),
       ],
       target: () => frameTarget(frame, v.focus, v.click),
+      laidOut: true,
     };
   const gloss = glossed ? noteChip(ctx) : undefined;
   if (gloss) underFrame(gloss, frame, box, ctx);
@@ -177,6 +178,7 @@ export function screenshot(v: V<'screenshot'>, ctx: ComponentContext): Component
       const { at } = pose(clock);
       return frame.map(at.focus, at.camera);
     },
+    laidOut: true,
   };
 }
 
@@ -255,6 +257,7 @@ export function beforeAfter(v: V<'before-after'>, ctx: ComponentContext): Compon
     ],
     // The change is on the "after" side.
     target: () => frameTarget(frames[1]!, v.focus, undefined),
+    laidOut: true,
   };
 }
 
@@ -307,6 +310,7 @@ function wipe(v: V<'before-after'>, ctx: ComponentContext): Component {
     },
     report: () => frameItems([before]),
     target: () => frameTarget(after, v.focus, undefined),
+    laidOut: true,
   };
 }
 
@@ -440,6 +444,7 @@ export function interaction(v: V<'interaction'>, ctx: ComponentContext): Compone
         height: lerp(prev.height, now.height, k),
       };
     },
+    laidOut: true,
   };
 }
 

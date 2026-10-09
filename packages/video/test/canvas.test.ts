@@ -6,6 +6,7 @@ import {
   type CameraStep,
   clampView,
   clipRect,
+  drawnRect,
   gridStyle,
   insetOf,
   isCameraMove,
@@ -56,6 +57,20 @@ describe('the canvas camera', () => {
     expect(screen(t, pivot).x).toBeCloseTo(pivot.x, 1);
     expect(screen(t, corner).x).toBeCloseTo(pivot.x + 1.02 * (corner.x - pivot.x), 1);
     expect(screen(t, corner).y).toBeCloseTo(pivot.y + 1.02 * (corner.y - pivot.y), 1);
+  });
+
+  it('draws a box laid out in a stop where the camera draws its layer', () => {
+    const box = { x: 300, y: 400, width: 120, height: 60 };
+    const rest = drawnRect(box, toWorld(restView(pivot), stop), stop, pivot);
+    for (const key of ['x', 'y', 'width', 'height'] as const)
+      expect(rest[key]).toBeCloseTo(box[key], 6);
+    const view = toWorld(beatView('zoom', box, 2, restView(pivot), media, pivot), stop);
+    const t = layerTransform(view, stop, pivot);
+    const drawn = drawnRect(box, view, stop, pivot);
+    expect(drawn.x).toBeCloseTo(screen(t, box).x, 1);
+    expect(drawn.y).toBeCloseTo(screen(t, box).y, 1);
+    expect(drawn.width).toBeCloseTo(240, 6);
+    expect(drawn.height).toBeCloseTo(120, 6);
   });
 
   it('zooms a beat onto its target, fits it when no zoom is given, and never shows past the region', () => {

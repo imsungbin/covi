@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveConfig, seedFrom } from '@covi/core';
@@ -9,6 +9,7 @@ import {
   layoutChecks,
   layoutScenes,
   pacingFor,
+  type Rect,
   resolveVideoSpec,
   type StoryboardInput,
   StoryboardSchema,
@@ -76,15 +77,29 @@ const insetTop = (clip: string | null) => Number(/inset\(([\d.]+)px/.exec(clip ?
 /**
  * Builds a directed 640×360 composition the way the pipeline does (default director, the given
  * shots over it, entrances, timing, resolution) and opens it. `off` builds it as 0.2.0 did;
- * `edit` changes the timeline before it is written.
+ * `edit` changes the timeline before it is written; `capture` puts a 640×400 capture at demo/a.png.
  */
 async function directed(
   scenes: StoryboardInput['scenes'],
   shots: DirectionInput['shots'] = [],
-  options: { off?: boolean; sources?: SourcesInput; edit?: (timeline: Timeline) => void } = {},
+  options: {
+    off?: boolean;
+    sources?: SourcesInput;
+    edit?: (timeline: Timeline) => void;
+    capture?: boolean;
+  } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'covi-canvas-'));
   dirs.push(dir);
+  if (options.capture) {
+    const capture = await browser!.newPage({ viewport: { width: 640, height: 400 } });
+    await capture.setContent(
+      '<body style="margin:0;background:linear-gradient(90deg,#2a6f97,#f4a261)"></body>',
+    );
+    mkdirSync(join(dir, 'demo'));
+    await capture.screenshot({ path: join(dir, 'demo', 'a.png') });
+    await capture.close();
+  }
   const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', width: W, height: H });
   const title = 'Send only the ids';
   const parsed = StoryboardSchema.parse({ title, template: 'bug-fix', scenes }).scenes;
@@ -100,6 +115,7 @@ async function directed(
   const enter = plan ? entrances(plan, parsed, evidence, seed) : new Map<string, TransitionKind>();
   const layout = layoutScenes(parsed, new Map(), new Map(), 'en', pacingFor(spec), enter);
   const assets = new AssetCollector(dir);
+  if (options.capture) await assets.prepare(['demo/a.png']);
   const staging = plan
     ? resolveDirection({
         plan,
@@ -240,7 +256,8 @@ describe.skipIf(!available)('the canvas', () => {
     const settled = camera(v.of(rest, 's2').transform);
     expect(Math.abs(settled.tx)).toBeLessThan(1);
     expect(settled.scale).toBeCloseTo(1, 2);
-    expect(insetTop(v.of(rest, 's2').clip)).toBeCloseTo(regions.media.y, 1);
+    // At rest nothing is clipped: the stop is drawn whole, as without a canvas.
+    expect(v.of(rest, 's2').clip).toBe('');
     expect(v.errors).toEqual([]);
   });
 
@@ -281,19 +298,24 @@ describe.skipIf(!available)('the canvas', () => {
     expect(Math.abs(row.y + row.height / 2 - pivot.y)).toBeLessThan(m.height / 4);
   });
 
-  it('clips what the camera magnifies to the scene’s region, and reports it clipped', async () => {
+  it('clips what the camera magnifies to the scene’s rows, and reports it clipped', async () => {
     const v = await directed(story, moves);
     const s3 = v.scene('s3');
     const beat = s3.direction!.beats[0]!;
     const zoomed = await v.report(v.frameAt('s3', beat.t + beat.seconds + 0.1));
     const m = regions.media;
     expect(zoomed.items.length).toBeGreaterThan(0);
-    for (const item of zoomed.items.filter((i) => i.role !== 'text')) {
-      expect(item.rect.x).toBeGreaterThanOrEqual(m.x - 1);
+    const media = zoomed.items.filter((i) => i.role !== 'text');
+    for (const item of media) {
+      expect(item.rect.x).toBeGreaterThanOrEqual(-1);
       expect(item.rect.y).toBeGreaterThanOrEqual(m.y - 1);
-      expect(item.rect.x + item.rect.width).toBeLessThanOrEqual(m.x + m.width + 1);
+      expect(item.rect.x + item.rect.width).toBeLessThanOrEqual(W + 1);
       expect(item.rect.y + item.rect.height).toBeLessThanOrEqual(m.y + m.height + 1);
     }
+    // Only the header and captions are protected: the frame's sides show what the camera shows.
+    expect(Math.max(...media.map((i) => i.rect.x + i.rect.width))).toBeGreaterThan(
+      m.x + m.width + 1,
+    );
     const checks = layoutChecks(v.timeline, [zoomed]);
     expect(checks.find((c) => c.id === 'captions-clear-of-content')!.status).toBe('pass');
   });
@@ -369,8 +391,8 @@ describe.skipIf(!available)('the canvas', () => {
     const media = report.items.filter((i) => i.role !== 'text');
     expect(media.length).toBeGreaterThan(0);
     for (const item of media) {
-      expect(item.rect.x).toBeGreaterThanOrEqual(m.x + tx - 1);
-      expect(item.rect.x + item.rect.width).toBeLessThanOrEqual(m.x + m.width + tx + 1);
+      expect(item.rect.x).toBeGreaterThanOrEqual(tx - 1);
+      expect(item.rect.x + item.rect.width).toBeLessThanOrEqual(W + tx + 1);
     }
     expect(Math.min(...media.map((i) => i.rect.x))).toBeLessThan(m.x - 10);
   });
@@ -384,6 +406,166 @@ describe.skipIf(!available)('the canvas', () => {
     expect(b.scene('s3').direction!.beats).toHaveLength(0);
     const frame = a.frameAt('s3', a.scene('s3').direction!.beats[0]!.t - 0.3);
     expect((await a.shot(frame)).equals(await b.shot(frame))).toBe(true);
+  });
+
+  it('clips only while the camera travels or magnifies, and never with a neighbour in the frame', async () => {
+    const v = await directed(story, moves);
+    const s3 = v.scene('s3');
+    const beat = s3.direction!.beats[0]!;
+    const clipOf = async (id: string, seconds: number) =>
+      v.of(await v.state(v.frameAt(id, seconds)), id).clip;
+    // Drawn whole at rest, before the beat zooms in; clipped mid-move and while magnified.
+    expect(await clipOf('s2', 1)).toBe('');
+    expect(await clipOf('s3', 1.2)).toBe('');
+    expect(await clipOf('s4', 1.5)).toBe('');
+    expect(await clipOf('s3', 0.45)).not.toBe('');
+    expect(await clipOf('s3', beat.t + beat.seconds + 0.1)).not.toBe('');
+    // While the viewport closes (the move's first fifth) and opens again (its last), the stop the
+    // camera is not at has nothing in the frame, so nothing of it shows over the header or captions.
+    const inFrame = (id: string, frame: number) =>
+      v.seek(
+        frame,
+        `const layer = document.querySelector('[data-scene="${id}"] > .stop-view > .layer');
+         return [...layer.querySelectorAll('*')].some((n) => {
+           const r = n.getBoundingClientRect();
+           return r.width > 0 && r.height > 0 && r.right > 0 && r.left < ${W} && r.bottom > 0 && r.top < ${H};
+         });`,
+      ) as Promise<boolean>;
+    for (const [from, to] of [
+      ['s1', 's2'],
+      ['s2', 's3'],
+    ] as const) {
+      const scene = v.scene(to);
+      const seconds = scene.transition!.seconds;
+      let checked = 0;
+      for (let frame = v.frameAt(to, 0); frame <= v.frameAt(to, seconds); frame++) {
+        const k = (frame / v.timeline.fps - scene.start) / seconds;
+        if (k > 0.2 && k < 0.8) continue;
+        expect(await inFrame(k <= 0.2 ? to : from, frame)).toBe(false);
+        checked++;
+      }
+      expect(checked).toBeGreaterThan(4);
+    }
+  });
+
+  it('hands the header over across a camera move: two are never on screen at once', async () => {
+    const pan = moves.map((s) => (s.scene === 's3' ? { ...s, enter: 'pan' as const } : s));
+    for (const shots of [moves, pan]) {
+      const v = await directed(story, shots);
+      const s3 = v.scene('s3');
+      const seconds = s3.transition!.seconds;
+      for (let frame = v.frameAt('s3', 0); frame <= v.frameAt('s3', seconds + 0.6); frame++) {
+        const shown = (await v.seek(
+          frame,
+          `return [...document.querySelectorAll('[data-scene]')]
+             .filter((s) => s.style.display === 'block')
+             .map((s) => {
+               const h = s.querySelector(':scope > .scene-header');
+               if (!h) return 0;
+               const parts = [...h.children].map((c) => Number.parseFloat(c.style.opacity || '1'));
+               return Number.parseFloat(h.style.opacity || '1') * Math.max(...parts) *
+                 Number.parseFloat(s.style.opacity || '1');
+             });`,
+        )) as number[];
+        expect(shown.filter((o) => o > 0.05).length).toBeLessThanOrEqual(1);
+      }
+      // The new header is in place once the move is done.
+      const eyebrow = await v.seek(
+        v.frameAt('s3', seconds + 0.6),
+        `return document.querySelector('[data-scene="s3"] .eyebrow').style.opacity;`,
+      );
+      expect(Number(eyebrow)).toBeCloseTo(1, 2);
+    }
+  });
+
+  it('eases the narrator in from a card with its own fox, and out into one', async () => {
+    const into = {
+      scene: 's4',
+      enter: 'pan' as const,
+      elements: [{ id: 'visual', kind: 'visual' as const }],
+    };
+    const v = await directed(story, [...moves, into]);
+    expect(v.scene('s4').transition!.kind).toBe('pan');
+    for (const id of ['s2', 's4']) {
+      const seconds = v.scene(id).transition!.seconds;
+      const seen: number[] = [];
+      for (let frame = v.frameAt(id, -0.1); frame <= v.frameAt(id, seconds + 0.1); frame++)
+        seen.push(
+          Number(await v.seek(frame, `return document.querySelector('.narrator').style.opacity;`)),
+        );
+      for (const [k, opacity] of seen.entries())
+        if (k > 0) expect(Math.abs(opacity - seen[k - 1]!)).toBeLessThan(0.2);
+      // It does come (from the title) and go (into the summary).
+      expect(Math.abs(seen.at(-1)! - seen[0]!)).toBeGreaterThan(0.9);
+    }
+  });
+
+  it('points the hero ring and reports the focus where the camera draws a capture', async () => {
+    const page = {
+      id: 's2',
+      beat: 'fix',
+      eyebrow: 'The page',
+      hero: true,
+      narration: 'First look here, then at the save button.',
+      sync: { hero: 'the save button' },
+      visual: {
+        kind: 'screenshot',
+        image: { path: 'demo/a.png' },
+        focus: { x: 540, y: 0, width: 100, height: 60 },
+        device: 'desktop',
+      },
+    } satisfies StoryboardInput['scenes'][number];
+    const zoom: DirectionInput['shots'] = [
+      {
+        scene: 's2',
+        elements: [{ id: 'visual', kind: 'visual' }],
+        beats: [{ verb: 'camera', move: 'zoom', to: 'visual', zoom: 2, at: 'First look here' }],
+      },
+    ];
+    const v = await directed([story[0]!, page, story[3]!], zoom, { capture: true });
+    const s2 = v.scene('s2');
+    const beat = s2.direction!.beats[0]!;
+    const hero = s2.phases!.hero!;
+    expect(hero).toBeGreaterThan(beat.t + beat.seconds);
+    const frame = v.frameAt('s2', hero + 0.2);
+    const drawn = (await v.seek(
+      frame,
+      `const box = (n) => {
+         const r = n.getBoundingClientRect();
+         return { x: r.x, y: r.y, width: r.width, height: r.height, opacity: Number(n.style.opacity) };
+       };
+       // The frame's focus ring as drawn (the focus and a margin, kept inside the frame), where it
+       // is laid out before the camera moves it, and the hero's ring.
+       const f = document.querySelector('[data-scene="s2"] .focus-ring');
+       const laid = { x: Number.parseFloat(f.style.left), y: Number.parseFloat(f.style.top) };
+       return { focus: box(f), laid, ring: box(document.querySelector('.hero-accent .ring')) };`,
+    )) as {
+      focus: Rect & { opacity: number };
+      laid: { x: number; y: number };
+      ring: Rect & { opacity: number };
+    };
+    const center = (r: Rect) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+    const inside = (p: { x: number; y: number }, r: Rect) =>
+      p.x >= r.x - 1 && p.x <= r.x + r.width + 1 && p.y >= r.y - 1 && p.y <= r.y + r.height + 1;
+    expect(drawn.focus.opacity).toBeGreaterThan(0.5);
+    expect(drawn.ring.opacity).toBeGreaterThan(0.05);
+    // In the image's corner the frame's own zoom cannot center the focus: the beat moves it far.
+    expect(Math.hypot(drawn.focus.x - drawn.laid.x, drawn.focus.y - drawn.laid.y)).toBeGreaterThan(
+      40,
+    );
+    // The hero's ring opens around the focus as the camera draws it, not where it is laid out; the
+    // focus is reported there too.
+    expect(inside(center(drawn.ring), drawn.focus)).toBe(true);
+    const focus = (await v.report(frame)).items.find((i) => i.role === 'focus')!;
+    expect(inside(focus.rect, drawn.focus)).toBe(true);
+    expect(
+      inside(
+        { x: focus.rect.x + focus.rect.width, y: focus.rect.y + focus.rect.height },
+        drawn.focus,
+      ),
+    ).toBe(true);
+    expect(Math.abs(center(drawn.ring).x - center(focus.rect).x)).toBeLessThan(1);
+    expect(Math.abs(center(drawn.ring).y - center(focus.rect).y)).toBeLessThan(1);
   });
 
   it('with direction off, draws as 0.2.0 did: no canvas, no stops, the old transitions', async () => {

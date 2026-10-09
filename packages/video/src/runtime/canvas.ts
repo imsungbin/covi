@@ -157,6 +157,17 @@ export function layerTransform(view: View, stop: Stop, pivot: Point): string {
   return `translate(${fixed(tx)}px, ${fixed(ty)}px) scale(${view.scale.toFixed(5)})`;
 }
 
+/** Where the camera draws a box laid out in a stop (stop-local stage pixels): `layerTransform`'s. */
+export function drawnRect(rect: Rect, view: View, stop: Stop, pivot: Point): Rect {
+  const s = view.scale;
+  return {
+    x: pivot.x + s * (stop.x + rect.x - view.x),
+    y: pivot.y + s * (stop.y + rect.y - view.y),
+    width: rect.width * s,
+    height: rect.height * s,
+  };
+}
+
 export function lerpRect(a: Rect, b: Rect, k: number): Rect {
   return {
     x: lerp(a.x, b.x, k),

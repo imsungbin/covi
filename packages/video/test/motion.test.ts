@@ -155,11 +155,11 @@ describe('the camera', () => {
       { id: 'a', label: 'A', changed: false },
       { id: 'b', label: 'B', changed: true },
     ];
-    const diagram = {
+    const diagram: TimelineScene['visual'] = {
       kind: 'diagram',
       nodes,
       edges: [{ from: 'a', to: 'b', label: 'calls' }],
-    } as const;
+    };
     const plan = cameraPlan(scene(diagram))!;
     expect(plan.settled).toBeLessThanOrEqual(0.5);
     for (let t = 0.75; t < 1.75; t += 0.25)
@@ -181,7 +181,12 @@ describe('the camera', () => {
 
   it('leaves the outro alone, and lingers on cards and titles over a capture', () => {
     expect(cameraPlan(scene({ kind: 'outro' }))).toBeUndefined();
-    const summary = { kind: 'summary', verdict: 'looks-good', headline: 'H', points: [] } as const;
+    const summary: TimelineScene['visual'] = {
+      kind: 'summary',
+      verdict: 'looks-good',
+      headline: 'H',
+      points: [],
+    };
     expect(cameraPlan(scene(summary))).toMatchObject({ drift: false });
     expect(
       cameraPlan(scene({ kind: 'title', title: 'T', meta: [], background: image })),

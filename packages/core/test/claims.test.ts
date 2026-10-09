@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   citationProblems,
   citeExplanation,
+  type GroundableFinding,
   groundFinding,
   hunksAt,
   indexEvidence,
@@ -216,8 +217,8 @@ describe('citations', () => {
 });
 
 describe('groundFinding', () => {
-  const base = {
-    certainty: 'likely' as const,
+  const base: GroundableFinding = {
+    certainty: 'likely',
     location: { path: 'src/cart.ts', line: 12 },
   };
 
@@ -235,8 +236,8 @@ describe('groundFinding', () => {
   });
 
   it('reports a confirmed or likely finding with nothing to cite as a risk', () => {
-    const grounded = groundFinding(
-      { certainty: 'confirmed' as const, location: { path: 'nowhere.ts', line: 1 } },
+    const grounded = groundFinding<GroundableFinding>(
+      { certainty: 'confirmed', location: { path: 'nowhere.ts', line: 1 } },
       index,
     );
     expect(grounded).toMatchObject({ finding: { certainty: 'risk' }, demoted: 'confirmed' });

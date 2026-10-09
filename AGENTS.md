@@ -124,7 +124,7 @@ Repositories under review are untrusted input.
 ```bash
 npm test                 # unit + integration tests (needs git; demo tests need Playwright Chromium)
 npm run test:render      # also renders small videos (needs ffmpeg)
-npm run typecheck        # Node code and the browser runtime
+npm run typecheck        # Node code, the browser runtime, and every test
 npm run lint             # Biome
 npm run check            # all of the above, plus the derived-file checks
 ```

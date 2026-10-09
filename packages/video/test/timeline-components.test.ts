@@ -242,7 +242,8 @@ describe('minimum time on screen', () => {
   it('gives a morph, a tour of marks, and marked steps a little more', () => {
     const [fix, page, flow] = scenes([FIX, PAGE, FLOW]);
     expect(minSecondsFor(fix!.visual)).toBe(2.5);
-    expect(minSecondsFor({ ...fix!.visual, mode: 'diff' })).toBe(2);
+    const code = fix!.visual as Extract<Scene['visual'], { kind: 'code' }>;
+    expect(minSecondsFor({ ...code, mode: 'diff' })).toBe(2);
     expect(minSecondsFor(page!.visual)).toBeCloseTo(3.6, 9);
     expect(
       minSecondsFor({ kind: 'screenshot', image, device: 'desktop', marks: [{ focus: box(0) }] }),

@@ -528,7 +528,7 @@ describe.skipIf(!browser)('the subject model', () => {
     });
     expect(result.subject?.proposed).toEqual(['Missing']);
     expect(result.subject?.flows).toEqual([{ name: 'Missing', outcome: 'failed' }]);
-    expect(result.findings.find((f) => f.source.id === 'flow-failure')).toMatchObject({
+    expect(result.findings.find((f) => f.source?.id === 'flow-failure')).toMatchObject({
       certainty: 'risk',
     });
   });

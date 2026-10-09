@@ -7,11 +7,10 @@ export interface ExtractedSymbol {
   exported: boolean;
   /** A one-statement declaration (`const LIMIT = 280;`): edits further down are not about it. */
   oneLine?: boolean;
-  /**
-   * The first line of the comment that sits directly on the declaration, with the blank lines
-   * above it: edits there are about this symbol, not the one before.
-   */
+  /** The first line of the comment directly on the declaration: edits there are about this symbol. */
   start?: number;
+  /** The first of the blank lines above the symbol and its comment: edits there are about neither. */
+  gap?: number;
 }
 
 type Rule = {
@@ -273,7 +272,7 @@ function indentOf(text: string): number {
 
 /**
  * The line a `/* … *\/` comment that ends on line `close` opens on, or 0 when it shares a line
- * with code or opens no lower than `floor`.
+ * with code or would open on line `floor` or before it.
  */
 function blockOpener(lines: readonly string[], close: number, floor: number): number {
   const last = lines[close - 1]!.trim();
@@ -289,33 +288,34 @@ function blockOpener(lines: readonly string[], close: number, floor: number): nu
 }
 
 /**
- * Where the comment directly above a declaration begins, with the blank lines above it, or
- * undefined when there is none. A comment indented deeper than the declaration ends the body above
- * it (a Python function's last line), and none reaches back past `floor`, the previous symbol.
+ * Where the comment directly above a declaration begins (`start`), and the blank lines above both
+ * (`gap`), each only when there is one. A comment indented deeper than the declaration ends the
+ * body above it (a Python function's last line), and neither reaches back to `floor`, the previous
+ * symbol.
  */
-function leadingStart(
+function leadingLines(
   lines: readonly string[],
   line: number,
   floor: number,
   style: { line?: string; block: boolean },
-): number | undefined {
+): Pick<ExtractedSymbol, 'start' | 'gap'> {
   const indent = indentOf(lines[line - 1] ?? '');
-  let top = line;
-  while (top - 1 > floor) {
-    const above = top - 1;
+  let start = line;
+  while (start - 1 > floor) {
+    const above = start - 1;
     const text = lines[above - 1]!.trim();
     let open = 0;
     if (style.line && text.startsWith(style.line)) open = above;
     else if (style.block && text.endsWith('*/')) open = blockOpener(lines, above, floor);
     if (open <= floor || indentOf(lines[open - 1]!) > indent) break;
-    top = open;
+    start = open;
   }
-  if (top === line) return undefined;
-  while (top - 1 > floor && lines[top - 2]!.trim() === '') top--;
-  return top;
+  let gap = start;
+  while (gap - 1 > floor && lines[gap - 2]!.trim() === '') gap--;
+  return { ...(start < line ? { start } : {}), ...(gap < start ? { gap } : {}) };
 }
 
-function withLeadingComments(
+function withLeadingLines(
   symbols: ExtractedSymbol[],
   content: string,
   language: string,
@@ -325,10 +325,8 @@ function withLeadingComments(
   const lines = content.split('\n');
   const taken = [...new Set(symbols.map((s) => s.line))].sort((a, b) => a - b);
   const floor = new Map(taken.map((line, i) => [line, taken[i - 1] ?? 0]));
-  for (const symbol of symbols) {
-    const start = leadingStart(lines, symbol.line, floor.get(symbol.line)!, style);
-    if (start !== undefined) symbol.start = start;
-  }
+  for (const symbol of symbols)
+    Object.assign(symbol, leadingLines(lines, symbol.line, floor.get(symbol.line)!, style));
   return symbols;
 }
 
@@ -339,7 +337,7 @@ export function extractSymbols(
 ): ExtractedSymbol[] {
   if (!language) return [];
   if (['css', 'scss', 'sass', 'less'].includes(language))
-    return withLeadingComments(extractCssSelectors(content), content, language);
+    return withLeadingLines(extractCssSelectors(content), content, language);
   if (language === 'vue' || language === 'svelte' || language === 'astro') {
     const name = (path.split('/').pop() ?? path).replace(/\.\w+$/, '');
     return [{ name, kind: 'component', line: 1, exported: true }];
@@ -393,7 +391,7 @@ export function extractSymbols(
     });
     for (const symbol of out) if (exportedNames.has(symbol.name)) symbol.exported = true;
   }
-  return withLeadingComments([...out, ...extractRoutes(content, path)], content, language);
+  return withLeadingLines([...out, ...extractRoutes(content, path)], content, language);
 }
 
 function rangeMap(
@@ -404,14 +402,12 @@ function rangeMap(
   const declarations = [...symbols]
     .filter((s) => s.kind !== 'route')
     .sort((a, b) => a.line - b.line);
-  // A symbol ends where the next one's leading comment begins: that comment documents the next one.
+  // A symbol ends before the blank lines and the comment that lead into the next one: the comment
+  // documents the next one, and the blank lines belong to neither.
+  const top = (s: ExtractedSymbol) => s.gap ?? s.start ?? s.line;
   declarations.forEach((s, i) => {
     const next = declarations[i + 1];
-    const end = s.oneLine
-      ? s.line
-      : next
-        ? Math.max(s.line, (next.start ?? next.line) - 1)
-        : totalLines;
+    const end = s.oneLine ? s.line : next ? Math.max(s.line, top(next) - 1) : totalLines;
     map.set(s, [s.start ?? s.line, end]);
   });
   // A route's handler follows its definition: it spans until the next route or the end of the
@@ -421,10 +417,7 @@ function rangeMap(
     const enclosing = declarations.filter((d) => d.line <= route.line).at(-1);
     const enclosingEnd = enclosing ? map.get(enclosing)![1] : totalLines;
     const nextRoute = routes[i + 1];
-    const end = Math.min(
-      enclosingEnd,
-      nextRoute ? (nextRoute.start ?? nextRoute.line) - 1 : totalLines,
-    );
+    const end = Math.min(enclosingEnd, nextRoute ? top(nextRoute) - 1 : totalLines);
     map.set(route, [route.start ?? route.line, Math.max(route.line, end)]);
   });
   return map;

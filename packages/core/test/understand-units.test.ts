@@ -264,6 +264,108 @@ describe('symbols', () => {
     ).toEqual(['POST /users:modified', 'register:modified']);
   });
 
+  const span = (from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+  // Hunks as git writes them: the blank line that comes with the new function is the hunk's last
+  // line, or its first when the diff slides it up. Blank lines belong to neither neighbor.
+  it('names only the function added or removed above a documented one', () => {
+    const a = ['function a() {', '  return 1;', '}', ''];
+    const b = ['/** Doc b. */', 'function b() {', '  return 2;', '}'];
+    const x = ['function x() {', '  return 3;', '}', ''];
+    const cases: Array<[string[], number[], number[]]> = [
+      [x, span(5, 8), span(4, 7)],
+      [['/** Doc x. */', ...x], span(5, 9), span(4, 8)],
+    ];
+    for (const [inserted, blankLast, blankFirst] of cases) {
+      for (const lines of [blankLast, blankFirst]) {
+        const added = changedIn('javascript', 'x.js', [...a, ...b], [...a, ...inserted, ...b], {
+          base: [],
+          head: lines,
+        });
+        expect(added).toEqual(['x:added']);
+        const removed = changedIn('javascript', 'x.js', [...a, ...inserted, ...b], [...a, ...b], {
+          base: lines,
+          head: [],
+        });
+        expect(removed).toEqual(['x:removed']);
+      }
+    }
+  });
+
+  it('names only the def added or removed above a documented one in Python', () => {
+    const a = ['def a():', '    return 1', '', ''];
+    const b = ['# Doc b.', 'def b():', '    return 2'];
+    const x = ['def x():', '    return 3', '', ''];
+    const cases: Array<[string[], number[], number[]]> = [
+      [x, span(5, 8), span(3, 6)],
+      [['# Doc x.', ...x], span(5, 9), span(3, 7)],
+    ];
+    for (const [inserted, blankLast, blankFirst] of cases) {
+      for (const lines of [blankLast, blankFirst]) {
+        expect(
+          changedIn('python', 'x.py', [...a, ...b], [...a, ...inserted, ...b], {
+            base: [],
+            head: lines,
+          }),
+        ).toEqual(['x:added']);
+        expect(
+          changedIn('python', 'x.py', [...a, ...inserted, ...b], [...a, ...b], {
+            base: lines,
+            head: [],
+          }),
+        ).toEqual(['x:removed']);
+      }
+    }
+  });
+
+  it('names only the route added between two others', () => {
+    const before = [
+      'export function register(app) {',
+      "  app.get('/users', list);",
+      '',
+      '  // Creates a user.',
+      "  app.post('/users', create);",
+      '}',
+    ];
+    const after = [
+      ...before.slice(0, 3),
+      "  app.delete('/users', remove);",
+      '',
+      ...before.slice(3),
+    ];
+    for (const lines of [
+      [4, 5],
+      [3, 4],
+    ]) {
+      expect(
+        changedIn('javascript', 'server.js', before, after, { base: [], head: lines }),
+      ).toEqual(['DELETE /users:added', 'register:modified']);
+    }
+  });
+
+  it('reads the comments of Go, Ruby, CSS, and SCSS, and a doc on the first line', () => {
+    const cases: Array<[string, string, string[], string]> = [
+      ['go', 'x.go', ['func A() {', '}', '', '// Doc B.', 'func B() {', '}'], 'B'],
+      ['ruby', 'x.rb', ['class A', '  def a', '  end', '  # B.', '  def b', '  end', 'end'], 'b'],
+      ['css', 'x.css', ['.a {', '  color: red;', '}', '', '/* B. */', '.b {', '}'], '.b'],
+      ['scss', 'x.scss', ['.a {', '}', '// B.', '.b {', '}'], '.b'],
+      ['typescript', 'x.ts', ['/** B. */', 'export function b() {}'], 'b'],
+    ];
+    for (const [language, path, before, documented] of cases) {
+      const line = before.findIndex((l) => l.includes('B.')) + 1;
+      const after = before.map((l, i) => (i === line - 1 ? l.replace('B.', 'C.') : l));
+      expect(changedIn(language, path, before, after, { base: [line], head: [line] })).toEqual([
+        `${documented}:modified`,
+      ]);
+    }
+    // A header set apart by a blank line documents nothing.
+    const header = (year: string) => [`// Copyright ${year}.`, '', 'export function a() {}'];
+    expect(
+      changedIn('typescript', 'x.ts', header('2025'), header('2026'), { base: [1], head: [1] }),
+    ).toEqual([]);
+  });
+
   it('counts test cases', () => {
     expect(
       countTestCases([

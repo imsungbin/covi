@@ -8,7 +8,7 @@ Spec: `specs/2026-10-09-covi-0.3.0-program-design.md`. Plans: `plans/`.
 | PR | Branch | Plan | PR # | State |
 |---|---|---|---|---|
 | A1 Broadcast mix | broadcast-mix | plans/2026-10-09-a1-broadcast-mix.md | — | task 7 of 9 |
-| B1 Density and monotony | density-checks | plans/2026-10-09-b1-density-checks.md | #10 | final review |
+| B1 Density and monotony | density-checks | plans/2026-10-09-b1-density-checks.md | #10 | merged 4ccbdb6 |
 | B2 Direction and canvas | direction-canvas | plans/2026-10-09-b2-direction-canvas.md | — | planned |
 | B3 Code morph | code-morph | plans/2026-10-09-b3-code-morph.md | — | planned |
 | B4 Numbers | metrics | plans/2026-10-09-b4-metrics.md | — | planned |
@@ -45,3 +45,37 @@ Spec: `specs/2026-10-09-covi-0.3.0-program-design.md`. Plans: `plans/`.
 - R-023 Ruling: B5 plan approved (7 tasks, its rulings stand: counts whole and from metrics; edges exist through flows; the default director stages a terminal's key metric with a packet split/merge and a pile, never writes warning labels; STAGED_COUNT_MAX 99) with one amendment: when the resolver drops a beat that phrases put out of order, it records it (a run warning and a note in the render result naming shot and beat) instead of dropping it silently — agents must be able to see why a beat vanished; B6's motion QC reads it — none.
 - R-024 Ruling: CHANGELOG gets exactly ONE line per PR (the owner's words), placed under the Keep a Changelog subsection of its dominant change type (`### Added`, `### Changed`, or `### Fixed`) inside `## [Unreleased]`; secondary fixes are mentioned inside that line — refines R-017 — a reader scanning only one subsection can miss a secondary fix.
 - R-025 Ruling: README text that quotes Covi's own rendered output (the first-commit explanation block) is never edited to reflect later changes — it is a quotation of what Covi produced — the README's example count there stays historical.
+
+## B1 rulings (PR #10, merged 4ccbdb6)
+
+Plan rulings: see the plan's `## Rulings` section (15). Execution rulings:
+
+- - PF-1 (Task 2): Ruling: `density.ts` imports `union` from `./runtime/narrator.ts` instead of copying it — verbatim duplication is a defect; narrator.ts has no DOM code — none.
+- - PF-2 (Task 2): Ruling: `SIZE_TOLERANCE` is 0.1 unit (measurement rounding of drawn boxes), not 0.5; tests: 23.8 warns, 23.95 passes — the constraint says code under 24 warns — a sub-pixel box rounding could flicker a warning.
+- - PF-3 (Task 4): Ruling: the `clamp` import removal moves to Step 7 so every step compiles — none.
+- - PF-4 (Tasks 6, 7): Ruling: shell steps use fixed scratch paths (e.g. `/tmp/covi-b1-render/`) or one compound command; no shell variables across commands — variables do not persist between commands — none.
+- - PF-5 (Task 8): Ruling: Step 4 names both full-pipeline tests that require every check but `still` to pass (timing grammar, and "every component and sound field") — none.
+- - PF-6 (Task 6): Ruling: README.md's "Five example changes" becomes six in Task 6 — none.
+- - PF-7 (Task 4): Ruling: the new test helper is named `settledReport` — avoids shadowing local `settled` variables — none.
+- Task 2: Ruling: density checks read only frames inside the settled span, or exactly the frame settledFrame picks (short scenes) — the brief's "frame just before settling" counted entering text and, with the 0.1 tolerance, warned falsely — a scene whose only sample is mid-entrance goes unmeasured.
+- Task 2: Ruling: size warnings print sizes to a tenth (23.8 px) — whole-pixel rounding would claim text at its floor is too small — none.
+- Task 2: Ruling: the empty-frame share rounding minor (density.ts:39/:152 prints "(40%); at least 40% wanted" for 39.5–39.9%) is fixed in Task 3, which edits density.ts anyway: print the share to a tenth — same contradiction as the size ruling — none.
+- Task 3: Ruling (implementer): empty-frame share floored to a tenth (39.97% → 39.9%) — nearest rounding still prints 40% — none.
+- Task 3: Ruling: the review's Important finding (full-pipeline "every timing field" render test fails at 665667f because empty-frame warns on its 3-line code card, 25.4%) is plan sequencing, not a Task 3 defect: 665667f stays red on that test until Task 4; Task 4 must run `COVI_TEST_RENDER=1 npx vitest run tests/render/render.test.ts -t "renders a storyboard that uses every"` (background) and both strict tests must pass before it reports — Task 4 is the task that makes code cards fill the frame — if Task 4 cannot reach 40% for a 3-line card, it must report it.
+- Task 4: Ruling: review minors M2 (drawnFont divides by integer offsetWidth → up to 0.5 px/width low → false text-size warnings at the 28 floor in Task 5) and M3 (smallestFont([]) = Infinity → frames.json null → read back warns "at 0 px" on frames reuse) are load-bearing (Task 5 body text sits at the floor; sound-only re-renders read frames.json) and join fix round 1 with the Important finding and M1 — cross-task context the reviewer lacked — a slightly larger fix round.
+- Task 4: Ruling (implementer): drawnFont browser test lives in packages/video/test/drawn-font.test.ts gated on canUseBrowser — in tests/ it would pull DOM-typed runtime code into the root typecheck — none.
+- Task 4: Ruling (implementer): drawnFont returns the set size for a node with no layout box — a hidden node never reads as 0 px — none.
+- Task 5: Ruling: a one-area change map (27–30%) and a 4-node 1:1 diagram (30.9%) stay under the 40% empty-frame line and warn — the plan capped change-map rows at 2× and diagram nodes at their width; the check only warns (R-007) — such videos carry an empty-frame warning until direction (B2+) lays them out.
+- Task 5: Ruling: review minors M1 (`justify-content: center` hides half an overflow from QC → use `safe center`), M2 (`>= 9` where exactly 9 expected), and M3 (`.nlabel { word-break: break-word }` overrides Korean keep-all → Korean labels break mid-word) join fix round 1 — QC accuracy and the Korean acceptance render depend on them; all are one-line fixes — none.
+- Task 6: Ruling (implementer): README 'Five example changes' → six, wording per README style (PF-6) — none.
+- Task 6: Ruling: review minors M2 (head reader's staleness check compares byte length but says "changed") and M3 (no Covi test pins the four benchmark numbers; B2–B7/A2 rely on them) join fix round 1 — the benchmark is load-bearing for every later PR — none.
+- Task 6: Ruling: add Task 6b (after Task 6): fix `rangeMap` in packages/core/src/understand/symbols.ts:311-323 so a symbol's range does not swallow the doc comment of the next symbol (benchmark narration wrongly says the change touches `chunk`); refresh affected baseline entries — "never claim more than the evidence shows", and the benchmark's default narration repeats it — touches core; other examples' baselines may shift.
+- Task 6: Ruling (implementer): M2 fixed by wording ('changed size'), not a content hash — a hash would change every ref and the pinned 9907 request bytes — none.
+- Task 6b: Ruling (implementer): a comment belongs to the next declaration only when it touches it (no blank line); a comment indented deeper than the declaration stays with the body above; routes follow the same rule; decorators/attributes out of scope — conservative, minimal — a blank line between a doc comment and its function keeps the old attribution.
+- Task 6b: Ruling: blank lines between declarations belong to neither symbol (the brief's "(and blank lines)" was the controller's error) — giving them to the documented symbol makes inserting/deleting a function above a documented one report the documented one as modified — none.
+- Task 6b: Ruling (implementer): `gap` applies to every symbol, not only documented ones — else a blank-first hunk inserting an undocumented x still reports a:modified — in comment-free files a hunk changing only blank lines no longer marks the function above.
+- Task 8: Ruling: the `### Fixed` CHANGELOG line for Task 6b stays (accurate; a user-visible fix belongs in the changelog) — none.
+- Task 8: Ruling: Task 8's Important finding (SKILL.md:59 says "40% of the frame"; the check divides by the media region, ≈ 22%/19% of the frame; contradicts docs/video.md:641) and its minors on doc accuracy (monotony row wording and code≠terminal kinds; Added line drops "with four or more"; Fixed line omits the blank-line half; `text-size` row wording; exempt list omits mark glosses/step labels) join the final review's single fix wave instead of a separate task fix round — Task 8 is the last task, its diff is docs only, and the final review runs on the same branch now — none.
+- Final review: Needs fixes — [I] README.md:91 quotes Covi's rendered explanation of its first commit; PF-6 edited quoted output. Ruling: PF-6 withdrawn; restore the line exactly as at aeef1fa — the README quotes text Covi produced — none.
+- Final review: Ruling: CHANGELOG keeps ONE line per PR (owner's words), under its dominant type (`### Added`); the Task 6b fix is mentioned inside that line, and the `### Fixed` line is removed — overrides the Task 8 ruling — a reader scanning only Fixed misses it.
+- Final: parked minors — CHANGELOG.md:10 says "drafted explanations" without "narration"; SKILL.md:90 omits "(with four or more)" — Ruling: cosmetic, fixed opportunistically in B2's docs task — none.

@@ -909,7 +909,10 @@ export class Stage {
     return target && m.component.laidOut ? this.onCanvas(m, target, time) : target;
   }
 
-  /** The camera's beats in a directed scene, each toward its target as drawn when the beat ends. */
+  /**
+   * The camera's beats in a directed scene, each toward its target as drawn when the beat ends, or,
+   * following an element that moves, toward where it is laid out at each frame.
+   */
   private cameraSteps(m: MountedScene): CameraStep[] {
     const d = m.scene.direction;
     if (!d || !m.scene.stop) return [];
@@ -922,6 +925,24 @@ export class Stage {
     for (const beat of beats) {
       const element = d.elements.find((e) => e.id === beat.to);
       if (!element) continue;
+      // Following an element that moves (a morph's changed lines) frames it at every frame.
+      const shot = beat.move === 'follow' ? m.shot : undefined;
+      const track = shot?.track(element.id, beat.t);
+      if (shot && track) {
+        const start = from;
+        const to = (t: number) =>
+          beatView(
+            'follow',
+            shot.track(element.id, t) ?? track,
+            beat.zoom,
+            start,
+            m.region,
+            this.pivot,
+          );
+        steps.push({ t: beat.t, seconds: beat.seconds, to });
+        from = to(beat.t + beat.seconds);
+        continue;
+      }
       // A beat frames its target as drawn when it ends: what the visual highlights then (its
       // lines, its focus), or the element's box.
       const measured = this.targetAt(m, element, beat.t + beat.seconds);

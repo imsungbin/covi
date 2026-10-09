@@ -9,6 +9,7 @@ import {
   layoutScenes,
   type MorphRow,
   pacingFor,
+  type Rect,
   resolveVideoSpec,
   type SceneStaging,
   StoryboardSchema,
@@ -71,9 +72,9 @@ const MORPH: DirectionBeat = { verb: 'morph', element: 'm', t: 2, seconds: 1.6 }
 
 /**
  * A two-scene 640×360 composition whose second scene morphs `lines` on `beats` (seconds since that
- * scene started), opened in Chromium.
+ * scene started) in a card laid out in `rect`, opened in Chromium.
  */
-async function morphed(lines: DiffLine[], beats: DirectionBeat[] = [MORPH]) {
+async function morphed(lines: DiffLine[], beats: DirectionBeat[] = [MORPH], rect: Rect = media) {
   const dir = mkdtempSync(join(tmpdir(), 'covi-morph-'));
   dirs.push(dir);
   const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', width: W, height: H });
@@ -118,7 +119,7 @@ async function morphed(lines: DiffLine[], beats: DirectionBeat[] = [MORPH]) {
           {
             id: 'm',
             kind: 'morph',
-            rect: media,
+            rect,
             morph: { path: 'src/request.js', language: 'javascript', ...model },
           },
         ],
@@ -319,5 +320,72 @@ describe.skipIf(!available)('the token morph', () => {
     const added = find(mid, 'added', 'byteLength');
     expect(added.opacity).toBeGreaterThan(0.05);
     expect(added.opacity).toBeLessThan(0.95);
+  });
+
+  it('follows the changed lines with the camera as they move, keeping them in the region', async () => {
+    const follow: DirectionBeat = {
+      verb: 'camera',
+      move: 'follow',
+      to: 'm',
+      zoom: 1.25,
+      t: 1,
+      seconds: 0.8,
+    };
+    const v = await morphed(refs, [follow, MORPH]);
+    expect((await v.camera(v.at(0.9))).scale).toBeLessThan(1.05);
+    const cameras: Array<{ tx: number; ty: number; scale: number }> = [];
+    for (const share of [0.3, 0.6, 0.9]) {
+      const frame = v.at(MORPH.t + MORPH.seconds * share);
+      cameras.push(await v.camera(frame));
+      const bars = (await v.seek(
+        frame,
+        `return [...document.querySelectorAll('[data-element="m"] .mbar')]
+           .filter((b) => Number(b.style.opacity) > 0.5)
+           .map((b) => { const r = b.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });`,
+      )) as Array<{ top: number; bottom: number }>;
+      expect(bars.length).toBeGreaterThan(0);
+      for (const bar of bars) {
+        expect(bar.top).toBeGreaterThanOrEqual(media.y - 1);
+        expect(bar.bottom).toBeLessThanOrEqual(media.y + media.height + 1);
+      }
+    }
+    // Zoomed in, and moving with the lines: no two of these frames share a camera.
+    for (const c of cameras) expect(c.scale).toBeCloseTo(1.25, 2);
+    expect(new Set(cameras.map((c) => c.ty.toFixed(1))).size).toBe(3);
+  });
+
+  it('follows a long changed line only as far as the text column, where it ends', async () => {
+    // A card narrow enough that, zoomed in, the camera can frame the line as it shows.
+    const long = `  return '${'x'.repeat(80)}';`;
+    const center = media.x + media.width / 2;
+    const narrow = { x: center - 100, y: media.y, width: 200, height: media.height };
+    const follow: DirectionBeat = {
+      verb: 'camera',
+      move: 'follow',
+      to: 'm',
+      zoom: 2.5,
+      t: 1,
+      seconds: 0.8,
+    };
+    const v = await morphed(
+      [context('function take() {', 10), del('  return 1;', 11), add(long, 11), context('}', 12)],
+      [follow, MORPH],
+      narrow,
+    );
+    // Settled, before the camera lingers: from the line's start to the end of the text column.
+    const { start, end } = (await v.seek(
+      v.at(MORPH.t + MORPH.seconds + 0.2),
+      `const live = document.querySelector('[data-element="m"] .mlive');
+       const r = live.getBoundingClientRect();
+       const font = Number.parseFloat(getComputedStyle(live).fontSize);
+       const bar = document.querySelector('[data-element="m"] .mbar.add').getBoundingClientRect();
+       return { start: bar.left, end: r.left + (live.offsetWidth - font) * (r.width / live.offsetWidth) };`,
+    )) as { start: number; end: number };
+    // The box it follows ends with the column, not with the tokens hidden past the ellipsis:
+    // narrower than the view, it is centered, all of it in the region.
+    expect((start + end) / 2).toBeCloseTo(center, 0);
+    expect(start).toBeGreaterThan(media.x + 1);
+    expect(end).toBeLessThan(media.x + media.width - 1);
+    expect(v.errors).toEqual([]);
   });
 });

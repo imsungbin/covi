@@ -36,6 +36,8 @@ export interface ShotComponent extends Component {
   visual?: Component;
   /** An element's box as last drawn, in stage pixels: what a camera beat aimed at it frames. */
   frame(id: string): Rect | undefined;
+  /** Where an element that moves is laid out `t` seconds into the scene: what `follow` frames. */
+  track(id: string, t: number): Rect | undefined;
 }
 
 type Reveal = Extract<DirectionBeat, { verb: 'reveal' }>;
@@ -126,6 +128,10 @@ export function mountShot(
         .filter((item) => item.role === 'media')
         .map((item) => item.rect);
       return boxes.length ? union(boxes) : undefined;
+    },
+    track(id, t) {
+      const d = drawn.find((x) => x.element.id === id);
+      return d?.component.follow?.(elementTime(d, t));
     },
   };
 }

@@ -120,6 +120,26 @@ describe('the canvas camera', () => {
     expect(viewAt(steps, 2.6, rest)).toEqual(b);
   });
 
+  it('keeps up with a moving target once a follow beat has eased in, until the next beat', () => {
+    const rest = restView(pivot);
+    // A target drifting down 100 px a second, framed at 2×.
+    const moving = (t: number) => ({ x: 900, y: 500 + 100 * t, scale: 2 });
+    const later = { x: 700, y: 520, scale: 1.25 };
+    const steps: CameraStep[] = [
+      { t: 1, seconds: 1, to: moving },
+      { t: 4, seconds: 1, to: later },
+    ];
+    expect(viewAt(steps, 0.5, rest)).toEqual(rest);
+    // Halfway through its ease, the camera is halfway to where the target is by then.
+    const easing = viewAt(steps, 1.5, rest);
+    expect(easing.y).toBeCloseTo(rest.y + easeInOutCubic(0.5) * (moving(1.5).y - rest.y), 9);
+    // Eased in, it sits on the target at every moment.
+    for (const t of [2, 2.7, 3.9]) expect(viewAt(steps, t, rest)).toEqual(moving(t));
+    // The next beat starts from where the target had got to.
+    const next = viewAt(steps, 4.5, rest);
+    expect(next.y).toBeCloseTo(moving(4).y + easeInOutCubic(0.5) * (later.y - moving(4).y), 9);
+  });
+
   it('pans and zooms between stops, continuous at both ends', () => {
     const a = toWorld(restView(pivot), { x: 0, y: 0 });
     const b = toWorld(restView(pivot), { x: 2400, y: 0 });

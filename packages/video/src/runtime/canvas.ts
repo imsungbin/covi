@@ -23,11 +23,14 @@ export interface View {
 
 export type CameraKind = (typeof CAMERA_TRANSITIONS)[number];
 
-/** A camera beat inside a stop: from `t` (seconds since the scene started) for `seconds`, toward `to`. */
+/**
+ * A camera beat inside a stop: from `t` (seconds since the scene started) for `seconds`, toward
+ * `to`, or, following a moving target, toward where it is at each moment.
+ */
 export interface CameraStep {
   t: number;
   seconds: number;
-  to: View;
+  to: View | ((t: number) => View);
 }
 
 /** The most a camera beat magnifies. */
@@ -111,7 +114,8 @@ export function beatView(
 /**
  * The view at `t` (seconds since the scene started): each beat eases from where the camera was
  * when it started, which is where the beat before it had got to by then. `steps` must be in time
- * order: the walk stops at the first step that has not started.
+ * order: the walk stops at the first step that has not started. A beat that follows a moving
+ * target keeps up with it once it has eased in, until the next beat starts.
  */
 export function viewAt(steps: readonly CameraStep[], t: number, rest: View): View {
   let view = rest;
@@ -119,9 +123,10 @@ export function viewAt(steps: readonly CameraStep[], t: number, rest: View): Vie
     if (t < step.t) break;
     const next = steps[i + 1];
     const until = next && next.t < t ? next.t : t;
+    const to = typeof step.to === 'function' ? step.to(until) : step.to;
     view = lerpView(
       view,
-      step.to,
+      to,
       easeInOutCubic(clamp((until - step.t) / Math.max(step.seconds, 1e-6))),
     );
   }

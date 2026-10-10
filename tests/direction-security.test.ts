@@ -191,6 +191,30 @@ describe('a hostile direction file', () => {
         rejected({ shots: [{ scene: 's1', elements: [{ id: 'v', kind: 'visual', ...extra }] }] }),
       ).toBe(true);
   });
+
+  it('cannot state a number on a metric or a count: values come only from the evidence cited', () => {
+    const withMetric = (extra: Record<string, unknown>, beats: unknown[] = []) => ({
+      shots: [
+        {
+          scene: 's1',
+          elements: [{ id: 'm', kind: 'metric', evidence: 'metric:terminal-1:bytes', ...extra }],
+          beats,
+        },
+      ],
+    });
+    expect(rejected(withMetric({}))).toBe(false);
+    for (const extra of [
+      { value: 42 },
+      { base: 70406 },
+      { head: 9907 },
+      { delta: -86 },
+      { unit: 'KB' },
+      { label: '-86%' },
+      { label: '10x smaller' },
+    ])
+      expect(rejected(withMetric(extra)), JSON.stringify(extra)).toBe(true);
+    expect(rejected(withMetric({}, [{ verb: 'count', element: 'm', to: 9907 }]))).toBe(true);
+  });
 });
 
 describe('a direction citing evidence the run does not have', () => {
@@ -217,6 +241,26 @@ describe('a direction citing evidence the run does not have', () => {
     );
     expect(found).toHaveLength(4);
     for (const line of found) expect(line).toMatch(/which the run's evidence does not have/);
+  });
+
+  it('refuses a metric the run never measured', () => {
+    const evidence = indexEvidence({ items: [] });
+    const found = directionProblems(
+      DirectionSchema.parse({
+        shots: [
+          {
+            scene: 's1',
+            elements: [{ id: 'm', kind: 'metric', evidence: 'metric:terminal-1:bytes' }],
+          },
+        ],
+      }),
+      [{ id: 's1', narration: 'One line.', visual: { kind: 'callout' } }],
+      evidence,
+      directionSources({ evidence }),
+    );
+    expect(found).toEqual([
+      'shot 1 (scene s1), element m: cites "metric:terminal-1:bytes", which the run\'s evidence does not have (`covi evidence --run <id>` lists it)',
+    ]);
   });
 
   it('cannot reach the terminal through the ids and phrases its problems echo', () => {

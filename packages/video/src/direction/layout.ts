@@ -9,6 +9,8 @@ const WEIGHT: Record<ShotElement['kind'], number> = {
   output: 3,
   capture: 3,
   morph: 3,
+  // A number shares a row with what it came from: 2 parts to the visual's 3.
+  metric: 2,
   node: 2,
   label: 1,
 };

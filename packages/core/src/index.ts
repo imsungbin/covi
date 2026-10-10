@@ -42,6 +42,15 @@ export {
 export { collectEvidence, loadEvidence, writeEvidence } from './evidence/collect.ts';
 export { evidenceId, evidencePart } from './evidence/ids.ts';
 export {
+  type MetricReading,
+  metricSlug,
+  metricValue,
+  type PairedMetric,
+  pairMetrics,
+  readJsonMetrics,
+  readMetrics,
+} from './evidence/metrics.ts';
+export {
   type ExecResult,
   exec,
   execShell,

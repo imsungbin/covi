@@ -62,6 +62,42 @@ export function withinCitationLimits(value: unknown): unknown {
 
 const ItemIdSchema = z.string().max(EVIDENCE_LIMITS.id).regex(EVIDENCE_ID);
 
+/** Bounds on measured numbers (`metric` items), and on reading them from a run's text. */
+export const METRIC_LIMITS = {
+  /** Metrics one source (a command, a response, a step, the diff, the test run) gives. */
+  perSource: 50,
+  /** Metrics one run gives. */
+  perRun: 500,
+  /** A metric's name in its id: a slug. */
+  nameChars: 40,
+  /** What the output called it, as kept in the item's label. */
+  labelChars: 60,
+  /** Values stay below this in magnitude, with at most `decimals` digits after the point. */
+  magnitude: 1e15,
+  decimals: 6,
+  /** How deep numeric leaves of JSON output are read. */
+  jsonDepth: 4,
+  /** Characters of one text read for metrics, and the longest line read. */
+  textChars: 100_000,
+  lineChars: 200,
+} as const;
+
+/** Digits after the point, as JavaScript writes the number (an exponent counts as too many). */
+export function decimalsOf(value: number): number {
+  const text = String(value);
+  if (/e/i.test(text)) return Number.POSITIVE_INFINITY;
+  return text.split('.')[1]?.length ?? 0;
+}
+
+/** A value a metric may hold: finite, below 1e15 in magnitude, at most six decimals. */
+export function isMetricValue(value: number): boolean {
+  return (
+    Number.isFinite(value) &&
+    Math.abs(value) < METRIC_LIMITS.magnitude &&
+    decimalsOf(value) <= METRIC_LIMITS.decimals
+  );
+}
+
 export const EvidenceItemSchema = z.strictObject({
   id: ItemIdSchema,
   kind: z.enum(EVIDENCE_KINDS),

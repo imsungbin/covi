@@ -31,7 +31,7 @@ export type MetricShotElement = Extract<ShotElement, { kind: 'metric' }>;
 const DELTA_MAX = 10_000;
 
 /** The sides a metric has, as a message names them: `a head value`, `a base and a head value`. */
-function sides(metric: MetricSource): string {
+export function sides(metric: MetricSource): string {
   const has = [
     ...(metric.base === undefined ? [] : ['base']),
     ...(metric.head === undefined ? [] : ['head']),
@@ -91,7 +91,7 @@ const DIFF_TOTALS = new Map<string, keyof TimelineLabels['stats']>([
  * What a metric is called on screen: the diff's totals in the video's words, else what the output
  * printed.
  */
-function metricName(metric: MetricSource, labels: Pick<TimelineLabels, 'stats'>): string {
+export function metricName(metric: MetricSource, labels: Pick<TimelineLabels, 'stats'>): string {
   const total = DIFF_TOTALS.get(metric.id);
   return total ? labels.stats[total] : metric.name;
 }

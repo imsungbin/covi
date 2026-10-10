@@ -155,6 +155,27 @@ describe('element slots', () => {
     expect(square.map((r) => r.width)).toEqual([527.69, 452.31]);
     expect(elementSlots(['code', 'label'], 'row', region, 'square', 20)[0]!.width).toBe(735);
   });
+  it('lay a square frame’s split that leads with a number as a row above the rest', () => {
+    // A 1080 × 1080 frame's media region. Side by side, half the width leaves the counter under
+    // its 120-unit floor, and 7 parts to 6 leaves a pile's items under their least size; a row of
+    // the counter and the packet above a pile as wide as the frame keeps both (measured: 127.5
+    // and 29.1 units for request bytes 70,406 → 9,907 and reader steps 28 → 10).
+    const square = { x: 64, y: 250, width: 952, height: 600 };
+    expect(elementSlots(['metric', 'packet', 'pile'], 'split', square, 'square', 28)).toEqual([
+      { x: 64, y: 250, width: 497.54, height: 286 },
+      { x: 589.54, y: 250, width: 426.46, height: 286 },
+      { x: 64, y: 564, width: 952, height: 286 },
+    ]);
+    // Two elements make the row alone, as a row gives a number in a square frame.
+    expect(elementSlots(['metric', 'visual'], 'split', square, 'square', 28)).toEqual(
+      elementSlots(['metric', 'visual'], 'row', square, 'square', 28),
+    );
+    // Wide and tall frames, and a split led by anything else, still halve the region.
+    expect(elementSlots(['metric', 'packet', 'pile'], 'split', square, 'landscape', 28)[0]).toEqual(
+      { x: 64, y: 250, width: 462, height: 600 },
+    );
+    expect(elementSlots(['visual', 'metric'], 'split', square, 'square', 28)[0]!.width).toBe(462);
+  });
   it('give one element the whole region, whatever the layout', () => {
     for (const layout of ['auto', 'single', 'row', 'column', 'split'] as const)
       expect(elementSlots(['visual'], layout, region, 'landscape', 20)).toEqual([region]);

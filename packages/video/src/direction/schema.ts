@@ -8,6 +8,7 @@ import {
   UsageError,
 } from '@covi/core';
 import { z } from 'zod';
+import { DRAWN_ITEMS } from '../runtime/routes.ts';
 import { TRANSITION_KINDS } from '../storyboard/schema.ts';
 import { CAMERA_TRANSITIONS } from '../timeline/types.ts';
 
@@ -40,8 +41,8 @@ export const DIRECTION_LIMITS = {
   zoom: { min: 1, max: 2.5 },
   /** Lines a code element may show. */
   lineSpan: 40,
-  /** Items a pile or a split draws at most (later verbs); the counter shows the true value. */
-  drawnItems: 12,
+  /** Items a pile or a split draws at most; the true count is drawn beside them. */
+  drawnItems: DRAWN_ITEMS,
   evidencePerElement: 4,
   /**
    * A morph: at most `changedLines` deleted and as many added lines (a landscape card's 14 rows,
@@ -229,6 +230,35 @@ export const ShotElementSchema = z.discriminatedUnion('kind', [
     text: LabelSchema,
     tone: z.enum(LABEL_TONES).optional(),
   }),
+  z
+    .strictObject({
+      id: ElementIdSchema,
+      kind: z.literal('packet'),
+      label: LabelSchema.optional().describe("What travels, in the video's language (no digits)."),
+    })
+    .describe(
+      'A packet: a pill a `flow` carries from node to node (else it sits in its slot); it can `split` into pieces and `merge` back.',
+    ),
+  z
+    .strictObject({
+      id: ElementIdSchema,
+      kind: z.literal('pile'),
+      evidence: EvidenceRefSchema.describe(
+        'A metric: id whose value is a whole count: the pile draws that many items (twelve at most) and the true number.',
+      ),
+      side: z
+        .enum(['base', 'head'])
+        .optional()
+        .describe(
+          'One side only: base (before the change) or head (after). Default: a row for each side the metric has, before above after.',
+        ),
+      label: LabelSchema.optional().describe(
+        "What is counted, in the video's language (no digits). Default: what the output called it.",
+      ),
+    })
+    .describe(
+      'A pile of a measured count: `stack` piles it up item by item; `merge` collapses it.',
+    ),
 ]);
 
 export const ShotBeatSchema = z.discriminatedUnion('verb', [
@@ -274,6 +304,64 @@ export const ShotBeatSchema = z.discriminatedUnion('verb', [
     })
     .describe(
       'A metric ticks from its base value to its head value (bars grow or shrink with it), once. With `at`, it lands as the phrase is spoken; a count of a revealed metric waits for its reveal.',
+    ),
+  z
+    .strictObject({
+      verb: z.literal('flow'),
+      from: ElementIdSchema.describe('The node it leaves.'),
+      to: ElementIdSchema.describe('The node it reaches.'),
+      packet: ElementIdSchema.optional().describe(
+        'The packet it carries; without one, a dot travels. The edge is drawn as it goes.',
+      ),
+      at: PhraseSchema.optional(),
+    })
+    .describe(
+      'Something travels along the edge from one node to another. It waits for the reveals of both nodes and of its packet.',
+    ),
+  z
+    .strictObject({
+      verb: z.literal('split'),
+      element: ElementIdSchema.describe('The packet or node that breaks apart.'),
+      count: EvidenceRefSchema.describe(
+        'A metric: id: how many pieces (twelve drawn at most; the true count is shown under them).',
+      ),
+      side: z
+        .enum(['base', 'head'])
+        .describe("Which of the metric's values: base (before the change) or head (after)."),
+      at: PhraseSchema.optional(),
+    })
+    .describe(
+      'One thing breaks into as many pieces as a measured count, once its reveal is done. A node fans them out in its slot, as does a packet resting against a node (else in place); a split whose slot has no room for them beside the label is left out, with a warning.',
+    ),
+  z
+    .strictObject({
+      verb: z.literal('merge'),
+      element: ElementIdSchema,
+      at: PhraseSchema.optional(),
+    })
+    .describe(
+      'The pieces of a split made earlier, or a pile, collapse into one; a merge timed before its split is left out, with a warning.',
+    ),
+  z
+    .strictObject({
+      verb: z.literal('stack'),
+      element: ElementIdSchema,
+      at: PhraseSchema.optional(),
+    })
+    .describe(
+      'A pile fills up item by item, its number counting up to the true count, once its reveal is done.',
+    ),
+  z
+    .strictObject({
+      verb: z.literal('count-up'),
+      element: ElementIdSchema.describe('A metric element drawn as a counter.'),
+      side: z
+        .enum(['base', 'head'])
+        .describe('The value it counts up to: base (before the change) or head (after).'),
+      at: PhraseSchema.optional(),
+    })
+    .describe(
+      'A counter counts up from zero to one side of its metric, once its reveal is done. With `at`, it lands as the phrase is spoken; one that has not landed when its counter’s count starts is left out, with a warning.',
     ),
 ]);
 

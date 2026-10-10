@@ -22,12 +22,13 @@ import {
 import { el, fitText, place } from '../dom.ts';
 import { union } from '../narrator.ts';
 import type { CountUpSpan } from '../numbers.ts';
-import { splitLayout, textBoxRect } from '../routes.ts';
+import { textBoxRect } from '../routes.ts';
 import {
   type FlowSpans,
   flowSpans,
   mountFlows,
   nodeBoxes,
+  nodeFanLayouts,
   nodeSplit,
   packet,
   pile,
@@ -77,7 +78,8 @@ export function mountShot(
 ): ShotComponent {
   const direction = scene.direction!;
   // Flows first: the edges go under every element, joining the nodes as they are drawn.
-  const boxes = nodeBoxes(direction, ctx);
+  const fans = nodeFanLayouts(direction, ctx);
+  const boxes = nodeBoxes(direction, ctx, fans);
   const flows = mountFlows(direction, ctx, boxes);
   const drawn: Drawn[] = direction.elements.map((element) => {
     // A full-stage layer per element, so components keep laying out in stage pixels.
@@ -107,7 +109,7 @@ export function mountShot(
     const span = beat
       ? ([elementTime(placed, beat.t), elementTime(placed, beat.t + beat.seconds)] as const)
       : ([0, 0] as const);
-    const spans = flowSpans(direction, element.id, boxes, (t) => elementTime(placed, t));
+    const spans = flowSpans(direction, element.id, boxes, (t) => elementTime(placed, t), fans);
     // A counter's count-up, on its clock too: it counts up before its count, if it has one.
     const up = direction.beats.find(
       (b): b is CountUp => b.verb === 'count-up' && b.element === element.id,
@@ -214,12 +216,12 @@ function draw(
     case 'pile':
       return { component: pile(element, ctx, spans) };
     case 'node': {
-      const { split } = spans;
-      if (!split) return textBox(element.label, box(), 'node dnode', ctx);
-      // A node that splits makes room in its slot for its pieces and its count.
-      const layout = splitLayout(element.rect, ctx.regions.unit, tall, split.count);
-      const part = textBox(element.label, layout.box, 'node dnode', ctx);
-      return { ...part, component: nodeSplit(part.component, layout, ctx, { ...spans, split }) };
+      // A node a split fans out of (its own, or a packet's resting against it) makes room in its
+      // slot for the pieces and their count.
+      const { split, fan } = spans;
+      const part = textBox(element.label, fan?.box ?? box(), 'node dnode', ctx);
+      if (!split || !fan) return part;
+      return { ...part, component: nodeSplit(part.component, fan, ctx, { ...spans, split }) };
     }
     case 'label':
       return textBox(element.text, box(), 'dlabel', ctx, toneColor(element.tone, ctx));

@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { elementSlots } from '../src/direction/layout.ts';
 import { computeRegions } from '../src/runtime/layout.ts';
 import {
+  arrangedSplit,
   arrowHead,
   DRAWN_ITEMS,
   edgeRoute,
   fanOut,
   legPoint,
   nodeBoxRect,
+  nodeFans,
   pileGrid,
   pointAlong,
+  restingAt,
   routeLength,
   type SplitLayout,
   splitLayout,
@@ -18,7 +21,7 @@ import {
   textBoxRect,
 } from '../src/runtime/routes.ts';
 import { orientationOf } from '../src/spec.ts';
-import type { Rect } from '../src/timeline/types.ts';
+import type { DirectionBeat, DirectionElement, Rect } from '../src/timeline/types.ts';
 
 const box = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
 
@@ -184,20 +187,21 @@ describe('splits and piles', () => {
   });
 });
 
+/** Node slots as the resolver lays them out, at a frame size. */
+const slots = (width: number, height: number, n: number, layout: 'auto' | 'column' | 'split') => {
+  const orientation = orientationOf(width, height);
+  const regions = computeRegions({ width, height, orientation });
+  const rects = elementSlots(
+    Array(n).fill('node'),
+    layout,
+    regions.media,
+    orientation,
+    28 * regions.unit,
+  );
+  return { rects, unit: regions.unit, tall: orientation === 'vertical' };
+};
+
 describe('a node that splits', () => {
-  /** Node slots as the resolver lays them out, at a frame size. */
-  const slots = (width: number, height: number, n: number, layout: 'auto' | 'column') => {
-    const orientation = orientationOf(width, height);
-    const regions = computeRegions({ width, height, orientation });
-    const rects = elementSlots(
-      Array(n).fill('node'),
-      layout,
-      regions.media,
-      orientation,
-      28 * regions.unit,
-    );
-    return { rects, unit: regions.unit, tall: orientation === 'vertical' };
-  };
   const inside = (r: Rect, slot: Rect) =>
     r.x >= slot.x - 1e-6 &&
     r.y >= slot.y - 1e-6 &&
@@ -270,5 +274,70 @@ describe('a node that splits', () => {
     expect(many.box.x + many.box.width).toBeGreaterThan(few.box.x);
     // A node that does not split keeps its box.
     expect(nodeBoxRect(column, 1, false)).toEqual(textBoxRect(column, 1, false));
+  });
+});
+
+describe('where splits fan out of nodes', () => {
+  it('arrange a split only in a slot with room for it beside the label', () => {
+    const [left] = slots(1920, 1080, 2, 'auto').rects;
+    expect(arrangedSplit(left!, 1, false, 4)).toEqual(splitLayout(left!, 1, false, 4));
+    // A row of a square frame split for seven: the fallback alone gives way to the pieces.
+    const short = slots(1080, 1080, 7, 'split').rects[3]!;
+    expect(arrangedSplit(short, 1, false, 4)).toBeUndefined();
+    expect(splitLayout(short, 1, false, 4).box.height).toBeLessThan(
+      textBoxRect(short, 1, false).height,
+    );
+  });
+
+  const flow = (from: string, to: string, t: number): DirectionBeat => ({
+    verb: 'flow',
+    from,
+    to,
+    packet: 'p',
+    t,
+    seconds: 1,
+  });
+  const trips = [flow('a', 'b', 1), flow('b', 'c', 3)];
+
+  it('find the node a packet rests against when it splits, and none while it travels', () => {
+    const at = (t: number) => restingAt(trips, { element: 'p', t });
+    expect([0.5, 1, 1.5, 2, 2.5, 3.5, 4, 6].map(at)).toEqual([
+      'a',
+      undefined,
+      undefined,
+      'b',
+      'b',
+      undefined,
+      'c',
+      'c',
+    ]);
+    expect(restingAt(trips, { element: 'q', t: 2 })).toBeUndefined();
+  });
+
+  it('give each node the first split to fan out of it: its own, or a resting packet’s', () => {
+    const rect = box(0, 0, 100, 100);
+    const elements: DirectionElement[] = [
+      { id: 'a', kind: 'node', rect, label: 'A' },
+      { id: 'b', kind: 'node', rect, label: 'B' },
+      { id: 'c', kind: 'node', rect, label: 'C' },
+      { id: 'p', kind: 'packet', rect },
+    ];
+    const split = (element: string, count: number, t: number): DirectionBeat => ({
+      verb: 'split',
+      element,
+      count,
+      name: 'chunks',
+      side: 'base',
+      t,
+      seconds: 0.9,
+    });
+    // The packet splits on its way to c: in place, so no node makes room for it.
+    expect(nodeFans({ elements, beats: [...trips, split('p', 4, 3.5)] })).toEqual(new Map());
+    expect(
+      nodeFans({ elements, beats: [split('b', 3, 0.5), ...trips, split('p', 4, 2.5)] }),
+    ).toEqual(new Map([['b', { count: 3, element: 'b' }]]));
+    expect(nodeFans({ elements, beats: [...trips, split('p', 4, 5)] })).toEqual(
+      new Map([['c', { count: 4, element: 'p' }]]),
+    );
   });
 });

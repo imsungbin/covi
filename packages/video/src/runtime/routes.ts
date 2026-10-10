@@ -1,9 +1,9 @@
-import type { Point, Rect } from '../timeline/types.ts';
+import type { DirectionBeat, Point, Rect, SceneDirection } from '../timeline/types.ts';
 
 /*
  * Where flows travel and piles stack: edge routes between node boxes, a packet's place along
- * them, a split's fan, and a pile's grid. Pure and DOM-free, so the runtime draws with them, the
- * camera follows with them, and Node's tests check them.
+ * them, a split's fan and the node it fans out of, and a pile's grid. Pure and DOM-free, so the
+ * runtime draws with them, the camera follows with them, and Node checks and tests them.
  */
 
 // `anim.ts` has these too, but it carries DOM types, and Node and tests/ import this file.
@@ -238,9 +238,34 @@ const SPLIT = {
  * with the count beside them (a wide, short slot, such as a column's). Under the box, the box
  * takes the top of the slot, cut down toward two lines of label if the pieces need the room;
  * beside it, the box stays where it is unsplit unless the pieces need the room, and then moves
- * left. The pieces shrink to the room they have.
+ * left. The pieces shrink to the room they have. In a slot with room for none of them, the box
+ * gives way to small pieces under it (see `arrangedSplit`, which the resolver asks first).
  */
 export function splitLayout(slot: Rect, unit: number, tall: boolean, count: number): SplitLayout {
+  const { best, squeezed } = splitArrangements(slot, unit, tall, count);
+  return best ?? squeezed();
+}
+
+/**
+ * `splitLayout`'s arrangement when the slot has room for one, else nothing: a direction never
+ * splits there (its split is left out), so its pieces never cover the node's label.
+ */
+export function arrangedSplit(
+  slot: Rect,
+  unit: number,
+  tall: boolean,
+  count: number,
+): SplitLayout | undefined {
+  return splitArrangements(slot, unit, tall, count).best;
+}
+
+/** A node split's best arrangement in its slot, if any has room, and the one when none has. */
+function splitArrangements(
+  slot: Rect,
+  unit: number,
+  tall: boolean,
+  count: number,
+): { best: SplitLayout | undefined; squeezed: () => SplitLayout } {
   const u = (n: number) => n * unit;
   const whole = textBoxRect(slot, unit, tall);
   const gap = u(SPLIT.gap);
@@ -351,25 +376,68 @@ export function splitLayout(slot: Rect, unit: number, tall: boolean, count: numb
     (a, b) => (a && shown(a) >= shown(b) - 1e-9 ? a : b),
     undefined,
   );
-  if (best) return best;
   // A slot with room for none: the box gives way to small pieces and the count under it.
-  const fan = fanned(wide, SPLIT.scale * tallest);
-  const block = extent(fan).height;
-  const squeezed = Math.max(0, Math.min(whole.height, room - block));
-  const bottom = { x: whole.x + whole.width / 2, y: slot.y + squeezed };
-  return laid(
-    { ...whole, y: slot.y, height: squeezed },
-    bottom,
-    fan,
-    { x: bottom.x, y: bottom.y + gap + block / 2 },
-    { x: slot.x + margin, y: bottom.y + 2 * gap + block, width: wide, height: captionHeight },
-    false,
-  );
+  const squeezed = () => {
+    const fan = fanned(wide, SPLIT.scale * tallest);
+    const block = extent(fan).height;
+    const height = Math.max(0, Math.min(whole.height, room - block));
+    const bottom = { x: whole.x + whole.width / 2, y: slot.y + height };
+    return laid(
+      { ...whole, y: slot.y, height },
+      bottom,
+      fan,
+      { x: bottom.x, y: bottom.y + gap + block / 2 },
+      { x: slot.x + margin, y: bottom.y + 2 * gap + block, width: wide, height: captionHeight },
+      false,
+    );
+  };
+  return { best, squeezed };
+}
+
+/**
+ * The node a packet rests against when its split starts (`beats` in time order): where its last
+ * trip before then ended, or, before its first trip, the node that trip leaves. None while it
+ * travels, nor for a packet no flow carries: it breaks apart in place.
+ */
+export function restingAt(
+  beats: readonly DirectionBeat[],
+  split: { element: string; t: number },
+): string | undefined {
+  let at: string | undefined;
+  for (const b of beats) {
+    if (b.verb !== 'flow' || b.packet !== split.element) continue;
+    if (split.t < b.t) return at ?? b.from;
+    if (split.t < b.t + b.seconds) return undefined;
+    at = b.to;
+  }
+  return at;
+}
+
+/**
+ * The nodes a shot's splits fan out of, each with the count and the element of its split: a node
+ * that splits, and a node a packet rests against when it splits, whose pieces fan out in that
+ * node's slot rather than over its label. The first split to reach a node takes it (a resolved
+ * direction has no other).
+ */
+export function nodeFans(
+  direction: Pick<SceneDirection, 'elements' | 'beats'>,
+): Map<string, { count: number; element: string }> {
+  const kinds = new Map(direction.elements.map((e) => [e.id, e.kind]));
+  const fans = new Map<string, { count: number; element: string }>();
+  for (const b of direction.beats) {
+    if (b.verb !== 'split') continue;
+    const kind = kinds.get(b.element);
+    const node =
+      kind === 'node' ? b.element : kind === 'packet' ? restingAt(direction.beats, b) : undefined;
+    if (node !== undefined && !fans.has(node))
+      fans.set(node, { count: b.count, element: b.element });
+  }
+  return fans;
 }
 
 /**
  * A node's box, as both its text and the edges that join it are drawn: `textBoxRect`'s, or, when
- * it splits into `count` pieces, the box its `splitLayout` leaves it.
+ * a split of `count` pieces fans out of it, the box its `splitLayout` leaves it.
  */
 export function nodeBoxRect(slot: Rect, unit: number, tall: boolean, count?: number): Rect {
   return count === undefined

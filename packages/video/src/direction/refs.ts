@@ -2,9 +2,15 @@ import type { EvidenceIndex, EvidenceItem, EvidenceKind } from '@covi/core';
 import { findPhrase, parseEmphasis } from '../storyboard/grammar.ts';
 import type { Scene } from '../storyboard/schema.ts';
 import { shown } from './echo.ts';
+import { beatTargets, flowBeatProblems, pileProblems } from './flow.ts';
 import { countProblem, metricProblems } from './metric.ts';
 import type { Direction, ShotBeat, ShotElement } from './schema.ts';
-import { type DirectionSources, hunkView, startupLog } from './sources.ts';
+import {
+  type DirectionSources,
+  hunkView,
+  startupLog,
+  UNKNOWN_EVIDENCE as UNKNOWN,
+} from './sources.ts';
 import { morphProblem } from './tokens.ts';
 
 /** What the checks read of a storyboard scene. */
@@ -22,6 +28,7 @@ const WHOLE_ONLY = new Set<Scene['visual']['kind']>(['title', 'summary']);
 const ACTS_ON: Partial<Record<ShotBeat['verb'], ShotElement['kind']>> = {
   morph: 'morph',
   count: 'metric',
+  stack: 'pile',
 };
 
 /**
@@ -29,8 +36,9 @@ const ACTS_ON: Partial<Record<ShotBeat['verb'], ShotElement['kind']>> = {
  * storyboard scenes (one each), beats name elements of their shot, a title or summary card is
  * shown only alone, every cited id is in the run's evidence with the kind its element shows, a
  * requested side exists, lines lie within the side shown, a morph's hunk can morph, a metric has
- * the values its element shows, a verb that acts on an element names one of its kind (once), a
- * count has two values to tick between, and every `at` is quoted from the scene's narration
+ * the values its element shows (a pile, whole counts), a verb that acts on an element names one of
+ * its kind (once), a count has two values to tick between, flow verbs ask only what their
+ * elements can do (`flowBeatProblems`), and every `at` is quoted from the scene's narration
  * exactly once (as `sync` phrases are).
  */
 export function directionProblems(
@@ -83,13 +91,15 @@ export function directionProblems(
     const acted = new Set<string>();
     shot.beats.forEach((beat, k) => {
       const name = `${where}, beat ${k + 1} (${beat.verb})`;
-      const target = beat.verb === 'camera' ? beat.to : beat.element;
+      const targets = beatTargets(beat);
+      const missing = targets.filter((id) => !elements.has(id));
+      for (const id of missing)
+        problems.push(
+          `${name}: the shot has no element "${id}" (it has: ${[...elements.keys()].join(', ')})`,
+        );
+      const target = targets[0]!;
       const element = elements.get(target);
       const kind = element?.kind;
-      if (!kind)
-        problems.push(
-          `${name}: the shot has no element "${target}" (it has: ${[...elements.keys()].join(', ')})`,
-        );
       const needs = ACTS_ON[beat.verb];
       // An element the shot lacks is reported above; it neither has a kind nor acts.
       if (needs && kind) {
@@ -109,6 +119,9 @@ export function directionProblems(
         const problem = countProblem(element, sources.metric(element.evidence));
         if (problem) problems.push(`${name}: ${problem}`);
       }
+      if (!missing.length)
+        for (const problem of flowBeatProblems(shot, k, evidence, sources))
+          problems.push(`${name}: ${problem}`);
       if (beat.verb === 'place' || beat.at === undefined || text === undefined) return;
       const at = findPhrase(text, beat.at);
       if (at.count === 0)
@@ -121,8 +134,6 @@ export function directionProblems(
   });
   return problems;
 }
-
-const UNKNOWN = "which the run's evidence does not have (`covi evidence --run <id>` lists it)";
 
 function elementProblems(
   element: ShotElement,
@@ -186,6 +197,13 @@ function elementProblems(
       if (!cites(element.evidence, 'metric', 'a metric element')) break;
       const metric = sources.metric(element.evidence);
       if (metric) out.push(...metricProblems(element, metric));
+      break;
+    }
+    case 'pile': {
+      // As a metric element's: its item carries its values, so it has a source.
+      if (!cites(element.evidence, 'metric', 'a pile')) break;
+      const metric = sources.metric(element.evidence);
+      if (metric) out.push(...pileProblems(element, metric));
       break;
     }
     case 'capture':

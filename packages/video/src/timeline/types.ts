@@ -181,6 +181,15 @@ export type DirectionBeat =
   | { verb: 'stack'; element: string; t: number; seconds: number }
   | { verb: 'count-up'; element: string; value: number; t: number; seconds: number };
 
+/** A beat the direction asked for that the resolver left out, and why. */
+export interface DroppedBeat {
+  verb: string;
+  /** What it acted on. */
+  element: string;
+  /** Why, in a phrase QC quotes after the scene's id. */
+  reason: string;
+}
+
 /** A scene's shot, resolved. */
 export interface SceneDirection {
   /** The shot shows only the storyboard's visual, laid out exactly as it is without direction. */
@@ -188,6 +197,8 @@ export interface SceneDirection {
   elements: DirectionElement[];
   /** In time order. */
   beats: DirectionBeat[];
+  /** Beats the direction asked for that cannot play where it put them; absent when none. */
+  dropped?: DroppedBeat[];
 }
 
 /** What direction adds to a story scene: its stop on the canvas and its resolved shot. */

@@ -1,6 +1,7 @@
 import { type DiffLine, type Language, t } from '@covi/core';
 import { type CaptionOptions, captionOptionsFor } from '../captions.ts';
 import { computeRegions, gridSpacing, type Regions } from '../runtime/layout.ts';
+import { arrangedSplit, nodeFans, restingAt } from '../runtime/routes.ts';
 import { orientationOf, type VideoSpec } from '../spec.ts';
 import { clipLines } from '../storyboard/draft.ts';
 import { parseEmphasis } from '../storyboard/grammar.ts';
@@ -17,13 +18,22 @@ import type {
   CodeLine,
   DirectionBeat,
   DirectionElement,
+  DroppedBeat,
   ImageAsset,
   Rect,
   SceneDirection,
   SceneStaging,
   TimelineLabels,
 } from '../timeline/types.ts';
-import { elementSlots, shotRegion } from './layout.ts';
+import {
+  beatTargets,
+  countUpValue,
+  flowSlots,
+  mergeInto,
+  resolvePile,
+  splitCount,
+} from './flow.ts';
+import { shotRegion } from './layout.ts';
 import { resolveMetric } from './metric.ts';
 import { codeLineText, type Direction, type Shot, type ShotElement } from './schema.ts';
 import { type CodeSide, type DirectionSources, hunkView } from './sources.ts';
@@ -31,10 +41,20 @@ import { canvasStops } from './stops.ts';
 import { morphHunk } from './tokens.ts';
 
 /** How long each verb takes, in seconds. */
-export const BEAT_SECONDS = { reveal: 0.5, camera: 0.8, morph: 1.6, count: 1.6 } as const;
+export const BEAT_SECONDS = {
+  reveal: 0.5,
+  camera: 0.8,
+  morph: 1.6,
+  count: 1.6,
+  flow: 1.2,
+  split: 0.9,
+  merge: 0.8,
+  stack: 1.8,
+  'count-up': 1.6,
+} as const;
 /**
- * A count that lands on its phrase ticks for at least this long, even near the scene's start or
- * after a late reveal.
+ * A count (or a count-up) that lands on its phrase ticks for at least this long, even near the
+ * scene's start or after a late reveal.
  */
 const COUNT_MIN = 0.6;
 /** Code elements show at most this many lines (wide, tall frames), as morphs do a side. */
@@ -120,16 +140,42 @@ export function resolveDirection(input: ResolveInput): SceneStaging[] {
 
 /**
  * What of a shot is on screen once it is resolved, for grounding (`sceneEvidence`): the elements
- * that resolved, or nothing when the scene shows its storyboard visual alone (no shot, a shot of
- * just the visual, or a shot none of whose content the run has), so the visual's evidence counts.
+ * that resolved and the splits that draw their counts, or nothing when the scene shows its
+ * storyboard visual alone (no shot, a shot of just the visual, or a shot none of whose content the
+ * run has), so the visual's evidence counts.
  */
 export function shownShot(
-  shot: Pick<Shot, 'elements'> | undefined,
-  direction: Pick<SceneDirection, 'whole' | 'elements'>,
-): Pick<Shot, 'elements'> | undefined {
+  shot: (Pick<Shot, 'elements'> & Partial<Pick<Shot, 'beats'>>) | undefined,
+  direction: Pick<SceneDirection, 'whole' | 'elements' | 'beats'>,
+): Pick<Shot, 'elements' | 'beats'> | undefined {
   if (!shot || direction.whole) return undefined;
   const shown = new Map(direction.elements.map((e) => [e.id, e.kind]));
-  return { elements: shot.elements.filter((e) => shown.get(e.id) === e.kind) };
+  // An element splits once, so its split in the plan is the one that resolved.
+  const splits = new Set(direction.beats.flatMap((b) => (b.verb === 'split' ? [b.element] : [])));
+  return {
+    elements: shot.elements.filter((e) => shown.get(e.id) === e.kind),
+    beats: (shot.beats ?? []).filter((b) => b.verb === 'split' && splits.has(b.element)),
+  };
+}
+
+/**
+ * What the render says of each beat a direction asked for that cannot play: the shot (its number
+ * in the file, and its scene), the beat (its verb and element: each acts on an element once), and
+ * why. The run warns with each, and notes it.
+ */
+export function droppedBeatNotes(
+  plan: Pick<Direction, 'shots'>,
+  scenes: readonly Pick<Scene, 'id'>[],
+  staging: readonly SceneStaging[],
+): string[] {
+  return staging.flatMap((s, i) => {
+    const id = scenes[i]?.id ?? `s${i + 1}`;
+    const shot = plan.shots.findIndex((x) => x.scene === id) + 1;
+    return (s.direction.dropped ?? []).map(
+      (d) =>
+        `Direction: shot ${shot} (scene ${id}) leaves out its ${d.verb} of "${d.element}": ${d.reason}.`,
+    );
+  });
 }
 
 /** A morph element no `morph` beat names morphs anyway, as if the shot ended with one. */
@@ -156,13 +202,8 @@ function resolveShot(given: Shot, scene: Scene, timing: SceneTiming, ctx: Contex
     shot.elements[0]!.kind === 'visual' &&
     !revealed.has(shot.elements[0]!.id);
   const region = shotRegion(whole, scene.visual, ctx.regions);
-  const slots = elementSlots(
-    shot.elements.map((e) => e.kind),
-    shot.layout ?? 'auto',
-    region,
-    ctx.orientation,
-    28 * ctx.regions.unit,
-  );
+  const gap = 28 * ctx.regions.unit;
+  const slots = flowSlots(shot, region, ctx.orientation, gap, ctx.regions.unit);
   let elements = shot.elements.flatMap((e, k) => {
     const resolved = element(e, slots[k]!, ctx);
     return resolved ? [resolved] : [];
@@ -180,10 +221,21 @@ function resolveShot(given: Shot, scene: Scene, timing: SceneTiming, ctx: Contex
   const countable = new Set(
     elements.flatMap((e) => (e.kind === 'metric' && e.from !== undefined ? [e.id] : [])),
   );
-  const beats = timeBeats(shot, scene, timing, ctx.options, shown).filter(
+  const timed = timeBeats(shot, scene, timing, ctx.options, shown, ctx).filter(
     (b) => b.verb !== 'count' || countable.has(b.element),
   );
-  return { whole, elements, beats };
+  const roomy = fanRoom(timed, elements, ctx);
+  const ordered = flowOrder(roomy.beats, elements);
+  const beats = stretchFlows(ordered.beats);
+  const dropped = [...roomy.dropped, ...ordered.dropped];
+  // A packet riding from a node a split fans out of starts on the box the split leaves that node.
+  const fans = new Map([...nodeFans({ elements, beats })].map(([id, fan]) => [id, fan.count]));
+  if (fans.size) {
+    const riding = flowSlots(shot, region, ctx.orientation, gap, ctx.regions.unit, fans);
+    const at = new Map(shot.elements.map((e, k) => [e.id, riding[k]!]));
+    elements = elements.map((e) => (e.kind === 'packet' ? { ...e, rect: at.get(e.id)! } : e));
+  }
+  return { whole, elements, beats, ...(dropped.length ? { dropped } : {}) };
 }
 
 function element(e: ShotElement, rect: Rect, ctx: Context): DirectionElement | undefined {
@@ -267,6 +319,15 @@ function element(e: ShotElement, rect: Rect, ctx: Context): DirectionElement | u
     }
     case 'metric':
       return resolveMetric(e, ctx.sources.metric(e.evidence), rect, ctx.labels);
+    case 'packet':
+      return {
+        id: e.id,
+        kind: 'packet',
+        rect,
+        ...(e.label === undefined ? {} : { label: e.label }),
+      };
+    case 'pile':
+      return resolvePile(e, ctx.sources.metric(e.evidence), rect, ctx.labels);
     case 'node':
       return { id: e.id, kind: 'node', rect, label: e.label };
     case 'label':
@@ -309,13 +370,14 @@ function codeWindow(view: readonly DiffLine[], max: number): DiffLine[] {
  * Beats with their moments (seconds since the scene started), in time order: `at` lands on its
  * phrase as the captions time it; a beat without one, or whose phrase redaction removed, takes an
  * evenly spaced slot over the line from 0.15 of it (over the scene when it has no line). A count
- * with `at` ticks in the moments before its phrase instead, so the number on screen lands as it
- * is said; one without never lands before the terminals beside it have typed their output, where
- * its number comes from. `place` is the default made explicit, so it resolves to nothing; beats on
- * elements that are gone drop. The camera never aims at an element that is not in place yet, nor
- * does a morph or a count play on one: a beat toward, or a morph or a count of, a revealed element
- * starts once its (first) reveal is done; a count that waited is shortened (to `COUNT_MIN` at the
- * least) to land on its phrase still.
+ * or a count-up with `at` ticks in the moments before its phrase instead, so the number on screen
+ * lands as it is said; a count without one never lands before the terminals beside it have typed
+ * their output, where its number comes from. `place` is the default made explicit, so it resolves
+ * to nothing; beats on elements that are gone drop. Nothing plays on an element that is not in
+ * place yet: a beat that moves the camera toward, acts on, or (a flow) travels between or carries
+ * a revealed element starts once its (first) reveal is done (the latest of them, for a flow); a
+ * count or a count-up that waited is shortened (to `COUNT_MIN` at the least) to land on its phrase
+ * still.
  */
 function timeBeats(
   shot: Shot,
@@ -323,6 +385,7 @@ function timeBeats(
   timing: SceneTiming,
   options: CaptionOptions,
   shown: readonly DirectionElement[],
+  ctx: Pick<Context, 'sources' | 'labels'>,
 ): DirectionBeat[] {
   const duration = timing.end - timing.start;
   const text = parseEmphasis(scene.narration).text;
@@ -340,33 +403,58 @@ function timeBeats(
   const moment = (verb: keyof typeof BEAT_SECONDS, start: number) =>
     inside(start, BEAT_SECONDS[verb]);
   /**
-   * A count that lands at `at`: it starts a count's length before, never before the scene does or
-   * `ready`, and ticks at least `COUNT_MIN`.
+   * A count (or a count-up) that lands at `at`: it starts its length before, never before the
+   * scene does or `ready`, and ticks at least `COUNT_MIN`.
    */
-  const landing = (at: number, ready = 0) => {
-    const start = Math.max(ready, at - BEAT_SECONDS.count);
+  const landing = (at: number, ready = 0, verb: 'count' | 'count-up' = 'count') => {
+    const start = Math.max(ready, at - BEAT_SECONDS[verb]);
     return inside(start, Math.max(COUNT_MIN, at - start));
   };
-  // Where each count with a phrase lands, for when it has to wait for its reveal.
+  // Where each count or count-up with a phrase lands, for when it has to wait for its reveal.
   const lands = new Map<DirectionBeat, number>();
   const beats = live.flatMap((beat, i): DirectionBeat[] => {
-    const target = beat.verb === 'camera' ? beat.to : beat.element;
-    if (!kept.has(target)) return [];
+    if (!beatTargets(beat).every((id) => kept.has(id))) return [];
     const pinned = beat.at === undefined ? undefined : phraseMoment(text, beat.at, timing, options);
     const spaced = from + span * (SPACED_FROM + ((1 - SPACED_FROM) * i) / live.length);
-    if (beat.verb === 'count') {
-      const count: DirectionBeat = {
-        verb: 'count',
-        element: beat.element,
-        ...(pinned === undefined ? moment('count', spaced) : landing(pinned)),
-      };
-      if (pinned !== undefined) lands.set(count, pinned);
-      return [count];
+    if (beat.verb === 'count' || beat.verb === 'count-up') {
+      const timed =
+        pinned === undefined ? moment(beat.verb, spaced) : landing(pinned, 0, beat.verb);
+      let landed: DirectionBeat;
+      if (beat.verb === 'count') landed = { verb: 'count', element: beat.element, ...timed };
+      else {
+        const value = countUpValue(beat, shot, ctx.sources);
+        if (value === undefined) return [];
+        landed = { verb: 'count-up', element: beat.element, value, ...timed };
+      }
+      if (pinned !== undefined) lands.set(landed, pinned);
+      return [landed];
     }
     const { t, seconds } = moment(beat.verb, pinned ?? spaced);
     if (beat.verb === 'reveal')
       return [{ verb: 'reveal', element: beat.element, style: beat.style ?? 'rise', t, seconds }];
     if (beat.verb === 'morph') return [{ verb: 'morph', element: beat.element, t, seconds }];
+    if (beat.verb === 'flow')
+      return [
+        {
+          verb: 'flow',
+          from: beat.from,
+          to: beat.to,
+          ...(beat.packet === undefined ? {} : { packet: beat.packet }),
+          t,
+          seconds,
+        },
+      ];
+    if (beat.verb === 'split') {
+      const pieces = splitCount(beat, ctx.sources.metric(beat.count), ctx.labels);
+      return pieces
+        ? [{ verb: 'split', element: beat.element, ...pieces, side: beat.side, t, seconds }]
+        : [];
+    }
+    if (beat.verb === 'merge') {
+      const into = mergeInto(beat, shot, ctx.sources, ctx.labels);
+      return [{ verb: 'merge', element: beat.element, ...(into ? { into } : {}), t, seconds }];
+    }
+    if (beat.verb === 'stack') return [{ verb: 'stack', element: beat.element, t, seconds }];
     return [
       {
         verb: 'camera',
@@ -382,17 +470,31 @@ function timeBeats(
   for (const b of [...beats].sort((a, b) => a.t - b.t))
     if (b.verb === 'reveal' && !firstReveal.has(b.element)) firstReveal.set(b.element, b);
   const typed = typedAt(shown, scene, timing, options, (id) => firstReveal.get(id)?.t ?? 0);
+  /** When element `id` is in place: once its first reveal is done, else from the start. */
+  const ready = (id: string) => {
+    const reveal = firstReveal.get(id);
+    return reveal ? reveal.t + reveal.seconds : 0;
+  };
   const aimed = beats.map((b) => {
-    if (b.verb !== 'camera' && b.verb !== 'morph' && b.verb !== 'count') return b;
-    const reveal = firstReveal.get(b.verb === 'camera' ? b.to : b.element);
-    const ready = reveal ? reveal.t + reveal.seconds : 0;
+    if (b.verb === 'reveal') return b;
+    const start = Math.max(...resolvedTargets(b).map(ready));
     const at = lands.get(b);
-    if (at !== undefined) return b.t >= ready ? b : { ...b, ...landing(at, ready) };
-    const start = Math.max(ready, b.verb === 'count' ? typed - BEAT_SECONDS.count : 0);
-    return b.t >= start ? b : { ...b, ...moment(b.verb, start) };
+    if (at !== undefined && (b.verb === 'count' || b.verb === 'count-up'))
+      return b.t >= start ? b : { ...b, ...landing(at, start, b.verb) };
+    // A count without a phrase waits for its number to be typed; a count-up shows the value
+    // before it, which no terminal types.
+    const begin = Math.max(start, b.verb === 'count' ? typed - BEAT_SECONDS.count : 0);
+    return b.t >= begin ? b : { ...b, ...moment(b.verb, begin) };
   });
   // Stable: beats at the same moment keep the order the agent wrote.
   return aimed.sort((a, b) => a.t - b.t);
+}
+
+/** The elements a resolved beat moves the camera toward, acts on, travels between, or carries. */
+function resolvedTargets(b: DirectionBeat): string[] {
+  if (b.verb === 'camera') return [b.to];
+  if (b.verb === 'flow') return [b.from, b.to, ...(b.packet === undefined ? [] : [b.packet])];
+  return [b.element];
 }
 
 /**
@@ -419,6 +521,117 @@ function typedAt(
       return at + settledAt(e.visual, Math.max(0.1, duration - at));
     }),
   );
+}
+
+/** A number of pieces, in words: one piece, four pieces. */
+const piecesText = (count: number) => `${count} ${count === 1 ? 'piece' : 'pieces'}`;
+
+/**
+ * The splits that fan out of a node and have room to: a node's own, and a packet's that rests
+ * against a node when it splits, whose pieces fan out in that node's slot rather than over its
+ * label. A split whose slot has no arrangement for its pieces beside the label, or whose node
+ * another split fans out of already (the first in time takes it), is left out, and said why.
+ */
+function fanRoom(
+  beats: DirectionBeat[],
+  elements: readonly DirectionElement[],
+  ctx: Pick<Context, 'regions' | 'orientation'>,
+): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
+  const byId = new Map(elements.map((e) => [e.id, e]));
+  const taken = new Map<string, string>();
+  const dropped: DroppedBeat[] = [];
+  const kept = beats.filter((b) => {
+    if (b.verb !== 'split') return true;
+    const kind = byId.get(b.element)?.kind;
+    const node = kind === 'node' ? b.element : kind === 'packet' ? restingAt(beats, b) : undefined;
+    const slot = node === undefined ? undefined : byId.get(node)?.rect;
+    if (node === undefined || !slot) return true;
+    const where =
+      node === b.element ? `node "${node}"` : `node "${node}", where "${b.element}" rests,`;
+    const by = taken.get(node);
+    let reason: string | undefined;
+    if (by !== undefined) reason = `${where} already makes room for the split of "${by}"`;
+    else if (!arrangedSplit(slot, ctx.regions.unit, ctx.orientation === 'vertical', b.count))
+      reason = `the slot of ${where} has no room beside its label for ${piecesText(b.count)}`;
+    if (reason === undefined) {
+      taken.set(node, b.element);
+      return true;
+    }
+    dropped.push({ verb: b.verb, element: b.element, reason });
+    return false;
+  });
+  return { beats: kept, dropped };
+}
+
+/**
+ * The flow beats that still make sense once timed: a merge after the split it pulls back (a pile
+ * merges any time), and a count-up that has landed by the time its counter's count starts (which
+ * then ticks from where the count-up ended). Phrases can put beats out of the written order; the
+ * ones that cannot play are left out, and said why.
+ */
+function flowOrder(
+  beats: DirectionBeat[],
+  elements: readonly DirectionElement[],
+): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
+  const piles = new Set(elements.flatMap((e) => (e.kind === 'pile' ? [e.id] : [])));
+  const split = new Map(
+    beats.flatMap((b) => (b.verb === 'split' ? [[b.element, b.t] as const] : [])),
+  );
+  const count = new Map(
+    beats.flatMap((b) => (b.verb === 'count' ? [[b.element, b.t] as const] : [])),
+  );
+  /** Why a beat cannot play where it was timed, as the beat left out; nothing when it can. */
+  const out = (b: DirectionBeat): DroppedBeat | undefined => {
+    if (b.verb === 'merge' && !piles.has(b.element)) {
+      const at = split.get(b.element);
+      const reason =
+        at === undefined
+          ? `the merge of "${b.element}" pulls back a split that was left out`
+          : at >= b.t
+            ? `the merge of "${b.element}" at ${b.t.toFixed(1)} s comes before its split`
+            : undefined;
+      return reason === undefined ? undefined : { verb: b.verb, element: b.element, reason };
+    }
+    const at = b.verb === 'count-up' ? count.get(b.element) : undefined;
+    if (b.verb === 'count-up' && at !== undefined && b.t + b.seconds > at + 1e-9)
+      return {
+        verb: b.verb,
+        element: b.element,
+        reason: `the count-up of "${b.element}" lands at ${(b.t + b.seconds).toFixed(1)} s, after its count starts`,
+      };
+    return undefined;
+  };
+  const dropped: DroppedBeat[] = [];
+  const kept = beats.filter((b) => {
+    const left = out(b);
+    if (left) dropped.push(left);
+    return !left;
+  });
+  return { beats: kept, dropped };
+}
+
+/** Flow verbs that may take longer than their own length. */
+const STRETCHES: ReadonlySet<DirectionBeat['verb']> = new Set(['flow', 'split', 'merge', 'stack']);
+/** A stretched beat ends this long before the next one starts… */
+const STRETCH_GAP = 0.15;
+/** …and takes at most this many times its own length. */
+const STRETCH_MAX = 3;
+
+/**
+ * Flows, splits, merges, and stacks take the time until the next beat starts, up to three times
+ * their own length, so a staged story keeps moving between its beats instead of freezing. The last
+ * beat keeps its own length: the shot settles before the next scene comes in.
+ */
+function stretchFlows(beats: DirectionBeat[]): DirectionBeat[] {
+  return beats.map((b, i) => {
+    const next = beats[i + 1];
+    if (!STRETCHES.has(b.verb) || !next) return b;
+    const own = BEAT_SECONDS[b.verb];
+    const room = next.t - STRETCH_GAP - b.t;
+    const seconds =
+      Math.round(Math.min(STRETCH_MAX * own, Math.max(b.seconds, room)) * 1000) / 1000;
+    return seconds === b.seconds ? b : { ...b, seconds };
+  });
 }
 
 /** The run images a direction shows (its captures), for the composition to prepare. */

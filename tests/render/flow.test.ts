@@ -23,6 +23,7 @@ import {
   edgeRoute,
   PILE_ITEM_MIN,
   pointAlong,
+  splitLayout,
   stackCount,
   stackRows,
 } from '../../packages/video/src/runtime/routes.ts';
@@ -457,6 +458,37 @@ describe.skipIf(!available)('splits and merges', () => {
       );
       expect(v.errors).toEqual([]);
     });
+
+  it('fans a packet that has arrived out beside the node it rests against, off its label', async () => {
+    const SPLIT = { verb: 'split', element: 'p', count: 4, name: 'chunks', side: 'base' } as const;
+    const MERGE = { verb: 'merge', element: 'p', t: 4.4, seconds: 0.8 } as const;
+    const v = await staged(twoNodes(true), [FLOW, { ...SPLIT, t: 2.6, seconds: 0.9 }, MERGE]);
+    const frame = v.frameAt(3.8);
+    const slot = v.r.right;
+    const b = await node(v, frame, 'b');
+    // The node makes room in its slot as if it split itself, and the edge meets it there.
+    const layout = splitLayout(slot, v.r.regions.unit, false, 4);
+    for (const key of ['x', 'y', 'width', 'height'] as const)
+      expect(b.placed[key]).toBeCloseTo(layout.box[key], 1);
+    const drawn = await read(v, frame);
+    expect(drawn.pieces).toHaveLength(4);
+    expect(drawn.badgeBoxes).toHaveLength(1);
+    expect(drawn.badges[0]).toMatchObject({ side: 'Before', name: 'chunks', num: '4' });
+    for (const part of [...drawn.pieces, ...drawn.badgeBoxes]) {
+      inside(part, slot);
+      expect(apart(part, b.label)).toBe(true);
+      expect(apart(part, b.box)).toBe(true);
+    }
+    // It breaks apart where it arrived, on the edge's end, and is whole there again once merged.
+    const end = edgeRoute((await node(v, frame, 'a')).placed, b.placed).at(-1)!;
+    const arrived = await read(v, v.frameAt(2.4));
+    expect(near(center(arrived.packet!), end)).toBeLessThan(1);
+    const merged = await read(v, v.frameAt(5.6));
+    expect(merged.pieces).toHaveLength(0);
+    expect(merged.packet!.opacity).toBe(1);
+    expect(near(center(merged.packet!), end)).toBeLessThan(1);
+    expect(v.errors).toEqual([]);
+  });
 
   it('fits a count’s caption to its slot, and reports a name too long to fit there', async () => {
     const split = (name: string) =>

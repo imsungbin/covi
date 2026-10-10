@@ -39,26 +39,31 @@ export function visualImages(visual: Visual): string[] {
  * The evidence a scene rests on: the ids it cites, then what is on screen from the run. Without
  * direction, or when its shot keeps the storyboard visual, that is what the visual shows (the
  * captured images, the diff hunks of its code, the request, command, or findings on screen); a
- * shot adds what its elements cite, and a shot without the visual replaces it. `shot` is what is
- * on screen of the scene's shot once resolved (`shownShot`), never the plan's: an element whose
- * content the run lacks is not drawn, and when none is, the storyboard visual shows instead.
+ * shot adds what its elements cite and the counts its splits draw, and a shot without the visual
+ * replaces it. `shot` is what is on screen of the scene's shot once resolved (`shownShot`), never
+ * the plan's: an element whose content the run lacks is not drawn, and when none is, the
+ * storyboard visual shows instead.
  */
 export function sceneEvidence(
   scene: Pick<Scene, 'visual' | 'evidenceIds'>,
   index: EvidenceIndex,
   findings: ReadonlyArray<Pick<Finding, 'title' | 'evidenceIds'>> = [],
-  shot?: Pick<Shot, 'elements'>,
+  shot?: Pick<Shot, 'elements'> & Partial<Pick<Shot, 'beats'>>,
 ): string[] {
   const ids = [...(scene.evidenceIds ?? [])];
   if (!shot || shot.elements.some((e) => e.kind === 'visual'))
     ids.push(...visualEvidence(scene.visual, index, findings));
-  for (const e of shot?.elements ?? []) {
-    const cited = e.kind === 'node' ? (e.evidence ?? []) : 'evidence' in e ? [e.evidence] : [];
-    // Stored as the registry holds it, like every other id the timeline records.
-    for (const id of cited) {
-      const item = index.find(id);
-      if (item) ids.push(item.id);
-    }
+  // What its elements cite, and the counts its splits draw.
+  const cited = [
+    ...(shot?.elements ?? []).flatMap((e) =>
+      e.kind === 'node' ? (e.evidence ?? []) : 'evidence' in e ? [e.evidence] : [],
+    ),
+    ...(shot?.beats ?? []).flatMap((b) => (b.verb === 'split' ? [b.count] : [])),
+  ];
+  // Stored as the registry holds it, like every other id the timeline records.
+  for (const id of cited) {
+    const item = index.find(id);
+    if (item) ids.push(item.id);
   }
   return [...new Set(ids)].slice(0, EVIDENCE_LIMITS.cites);
 }

@@ -4,6 +4,7 @@ import { availableParallelism } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
 import { serveStatic, sha256 } from '@covi/core';
 import { type Browser, chromium, type Page } from 'playwright';
+import { DELTA_FADE } from '../runtime/numbers.ts';
 import { entranceSeconds, restFrame, settledFrame } from '../timeline/cues.ts';
 import {
   type CompositionApi,
@@ -137,7 +138,8 @@ const MORPH_TILE = 0.5;
 /**
  * Frames for the contact sheet, in time order: the opening, every scene's middle, the middle of
  * every transition (a cut has none; timelines without kinds faded over `transition`), the hero's
- * accent, and the middle of every morph, so the sheet shows the code changing.
+ * accent, the middle of every morph, so the sheet shows the code changing, and where every count
+ * lands, once its change in percent has faded in: the moment its number is judged.
  */
 export function contactSheetFrames(
   timeline: Pick<Timeline, 'fps' | 'frames' | 'scenes' | 'transition'>,
@@ -151,8 +153,10 @@ export function contactSheetFrames(
     if (seconds > 0) frames.add(frame(s.start + seconds / 2));
     const hero = s.phases?.[HERO_PHASE];
     if (s.hero && hero !== undefined) frames.add(frame(s.start + hero + HERO_TILE));
-    for (const beat of s.direction?.beats ?? [])
+    for (const beat of s.direction?.beats ?? []) {
       if (beat.verb === 'morph') frames.add(frame(s.start + beat.t + beat.seconds * MORPH_TILE));
+      if (beat.verb === 'count') frames.add(frame(s.start + beat.t + beat.seconds + DELTA_FADE));
+    }
   });
   return [...frames].sort((a, b) => a - b);
 }

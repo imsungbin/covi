@@ -109,6 +109,27 @@ describe('the contact sheet', () => {
     expect(frames).toEqual([9, 60, 204, 210]);
   });
 
+  it('samples where every count lands, once its change in percent has faded in', () => {
+    const frames = contactSheetFrames({
+      fps: 30,
+      frames: 300,
+      transition: 0.45,
+      scenes: [
+        s('s1', 0, 4),
+        s('s2', 4, 10, {
+          transition: { kind: 'cut', seconds: 0 },
+          direction: {
+            whole: false,
+            elements: [],
+            beats: [{ verb: 'count', element: 'm', t: 1, seconds: 1.6 }],
+          },
+        }),
+      ],
+    });
+    // 0.3 s; middles 2 and 7; the count ends 4 + 1 + 1.6 s in, its percent faded in 0.3 s later.
+    expect(frames).toEqual([9, 60, 207, 210]);
+  });
+
   it('samples transitions of timelines written before they had kinds', () => {
     const frames = contactSheetFrames({
       fps: 10,

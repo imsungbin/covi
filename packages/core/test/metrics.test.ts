@@ -127,6 +127,65 @@ describe('reading metrics from output', () => {
     ]);
   });
 
+  it('stays silent on credentials however they are spelled, in lines and JSON keys', () => {
+    for (const name of [
+      'passphrase',
+      'cvv',
+      'credential',
+      'credentials',
+      // Run-together and short spellings.
+      'apikey',
+      'authtoken',
+      'accesstoken',
+      'secretkey',
+      'csrftoken',
+      'sessionid',
+      'passwd',
+      'pwd',
+      'pw',
+      'cvc',
+      'totp',
+      // Phrases, by their words in order.
+      'verification code',
+      'auth code',
+      'one-time code',
+      // Words the ASCII word split drops, and compounds.
+      '비밀번호',
+      '새 암호',
+      'パスワード',
+      '密码',
+      '口令',
+      'Passwort',
+      'Kennwort',
+      'Benutzerpasswort',
+      'ｐａｓｓｗｏｒｄ',
+    ]) {
+      expect(values(`${name}: 48291357`), name).toEqual([]);
+      expect(values(`${name.replace(/ /g, '_')}=48291357`), name).toEqual([]);
+      expect(readJsonMetrics(JSON.stringify({ [name]: 48291357 })), name).toEqual([]);
+    }
+    expect(
+      readJsonMetrics(
+        JSON.stringify({
+          passwd: 12345678,
+          user: { pwd: 1234 },
+          apikey: 42,
+          verificationCode: 482913,
+          auth: { code: 7 },
+          비밀번호: 1234,
+          total: 3,
+        }),
+      ).map((m) => m.name),
+    ).toEqual(['total']);
+    // Words that only contain a credential's letters, or a code that is no credential, still read.
+    expect(values('cache keys: 12\npower: 3 W\nexit code: 1\ncompassion: 2')).toEqual([
+      ['cache-keys', 12, undefined],
+      ['power', 3, 'W'],
+      ['exit-code', 1, undefined],
+      ['compassion', 2, undefined],
+    ]);
+  });
+
   it('reads keys counted, and a name where key is not the last word', () => {
     expect(values('cache keys: 12\nkey count: 3')).toEqual([
       ['cache-keys', 12, undefined],

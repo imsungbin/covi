@@ -87,10 +87,41 @@ const CREDENTIALS = new Set([
   'ssn',
   'credential',
   'credentials',
+  // Run together or cut short, as keys and flags often are.
+  'apikey',
+  'authtoken',
+  'accesstoken',
+  'secretkey',
+  'csrftoken',
+  'sessionid',
+  'passwd',
+  'pwd',
+  'pw',
+  'cvc',
+  'totp',
 ]);
-/** `key` names a credential only as the last word: `api key`, not `key count` or `cache keys`. */
-const isCredential = (words: readonly string[]) =>
-  words.at(-1) === 'key' || words.some((w) => CREDENTIALS.has(w));
+/** Credentials named by words in order, found among a name's words: `verification code`. */
+const CREDENTIAL_PHRASES = ['verification-code', 'auth-code', 'one-time-code'];
+/**
+ * Credential words in other languages, found anywhere in the name as printed (NFKC, lowercase):
+ * the ASCII word split drops other scripts, and German joins words into one (`Benutzerpasswort`).
+ */
+const CREDENTIAL_TEXT = ['비밀번호', '암호', 'パスワード', '密码', '口令', 'passwort', 'kennwort'];
+
+/**
+ * Whether a name names a credential: by a word, a phrase, or a word of another language, or by
+ * `key` as its last word (`api key`, not `key count` or `cache keys`).
+ */
+function isCredential(printed: string, words: readonly string[]): boolean {
+  const slug = `-${words.join('-')}-`;
+  const folded = printed.normalize('NFKC').toLowerCase();
+  return (
+    words.at(-1) === 'key' ||
+    words.some((w) => CREDENTIALS.has(w)) ||
+    CREDENTIAL_PHRASES.some((phrase) => slug.includes(`-${phrase}-`)) ||
+    CREDENTIAL_TEXT.some((word) => folded.includes(word))
+  );
+}
 
 /** A parsed number as a metric value: rounded to six decimals, undefined when out of bounds. */
 function bounded(value: number): number | undefined {
@@ -150,7 +181,8 @@ export const metricLabel = (text: string) =>
  */
 function add(found: Found[], printed: string, value: number | undefined, unit?: string): void {
   const words = wordsOf(printed);
-  if (value === undefined || IDENTIFIERS.has(words.at(-1) ?? '') || isCredential(words)) return;
+  if (value === undefined || IDENTIFIERS.has(words.at(-1) ?? '') || isCredential(printed, words))
+    return;
   found.push({ label: metricLabel(printed), words, value, ...(unit ? { unit } : {}) });
 }
 

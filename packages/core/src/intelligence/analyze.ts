@@ -68,6 +68,12 @@ export async function buildAnalysisSystemPrompt(): Promise<string> {
   ].join('\n\n');
 }
 
+/**
+ * How many captured items the analysis prompt lists: metrics come last in the registry, so they
+ * have their own budget, and many captures cannot crowd the numbers out.
+ */
+const PROMPT_EVIDENCE = { captures: 60, metrics: 20 } as const;
+
 export interface ModelAnalysis {
   explanation: Explanation;
   findings: FindingsFile;
@@ -110,11 +116,9 @@ export async function analyzeWithModel(
     evidenceIds: f.evidenceIds,
   }));
   const listed = (input.evidence ?? []).filter((e) => e.kind !== 'diff-hunk');
-  // Metrics come last in the registry, so they have their own budget: many captures cannot crowd
-  // the numbers out.
   const captured = [
-    ...listed.filter((e) => e.kind !== 'metric').slice(0, 60),
-    ...listed.filter((e) => e.kind === 'metric').slice(0, 20),
+    ...listed.filter((e) => e.kind !== 'metric').slice(0, PROMPT_EVIDENCE.captures),
+    ...listed.filter((e) => e.kind === 'metric').slice(0, PROMPT_EVIDENCE.metrics),
   ].map((e) => `- \`${e.id}\`: ${describeMetric(e)}`);
   const prompt = [
     material,

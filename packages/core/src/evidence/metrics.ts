@@ -99,15 +99,12 @@ const CREDENTIALS = new Set([
 ]);
 /** Words that name a credential inside any other, separators taken out: `userPassword`. */
 const CREDENTIAL_PARTS = ['password', 'passwd', 'passcode', 'passphrase', 'secret', 'credential'];
-/**
- * Short words that name a credential only right after a word saying what kind (`refreshToken`,
- * `auth code`, `smspin`), separators taken out: alone, `tokens`, `spinner`, and `exit code` are
- * measurements.
- */
+/** The words that say what kind of token, code, or pin a name is: `refresh` in `refreshToken`. */
 const CREDENTIAL_KINDS = [
   'refresh',
   'access',
   'auth',
+  'oauth',
   'api',
   'csrf',
   'session',
@@ -117,7 +114,20 @@ const CREDENTIAL_KINDS = [
   'verification',
   'sms',
 ];
-const KIND_OF_CREDENTIAL = new RegExp(`(?:${CREDENTIAL_KINDS.join('|')})(?:token|code|pin)`);
+/** A kind of token, code, or pin, exactly: `refreshtoken`, `otpcodes`; not `invalidtokens`. */
+const KIND_OF_CREDENTIAL = new RegExp(`^(?:${CREDENTIAL_KINDS.join('|')})(?:token|code|pin)s?$`);
+
+/**
+ * Whether one of a name's words, or up to three side by side run together, is exactly a kind of
+ * token, code, or pin (`refreshToken`, `otp code`, `one-time code`). Alone, `tokens`, `spinner`,
+ * and `exit code` are measurements, and so is a word that only ends in a kind (`valid codes`).
+ */
+const namesKindOfCredential = (words: readonly string[]) =>
+  words.some((_, i) =>
+    [1, 2, 3].some(
+      (n) => i + n <= words.length && KIND_OF_CREDENTIAL.test(words.slice(i, i + n).join('')),
+    ),
+  );
 
 /** A name's letters and digits as one run, NFKC, lowercase: `Refresh-Token` is `refreshtoken`. */
 const collapsed = (text: string) =>
@@ -148,8 +158,8 @@ const CREDENTIAL_TEXT = [
 
 /**
  * Whether a name names a credential: by a word of one (numbered or not), a long one inside another
- * word, a short one after a word saying what kind, or one of another language; or by `key` as its
- * last word (`api key`, not `key count` or `cache keys`).
+ * word, a kind of token, code, or pin, or one of another language; or by `key` as its last word
+ * (`api key`, not `key count` or `cache keys`).
  */
 function isCredential(printed: string, words: readonly string[]): boolean {
   const run = collapsed(printed);
@@ -157,7 +167,7 @@ function isCredential(printed: string, words: readonly string[]): boolean {
     words.at(-1) === 'key' ||
     words.some((w) => CREDENTIALS.has(w) || CREDENTIALS.has(w.replace(/\d+$/, ''))) ||
     CREDENTIAL_PARTS.some((part) => run.includes(part)) ||
-    KIND_OF_CREDENTIAL.test(run) ||
+    namesKindOfCredential(words) ||
     CREDENTIAL_TEXT.some((word) => run.includes(word))
   );
 }

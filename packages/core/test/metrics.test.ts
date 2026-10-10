@@ -195,17 +195,25 @@ describe('reading metrics from output', () => {
       'client_secret',
       'devicepasscode',
       'credentialCount',
-      // Token, code, and pin after a word that says what kind.
+      // Token, code, and pin after a word that says what kind: one word, or words side by side.
       'refreshtoken',
+      'refresh token',
       'apitoken',
+      'api tokens',
+      'API_TOKENS',
       'sessionToken',
+      'CSRFToken',
       'idtoken',
       'authcode',
+      'auth.code',
       'verificationcode',
       'otpcode',
+      'otp code',
       'onetimecode',
+      'one time codes',
       'oauth code',
       'smspin',
+      'SMS pins',
       // A credential word with a number after it.
       'cvv2',
       // Other languages.
@@ -221,15 +229,36 @@ describe('reading metrics from output', () => {
       expect(values(`${name}: 48291357`), name).toEqual([]);
       expect(readJsonMetrics(JSON.stringify({ [name]: 48291357 })), name).toEqual([]);
     }
-    // The same short words alone, or inside another word, are measurements.
+    // The same short words alone, inside another word, or after a word that only ends in a kind
+    // (`valid` ends in `id`), are measurements.
     expect(
-      values('tokens: 1200\nspinner: 3\nexit code: 1\ncache keys: 12\nstatus code: 200'),
+      values(
+        [
+          'tokens: 1200',
+          'spinner: 3',
+          'exit code: 1',
+          'cache keys: 12',
+          'status code: 200',
+          'invalid tokens: 4',
+          'valid codes: 5',
+          'paid codes: 6',
+          'rapid pins: 7',
+        ].join('\n'),
+      ),
     ).toEqual([
       ['tokens', 1200, undefined],
       ['spinner', 3, undefined],
       ['exit-code', 1, undefined],
       ['cache-keys', 12, undefined],
       ['status-code', 200, undefined],
+      ['invalid-tokens', 4, undefined],
+      ['valid-codes', 5, undefined],
+      ['paid-codes', 6, undefined],
+      ['rapid-pins', 7, undefined],
+    ]);
+    expect(readJsonMetrics('{"validCodes":5,"invalid":{"tokens":4}}').map((m) => m.name)).toEqual([
+      'valid-codes',
+      'invalid-tokens',
     ]);
   });
 

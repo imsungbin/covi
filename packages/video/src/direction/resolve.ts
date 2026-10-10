@@ -388,8 +388,8 @@ function codeWindow(view: readonly DiffLine[], max: number): DiffLine[] {
  * place yet: a beat that moves the camera toward, acts on, or (a flow) travels between or carries
  * a revealed element starts once its (first) reveal is done (the latest of them, for a flow); a
  * count or a count-up that waited is shortened (to `COUNT_MIN` at the least) to land on its phrase
- * still. Flow verbs then keep each element's written order and end by `limit` (`sequenced`); the
- * ones that cannot are left out, and said why.
+ * still. Flow verbs without a phrase make way for counts (`makeWay`), then keep each element's
+ * written order and end by `limit` (`sequenced`); the ones that cannot are left out, and said why.
  */
 function timeBeats(
   shot: Shot,
@@ -511,7 +511,7 @@ function timeBeats(
     const begin = Math.max(was.ready, b.verb === 'count' ? typed - BEAT_SECONDS.count : 0);
     return { beat: b.t >= begin ? b : { ...b, ...moment(b.verb, begin) }, ...was };
   });
-  const out = sequenced(aimed, limit);
+  const out = sequenced(makeWay(aimed, from + span * SPACED_FROM), limit);
   // Stable: beats at the same moment keep the order the agent wrote.
   return { beats: out.beats.sort((a, b) => a.t - b.t), dropped: out.dropped };
 }
@@ -521,6 +521,30 @@ interface Written {
   beat: DirectionBeat;
   phrased: boolean;
   ready: number;
+}
+
+/**
+ * Flow verbs without a phrase make way for the numbers: one that would still be moving while a
+ * count or a count-up ticks starts earlier, to end as that one starts, so the number moves alone
+ * as it lands. Never before `first` (where the spacing starts) or what it acts on is in place, nor
+ * into another count; one with no room stays where the spacing put it. `sequenced` then keeps
+ * each element's order, which can only move a beat back toward where it was.
+ */
+function makeWay(written: readonly Written[], first: number): Written[] {
+  const ticks = written
+    .flatMap(({ beat: b }) => (b.verb === 'count' || b.verb === 'count-up' ? [b] : []))
+    .sort((a, b) => a.t - b.t);
+  const during = (t: number, end: number) =>
+    ticks.find((c) => c.t < end - 1e-9 && t < c.t + c.seconds - 1e-9);
+  return written.map((w) => {
+    const b = w.beat;
+    if (w.phrased || !STRETCHES.has(b.verb)) return w;
+    const tick = during(b.t, b.t + b.seconds);
+    if (!tick) return w;
+    const t = Math.round((tick.t - b.seconds) * 1000) / 1000;
+    if (t < Math.max(first, w.ready) - 1e-9 || during(t, tick.t)) return w;
+    return { ...w, beat: { ...b, t } };
+  });
 }
 
 /** The element a flow verb moves: a flow's packet (a dot is no element), else what it acts on. */

@@ -69,10 +69,12 @@ function along(region: Rect, weights: readonly number[], axis: 'x' | 'y', gap: n
  * Deterministic slots for a shot's elements, in stop-local stage pixels. One element fills the
  * region whatever the layout. `auto` picks from the count: two split it, three line up (a row on
  * wide frames, a column on tall ones), and more make a grid of two columns on tall frames or two
- * rows on wide ones. A square frame's split that leads with a number and stages a pile puts the
- * number in a row beside the next element (7 parts to its 6, as a row gives a number there), above
- * the rest in a row of their own: half the width would leave the counter under its floor, and 7
- * parts to 6 side by side would leave the pile's items under their least size.
+ * rows on wide ones. A square frame's split that leads with a number gives it what a row gives it
+ * there: half the width would leave a counter under its floor. Beside one other element, the
+ * number takes 7 parts to its 6, unless that element is a pile, which goes under the number as
+ * wide as the frame: 7 parts to 6 side by side would leave the pile's items under their least
+ * size. With more elements and a pile, the number shares a row with the next element (7 parts to
+ * its 6), above the rest in a row of their own.
  */
 export function elementSlots(
   kinds: readonly ShotElement['kind'][],
@@ -102,11 +104,15 @@ export function elementSlots(
   if (resolved === 'single') slots = kinds.map(() => region);
   else if (resolved === 'row') slots = along(region, weights, 'x', gap);
   else if (resolved === 'column') slots = along(region, weights, 'y', gap);
+  else if (resolved === 'split' && orientation === 'square' && kinds[0] === 'metric' && n === 2)
+    slots =
+      kinds[1] === 'pile'
+        ? along(region, [1, 1], 'y', gap)
+        : along(region, [SQUARE_METRIC, WEIGHT.visual], 'x', gap);
   else if (
     resolved === 'split' &&
     orientation === 'square' &&
     kinds[0] === 'metric' &&
-    n > 2 &&
     kinds.includes('pile')
   ) {
     const [pair, rest] = along(region, [1, 1], 'y', gap) as [Rect, Rect];

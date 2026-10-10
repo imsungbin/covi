@@ -322,6 +322,55 @@ describe('flow verbs in the direction file', () => {
     expect(s2!.direction).not.toHaveProperty('dropped');
   });
 
+  it('make way for a count: flow verbs without a phrase end as it starts, when there is room', () => {
+    const options = { ...captionOptionsFor('landscape'), language: 'en' as const };
+    const timing = layout.scenes[1]!;
+    const said = (phrase: string) => phraseMoment(NARRATION, phrase, timing, options)!;
+    // Where the spacing starts: no beat without a phrase starts before it.
+    const first =
+      timing.speechStart - timing.start + 0.15 * (timing.speechEnd - timing.speechStart);
+    // The default director's staging of the benchmark: spaced, the merge and the stack would
+    // still be moving while the request bytes count down.
+    const [, s2] = resolve(
+      shot(STAGE, [
+        { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+        { verb: 'stack', element: 'r' },
+        { verb: 'merge', element: 'p' },
+        { verb: 'count', element: 'm', at: 'request bytes' },
+      ]),
+    );
+    const beats = s2!.direction.beats;
+    const count = beats.find((b) => b.verb === 'count')!;
+    // The number counts alone, landing as the narration names it.
+    expect(count.t + count.seconds).toBeCloseTo(said('request bytes'), 2);
+    expect(beats.at(-1)).toBe(count);
+    for (const b of beats.slice(0, -1))
+      expect(b.t + b.seconds, b.verb).toBeLessThanOrEqual(count.t + 1e-6);
+    // The packet still merges after it splits, and nothing starts before the spacing does.
+    const split = beats.find((b) => b.verb === 'split')!;
+    expect(beats.find((b) => b.verb === 'merge')!.t).toBeGreaterThanOrEqual(
+      split.t + split.seconds - 1e-6,
+    );
+    for (const b of beats) expect(b.t).toBeGreaterThanOrEqual(first - 1e-3);
+    expect(s2!.direction).not.toHaveProperty('dropped');
+    // A stack a phrase placed stays on its phrase; one with no room before the count stays where
+    // the spacing put it.
+    const stackOf = (beats: unknown[]) =>
+      resolve(shot(STAGE, beats))[1]!.direction.beats.find((b) => b.verb === 'stack')!;
+    expect(
+      stackOf([
+        { verb: 'stack', element: 'r', at: 'request bytes' },
+        { verb: 'count', element: 'm', at: 'request bytes' },
+      ]).t,
+    ).toBeCloseTo(said('request bytes'), 3);
+    expect(
+      stackOf([
+        { verb: 'stack', element: 'r' },
+        { verb: 'count', element: 'm', at: 'same command' },
+      ]).t,
+    ).toBeCloseTo(first, 3);
+  });
+
   it('stretch flows, splits, merges, and stacks toward the next beat, up to three times their length', () => {
     const [, s2] = resolve(
       shot(STAGE, [

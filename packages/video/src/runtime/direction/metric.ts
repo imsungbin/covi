@@ -222,10 +222,15 @@ function counter(
     each(
       [value],
       printed,
+      // The name and the value hide what runs past them, so a short card squeezes them instead
+      // of overflowing: they are kept from being clipped as QC reads it. A name too long for one
+      // line wraps, clipped whatever the size.
       () =>
         row.scrollWidth <= row.clientWidth + 1 &&
         row.scrollHeight <= 0.55 * e.rect.height + 1 &&
-        box.scrollHeight <= box.clientHeight + 1,
+        box.scrollHeight <= box.clientHeight + 1 &&
+        !overflows(row) &&
+        (name.classList.contains('wrap') || !overflows(name)),
     ),
     scaled(COUNTER_FONT, u),
   );

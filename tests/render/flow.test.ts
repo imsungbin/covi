@@ -906,93 +906,126 @@ describe.skipIf(!available)('piles and count-ups', () => {
   });
 });
 
+/**
+ * The benchmark's terminal scene with a command that printed `counts` besides its request bytes
+ * (70,406 → 9,907), directed by Covi and resolved as a render does, opened in a square frame at
+ * its settled frame: what the shot stages, its counter's size and its pile's items, in design
+ * units.
+ */
+async function measuredSquare(counts: Array<[string, number, number]>) {
+  const size = { width: 1080, height: 1080 };
+  const lines = (side: 1 | 2) => counts.map((c) => `${c[0]}: ${c[side]}`).join('\n');
+  const demo = {
+    commands: [
+      {
+        name: 'Measure the review request',
+        command: 'node scripts/measure.js',
+        before: { exitCode: 0, output: `request bytes: 70406\n${lines(1)}` },
+        after: { exitCode: 0, output: `request bytes: 9907\n${lines(2)}` },
+        changed: true,
+      },
+    ],
+    shots: [],
+    requests: [],
+    skipped: [],
+    findings: [],
+  } as unknown as Demonstration;
+  const evidence = indexEvidence(buildEvidence({ demo }));
+  const sources = directionSources({ demo, evidence });
+  const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', ...size });
+  const title = 'Send document references';
+  const scenes = StoryboardSchema.parse({
+    title,
+    template: 'bug-fix',
+    scenes: [
+      {
+        id: 's1',
+        beat: 'a',
+        narration: 'The request carried every document.',
+        visual: { kind: 'callout', title: 'Before' },
+      },
+      {
+        id: 's2',
+        beat: 'b',
+        narration:
+          "Here's the same command before and after the change. It now prints request bytes: 9907.",
+        visual: {
+          kind: 'terminal',
+          command: 'node scripts/measure.js',
+          output: 'request bytes: 9907',
+          before: 'request bytes: 70406',
+        },
+      },
+    ],
+  }).scenes;
+  const layout = layoutScenes(scenes, new Map(), new Map(), 'en', pacingFor(spec));
+  const image = () => ({ src: '', width: 1, height: 1 });
+  const plan = defaultDirection({ scenes, evidence, sources, seed: 3, orientation: 'square' });
+  const staging = resolveDirection({
+    plan,
+    scenes,
+    layout,
+    spec,
+    language: 'en',
+    sources,
+    image,
+    seed: 3,
+    redact: (value) => value,
+  });
+  const direction = staging[1]!.direction;
+  const timeline = buildTimeline({ title, scenes, layout, spec, image, staging });
+  const v = await opened(timeline, size);
+  const frame = settledFrame(timeline, 1)!;
+  const drawn = (await v.seek(
+    frame,
+    `const scene = document.querySelector('[data-scene="s2"]');
+     const items = [...scene.querySelectorAll('.pitem')].map((n) => n.getBoundingClientRect().width);
+     return { counter: Number.parseFloat(getComputedStyle(scene.querySelector('.mvalue')).fontSize), items: items.length, item: Math.min(...items) };`,
+  )) as { counter: number; items: number; item: number };
+  const unit = computeRegions({ ...size, orientation: 'square' }).unit;
+  return {
+    direction,
+    counter: drawn.counter / unit,
+    items: drawn.items,
+    item: drawn.item / unit,
+    overflowing: (await v.report(frame)).items.filter((i) => i.overflow),
+    errors: v.errors,
+  };
+}
+
 describe.skipIf(!available)('the default director’s staged counts', () => {
   it('keeps the benchmark’s counter at its floor and its reads’ items at their least in a square frame', async () => {
-    // The benchmark's terminal scene, directed by Covi and resolved as a render does, at 1:1.
-    const size = { width: 1080, height: 1080 };
-    const demo = {
-      commands: [
-        {
-          name: 'Measure the review request',
-          command: 'node scripts/measure.js',
-          before: {
-            exitCode: 0,
-            output: 'request bytes: 70406\nchunks: 4\nreader steps: 28\ntimeouts: 1',
-          },
-          after: {
-            exitCode: 0,
-            output: 'request bytes: 9907\nchunks: 1\nreader steps: 10\ntimeouts: 0',
-          },
-          changed: true,
-        },
-      ],
-      shots: [],
-      requests: [],
-      skipped: [],
-      findings: [],
-    } as unknown as Demonstration;
-    const evidence = indexEvidence(buildEvidence({ demo }));
-    const sources = directionSources({ demo, evidence });
-    const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', ...size });
-    const title = 'Send document references';
-    const scenes = StoryboardSchema.parse({
-      title,
-      template: 'bug-fix',
-      scenes: [
-        {
-          id: 's1',
-          beat: 'a',
-          narration: 'The request carried every document.',
-          visual: { kind: 'callout', title: 'Before' },
-        },
-        {
-          id: 's2',
-          beat: 'b',
-          narration:
-            "Here's the same command before and after the change. It now prints request bytes: 9907.",
-          visual: {
-            kind: 'terminal',
-            command: 'node scripts/measure.js',
-            output: 'request bytes: 9907',
-            before: 'request bytes: 70406',
-          },
-        },
-      ],
-    }).scenes;
-    const layout = layoutScenes(scenes, new Map(), new Map(), 'en', pacingFor(spec));
-    const image = () => ({ src: '', width: 1, height: 1 });
-    const plan = defaultDirection({ scenes, evidence, sources, seed: 3, orientation: 'square' });
-    const staging = resolveDirection({
-      plan,
-      scenes,
-      layout,
-      spec,
-      language: 'en',
-      sources,
-      image,
-      seed: 3,
-      redact: (value) => value,
-    });
-    const direction = staging[1]!.direction;
-    expect(direction.elements.map((e) => e.kind)).toEqual(['metric', 'packet', 'pile']);
-    // Every beat plays: none is dropped as out of order or too late.
-    expect(direction.beats.map((b) => b.verb).sort()).toEqual(['count', 'merge', 'split', 'stack']);
-    expect(direction.dropped).toBeUndefined();
-    const timeline = buildTimeline({ title, scenes, layout, spec, image, staging });
-    const v = await opened(timeline, size);
-    const frame = settledFrame(timeline, 1)!;
-    const drawn = (await v.seek(
-      frame,
-      `const scene = document.querySelector('[data-scene="s2"]');
-       const items = [...scene.querySelectorAll('.pitem')].map((n) => n.getBoundingClientRect().width);
-       return { counter: Number.parseFloat(getComputedStyle(scene.querySelector('.mvalue')).fontSize), items: items.length, item: Math.min(...items) };`,
-    )) as { counter: number; items: number; item: number };
-    const unit = computeRegions({ ...size, orientation: 'square' }).unit;
+    const drawn = await measuredSquare([
+      ['chunks', 4, 1],
+      ['reader steps', 28, 10],
+      ['timeouts', 1, 0],
+    ]);
+    expect(drawn.direction.elements.map((e) => e.kind)).toEqual(['metric', 'packet', 'pile']);
+    // Every beat plays, in the order written: the flow verbs make way, and the count ticks alone.
+    expect(drawn.direction.beats.map((b) => b.verb)).toEqual(['split', 'stack', 'merge', 'count']);
+    expect(drawn.direction.dropped).toBeUndefined();
     // Both at once: a counter at its floor beside a pile of dots would not do.
-    expect(drawn.counter / unit).toBeGreaterThanOrEqual(120);
+    expect(drawn.counter).toBeGreaterThanOrEqual(120);
     expect(drawn.items).toBe(22);
-    expect(drawn.item / unit).toBeGreaterThanOrEqual(PILE_ITEM_MIN);
-    expect((await v.report(frame)).items.filter((i) => i.overflow)).toEqual([]);
-    expect(v.errors).toEqual([]);
+    expect(drawn.item).toBeGreaterThanOrEqual(PILE_ITEM_MIN);
+    expect(drawn.overflowing).toEqual([]);
+    expect(drawn.errors).toEqual([]);
+  });
+
+  it('keeps the counter at its floor beside a packet or above a pile alone, in a square frame', async () => {
+    const packet = await measuredSquare([['chunks', 4, 1]]);
+    expect(packet.direction.elements.map((e) => e.kind)).toEqual(['metric', 'packet']);
+    expect(packet.counter).toBeGreaterThanOrEqual(120);
+    expect(packet.overflowing).toEqual([]);
+    const pile = await measuredSquare([['reader steps', 28, 10]]);
+    expect(pile.direction.elements.map((e) => e.kind)).toEqual(['metric', 'pile']);
+    expect(pile.counter).toBeGreaterThanOrEqual(120);
+    expect(pile.items).toBe(22);
+    expect(pile.item).toBeGreaterThanOrEqual(PILE_ITEM_MIN);
+    expect(pile.overflowing).toEqual([]);
+    for (const drawn of [packet, pile]) {
+      expect(drawn.direction.dropped).toBeUndefined();
+      expect(drawn.errors).toEqual([]);
+    }
   });
 });

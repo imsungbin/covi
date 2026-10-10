@@ -20,6 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { elementSlots } from '../../packages/video/src/direction/layout.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import { edgeRoute, pointAlong } from '../../packages/video/src/runtime/routes.ts';
+import { orientationOf } from '../../packages/video/src/spec.ts';
 import { canUseBrowser } from '../helpers/env.ts';
 
 /*
@@ -48,8 +49,9 @@ type Point = { x: number; y: number };
 
 /** The media region of a frame, and its two halves side by side (one above the other when tall). */
 function regionsOf(size: Size) {
-  const tall = size.height > size.width;
-  const regions = computeRegions({ ...size, orientation: tall ? 'vertical' : 'landscape' });
+  const orientation = orientationOf(size.width, size.height);
+  const tall = orientation === 'vertical';
+  const regions = computeRegions({ ...size, orientation });
   const m = regions.media;
   const gap = 28 * regions.unit;
   const half = tall ? (m.height - gap) / 2 : (m.width - gap) / 2;
@@ -58,14 +60,33 @@ function regionsOf(size: Size) {
     ? { ...m, y: m.y + half + gap, height: half }
     : { ...m, x: m.x + half + gap, width: half };
   const pivot = { x: m.x + m.width / 2, y: m.y + m.height / 2 };
-  return { regions, media: m, left, right, pivot };
+  return { regions, orientation, media: m, left, right, pivot };
 }
 
-/** Four node slots as the resolver lays them out: a grid of two rows of two (`auto`), or a row. */
-const fourNodes = (layout: 'auto' | 'row') => (r: ReturnType<typeof regionsOf>) =>
-  elementSlots(Array(4).fill('node'), layout, r.media, 'landscape', 28 * r.regions.unit);
+/**
+ * Four node slots as the resolver lays them out: a grid of two rows of two (`auto`), a row, or a
+ * column.
+ */
+const fourNodes = (layout: 'auto' | 'row' | 'column') => (r: ReturnType<typeof regionsOf>) =>
+  elementSlots(Array(4).fill('node'), layout, r.media, r.orientation, 28 * r.regions.unit);
 const grid = fourNodes('auto');
 const row = fourNodes('row');
+const column = fourNodes('column');
+const ids = ['a', 'b', 'c', 'd'] as const;
+const steps = (slots: Rect[]): DirectionElement[] =>
+  slots.map((rect, i) => ({ id: ids[i]!, kind: 'node', rect, label: `Step ${i}` }));
+
+/** `box` lies inside `slot`, to rounding. */
+const inside = (box: Rect, slot: Rect) => {
+  expect(box.x).toBeGreaterThanOrEqual(slot.x - 0.5);
+  expect(box.y).toBeGreaterThanOrEqual(slot.y - 0.5);
+  expect(box.x + box.width).toBeLessThanOrEqual(slot.x + slot.width + 0.5);
+  expect(box.y + box.height).toBeLessThanOrEqual(slot.y + slot.height + 0.5);
+};
+/** Two boxes that do not overlap, to rounding. */
+const apart = (a: Rect, b: Rect) =>
+  Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) <= 0.5 ||
+  Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) <= 0.5;
 
 const center = (r: Rect): Point => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
 const near = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -163,6 +184,28 @@ interface Drawn {
   pileName: string | null;
   value: string | null;
 }
+
+/**
+ * A node as scene s2 draws it at a frame: its box on screen and as placed (stage pixels, as edges
+ * are routed), its label's text, and its visible pieces and count captions.
+ */
+const node = (v: Staged, frame: number, id: string) =>
+  v.seek(
+    frame,
+    `const layer = document.querySelector('[data-scene="s2"] [data-element="${id}"]');
+     const box = (n) => { const r = n.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+     const op = (n) => Number.parseFloat(n.style.opacity || '1');
+     const shown = (s) => [...layer.querySelectorAll(s)].filter((n) => op(n) > 0).map(box);
+     const node = layer.querySelector('.dnode');
+     const px = (k) => Number.parseFloat(node.style[k]);
+     return {
+       box: box(node),
+       placed: { x: px('left'), y: px('top'), width: px('width'), height: px('height') },
+       label: box(node.querySelector('.nlabel')),
+       pieces: shown('.fpiece'),
+       badges: shown('.fbadge'),
+     };`,
+  ) as Promise<{ box: Rect; placed: Rect; label: Rect; pieces: Rect[]; badges: Rect[] }>;
 
 /** What scene s2 draws at a frame. */
 const read = (v: Staged, frame: number) =>
@@ -343,54 +386,135 @@ describe.skipIf(!available)('splits and merges', () => {
     expect(split.badges[0]).toMatchObject({ side: 'After', name: 'jobs', num: '3' });
   });
 
-  it('keeps a node’s pieces and count inside its slot in a grid’s bottom row', async () => {
-    const v = await staged(
-      (r) => grid(r).map((rect, i) => ({ id: 'abcd'[i]!, kind: 'node', rect, label: `Step ${i}` })),
-      [{ verb: 'split', element: 'c', count: 12, name: 'jobs', side: 'head', t: 1, seconds: 0.9 }],
-    );
-    const slot = grid(v.r)[2]!;
-    const split = await read(v, v.frameAt(2.2));
-    expect(split.pieces).toHaveLength(12);
-    expect(split.badgeBoxes).toHaveLength(1);
-    // There is no room below the node for them all: they rise over it rather than leave the slot.
-    const bottom = Math.min(slot.y + slot.height, v.r.regions.captions.y);
-    for (const box of [...split.pieces, ...split.badgeBoxes]) {
-      expect(box.y).toBeGreaterThanOrEqual(slot.y - 0.5);
-      expect(box.y + box.height).toBeLessThanOrEqual(bottom + 0.5);
-      expect(box.x).toBeGreaterThanOrEqual(slot.x - 0.5);
-      expect(box.x + box.width).toBeLessThanOrEqual(slot.x + slot.width + 0.5);
-    }
-    // Still below where the node's box starts, and the count under the pieces.
-    const ys = split.pieces.map((p) => p.y);
-    expect(Math.min(...ys)).toBeGreaterThan(split.nodes.c!.y);
-    expect(split.badgeBoxes[0]!.y).toBeGreaterThan(Math.max(...ys));
-    expect(v.errors).toEqual([]);
-  });
+  for (const [name, slotsOf, splits] of [
+    [
+      'both rows of a 2×2 grid',
+      grid,
+      [
+        ['b', 12],
+        ['c', 3],
+      ],
+    ],
+    [
+      'a column of four',
+      column,
+      [
+        ['d', 12],
+        ['b', 6],
+      ],
+    ],
+  ] as const)
+    it(`keeps a node’s pieces and count off its label and inside its slot, in ${name}`, async () => {
+      const [first] = splits;
+      const v = await staged(
+        (r) => steps(slotsOf(r)),
+        [
+          { verb: 'flow', from: 'a', to: first[0], t: 0.6, seconds: 0.4 },
+          ...splits.map(
+            ([element, count]) =>
+              ({
+                verb: 'split',
+                element,
+                count,
+                name: 'jobs',
+                side: 'head',
+                t: 1,
+                seconds: 0.9,
+              }) as const,
+          ),
+        ],
+      );
+      const frame = v.frameAt(2.2);
+      for (const [id, count] of splits) {
+        const slot = slotsOf(v.r)[ids.indexOf(id)]!;
+        const drawn = await node(v, frame, id);
+        expect(drawn.pieces).toHaveLength(count);
+        expect(drawn.badges).toHaveLength(1);
+        for (const part of [drawn.box, ...drawn.pieces, ...drawn.badges]) inside(part, slot);
+        for (const part of [...drawn.pieces, ...drawn.badges]) {
+          expect(apart(part, drawn.label)).toBe(true);
+          expect(apart(part, drawn.box)).toBe(true);
+        }
+      }
+      // The edge into a node that splits meets its box where it is drawn.
+      const path = (await v.seek(
+        frame,
+        `return document.querySelector('[data-scene="s2"] .flows path').getAttribute('d');`,
+      )) as string;
+      const route = edgeRoute(
+        (await node(v, frame, 'a')).placed,
+        (await node(v, frame, first[0])).placed,
+      );
+      expect(path.match(/-?[\d.]+/g)!.map(Number)).toEqual(
+        route.flatMap((p) => [expect.closeTo(p.x, 1), expect.closeTo(p.y, 1)]),
+      );
+      expect(v.errors).toEqual([]);
+    });
 
   it('fits a count’s caption to its slot, and reports a name too long to fit there', async () => {
     const split = (name: string) =>
       staged(
-        (r) =>
-          row(r).map((rect, i) => ({ id: 'abcd'[i]!, kind: 'node', rect, label: `Step ${i}` })),
+        (r) => steps(row(r)),
         [{ verb: 'split', element: 'a', count: 3, name, side: 'base', t: 1, seconds: 0.9 }],
       );
-    const within = (v: Staged, box: Rect) => {
-      const slot = row(v.r)[0]!;
-      expect(box.x).toBeGreaterThanOrEqual(slot.x - 0.5);
-      expect(box.x + box.width).toBeLessThanOrEqual(slot.x + slot.width + 0.5);
-    };
+    const within = (v: Staged, box: Rect) => inside(box, row(v.r)[0]!);
     const overflowing = async (v: Staged, frame: number) =>
       (await v.report(frame)).items.filter((item) => item.overflow).length;
-    // A name that fits on two lines wraps onto them, and nothing overflows.
+    // A name that fits on two lines wraps onto them, at the body floor at least, and nothing
+    // overflows.
     const two = await split('documents waiting in the queue');
     within(two, (await read(two, two.frameAt(2.2))).badgeBoxes[0]!);
     expect(await overflowing(two, two.frameAt(2.2))).toBe(0);
+    const caption = (await two.seek(
+      two.frameAt(2.2),
+      `const b = document.querySelector('[data-scene="s2"] .fbadge');
+       return [Number.parseFloat(b.style.fontSize), b.querySelector('.fname').getBoundingClientRect().height];`,
+    )) as [number, number];
+    expect(caption[0]).toBeGreaterThanOrEqual(28 * two.r.regions.unit - 0.01);
+    expect(caption[1]).toBeGreaterThan(2 * caption[0]);
     // One that does not is cut off inside the slot, and QC hears about it.
     const long = await split(
       'documents waiting in the request queue for the reader to fetch them one by one, again',
     );
     within(long, (await read(long, long.frameAt(2.2))).badgeBoxes[0]!);
     expect(await overflowing(long, long.frameAt(2.2))).toBeGreaterThan(0);
+  });
+
+  it('shrinks a count below the body floor rather than leave a slot too short for it', async () => {
+    const six = (r: ReturnType<typeof regionsOf>) =>
+      elementSlots(Array(6).fill('node'), 'column', r.media, r.orientation, 28 * r.regions.unit);
+    const v = await staged(
+      (r) => six(r).map((rect, i) => ({ id: `n${i}`, kind: 'node', rect, label: `Step ${i}` })),
+      [
+        {
+          verb: 'split',
+          element: 'n5',
+          count: 12,
+          name: 'documents waiting in the queue',
+          side: 'head',
+          t: 1,
+          seconds: 0.9,
+        },
+      ],
+    );
+    const frame = v.frameAt(2.2);
+    const slot = six(v.r)[5]!;
+    const drawn = await node(v, frame, 'n5');
+    for (const part of [drawn.box, ...drawn.pieces, ...drawn.badges]) inside(part, slot);
+    for (const part of [...drawn.pieces, ...drawn.badges])
+      expect(apart(part, drawn.label)).toBe(true);
+    // QC reads the smaller text, where it holds text to the floor.
+    const fonts = (await v.report(frame)).items.flatMap((item) =>
+      item.role === 'text' && item.font !== undefined && item.rect.y >= slot.y - 0.5
+        ? [item.font]
+        : [],
+    );
+    expect(Math.min(...fonts)).toBeLessThan(28 * v.r.regions.unit);
+    const size = await v.seek(
+      frame,
+      `return Number.parseFloat(document.querySelector('[data-element="n5"] .fbadge').style.fontSize);`,
+    );
+    expect(size).toBeCloseTo(Math.min(...fonts), 0);
   });
 
   it('sets the agent’s label and the run’s words as text', async () => {
@@ -422,6 +546,12 @@ describe.skipIf(!available)('splits and merges', () => {
       await a.shot(a.frameAt(0.6));
       expect((await a.shot(frame)).equals(first)).toBe(true);
       expect((await b.shot(frame)).equals(first)).toBe(true);
+    }
+    // In order, as a render draws them, the scene's entrance included: the same bytes twice.
+    const [c, d] = [await make(), await make()];
+    for (const t of [0.2, 1.6, 2.8]) {
+      const frame = c.frameAt(t);
+      expect((await d.shot(frame)).equals(await c.shot(frame))).toBe(true);
     }
   });
 });

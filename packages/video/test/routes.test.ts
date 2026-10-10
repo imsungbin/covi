@@ -1,17 +1,24 @@
 import { describe, expect, it } from 'vitest';
+import { elementSlots } from '../src/direction/layout.ts';
+import { computeRegions } from '../src/runtime/layout.ts';
 import {
   arrowHead,
   DRAWN_ITEMS,
   edgeRoute,
   fanOut,
   legPoint,
+  nodeBoxRect,
   pileGrid,
   pointAlong,
   routeLength,
+  type SplitLayout,
+  splitLayout,
   stackCount,
   stackRows,
   textBoxRect,
 } from '../src/runtime/routes.ts';
+import { orientationOf } from '../src/spec.ts';
+import type { Rect } from '../src/timeline/types.ts';
 
 const box = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
 
@@ -174,5 +181,94 @@ describe('splits and piles', () => {
     expect(stackRows(0.25, 2)).toEqual([0.5, 0]);
     expect(stackRows(0.75, 2)).toEqual([1, 0.5]);
     expect(stackRows(1, 1)).toEqual([1]);
+  });
+});
+
+describe('a node that splits', () => {
+  /** Node slots as the resolver lays them out, at a frame size. */
+  const slots = (width: number, height: number, n: number, layout: 'auto' | 'column') => {
+    const orientation = orientationOf(width, height);
+    const regions = computeRegions({ width, height, orientation });
+    const rects = elementSlots(
+      Array(n).fill('node'),
+      layout,
+      regions.media,
+      orientation,
+      28 * regions.unit,
+    );
+    return { rects, unit: regions.unit, tall: orientation === 'vertical' };
+  };
+  const inside = (r: Rect, slot: Rect) =>
+    r.x >= slot.x - 1e-6 &&
+    r.y >= slot.y - 1e-6 &&
+    r.x + r.width <= slot.x + slot.width + 1e-6 &&
+    r.y + r.height <= slot.y + slot.height + 1e-6;
+  const overlap = (a: Rect, b: Rect) =>
+    Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 1e-6 &&
+    Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 1e-6;
+  const pieceRects = (l: SplitLayout) =>
+    l.fan.offsets.map((o) => ({
+      x: l.origin.x + o.x - l.fan.width / 2,
+      y: l.origin.y + o.y - l.fan.height / 2,
+      width: l.fan.width,
+      height: l.fan.height,
+    }));
+
+  it('keeps its pieces and its count off its box and inside its slot, in every layout', () => {
+    const layouts = [
+      ['2×2, 1920×1080', slots(1920, 1080, 4, 'auto')],
+      ['2×2, 640×360', slots(640, 360, 4, 'auto')],
+      ['2×2, 1080×1080', slots(1080, 1080, 4, 'auto')],
+      ['2×2, 1080×1920', slots(1080, 1920, 4, 'auto')],
+      ['3 in a column, 1920×1080', slots(1920, 1080, 3, 'column')],
+      ['4 in a column, 1920×1080', slots(1920, 1080, 4, 'column')],
+      ['4 in a column, 1080×1920', slots(1080, 1920, 4, 'column')],
+      ['2 side by side, 1920×1080', slots(1920, 1080, 2, 'auto')],
+    ] as const;
+    for (const [name, { rects, unit, tall }] of layouts)
+      for (const slot of rects)
+        for (let count = 1; count <= 40; count += count < 12 ? 1 : 28) {
+          const l = splitLayout(slot, unit, tall, count);
+          const pieces = pieceRects(l);
+          const where = `${name}, ${count} pieces`;
+          expect(pieces, where).toHaveLength(Math.min(count, DRAWN_ITEMS));
+          for (const r of [l.box, l.caption, ...pieces]) expect(inside(r, slot), where).toBe(true);
+          for (const r of [l.caption, ...pieces]) expect(overlap(r, l.box), where).toBe(false);
+          for (const r of pieces) expect(overlap(r, l.caption), where).toBe(false);
+          // Room for its label (two lines at the floor), and pieces at least a quarter their size.
+          expect(l.box.height, where).toBeGreaterThanOrEqual(
+            Math.min(96 * unit, textBoxRect(slot, unit, tall).height) - 1e-6,
+          );
+          expect(l.fan.width, where).toBeGreaterThanOrEqual(0.25 * 90 * unit - 1e-6);
+          // The count's room holds two lines of name beside the number, or the slot's height.
+          expect(l.caption.height, where).toBeCloseTo(Math.min(120 * unit, slot.height), 6);
+          expect(nodeBoxRect(slot, unit, tall, count), where).toEqual(l.box);
+        }
+  });
+
+  it('fans out under a box with room for it, and to the right of one in a wide, short slot', () => {
+    const [left] = slots(1920, 1080, 2, 'auto').rects;
+    const roomy = splitLayout(left!, 1, false, 3);
+    // Full-size pieces under a full-size box, the count under them, all centered in the slot.
+    expect(roomy.beside).toBe(false);
+    expect(roomy.box.height).toBe(170);
+    expect(roomy.fan.width).toBeCloseTo(90, 9);
+    expect(roomy.origin).toEqual({ x: roomy.box.x + 260, y: roomy.box.y + 170 });
+    expect(roomy.fan.offsets.every((o) => o.y > 0)).toBe(true);
+    const column = slots(1920, 1080, 4, 'column').rects[3]!;
+    const few = splitLayout(column, 1, false, 3);
+    // Beside, the box stays where it is unsplit, so edges up and down the column run straight.
+    expect(few.beside).toBe(true);
+    expect(few.box).toEqual(textBoxRect(column, 1, false));
+    expect(few.origin).toEqual({ x: few.box.x + few.box.width, y: few.box.y + few.box.height / 2 });
+    expect(few.fan.offsets.every((o) => o.x > 0)).toBe(true);
+    // Twelve need more room: the box moves left, as it was otherwise, still above and below its
+    // neighbours' boxes, so the edges to them stay straight.
+    const many = splitLayout(column, 1, false, 12);
+    expect(many.box).toMatchObject({ y: few.box.y, width: 520, height: few.box.height });
+    expect(many.box.x).toBeLessThan(few.box.x);
+    expect(many.box.x + many.box.width).toBeGreaterThan(few.box.x);
+    // A node that does not split keeps its box.
+    expect(nodeBoxRect(column, 1, false)).toEqual(textBoxRect(column, 1, false));
   });
 });

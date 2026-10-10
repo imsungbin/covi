@@ -21,7 +21,7 @@ import {
 } from '../components/types.ts';
 import { el, fitText, place } from '../dom.ts';
 import { union } from '../narrator.ts';
-import { textBoxRect } from '../routes.ts';
+import { splitLayout, textBoxRect } from '../routes.ts';
 import { type FlowSpans, flowSpans, mountFlows, nodeBoxes, nodeSplit, packet } from './flow.ts';
 import { metric } from './metric.ts';
 import { morph } from './morph.ts';
@@ -177,6 +177,9 @@ function draw(
   span: Span,
   spans: FlowSpans,
 ): Part {
+  const tall = ctx.timeline.orientation === 'vertical';
+  // A node's or a label's box in its slot; edges join a node where it is drawn (see `nodeBoxes`).
+  const box = () => textBoxRect(element.rect, ctx.regions.unit, tall);
   switch (element.kind) {
     case 'visual':
       return { component: drawVisual(ctx) };
@@ -193,14 +196,15 @@ function draw(
     case 'packet':
       return { component: packet(element, ctx, spans) };
     case 'node': {
-      const part = textBox(element.label, element.rect, 'node dnode', ctx);
       const { split } = spans;
-      return split
-        ? { ...part, component: nodeSplit(part.component, element, ctx, { ...spans, split }) }
-        : part;
+      if (!split) return textBox(element.label, box(), 'node dnode', ctx);
+      // A node that splits makes room in its slot for its pieces and its count.
+      const layout = splitLayout(element.rect, ctx.regions.unit, tall, split.count);
+      const part = textBox(element.label, layout.box, 'node dnode', ctx);
+      return { ...part, component: nodeSplit(part.component, layout, ctx, { ...spans, split }) };
     }
     case 'label':
-      return textBox(element.text, element.rect, 'dlabel', ctx, toneColor(element.tone, ctx));
+      return textBox(element.text, box(), 'dlabel', ctx, toneColor(element.tone, ctx));
   }
 }
 
@@ -214,12 +218,13 @@ function toneColor(
 }
 
 /**
- * A box of an agent's short text (a node's name, a label), centered in its slot and sized to it,
- * with the text fitted between 28 and 40 units (48 on tall frames) and set as text.
+ * A box of an agent's short text (a node's name, a label), drawn at `rect` (centered in its slot,
+ * or where a node that splits leaves it), with the text fitted between 28 and 40 units (48 on tall
+ * frames) and set as text.
  */
 function textBox(
   text: string,
-  slot: Rect,
+  rect: Rect,
   className: string,
   ctx: ComponentContext,
   color?: string,
@@ -227,8 +232,7 @@ function textBox(
   const u = ctx.u;
   const tall = ctx.timeline.orientation === 'vertical';
   const box = el('div', className, ctx.root);
-  // The box edges join and packets travel to (see `nodeBoxes`): one computation for both.
-  place(box, textBoxRect(slot, ctx.regions.unit, tall));
+  place(box, rect);
   // The tone marks the box; the text keeps the theme's color, which reads on any tint.
   if (color) Object.assign(box.style, { borderColor: color, background: `${color}1f` });
   const label = el('div', 'nlabel', box, text);

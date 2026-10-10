@@ -181,6 +181,200 @@ export function fanOut(
   return { width, height, offsets };
 }
 
+/** How much room a fan's pieces cover around its origin. */
+function extent(fan: Fan): { width: number; height: number } {
+  if (!fan.offsets.length) return { width: 0, height: 0 };
+  const xs = fan.offsets.map((o) => o.x);
+  const ys = fan.offsets.map((o) => o.y);
+  return {
+    width: Math.max(...xs) - Math.min(...xs) + fan.width,
+    height: Math.max(...ys) - Math.min(...ys) + fan.height,
+  };
+}
+
+/** A node that splits, laid out in its slot: its box, its pieces fanned out, and its count. */
+export interface SplitLayout {
+  box: Rect;
+  /** Where the pieces leave the box and merge back into it: the middle of its side facing them. */
+  origin: Point;
+  /** The pieces fanned out: their size, and their centers' offsets from `origin`. */
+  fan: Fan;
+  /** The room the count's caption is fitted to. */
+  caption: Rect;
+  /**
+   * The count sits beside the pieces (at the left of its room, level with them), else under them
+   * (centered across its room, at its top).
+   */
+  beside: boolean;
+}
+
+/** A node split's sizes, in design units. */
+const SPLIT = {
+  /** Its pieces are a packet's, whatever the node's size. */
+  piece: { width: 150, height: 64 },
+  /** Between the box, the pieces, and the count. */
+  gap: 16,
+  /** Kept clear inside the slot's sides. */
+  margin: 16,
+  /** The least a box is cut to: two lines of a label at the body floor, and its padding… */
+  box: 96,
+  /** …and narrowed to, beside its pieces. */
+  boxWidth: 280,
+  /** The count's room: its side above its name, on two lines at most, beside the number. */
+  caption: { width: 380, height: 120 },
+  /** The least width the count gets beside the pieces. */
+  captionMin: 160,
+  /** The share of their size pieces are drawn at in a slot with room for no arrangement. */
+  scale: 0.25,
+} as const;
+
+/**
+ * Where a node that splits into `count` pieces is drawn in its slot, so that neither its pieces
+ * nor its count cover its box (and its label) or leave the slot. Of three arrangements, the one
+ * that shows the pieces largest (the first on a tie): under the box with the count under them (a
+ * tall slot), under the box with the count beside them (a shorter one), or to the right of the box
+ * with the count beside them (a wide, short slot, such as a column's). Under the box, the box
+ * takes the top of the slot, cut down toward two lines of label if the pieces need the room;
+ * beside it, the box stays where it is unsplit unless the pieces need the room, and then moves
+ * left. The pieces shrink to the room they have.
+ */
+export function splitLayout(slot: Rect, unit: number, tall: boolean, count: number): SplitLayout {
+  const u = (n: number) => n * unit;
+  const whole = textBoxRect(slot, unit, tall);
+  const gap = u(SPLIT.gap);
+  const margin = u(SPLIT.margin);
+  const wide = slot.width - 2 * margin;
+  const piece = { width: u(SPLIT.piece.width), height: u(SPLIT.piece.height) };
+  const captionHeight = Math.min(u(SPLIT.caption.height), slot.height);
+  const boxMin = Math.min(u(SPLIT.box), whole.height);
+  // How tall the pieces' lines are at full size, before any fitting to a width.
+  const lines = Math.ceil(Math.min(Math.max(0, Math.floor(count)), DRAWN_ITEMS) / PER_LINE);
+  const tallest = lines ? piece.height * 0.7 * (1.5 * (lines - 1) + 1) : 0;
+  /** The pieces at most `height` tall and `width` wide. */
+  const fanned = (width: number, height: number) => {
+    const k = tallest ? Math.min(1, height / tallest) : 1;
+    return fanOut(count, { width: piece.width * k, height: piece.height * k }, width, 0);
+  };
+  /** A layout's pieces as a share of their full size. */
+  const shown = (l: SplitLayout) => (l.fan.offsets.length ? l.fan.width / (0.6 * piece.width) : 1);
+  /** The layout with the pieces' block centered at `at`. */
+  const laid = (box: Rect, origin: Point, fan: Fan, at: Point, caption: Rect, beside: boolean) => ({
+    box,
+    origin,
+    fan: {
+      ...fan,
+      offsets: fan.offsets.map((o) => ({ x: o.x + at.x - origin.x, y: o.y + at.y - origin.y })),
+    },
+    caption,
+    beside,
+  });
+  const candidates: SplitLayout[] = [];
+
+  // Under the box, the count under the pieces.
+  const room = slot.height - 2 * gap - captionHeight;
+  const height = Math.min(
+    whole.height,
+    Math.max(boxMin, room - extent(fanned(wide, tallest)).height),
+  );
+  if (room - height > 0) {
+    const fan = fanned(wide, room - height);
+    const block = extent(fan).height;
+    const top =
+      slot.y + Math.max(0, (slot.height - (height + 2 * gap + block + captionHeight)) / 2);
+    const origin = { x: whole.x + whole.width / 2, y: top + height };
+    const caption = { x: slot.x + margin, y: origin.y + 2 * gap + block, width: wide };
+    candidates.push(
+      laid(
+        { ...whole, y: top, height },
+        origin,
+        fan,
+        { x: origin.x, y: origin.y + gap + block / 2 },
+        { ...caption, height: captionHeight },
+        false,
+      ),
+    );
+  }
+
+  // Under the box, the count beside the pieces: a row as tall as the count.
+  const rowCaption = Math.min(u(SPLIT.caption.width), 0.45 * wide);
+  const rowBox = Math.min(whole.height, slot.height - gap - captionHeight);
+  if (rowBox >= boxMin && rowCaption >= u(SPLIT.captionMin)) {
+    const across = wide - gap - rowCaption;
+    const top = slot.y + (slot.height - (rowBox + gap + captionHeight)) / 2;
+    const origin = { x: whole.x + whole.width / 2, y: top + rowBox };
+    const row = origin.y + gap;
+    // The pieces end where the count starts.
+    const fan = fanned(across, captionHeight);
+    candidates.push(
+      laid(
+        { ...whole, y: top, height: rowBox },
+        origin,
+        fan,
+        { x: slot.x + margin + across - extent(fan).width / 2, y: row + captionHeight / 2 },
+        { x: slot.x + margin + across + gap, y: row, width: rowCaption, height: captionHeight },
+        true,
+      ),
+    );
+  }
+
+  // To the right of the box, the count beside the pieces. The box stays where it is unsplit while
+  // that leaves room for the pieces at half their size; else it moves left, then narrows.
+  const right = slot.x + slot.width - margin;
+  const need = 2 * gap + u(SPLIT.caption.width) + 0.5 * extent(fanned(Infinity, slot.height)).width;
+  const short = need - (right - (whole.x + whole.width));
+  const move = Math.max(0, Math.min(short, whole.x - (slot.x + margin)));
+  const narrow = Math.max(0, Math.min(short - move, whole.width - u(SPLIT.boxWidth)));
+  const box = { ...whole, x: whole.x - move, width: whole.width - narrow };
+  const origin = { x: box.x + box.width, y: box.y + box.height / 2 };
+  const across = right - origin.x - 2 * gap;
+  const sideCaption = Math.min(u(SPLIT.caption.width), 0.45 * across);
+  if (sideCaption >= u(SPLIT.captionMin)) {
+    const fan = fanned(across - sideCaption, slot.height);
+    const block = extent(fan).width;
+    const x = origin.x + 2 * gap + block;
+    const caption = { x, y: slot.y + (slot.height - captionHeight) / 2, width: right - x };
+    candidates.push(
+      laid(
+        box,
+        origin,
+        fan,
+        { x: origin.x + gap + block / 2, y: origin.y },
+        { ...caption, height: captionHeight },
+        true,
+      ),
+    );
+  }
+
+  const best = candidates.reduce<SplitLayout | undefined>(
+    (a, b) => (a && shown(a) >= shown(b) - 1e-9 ? a : b),
+    undefined,
+  );
+  if (best) return best;
+  // A slot with room for none: the box gives way to small pieces and the count under it.
+  const fan = fanned(wide, SPLIT.scale * tallest);
+  const block = extent(fan).height;
+  const squeezed = Math.max(0, Math.min(whole.height, room - block));
+  const bottom = { x: whole.x + whole.width / 2, y: slot.y + squeezed };
+  return laid(
+    { ...whole, y: slot.y, height: squeezed },
+    bottom,
+    fan,
+    { x: bottom.x, y: bottom.y + gap + block / 2 },
+    { x: slot.x + margin, y: bottom.y + 2 * gap + block, width: wide, height: captionHeight },
+    false,
+  );
+}
+
+/**
+ * A node's box, as both its text and the edges that join it are drawn: `textBoxRect`'s, or, when
+ * it splits into `count` pieces, the box its `splitLayout` leaves it.
+ */
+export function nodeBoxRect(slot: Rect, unit: number, tall: boolean, count?: number): Rect {
+  return count === undefined
+    ? textBoxRect(slot, unit, tall)
+    : splitLayout(slot, unit, tall, count).box;
+}
+
 /**
  * A pile row's items in its grid box (box-relative): at most twelve squares in two lines of six,
  * filled left to right and top to bottom, sized so twelve would fit, the block centered.

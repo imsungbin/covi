@@ -396,29 +396,45 @@ describe('covi CLI', () => {
 
   it('drafts a counter for the benchmark’s request bytes, from the command it measured', async () => {
     const dir = await example('backend-slim-request');
-    const draft = covi(['video', '--repo', dir, '--standard', '--draft', '--force', '--json']);
-    expect(draft.code).toBe(0);
-    const json = draft.json() as { artifacts: Record<string, string> };
-    const storyboard = JSON.parse(readFileSync(json.artifacts.storyboard!, 'utf8')) as {
-      scenes: Array<{ id: string; visual: { kind: string } }>;
-    };
-    const direction = JSON.parse(readFileSync(json.artifacts.direction!, 'utf8')) as {
-      shots: Array<{ scene: string }>;
-    };
-    const terminal = storyboard.scenes.find((s) => s.visual.kind === 'terminal')!;
-    expect(direction.shots.find((s) => s.scene === terminal.id)).toMatchObject({
-      layout: 'row',
-      elements: [
-        {
-          id: 'metric',
-          kind: 'metric',
-          evidence: 'metric:terminal-1:request-bytes',
-          show: 'counter',
-        },
-        { id: 'visual', kind: 'visual' },
-      ],
-      beats: [{ verb: 'count', element: 'metric', at: 'request bytes' }],
-    });
+    // Korean narration names it too ("이제 request bytes: 9907을 출력합니다."), particle and all.
+    for (const language of ['en', 'ko']) {
+      const draft = covi([
+        'video',
+        '--repo',
+        dir,
+        '--standard',
+        '--language',
+        language,
+        '--draft',
+        '--force',
+        '--json',
+      ]);
+      expect(draft.code).toBe(0);
+      const json = draft.json() as { artifacts: Record<string, string> };
+      const storyboard = JSON.parse(readFileSync(json.artifacts.storyboard!, 'utf8')) as {
+        scenes: Array<{ id: string; visual: { kind: string } }>;
+      };
+      const direction = JSON.parse(readFileSync(json.artifacts.direction!, 'utf8')) as {
+        shots: Array<{ scene: string }>;
+      };
+      const terminal = storyboard.scenes.find((s) => s.visual.kind === 'terminal')!;
+      expect(
+        direction.shots.find((s) => s.scene === terminal.id),
+        language,
+      ).toMatchObject({
+        layout: 'row',
+        elements: [
+          {
+            id: 'metric',
+            kind: 'metric',
+            evidence: 'metric:terminal-1:request-bytes',
+            show: 'counter',
+          },
+          { id: 'visual', kind: 'visual' },
+        ],
+        beats: [{ verb: 'count', element: 'metric', at: 'request bytes' }],
+      });
+    }
   });
 
   it('declines a video for an internal change and still produces the review', async () => {

@@ -84,6 +84,12 @@ export function diffFiles(
   });
 }
 
+/** The demo command (1-based) a terminal evidence id names, if it names one. */
+export function terminalNumber(id: string): number | undefined {
+  const n = Number(/^terminal:(\d+)$/.exec(id)?.[1]);
+  return Number.isSafeInteger(n) && evidenceId.terminal(n) === id ? n : undefined;
+}
+
 /** The revision whose app start-up log an evidence id names, if it names one. */
 export function startupLog(id: string): 'base' | 'head' | undefined {
   return (['base', 'head'] as const).find((revision) => id === evidenceId.appStart(revision));
@@ -131,8 +137,8 @@ export function directionSources(input: SourcesInput): DirectionSources {
         const log = input.appLogs?.[revision];
         return log === undefined ? undefined : { name: found.label, command: '', output: log };
       }
-      const n = /^terminal:(\d+)$/.exec(found.id);
-      const c = n ? input.demo?.commands[Number(n[1]) - 1] : undefined;
+      const n = terminalNumber(found.id);
+      const c = n === undefined ? undefined : input.demo?.commands[n - 1];
       if (!c) return undefined;
       return {
         name: c.name,

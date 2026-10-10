@@ -2,6 +2,7 @@ import {
   decimalsOf,
   type EvidenceIndex,
   type EvidenceItem,
+  escapeRegExp,
   evidenceId,
   METRIC_LIMITS,
   metricSource,
@@ -14,7 +15,7 @@ import type { Scene } from '../storyboard/schema.ts';
 import type { DirectionElement, Rect, TimelineLabels } from '../timeline/types.ts';
 import { shown } from './echo.ts';
 import type { Shot, ShotElement } from './schema.ts';
-import type { MetricSource } from './sources.ts';
+import { type MetricSource, terminalNumber } from './sources.ts';
 
 /*
  * Metric elements: what a shot may ask of a measured number, and the number as the video draws it.
@@ -169,8 +170,8 @@ export function keyMetric(
 ): EvidenceItem | undefined {
   if (scene.visual.kind !== 'terminal' || !evidence) return undefined;
   const prefixes = sceneEvidence({ visual: scene.visual }, evidence).flatMap((id) => {
-    const n = /^terminal:(\d+)$/.exec(id);
-    return n ? [`metric:${metricSource.terminal(Number(n[1]))}:`] : [];
+    const n = terminalNumber(id);
+    return n === undefined ? [] : [evidenceId.metric(metricSource.terminal(n), '')];
   });
   let best: EvidenceItem | undefined;
   let most = 0;
@@ -208,12 +209,12 @@ export function metricShot(
   // 0.9999999999999998) from losing one.
   const steps = Math.round(Math.abs(m.head - m.base) * 10 ** decimals);
   const show = steps >= COUNTER_STEPS ? 'counter' : 'compare';
-  // Where the narration says it: its printed name, else its value as drawn or as printed. Trimmed
-  // as the direction schema trims a phrase, so the draft reads back as written.
+  // Where the narration says it: its printed name, else its value as drawn or as printed.
   const text = parseEmphasis(scene.narration).text;
-  const at = [item.label, formatNumber(m.head, decimals), String(m.head)]
-    .map((phrase) => phrase.trim())
-    .find((phrase) => phrase && findPhrase(text, phrase).count === 1);
+  const at =
+    spoken(text, item.label, NAME_RUNS_ON) ??
+    spoken(text, formatNumber(m.head, decimals), VALUE_RUNS_ON) ??
+    spoken(text, String(m.head), VALUE_RUNS_ON);
   const elements: ShotElement[] = [
     { id: 'metric', kind: 'metric', evidence: item.id, show },
     { id: 'visual', kind: 'visual' },
@@ -227,4 +228,48 @@ export function metricShot(
         : { verb: 'reveal', element: 'metric', style: 'pop', ...(at ? { at } : {}) },
     ],
   };
+}
+
+/** Whether the text around a phrase found at `[start, end)` runs on from it. */
+type RunsOn = (text: string, start: number, end: number) => boolean;
+
+const WORDLIKE = /[A-Za-z0-9]/;
+
+/**
+ * A name runs on into a letter or digit beside its own (`time` in `runtime`). ASCII only: a Korean
+ * particle follows a word with no space (`bytes를`) and leaves it whole.
+ */
+const NAME_RUNS_ON: RunsOn = (text, start, end) =>
+  (WORDLIKE.test(text.charAt(start)) && WORDLIKE.test(text.charAt(start - 1))) ||
+  (WORDLIKE.test(text.charAt(end - 1)) && WORDLIKE.test(text.charAt(end)));
+
+/**
+ * A value runs on into a digit beside it, or into a separator that joins it to one: `9` in `19`
+ * or `9,907`, `5` in `0.5`.
+ */
+const VALUE_RUNS_ON: RunsOn = (text, start, end) =>
+  /\d/.test(text.charAt(start - 1)) ||
+  (/[.,]/.test(text.charAt(start - 1)) && /\d/.test(text.charAt(start))) ||
+  /\d/.test(text.charAt(end)) ||
+  (/[.,]/.test(text.charAt(end)) && /\d/.test(text.charAt(end + 1)));
+
+/**
+ * The phrase as the narration says it, when the narration says it once (in any case) and as a
+ * whole, not as part of another number or word: a beat pinned there lands as the narration says
+ * the metric, not something else. Whitespace is quoted as one space, as the checks compare it.
+ */
+function spoken(text: string, phrase: string, runsOn: RunsOn): string | undefined {
+  const words = phrase.split(/\s+/).filter(Boolean);
+  if (!words.length) return undefined;
+  const pattern = new RegExp(words.map(escapeRegExp).join('\\s+'), 'giu');
+  const found: RegExpExecArray[] = [];
+  for (let m = pattern.exec(text); m; m = pattern.exec(text)) {
+    found.push(m);
+    // Overlapping occurrences count, as the checks count them.
+    pattern.lastIndex = m.index + String.fromCodePoint(text.codePointAt(m.index)!).length;
+  }
+  const m = found.length === 1 ? found[0]! : undefined;
+  if (!m || runsOn(text, m.index, m.index + m[0].length)) return undefined;
+  const quoted = m[0].replace(/\s+/g, ' ');
+  return findPhrase(text, quoted).count === 1 ? quoted : undefined;
 }

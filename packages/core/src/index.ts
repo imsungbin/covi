@@ -243,7 +243,7 @@ export {
   writeFileAtomic,
   writeJson,
 } from './util/fs.ts';
-export { matchesAny, matchesGlob } from './util/glob.ts';
+export { escapeRegExp, matchesAny, matchesGlob } from './util/glob.ts';
 export { seededRandom, seedFrom, sha256, sha256File, shortHash } from './util/hash.ts';
 export { type Logger, type LogRecord, MemoryLogger, silentLogger, TeeLogger } from './util/log.ts';
 export * from './util/text.ts';

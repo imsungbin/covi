@@ -190,7 +190,11 @@ describe('the default director’s metrics', () => {
   it('finds the name whatever its case, and quotes it as the narration says it', () => {
     const scenes = [scene('s1', terminal(), 'Request bytes drop sharply.')];
     const plan = defaultDirection({ scenes, evidence: BENCHMARK.evidence, seed: 3 });
+    // The counts it measured besides stage before it.
     expect(plan.shots[0]!.beats).toEqual([
+      { verb: 'split', element: 'packet', count: 'metric:terminal-1:chunks', side: 'base' },
+      { verb: 'stack', element: 'pile' },
+      { verb: 'merge', element: 'packet' },
       { verb: 'count', element: 'metric', at: 'Request bytes' },
     ]);
     expect(directionProblems(plan, scenes, BENCHMARK.evidence, BENCHMARK.sources)).toEqual([]);
@@ -246,8 +250,8 @@ describe('the default director’s metrics', () => {
     const plan = defaultDirection({ scenes, evidence: BENCHMARK.evidence, seed: 3 });
     expect(plan.shots[0]).toMatchObject({
       scene: 's1',
-      layout: 'row',
-      elements: [{ kind: 'metric' }, { kind: 'visual' }],
+      layout: 'split',
+      elements: [{ kind: 'metric' }, { kind: 'packet' }, { kind: 'pile' }],
     });
     expect(plan.shots[1]!.elements).toEqual([{ id: 'visual', kind: 'visual' }]);
     expect(directionProblems(plan, scenes, BENCHMARK.evidence, BENCHMARK.sources)).toEqual([]);
@@ -267,7 +271,7 @@ describe('the default director’s metrics', () => {
       seed: 3,
       orientation: 'vertical',
     });
-    expect(tall.plan!.shots[0]!.layout).toBe('column');
+    expect(tall.plan!.shots[0]!.layout).toBe('split');
     expect(DirectionSchema.parse(tall.draft)).toEqual(tall.draft);
   });
 
@@ -280,7 +284,9 @@ describe('the default director’s metrics', () => {
     ];
     const plan = defaultDirection({ scenes, evidence: BENCHMARK.evidence, seed: 3 });
     expect(plan.shots.map((s) => s.scene)).toEqual(['s1', 's3']);
-    expect(plan.shots[1]).toMatchObject({ elements: [{ kind: 'metric' }, { kind: 'visual' }] });
+    expect(plan.shots[1]).toMatchObject({
+      elements: [{ kind: 'metric' }, { kind: 'packet' }, { kind: 'pile' }],
+    });
     expect(plan.shots[1]!.enter).toBeDefined();
     expect(DirectionSchema.parse(plan)).toEqual(plan);
   });

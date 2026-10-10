@@ -7,7 +7,7 @@ import type { TransitionKind } from '../timeline/types.ts';
 import { metricShot } from './metric.ts';
 import { DIRECTION_LIMITS, type Direction, type Shot, type ShotBeat } from './schema.ts';
 import type { DirectionSources } from './sources.ts';
-import { diagramShot } from './staging.ts';
+import { countShot, diagramShot } from './staging.ts';
 import { morphProblem } from './tokens.ts';
 
 /** How far the camera zooms toward the lines a code scene highlights. */
@@ -31,14 +31,16 @@ const sceneId = (scene: Pick<Scene, 'id'>, i: number) => scene.id ?? `s${i + 1}`
  * Covi's own direction, for every run without an agent's (CI and `--json` runs get the same
  * motion as interactive ones): a code scene whose hunk is small enough morphs it, the camera
  * following the changed lines; a terminal scene whose command measured a change shows the biggest
- * one as a number beside its output; a diagram scene becomes its nodes, with something
- * travelling each edge in order and the nodes' details left out, unless a name is not a label, it
- * singles out some nodes as changed, or an edge has words of its own (Covi never discards an
- * emphasis or words the storyboard wrote); every other scene keeps its storyboard visual, and a
- * code scene that highlights lines zooms toward them as they light. Each scene after the first
- * gets its entrance from the rotation unless the storyboard set its `transition`. Pure and
- * deterministic. It never invents content: morphs and metrics come from evidence, and a diagram's
- * nodes and flows from the storyboard's own diagram.
+ * one as a number beside its output, or beside the other counts it measured, staged in the
+ * output's place (a request that splits into its chunks and merges into one, reads that pile up);
+ * a diagram scene becomes its nodes, with something travelling each edge in order and the nodes'
+ * details left out, unless a name is not a label, it singles out some nodes as changed, or an edge
+ * has words of its own (Covi never discards an emphasis or words the storyboard wrote); every
+ * other scene keeps its storyboard visual, and a code scene that highlights lines zooms toward
+ * them as they light. Each scene after the first gets its entrance from the rotation unless the
+ * storyboard set its `transition`. Pure and deterministic. It never invents content: morphs,
+ * metrics, and counts come from evidence, and a diagram's nodes and flows from the storyboard's
+ * own diagram.
  * What it returns reads back unchanged through `DirectionSchema`: Covi never writes a direction
  * file it would then refuse.
  */
@@ -136,7 +138,8 @@ function morphShot(scene: Scene, id: string, input: DirectorInput): Shot | undef
 /** A terminal scene whose command measured a change shows the biggest one as a number. */
 function measuredShot(scene: Scene, id: string, input: DirectorInput): Shot | undefined {
   const shot = metricShot(scene, input.evidence, input.orientation ?? 'landscape');
-  return shot && { scene: id, ...shot };
+  // Counts its command measured besides are staged next to the number: shown, not told.
+  return shot && { scene: id, ...(countShot(scene, input.evidence, shot) ?? shot) };
 }
 
 /** A diagram scene's nodes, with something travelling each edge. */

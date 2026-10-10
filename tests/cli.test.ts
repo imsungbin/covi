@@ -394,7 +394,7 @@ describe('covi CLI', () => {
     ).toBeUndefined();
   });
 
-  it('drafts a counter for the benchmark’s request bytes, from the command it measured', async () => {
+  it('drafts a counter for the benchmark’s request bytes, and stages the counts beside it', async () => {
     const dir = await example('backend-slim-request');
     // Korean narration names it too ("이제 request bytes: 9907을 출력합니다."), particle and all.
     for (const language of ['en', 'ko']) {
@@ -418,11 +418,13 @@ describe('covi CLI', () => {
         shots: Array<{ scene: string }>;
       };
       const terminal = storyboard.scenes.find((s) => s.visual.kind === 'terminal')!;
+      // The problem shown, not told: the request splits into its chunks and merges into one, and
+      // the reader's steps pile up, beside the request bytes counting down.
       expect(
         direction.shots.find((s) => s.scene === terminal.id),
         language,
       ).toMatchObject({
-        layout: 'row',
+        layout: 'split',
         elements: [
           {
             id: 'metric',
@@ -430,9 +432,15 @@ describe('covi CLI', () => {
             evidence: 'metric:terminal-1:request-bytes',
             show: 'counter',
           },
-          { id: 'visual', kind: 'visual' },
+          { id: 'packet', kind: 'packet' },
+          { id: 'pile', kind: 'pile', evidence: 'metric:terminal-1:reader-steps' },
         ],
-        beats: [{ verb: 'count', element: 'metric', at: 'request bytes' }],
+        beats: [
+          { verb: 'split', element: 'packet', count: 'metric:terminal-1:chunks', side: 'base' },
+          { verb: 'stack', element: 'pile' },
+          { verb: 'merge', element: 'packet' },
+          { verb: 'count', element: 'metric', at: 'request bytes' },
+        ],
       });
     }
   });

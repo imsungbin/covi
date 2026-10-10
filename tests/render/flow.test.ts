@@ -1,18 +1,22 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConfig } from '@covi/core';
+import { buildEvidence, type Demonstration, indexEvidence, resolveConfig } from '@covi/core';
 import {
   buildTimeline,
   type DirectionBeat,
   type DirectionElement,
+  defaultDirection,
+  directionSources,
   type LayoutReport,
   layoutScenes,
   pacingFor,
   type Rect,
+  resolveDirection,
   resolveVideoSpec,
   type SceneStaging,
   StoryboardSchema,
+  type Timeline,
   writeComposition,
 } from '@covi/video';
 import { type Browser, chromium } from 'playwright';
@@ -29,6 +33,7 @@ import {
 } from '../../packages/video/src/runtime/routes.ts';
 import { TEXT_FLOOR } from '../../packages/video/src/runtime/sizing.ts';
 import { orientationOf } from '../../packages/video/src/spec.ts';
+import { settledFrame } from '../../packages/video/src/timeline/cues.ts';
 import { canUseBrowser } from '../helpers/env.ts';
 
 /*
@@ -108,8 +113,6 @@ async function staged(
   beats: DirectionBeat[],
   size: Size = LANDSCAPE,
 ) {
-  const dir = mkdtempSync(join(tmpdir(), 'covi-flow-'));
-  dirs.push(dir);
   const r = regionsOf(size);
   const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', ...size });
   const title = 'Send document references';
@@ -154,6 +157,18 @@ async function staged(
     image: () => ({ src: '', width: 1, height: 1 }),
     staging,
   });
+  const { seek, report, shot, errors } = await opened(timeline, size);
+  const s2 = timeline.scenes.find((s) => s.id === 's2')!;
+  const frameAt = (seconds: number) => Math.round((s2.start + seconds) * timeline.fps);
+  /** Seconds into s2 at a frame, as the runtime's clock has them. */
+  const local = (frame: number) => frame / timeline.fps - s2.start;
+  return { timeline, r, frameAt, local, seek, report, shot, errors };
+}
+
+/** A timeline's composition, opened in Chromium at `size`. */
+async function opened(timeline: Timeline, size: Size) {
+  const dir = mkdtempSync(join(tmpdir(), 'covi-flow-'));
+  dirs.push(dir);
   await writeComposition(join(dir, 'composition'), timeline, new Map());
   const page = await browser!.newPage({ viewport: size });
   const errors: string[] = [];
@@ -161,10 +176,6 @@ async function staged(
   await page.goto(`file://${join(dir, 'composition', 'index.html')}`);
   await page.waitForFunction('window.covi !== undefined');
   await page.evaluate('window.covi.ready');
-  const s2 = timeline.scenes.find((s) => s.id === 's2')!;
-  const frameAt = (seconds: number) => Math.round((s2.start + seconds) * timeline.fps);
-  /** Seconds into s2 at a frame, as the runtime's clock has them. */
-  const local = (frame: number) => frame / timeline.fps - s2.start;
   const seek = (frame: number, body: string) =>
     page.evaluate(`(() => { window.covi.seek(${frame}); ${body} })()`);
   const report = (frame: number) =>
@@ -173,7 +184,7 @@ async function staged(
     await page.evaluate(`window.covi.seek(${frame})`);
     return page.screenshot({ type: 'png' });
   };
-  return { timeline, r, frameAt, local, seek, report, shot, errors };
+  return { seek, report, shot, errors };
 }
 
 type Staged = Awaited<ReturnType<typeof staged>>;
@@ -892,5 +903,96 @@ describe.skipIf(!available)('piles and count-ups', () => {
     );
     expect((await read(v, v.frameAt(0.3))).value).toBe('0');
     expect((await read(v, v.frameAt(2.5))).value).toBe('28');
+  });
+});
+
+describe.skipIf(!available)('the default director’s staged counts', () => {
+  it('keeps the benchmark’s counter at its floor and its reads’ items at their least in a square frame', async () => {
+    // The benchmark's terminal scene, directed by Covi and resolved as a render does, at 1:1.
+    const size = { width: 1080, height: 1080 };
+    const demo = {
+      commands: [
+        {
+          name: 'Measure the review request',
+          command: 'node scripts/measure.js',
+          before: {
+            exitCode: 0,
+            output: 'request bytes: 70406\nchunks: 4\nreader steps: 28\ntimeouts: 1',
+          },
+          after: {
+            exitCode: 0,
+            output: 'request bytes: 9907\nchunks: 1\nreader steps: 10\ntimeouts: 0',
+          },
+          changed: true,
+        },
+      ],
+      shots: [],
+      requests: [],
+      skipped: [],
+      findings: [],
+    } as unknown as Demonstration;
+    const evidence = indexEvidence(buildEvidence({ demo }));
+    const sources = directionSources({ demo, evidence });
+    const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', ...size });
+    const title = 'Send document references';
+    const scenes = StoryboardSchema.parse({
+      title,
+      template: 'bug-fix',
+      scenes: [
+        {
+          id: 's1',
+          beat: 'a',
+          narration: 'The request carried every document.',
+          visual: { kind: 'callout', title: 'Before' },
+        },
+        {
+          id: 's2',
+          beat: 'b',
+          narration:
+            "Here's the same command before and after the change. It now prints request bytes: 9907.",
+          visual: {
+            kind: 'terminal',
+            command: 'node scripts/measure.js',
+            output: 'request bytes: 9907',
+            before: 'request bytes: 70406',
+          },
+        },
+      ],
+    }).scenes;
+    const layout = layoutScenes(scenes, new Map(), new Map(), 'en', pacingFor(spec));
+    const image = () => ({ src: '', width: 1, height: 1 });
+    const plan = defaultDirection({ scenes, evidence, sources, seed: 3, orientation: 'square' });
+    const staging = resolveDirection({
+      plan,
+      scenes,
+      layout,
+      spec,
+      language: 'en',
+      sources,
+      image,
+      seed: 3,
+      redact: (value) => value,
+    });
+    const direction = staging[1]!.direction;
+    expect(direction.elements.map((e) => e.kind)).toEqual(['metric', 'packet', 'pile']);
+    // Every beat plays: none is dropped as out of order or too late.
+    expect(direction.beats.map((b) => b.verb).sort()).toEqual(['count', 'merge', 'split', 'stack']);
+    expect(direction.dropped).toBeUndefined();
+    const timeline = buildTimeline({ title, scenes, layout, spec, image, staging });
+    const v = await opened(timeline, size);
+    const frame = settledFrame(timeline, 1)!;
+    const drawn = (await v.seek(
+      frame,
+      `const scene = document.querySelector('[data-scene="s2"]');
+       const items = [...scene.querySelectorAll('.pitem')].map((n) => n.getBoundingClientRect().width);
+       return { counter: Number.parseFloat(getComputedStyle(scene.querySelector('.mvalue')).fontSize), items: items.length, item: Math.min(...items) };`,
+    )) as { counter: number; items: number; item: number };
+    const unit = computeRegions({ ...size, orientation: 'square' }).unit;
+    // Both at once: a counter at its floor beside a pile of dots would not do.
+    expect(drawn.counter / unit).toBeGreaterThanOrEqual(120);
+    expect(drawn.items).toBe(22);
+    expect(drawn.item / unit).toBeGreaterThanOrEqual(PILE_ITEM_MIN);
+    expect((await v.report(frame)).items.filter((i) => i.overflow)).toEqual([]);
+    expect(v.errors).toEqual([]);
   });
 });

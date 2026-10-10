@@ -179,6 +179,25 @@ describe('splits and piles', () => {
     });
   });
 
+  it('lay a pile row out in one line of twelve when two lines of six would draw it smaller', () => {
+    // A row as wide and short as a square frame's pile under its number: two lines of six would
+    // be 35 pixels, one line of twelve is 65.
+    const line = pileGrid(28, { width: 900, height: 80 }, 10);
+    expect(line).toHaveLength(DRAWN_ITEMS);
+    const size = (900 - 11 * 10) / 12;
+    for (const [i, item] of line.entries())
+      expect(item).toEqual({
+        x: expect.closeTo(i * (size + 10), 9),
+        y: expect.closeTo((80 - size) / 2, 9),
+        width: expect.closeTo(size, 9),
+        height: expect.closeTo(size, 9),
+      });
+    // The same size for any count, filled from the left.
+    expect(pileGrid(4, { width: 900, height: 80 }, 10)).toEqual(line.slice(0, 4));
+    // Where two lines draw them larger, they keep two.
+    expect(pileGrid(28, { width: 900, height: 200 }, 10)[6]!.y).toBeGreaterThan(line[0]!.y);
+  });
+
   it('count a stack up to its true number, and fill rows one after another', () => {
     expect([0, 0.5, 0.99, 1].map((k) => stackCount(28, k))).toEqual([0, 14, 27, 28]);
     expect(stackRows(0.25, 2)).toEqual([0.5, 0]);

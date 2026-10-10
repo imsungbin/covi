@@ -447,7 +447,8 @@ export function nodeBoxRect(slot: Rect, unit: number, tall: boolean, count?: num
 
 /**
  * A pile row's items in its grid box (box-relative): at most twelve squares in two lines of six,
- * filled left to right and top to bottom, sized so twelve would fit, the block centered.
+ * or in one line of twelve where a short, wide box would draw two lines smaller, filled left to
+ * right and top to bottom, sized so twelve would fit, the block centered.
  */
 export function pileGrid(
   count: number,
@@ -455,15 +456,16 @@ export function pileGrid(
   gap: number,
 ): Rect[] {
   const n = Math.max(0, Math.min(Math.floor(count), DRAWN_ITEMS));
-  const size = Math.max(
-    0,
-    Math.min((box.width - gap * (PER_LINE - 1)) / PER_LINE, (box.height - gap) / 2),
-  );
-  const left = (box.width - (PER_LINE * size + (PER_LINE - 1) * gap)) / 2;
-  const top = (box.height - (2 * size + gap)) / 2;
+  const two = Math.min((box.width - gap * (PER_LINE - 1)) / PER_LINE, (box.height - gap) / 2);
+  const one = Math.min((box.width - gap * (DRAWN_ITEMS - 1)) / DRAWN_ITEMS, box.height);
+  const lines = one > two ? 1 : 2;
+  const perLine = DRAWN_ITEMS / lines;
+  const size = Math.max(0, lines === 1 ? one : two);
+  const left = (box.width - (perLine * size + (perLine - 1) * gap)) / 2;
+  const top = (box.height - (lines * size + (lines - 1) * gap)) / 2;
   return Array.from({ length: n }, (_, i) => ({
-    x: left + (i % PER_LINE) * (size + gap),
-    y: top + Math.floor(i / PER_LINE) * (size + gap),
+    x: left + (i % perLine) * (size + gap),
+    y: top + Math.floor(i / perLine) * (size + gap),
     width: size,
     height: size,
   }));

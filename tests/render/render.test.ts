@@ -40,17 +40,18 @@ import { DirectionSchema } from '../../packages/video/src/direction/schema.ts';
 import { contactSheetFrames, sheetColumns } from '../../packages/video/src/render/renderer.ts';
 import { tileLayout } from '../../packages/video/src/render/sheet.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
-import { DELTA_FADE } from '../../packages/video/src/runtime/numbers.ts';
 import { TEXT_FLOOR } from '../../packages/video/src/runtime/sizing.ts';
 import {
   edgeEntrance,
   edgeLabelEntrance,
   interactionTiming,
+  metricSettledAt,
   morphTiming,
+  sceneFrame,
   screenshotMarks,
   settledFrame,
 } from '../../packages/video/src/timeline/cues.ts';
-import type { TimelineVisual } from '../../packages/video/src/timeline/types.ts';
+import type { DirectionElement, TimelineVisual } from '../../packages/video/src/timeline/types.ts';
 import { canRenderVideo, fullRenders } from '../helpers/env.ts';
 
 const available = await canRenderVideo();
@@ -1582,7 +1583,9 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
           s.direction?.elements.some((e) => e.kind === 'metric'),
         );
         const scene = timeline.scenes[index]!;
-        const counter = scene.direction!.elements.find((e) => e.kind === 'metric')!;
+        const counter = scene.direction!.elements.find(
+          (e): e is Extract<DirectionElement, { kind: 'metric' }> => e.kind === 'metric',
+        )!;
         expect(counter).toMatchObject({
           show: 'counter',
           name: 'request bytes',
@@ -1594,10 +1597,13 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
           (b) => b.verb === 'count' && b.element === counter.id,
         )!;
         expect(count).toBeDefined();
-        // The sheet shows it landed, its change in percent faded in.
+        // The sheet shows it settled (landed, centered, its change in percent faded in), the very
+        // frame QC reads the scene at.
+        expect(tiles).toContain(settledFrame(timeline, index));
         expect(tiles).toContain(
-          Math.round((scene.start + count.t + count.seconds + DELTA_FADE) * timeline.fps),
+          sceneFrame(timeline, index, scene.start + metricSettledAt(scene.direction!, counter)),
         );
+        expect(metricSettledAt(scene.direction!, counter)).toBeGreaterThan(count.t + count.seconds);
         // Where the scene has settled (its count has landed), the counter is the largest text.
         const frames = JSON.parse(
           readFileSync(join(result.runDir, 'video', 'frames.json'), 'utf8'),

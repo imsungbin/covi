@@ -11,7 +11,7 @@ export function truncate(text: string, max: number, ellipsis = '…'): string {
  * What a terminal acts on or hides: control characters (an ANSI escape starts with one), format
  * and bidi characters, line separators, and lone surrogates.
  */
-const UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]/gu;
+export const UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]/gu;
 
 /**
  * Untrusted text echoed back to a person (a key from a file an agent wrote, a parser's quote of

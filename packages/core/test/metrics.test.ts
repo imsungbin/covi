@@ -48,6 +48,12 @@ describe('reading metrics from output', () => {
     expect(metricValue('70,406')).toBe(70406);
   });
 
+  it('takes only a whole printed number as a value', () => {
+    expect(metricValue('−3.5')).toBe(-3.5);
+    for (const text of ['', ' ', ' 12', '1,5', '1,000_000', '0x10', '0b11', '1e3', '12.', '.5'])
+      expect(metricValue(text), text).toBeUndefined();
+  });
+
   it('reads key=value pairs inside a line', () => {
     expect(values('GET /api 200 status=200 duration=12ms bytes=1,024 (cache=0%)')).toEqual([
       ['status', 200, undefined],
@@ -57,6 +63,10 @@ describe('reading metrics from output', () => {
     ]);
     // A query string is not a list of measurements.
     expect(values('fetched /api/users?page=2&limit=10')).toEqual([]);
+    expect(values('a=1,234,b=5')).toEqual([
+      ['a', 1234, undefined],
+      ['b', 5, undefined],
+    ]);
   });
 
   it('stays silent on numbers that are not measurements', () => {
@@ -77,10 +87,34 @@ describe('reading metrics from output', () => {
       'big: 1234567890123456',
       'tiny: 1e-7',
       'timeouts: 1 (retried)',
+      // An address or a place in a file: a colon that names a number has a space after it.
+      'Server listening on localhost:3000',
+      'Listening at 0.0.0.0:8080',
+      'Connected to redis at 127.0.0.1:6379',
+      'src/app.ts:42',
+      'README.md:3',
+      // A decimal comma or a list is not a grouped number.
+      'size=1,5',
+      'x=1.234,56',
+      'ids=1,2,3',
+      'coords=12,34',
+      // Identifiers differ between runs without measuring anything.
+      'pid=4242',
+      'PID: 4242',
+      'port: 3000',
+      'request id: 99',
+      'requestId=99',
       // Longer than a line Covi reads.
       'a=1 '.repeat(Math.ceil(METRIC_LIMITS.lineChars / 4) + 1),
     ])
       expect(values(text), text).toEqual([]);
+  });
+
+  it('reads a measurement whose name only starts with an identifier word', () => {
+    expect(values('build time: 12.3 s\nline coverage: 87.5%')).toEqual([
+      ['build-time', 12.3, 's'],
+      ['line-coverage', 87.5, '%'],
+    ]);
   });
 
   it('strips terminal colors before reading', () => {
@@ -106,6 +140,36 @@ describe('reading metrics from output', () => {
     // A response body that is not a JSON object gives nothing, whatever its lines say.
     expect(readJsonMetrics('total: 12')).toEqual([]);
     expect(readJsonMetrics('[{"total": 12}]')).toEqual([]);
+    expect(readJsonMetrics('{"total": 12,')).toEqual([]);
+    expect(
+      readJsonMetrics(JSON.stringify({ total: 12, pad: 'x'.repeat(METRIC_LIMITS.textChars) })),
+    ).toEqual([]);
+  });
+
+  it('names a JSON key by its words, and drops ids and keys that hide text', () => {
+    const json = {
+      requestBytes: 9907,
+      userId: 7,
+      id: 1,
+      order: { orderID: 3 },
+      total: 3,
+      tiny: 1e-7,
+    };
+    expect(readJsonMetrics(JSON.stringify(json))).toEqual([
+      { name: 'request-bytes', label: 'requestBytes', value: 9907 },
+      { name: 'total', label: 'total', value: 3 },
+      { name: 'tiny', label: 'tiny', value: 0 },
+    ]);
+    // People and models read a key: one that moves the cursor or turns text around is skipped.
+    const hidden = {
+      '\u001b[2J\u001b]0;pwned\u0007x': 5,
+      '\u202etotal': 6,
+      'a\u200b': { b: 1 },
+      ok: 2,
+    };
+    expect(readJsonMetrics(JSON.stringify(hidden))).toEqual([
+      { name: 'ok', label: 'ok', value: 2 },
+    ]);
   });
 
   it('names a second reading of the same name -2, and a label in another script value', () => {
@@ -126,6 +190,17 @@ describe('reading metrics from output', () => {
     expect(read).toHaveLength(METRIC_LIMITS.perSource);
     expect(read.at(-1)!.name).toBe('m49');
   });
+
+  it('reads lines up to the longest, and never a line the text limit cuts in half', () => {
+    const longest = `${'x'.repeat(METRIC_LIMITS.lineChars - 4)} a=1`;
+    expect(longest).toHaveLength(METRIC_LIMITS.lineChars);
+    expect(values(longest)).toEqual([['a', 1, undefined]]);
+    expect(values(`x${longest}`)).toEqual([]);
+    // The limit falls inside 70406: reading "70" would be wrong.
+    const cut = `a: 1\n${' '.repeat(METRIC_LIMITS.textChars - 11)}\nb: 70406`;
+    expect(cut.indexOf('b: 70406') + 'b: 70'.length).toBe(METRIC_LIMITS.textChars);
+    expect(values(cut)).toEqual([['a', 1, undefined]]);
+  });
 });
 
 describe('pairing base and head', () => {
@@ -144,5 +219,10 @@ describe('pairing base and head', () => {
     expect(pairMetrics(readMetrics('time: 1.2 s'), readMetrics('time: 800 ms'))).toEqual([
       { name: 'time', label: 'time', unit: 'ms', head: 800 },
     ]);
+  });
+
+  it('pairs at most 50 metrics', () => {
+    const head = readMetrics(Array.from({ length: 50 }, (_, i) => `h${i}: ${i}`).join('\n'));
+    expect(pairMetrics(readMetrics('base only: 1'), head)).toHaveLength(METRIC_LIMITS.perSource);
   });
 });

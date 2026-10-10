@@ -147,6 +147,14 @@ describe('element slots', () => {
     expect(elementSlots(['visual'], 'auto', region, 'landscape', 20)).toEqual([region]);
     expect(elementSlots(['code', 'label'], 'auto', region, 'landscape', 20)[0]!.width).toBe(490);
   });
+  it('give a number more of a square frame’s narrow row than of a wide one', () => {
+    const wide = elementSlots(['metric', 'visual'], 'row', region, 'landscape', 20);
+    expect(wide.map((r) => r.width)).toEqual([392, 588]);
+    const square = elementSlots(['metric', 'visual'], 'row', region, 'square', 20);
+    // 7 parts to the visual's 6.
+    expect(square.map((r) => r.width)).toEqual([527.69, 452.31]);
+    expect(elementSlots(['code', 'label'], 'row', region, 'square', 20)[0]!.width).toBe(735);
+  });
   it('give one element the whole region, whatever the layout', () => {
     for (const layout of ['auto', 'single', 'row', 'column', 'split'] as const)
       expect(elementSlots(['visual'], layout, region, 'landscape', 20)).toEqual([region]);

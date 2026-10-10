@@ -13,6 +13,12 @@ export function truncate(text: string, max: number, ellipsis = '…'): string {
  */
 const UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]/gu;
 
+/** Whether text holds a character a terminal acts on or hides (`escapeUnprintable` spells them). */
+export function hasUnprintable(text: string): boolean {
+  // `search` starts at 0 and leaves the global pattern's place alone, unlike `test`.
+  return text.search(UNPRINTABLE) >= 0;
+}
+
 /**
  * Untrusted text echoed back to a person (a key from a file an agent wrote, a parser's quote of
  * it): every unprintable character spelled as an escape, and at most `max` characters kept.

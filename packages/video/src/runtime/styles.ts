@@ -217,5 +217,28 @@ ${languageRules(t)}
   padding: ${u(12)} ${u(22)}; border-radius: ${u(18)}; border: ${u(3)} solid ${c.line}; background: ${c.surface}; color: ${c.text}; box-shadow: ${c.shadow}; }
 .dlabel .nlabel { font-weight: 720; line-height: 1.15; overflow-wrap: anywhere; }
 .node.dnode { overflow: hidden; justify-content: safe center; align-items: safe center; }
+
+/* Metrics: every rule under .mcard (a morph's .mnum and .mbar live under .code.tokens). Parts are
+   centered safely, so one too large for its box runs past the end, where fitting sees it. */
+.mcard { position: absolute; display: flex; flex-direction: column; justify-content: safe center; align-items: safe center; gap: ${u(18)};
+  padding: ${u(28)} ${u(32)}; border-radius: ${u(28)}; border: ${u(3)} solid ${c.line}; background: ${c.surface}; box-shadow: ${c.shadow};
+  overflow: hidden; text-align: center; }
+.mcard .mname { max-width: 100%; color: ${c.textMuted}; font-weight: 650; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mcard .mname.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.mcard .mrow { display: flex; justify-content: safe center; align-items: baseline; gap: 0.12em; width: 100%; white-space: nowrap; line-height: 1; overflow: hidden; }
+.mcard .mvalue, .mcard .mnum { font-weight: 800; letter-spacing: -0.02em; color: ${c.text}; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.05; text-align: right; }
+.mcard .munit { font-weight: 650; color: ${c.textMuted}; }
+.mcard .mdelta { color: ${c.primary}; font-weight: 760; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
+.mcard .mgrid { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: ${u(22)} ${u(18)}; width: 100%; }
+.mcard .mcap { color: ${c.textMuted}; font-weight: 650; white-space: nowrap; }
+.mcard .mtrack { height: ${u(44)}; border-radius: ${u(10)}; background: ${c.surfaceAlt}; overflow: hidden; }
+.mcard .mfill { height: 100%; border-radius: ${u(10)}; background: ${c.line}; }
+.mcard .mfill.head { background: ${c.primary}; }
+.mcard .mgrid .mcap { text-align: left; }
+.mcard .mpair { display: flex; align-items: flex-end; justify-content: safe center; gap: ${u(36)}; width: 100%; }
+.mcard .mside { display: flex; flex-direction: column; align-items: center; gap: ${u(10)}; }
+.mcard .mside .mcap { font-size: ${u(30)}; }
+.mcard .marrow { display: flex; align-items: center; color: ${c.primary}; }
+.mcard .marrow svg { display: block; fill: none; stroke: currentColor; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
 `;
 }

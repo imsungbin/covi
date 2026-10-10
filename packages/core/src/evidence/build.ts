@@ -7,12 +7,20 @@ import {
   type EvidenceFile,
   type EvidenceItem,
   EvidenceItemSchema,
+  METRIC_LIMITS,
 } from '../model/evidence.ts';
 import { renderHunk } from '../report/digest.ts';
 import { DEMO_PATHS, demoPath, RUN_PATHS } from '../run/paths.ts';
 import { sha256 } from '../util/hash.ts';
 import { truncate } from '../util/text.ts';
-import { evidenceId, evidencePart } from './ids.ts';
+import { evidenceId, evidencePart, metricSource } from './ids.ts';
+import {
+  metricLabel,
+  type PairedMetric,
+  pairMetrics,
+  readJsonMetrics,
+  readMetrics,
+} from './metrics.ts';
 
 export interface EvidenceSources {
   /** The change's files with their hunks: parsed from `diff.patch`, or the resolved change. */
@@ -21,8 +29,8 @@ export interface EvidenceSources {
   /** The traces `demo.traces` names, as read from the run. */
   traces?: readonly Trace[];
   behavior?: BehaviorDiff;
-  /** The test command, when `tests.log` holds its output. */
-  tests?: { command: string };
+  /** The test command, and the output `tests.log` holds after it, when tests ran. */
+  tests?: { command: string; output?: string };
   /** A run file's sha256; undefined when the file is missing, which leaves its item out. */
   fileSha?: (path: string) => string | undefined;
   /**
@@ -131,7 +139,8 @@ function traceParts(trace: Trace): string[] {
 /**
  * The run's evidence registry from what its stages produced. Pure and deterministic: the same
  * sources give the same items in the same order (hunks, screenshots, pixel diffs, recordings,
- * traces, requests, commands, app start-up logs, the test run), so rebuilding is always safe.
+ * traces, requests, commands, app start-up logs, the test run, then the numbers they measured), so
+ * rebuilding is always safe.
  */
 export function buildEvidence(sources: EvidenceSources): EvidenceFile {
   const sha = sources.fileSha ?? (() => undefined);
@@ -222,6 +231,7 @@ export function buildEvidence(sources: EvidenceSources): EvidenceFile {
       revision: 'head',
       label: sources.tests.command,
     });
+  items.push(...metricEvidence(sources, redact));
   const seen = new Set<string>();
   const unique: EvidenceItem[] = [];
   for (const raw of items) {
@@ -231,4 +241,104 @@ export function buildEvidence(sources: EvidenceSources): EvidenceFile {
     unique.push(item);
   }
   return { schemaVersion: 1, items: unique.slice(0, EVIDENCE_LIMITS.items) };
+}
+
+/**
+ * A metric item of `source`, held in run file `path`. Its label is already redacted, so cutting it
+ * to 60 characters cannot leave part of a secret behind.
+ */
+function metricItem(source: string, path: string, m: PairedMetric): EvidenceItem {
+  const metric = {
+    name: m.name,
+    ...(m.unit ? { unit: m.unit } : {}),
+    ...(m.base !== undefined ? { base: m.base } : {}),
+    ...(m.head !== undefined ? { head: m.head } : {}),
+  };
+  return {
+    id: evidenceId.metric(source, m.name),
+    kind: 'metric',
+    path,
+    revision:
+      m.base !== undefined && m.head !== undefined
+        ? 'both'
+        : m.base !== undefined
+          ? 'base'
+          : 'head',
+    sha256: sha256(JSON.stringify(metric)),
+    label: metricLabel(m.label),
+    metric,
+  };
+}
+
+/**
+ * The numbers the run measured, after every other item: the diff's totals, each behavior-diff
+ * step's changed pixels, the numeric fields of each response, the numbers each demo command
+ * printed, and the test run's. Text is redacted before it is read (or cut), and a value redaction
+ * would mask once printed plainly is dropped, so a number redaction masks never becomes a metric.
+ * At most 50 per source and 500 per run.
+ */
+function metricEvidence(
+  sources: EvidenceSources,
+  redact: (text: string) => string,
+): EvidenceItem[] {
+  const out: EvidenceItem[] = [];
+  // Redaction matches text: a secret printed grouped (`411,111,111,111`) or in JSON's exponent form
+  // escapes it, yet reads as the very number it masks, which the written file would then hold.
+  const hidden = (v: number | undefined) => v !== undefined && redact(String(v)) !== String(v);
+  const add = (source: string, path: string, metrics: readonly PairedMetric[]) => {
+    for (const m of metrics)
+      if (!hidden(m.base) && !hidden(m.head)) out.push(metricItem(source, path, m));
+  };
+  // captures.json is read without a shape check: a side a damaged file holds as anything but text
+  // gives no readings, rather than failing the whole registry.
+  const read = (text: unknown) =>
+    typeof text === 'string' ? readMetrics(redact(text)) : undefined;
+  const json = (text: unknown) =>
+    typeof text === 'string' ? readJsonMetrics(redact(text)) : undefined;
+  const files = sources.diff ?? [];
+  if (files.length) {
+    const lines = files.flatMap((f) => f.hunks.flatMap((h) => h.lines));
+    const total = (kind: 'add' | 'del') => lines.filter((l) => l.kind === kind).length;
+    add(metricSource.diff(), RUN_PATHS.diff, [
+      { name: 'files', label: 'files', head: new Set(files.map((f) => f.path)).size },
+      { name: 'additions', label: 'additions', head: total('add') },
+      { name: 'deletions', label: 'deletions', head: total('del') },
+    ]);
+  }
+  // A behavior diff an old run kept is only shape-checked, so its ratio may not be a number.
+  for (const s of sources.behavior?.scenarios ?? [])
+    for (const step of s.steps)
+      if (typeof step.changedRatio === 'number') {
+        const share = Number((100 * step.changedRatio).toFixed(METRIC_LIMITS.decimals));
+        add(metricSource.pixel(s.id, step.id), DEMO_PATHS.behaviorDiff, [
+          {
+            name: 'changed',
+            label: redact(`${s.name} (${s.viewport}) · ${step.id}`),
+            unit: '%',
+            head: share,
+          },
+        ]);
+      }
+  // A capture a damaged file left without its result is skipped: there is nothing to compare.
+  for (const [i, r] of (sources.demo?.requests ?? []).entries())
+    if (r.after)
+      add(
+        metricSource.http(i + 1),
+        DEMO_PATHS.captures,
+        pairMetrics(json(r.before?.body), json(r.after.body)),
+      );
+  for (const [i, c] of (sources.demo?.commands ?? []).entries())
+    if (c.after)
+      add(
+        metricSource.terminal(i + 1),
+        DEMO_PATHS.captures,
+        pairMetrics(read(c.before?.output), read(c.after.output)),
+      );
+  if (sources.tests?.output !== undefined)
+    add(
+      metricSource.testRun(),
+      RUN_PATHS.testsLog,
+      pairMetrics(undefined, read(sources.tests.output)),
+    );
+  return out.slice(0, METRIC_LIMITS.perRun);
 }

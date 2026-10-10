@@ -62,6 +62,12 @@ async function readShaped<T>(
   return undefined;
 }
 
+/** `tests.log`: `$ <command>` on its first line, then the tail of its output. */
+function testsOf(log: string): { command: string; output: string } {
+  const [first = '', ...rest] = log.split('\n');
+  return { command: first.replace(/^\$ /, ''), output: rest.join('\n') };
+}
+
 /**
  * The run's evidence, built from the files its stages wrote: the diff, the captures, the traces
  * they name, the behavior diff, start-up logs, and test output. Only files inside the run are read.
@@ -94,7 +100,7 @@ export async function collectEvidence(
     if (trace) traces.push(trace);
   }
   const tests = (await run.has(RUN_PATHS.testsLog))
-    ? { command: (await run.readText(RUN_PATHS.testsLog)).split('\n')[0]!.replace(/^\$ /, '') }
+    ? testsOf(await run.readText(RUN_PATHS.testsLog))
     : undefined;
   // Hash only what exists inside the run; a hash recorded in run.json saves reading a recording.
   const recorded = new Map(run.manifest.artifacts.map((a) => [a.path, a.sha256]));

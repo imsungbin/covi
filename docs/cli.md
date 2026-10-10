@@ -404,7 +404,7 @@ Lists a run's evidence: every id a finding, explanation statement, or storyboard
 |---|---|
 | `--run <id>` | Run id, run directory, or `latest` (default). |
 
-Without `--json`, one line per item: id, kind, revision, label. With `--json`, the result object with `data.items` (the registry's items), `data.schemaVersion`, and `data.source`: `file` when the run has `evidence.json`, `rebuilt` when it was made before Covi kept one (rebuilt in memory, nothing written; `artifacts.evidence` is then absent).
+Without `--json`, one line per item: id, kind, revision, label (a metric's with its values: `request bytes: 70406 → 9907`). With `--json`, the result object with `data.items` (the registry's items), `data.schemaVersion`, and `data.source`: `file` when the run has `evidence.json`, `rebuilt` when it was made before Covi kept one (rebuilt in memory, nothing written; `artifacts.evidence` is then absent).
 
 ### `covi subject`
 

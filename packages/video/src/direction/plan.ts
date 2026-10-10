@@ -1,4 +1,5 @@
 import { type EvidenceIndex, UsageError } from '@covi/core';
+import type { Orientation } from '../spec.ts';
 import type { Scene } from '../storyboard/schema.ts';
 import type { TransitionKind } from '../timeline/types.ts';
 import { defaultDirection, entrances, mergeDirection } from './director.ts';
@@ -23,6 +24,8 @@ export interface PlanInput {
   evidence?: EvidenceIndex;
   sources: DirectionSources;
   seed: number;
+  /** The video's orientation, for the default director's layouts. */
+  orientation?: Orientation;
 }
 
 export interface DirectionPlan {
@@ -47,6 +50,7 @@ export function planDirection(input: PlanInput): DirectionPlan {
     evidence: input.evidence,
     seed: input.seed,
     sources: input.sources,
+    ...(input.orientation ? { orientation: input.orientation } : {}),
   });
   const own = input.file && !input.file.draft ? input.file : undefined;
   if (own) {

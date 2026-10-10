@@ -9,9 +9,17 @@ const WEIGHT: Record<ShotElement['kind'], number> = {
   output: 3,
   capture: 3,
   morph: 3,
+  // A number shares a row with what it came from: 2 parts to the visual's 3.
+  metric: 2,
   node: 2,
   label: 1,
 };
+/**
+ * A square frame's row is narrow for a number beside what it came from: there it takes 7 parts to
+ * the visual's 6, the share at which a counter stays at least 120 units tall and a terminal's code
+ * beside it at its 24-unit floor.
+ */
+const SQUARE_METRIC = 3.5;
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const rounded = (r: Rect): Rect => ({
@@ -69,7 +77,9 @@ export function elementSlots(
 ): Rect[] {
   const n = kinds.length;
   const tall = orientation === 'vertical';
-  const weights = kinds.map((k) => WEIGHT[k]);
+  const weights = kinds.map((k) =>
+    k === 'metric' && orientation === 'square' ? SQUARE_METRIC : WEIGHT[k],
+  );
   const resolved =
     n === 1
       ? 'single'

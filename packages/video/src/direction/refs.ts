@@ -1,37 +1,11 @@
-import {
-  type EvidenceIndex,
-  type EvidenceItem,
-  type EvidenceKind,
-  escapeUnprintable,
-} from '@covi/core';
+import type { EvidenceIndex, EvidenceItem, EvidenceKind } from '@covi/core';
 import { findPhrase, parseEmphasis } from '../storyboard/grammar.ts';
 import type { Scene } from '../storyboard/schema.ts';
+import { shown } from './echo.ts';
+import { countProblem, metricProblems } from './metric.ts';
 import type { Direction, ShotBeat, ShotElement } from './schema.ts';
 import { type DirectionSources, hunkView, startupLog } from './sources.ts';
 import { morphProblem } from './tokens.ts';
-
-/** Characters a problem prints of a cited id, a phrase, or a scene id, escapes included. */
-const ECHO_CHARS = 120;
-
-/**
- * Text from the direction or the storyboard as a problem echoes it: their authors may be hostile,
- * so nothing unprintable reaches the terminal raw, and the printed text is at most `ECHO_CHARS`
- * long. A cut falls between characters, never inside an escape or a surrogate pair.
- */
-function shown(text: string): string {
-  const parts: string[] = [];
-  let length = 0;
-  for (const char of text) {
-    const part = escapeUnprintable(char);
-    if (length + part.length > ECHO_CHARS) {
-      while (length + 1 > ECHO_CHARS) length -= parts.pop()!.length;
-      return `${parts.join('')}…`;
-    }
-    parts.push(part);
-    length += part.length;
-  }
-  return parts.join('');
-}
 
 /** What the checks read of a storyboard scene. */
 export type DirectedScene = Pick<Scene, 'id' | 'narration'> & {
@@ -45,15 +19,19 @@ export type DirectedScene = Pick<Scene, 'id' | 'narration'> & {
 const WHOLE_ONLY = new Set<Scene['visual']['kind']>(['title', 'summary']);
 
 /** The kind of element each verb that acts on an element works on; it acts on each one once. */
-const ACTS_ON: Partial<Record<ShotBeat['verb'], ShotElement['kind']>> = { morph: 'morph' };
+const ACTS_ON: Partial<Record<ShotBeat['verb'], ShotElement['kind']>> = {
+  morph: 'morph',
+  count: 'metric',
+};
 
 /**
  * What the schema alone cannot check, as lines that name the shot, element, and beat: shots name
  * storyboard scenes (one each), beats name elements of their shot, a title or summary card is
  * shown only alone, every cited id is in the run's evidence with the kind its element shows, a
- * requested side exists, lines lie within the side shown, a morph's hunk can morph, a verb that
- * acts on an element names one of its kind (once), and every `at` is quoted from the scene's
- * narration exactly once (as `sync` phrases are).
+ * requested side exists, lines lie within the side shown, a morph's hunk can morph, a metric has
+ * the values its element shows, a verb that acts on an element names one of its kind (once), a
+ * count has two values to tick between, and every `at` is quoted from the scene's narration
+ * exactly once (as `sync` phrases are).
  */
 export function directionProblems(
   direction: Pick<Direction, 'shots'>,
@@ -93,11 +71,11 @@ export function directionProblems(
       problems.push(
         `${where}, element ${visual.id}: a ${scene.visual.kind} card draws its own header and fox, so it is shown only alone; make it the shot's one element, without a reveal, or leave it out`,
       );
-    const kinds = new Map<string, ShotElement['kind']>();
+    const elements = new Map<string, ShotElement>();
     for (const element of shot.elements) {
-      if (kinds.has(element.id))
+      if (elements.has(element.id))
         problems.push(`${where}: element id "${element.id}" is used twice`);
-      else kinds.set(element.id, element.kind);
+      else elements.set(element.id, element);
       for (const problem of elementProblems(element, evidence, sources))
         problems.push(`${where}, element ${element.id}: ${problem}`);
     }
@@ -106,10 +84,11 @@ export function directionProblems(
     shot.beats.forEach((beat, k) => {
       const name = `${where}, beat ${k + 1} (${beat.verb})`;
       const target = beat.verb === 'camera' ? beat.to : beat.element;
-      const kind = kinds.get(target);
+      const element = elements.get(target);
+      const kind = element?.kind;
       if (!kind)
         problems.push(
-          `${name}: the shot has no element "${target}" (it has: ${[...kinds.keys()].join(', ')})`,
+          `${name}: the shot has no element "${target}" (it has: ${[...elements.keys()].join(', ')})`,
         );
       const needs = ACTS_ON[beat.verb];
       // An element the shot lacks is reported above; it neither has a kind nor acts.
@@ -124,6 +103,11 @@ export function directionProblems(
             `${name}: "${target}" already ${beat.verb}s at an earlier beat; it ${beat.verb}s once`,
           );
         acted.add(key);
+      }
+      // A count ticks from base to head: its metric element must show both, and have both.
+      if (beat.verb === 'count' && element?.kind === 'metric') {
+        const problem = countProblem(element, sources.metric(element.evidence));
+        if (problem) problems.push(`${name}: ${problem}`);
       }
       if (beat.verb === 'place' || beat.at === undefined || text === undefined) return;
       const at = findPhrase(text, beat.at);
@@ -195,6 +179,13 @@ function elementProblems(
         ? morphProblem(hunk.lines)
         : `Covi cannot find hunk "${shown(element.evidence)}" in the run's diff`;
       if (problem) out.push(problem);
+      break;
+    }
+    case 'metric': {
+      // A metric item always carries its values (the registry's schema), so it has a source.
+      if (!cites(element.evidence, 'metric', 'a metric element')) break;
+      const metric = sources.metric(element.evidence);
+      if (metric) out.push(...metricProblems(element, metric));
       break;
     }
     case 'capture':

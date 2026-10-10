@@ -44,6 +44,8 @@ export interface Stop {
 export type RevealStyle = 'rise' | 'pop' | 'wipe' | 'type';
 /** How a camera beat moves inside a stop. */
 export type CameraMove = 'zoom' | 'pan' | 'follow';
+/** How a metric element draws its number: large and counting, as bars, or before beside after. */
+export type MetricShow = 'counter' | 'bars' | 'compare';
 
 /** A code token's syntax color: a `tk-` class of the code panel. */
 export type TokenTone = 'keyword' | 'string' | 'number' | 'comment' | 'fn' | 'type' | 'prop';
@@ -82,7 +84,8 @@ export interface MorphVisual {
 /**
  * An element of a directed scene, resolved: content from the run's evidence (never from the
  * agent, labels excepted) and its slot in stop-local stage pixels. Code, output, and captures are
- * drawn by the components that draw those visuals, inside their slot; a morph by its own.
+ * drawn by the components that draw those visuals, inside their slot; a morph and a metric by
+ * their own.
  */
 export type DirectionElement =
   | { id: string; kind: 'visual'; rect: Rect }
@@ -100,6 +103,26 @@ export type DirectionElement =
       visual: Extract<TimelineVisual, { kind: 'screenshot' }>;
     }
   | { id: string; kind: 'morph'; rect: Rect; morph: MorphVisual }
+  | {
+      id: string;
+      kind: 'metric';
+      rect: Rect;
+      show: MetricShow;
+      /** What the number is: the agent's label, else what the run's output called it. */
+      name: string;
+      unit?: string;
+      /** The value before the change: where a count starts, the first bar, a compare's left. */
+      from?: number;
+      /** The value drawn last: after the change, or the one side a counter shows. */
+      to: number;
+      /** Digits after the point, the same for every value drawn. */
+      decimals: number;
+      /**
+       * Covi's change from `from` to `to` in percent, rounded for display; absent without a
+       * nonzero `from`, and for a change of 10,000% or more, too large to read as a percentage.
+       */
+      delta?: number;
+    }
   | { id: string; kind: 'node'; rect: Rect; label: string }
   | {
       id: string;
@@ -113,7 +136,8 @@ export type DirectionElement =
 export type DirectionBeat =
   | { verb: 'reveal'; element: string; style: RevealStyle; t: number; seconds: number }
   | { verb: 'camera'; move: CameraMove; to: string; zoom?: number; t: number; seconds: number }
-  | { verb: 'morph'; element: string; t: number; seconds: number };
+  | { verb: 'morph'; element: string; t: number; seconds: number }
+  | { verb: 'count'; element: string; t: number; seconds: number };
 
 /** A scene's shot, resolved. */
 export interface SceneDirection {

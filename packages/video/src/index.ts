@@ -9,6 +9,7 @@ export {
   densityChecks,
   EMPTY_SHARE,
   emptyFrameCheck,
+  type LeadKind,
   leadKind,
   MAX_RUN,
   monotonyCheck,

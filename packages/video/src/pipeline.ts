@@ -61,7 +61,7 @@ import {
   resolveMusic,
   type SoundInput,
 } from './sound.ts';
-import type { VideoSpec } from './spec.ts';
+import { orientationOf, type VideoSpec } from './spec.ts';
 import { draftStoryboard } from './storyboard/draft.ts';
 import { stripEmphasis } from './storyboard/grammar.ts';
 import { refineNarration } from './storyboard/model.ts';
@@ -292,6 +292,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
     evidence: input.evidence,
     sources,
     seed,
+    orientation: orientationOf(spec.width, spec.height),
   });
   // Labels and phrases are agent text: redacted like the storyboard they are matched against.
   const plan = directed.plan && redact(directed.plan);

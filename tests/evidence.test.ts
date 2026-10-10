@@ -411,6 +411,43 @@ describe('covi evidence', () => {
     expect(existsSync(join(runDir, 'evidence.json'))).toBe(false);
   });
 
+  it('lists the numbers a demo command printed at both revisions, with their values', async () => {
+    const dir = await materializeExample(
+      (await listExamples()).find((e) => e.name === 'backend-slim-request')!,
+    );
+    dirs.push(dir);
+    const demo = covi(['demo', '--repo', dir, '--json']);
+    expect(demo.code).toBe(0);
+    const runDir = demo.json().runDir as string;
+    const listed = covi(['evidence', '--repo', dir, '--run', runDir, '--json']).json() as {
+      data: { items: Array<{ id: string; kind: string; revision: string; metric?: unknown }> };
+    };
+    const metrics = listed.data.items.filter((i) => i.kind === 'metric');
+    expect(metrics.filter((i) => i.id.startsWith('metric:terminal-1:'))).toEqual([
+      expect.objectContaining({
+        id: 'metric:terminal-1:request-bytes',
+        revision: 'both',
+        metric: { name: 'request-bytes', base: 70406, head: 9907 },
+      }),
+      expect.objectContaining({
+        id: 'metric:terminal-1:chunks',
+        metric: { name: 'chunks', base: 4, head: 1 },
+      }),
+      expect.objectContaining({
+        id: 'metric:terminal-1:reader-steps',
+        metric: { name: 'reader-steps', base: 28, head: 10 },
+      }),
+      expect.objectContaining({
+        id: 'metric:terminal-1:timeouts',
+        metric: { name: 'timeouts', base: 1, head: 0 },
+      }),
+    ]);
+    const human = covi(['evidence', '--repo', dir, '--run', runDir]).stdout;
+    expect(human).toMatch(
+      /^metric:terminal-1:request-bytes\s+metric\s+both\s+request bytes: 70406 → 9907$/m,
+    );
+  });
+
   it('exits 2 for a run that does not exist and 3 outside a repository', () => {
     const repo = change({ 'a.txt': 'a\n' }, { 'a.txt': 'b\n' });
     expect(covi(['evidence', '--repo', repo.root, '--run', 'no-such-run', '--json']).code).toBe(2);
@@ -423,6 +460,7 @@ describe('covi evidence', () => {
     const schema = covi(['schema', 'evidence']);
     expect(schema.code).toBe(0);
     expect(schema.stdout).toContain('pixel-diff');
+    expect(schema.stdout).toContain('"metric"');
   });
 });
 

@@ -72,6 +72,7 @@ export const SHOT_LAYOUTS = ['auto', 'single', 'row', 'column', 'split'] as cons
 export const REVEAL_STYLES = ['rise', 'pop', 'wipe', 'type'] as const;
 export const CAMERA_MOVES = ['zoom', 'pan', 'follow'] as const;
 export const LABEL_TONES = ['neutral', 'warning', 'success'] as const;
+export const METRIC_SHOWS = ['counter', 'bars', 'compare'] as const;
 
 export type ShotLayout = (typeof SHOT_LAYOUTS)[number];
 
@@ -194,6 +195,26 @@ export const ShotElementSchema = z.discriminatedUnion('kind', [
     ),
   z.strictObject({
     id: ElementIdSchema,
+    kind: z.literal('metric'),
+    evidence: EvidenceRefSchema.describe(
+      'A metric: id from `covi evidence --run <id>`: a number Covi measured in the run. Its value is never written here.',
+    ),
+    show: z
+      .enum(METRIC_SHOWS)
+      .optional()
+      .describe(
+        'counter (default): the value large, ticking from before to after on a count; bars: before and after on one scale (not for a value that changes sign); compare: before and after side by side.',
+      ),
+    side: z
+      .enum(['base', 'head'])
+      .optional()
+      .describe('A counter of one side only: base (before the change) or head (after).'),
+    label: LabelSchema.optional().describe(
+      "What the number is, in the video's language (no digits). Default: what the output called it.",
+    ),
+  }),
+  z.strictObject({
+    id: ElementIdSchema,
     kind: z.literal('node'),
     label: LabelSchema,
     evidence: z
@@ -244,6 +265,15 @@ export const ShotBeatSchema = z.discriminatedUnion('verb', [
     })
     .describe(
       'A morph element turns from the code before the change into the code after it, once: removed lines fold away, new ones slide in, and the tokens that stay travel to their new places. A morph element that no beat names morphs anyway; a morph of a revealed element waits for its reveal.',
+    ),
+  z
+    .strictObject({
+      verb: z.literal('count'),
+      element: ElementIdSchema,
+      at: PhraseSchema.optional(),
+    })
+    .describe(
+      'A metric ticks from its base value to its head value (bars grow or shrink with it), once. With `at`, it lands as the phrase is spoken; a count of a revealed metric waits for its reveal.',
     ),
 ]);
 

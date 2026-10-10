@@ -21,13 +21,14 @@ import {
 } from '../components/types.ts';
 import { el, fitText, place } from '../dom.ts';
 import { union } from '../narrator.ts';
+import { metric } from './metric.ts';
 import { morph } from './morph.ts';
 
 /*
  * A directed scene's elements, drawn together as one component, so the stage treats a shot like a
  * visual. Code, output, and captures are drawn by the components that draw those visuals, each in
- * its slot; a morph by its own; nodes and labels are the agent's short text, always set as text,
- * never as markup.
+ * its slot; a morph and a metric by their own; nodes and labels are the agent's short text, always
+ * set as text, never as markup.
  */
 
 /** A shot, drawn: one component for the stage, and the storyboard visual's own when it keeps it. */
@@ -80,8 +81,8 @@ export function mountShot(
       (b): b is Reveal => b.verb === 'reveal' && b.element === element.id,
     );
     const placed = { element, layer, ...(reveal ? { reveal } : {}) };
-    // The element's own beat (a morph's), on the element's own clock. A morph without one (a
-    // timeline built by hand) shows the code after the change from the start.
+    // The element's own beat (a morph's or a metric's count), on the element's own clock. A morph
+    // without one (a timeline built by hand) shows the code after the change from the start.
     const beat = direction.beats.find(
       (b) => b.verb !== 'reveal' && b.verb !== 'camera' && b.element === element.id,
     );
@@ -176,6 +177,8 @@ function draw(
       return { component: screenshot(element.visual, ctx) };
     case 'morph':
       return { component: morph(element.morph, ctx, span) };
+    case 'metric':
+      return { component: metric(element, ctx, span) };
     case 'node':
       return textBox(element.label, element.rect, 'node dnode', ctx);
     case 'label':

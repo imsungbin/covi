@@ -45,11 +45,14 @@ import {
   edgeEntrance,
   edgeLabelEntrance,
   interactionTiming,
+  metricSettledAt,
   morphTiming,
+  sceneFrame,
   screenshotMarks,
+  settledAt,
   settledFrame,
 } from '../../packages/video/src/timeline/cues.ts';
-import type { TimelineVisual } from '../../packages/video/src/timeline/types.ts';
+import type { DirectionElement, TimelineVisual } from '../../packages/video/src/timeline/types.ts';
 import { canRenderVideo, fullRenders } from '../helpers/env.ts';
 
 const available = await canRenderVideo();
@@ -1528,8 +1531,10 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
     ['api-users-pagination', ['--standard']],
     // The benchmark for changes with nothing to see: a command's output before and after, and code.
     ['backend-slim-request', ['--standard']],
+    // Square: a narrow row for the number and the command beside it.
+    ['backend-slim-request', ['--custom', '--width', '1080', '--height', '1080']],
   ] as const) {
-    it(`renders ${example}`, async () => {
+    it(`renders ${example} (${flags.join(' ')})`, async () => {
       const dir = await materializeExample((await listExamples()).find((e) => e.name === example)!);
       dirs.push(dir);
       const out = execFileSync(
@@ -1575,6 +1580,55 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         const tiles = contactSheetFrames(timeline);
         for (const { s, b } of morphs)
           expect(tiles).toContain(Math.round((s.start + b.t + b.seconds / 2) * timeline.fps));
+        // The key number is a metric: request bytes count down from 70,406 to 9,907 beside the
+        // command that printed them.
+        const index = timeline.scenes.findIndex((s) =>
+          s.direction?.elements.some((e) => e.kind === 'metric'),
+        );
+        const scene = timeline.scenes[index]!;
+        const counter = scene.direction!.elements.find(
+          (e): e is Extract<DirectionElement, { kind: 'metric' }> => e.kind === 'metric',
+        )!;
+        expect(counter).toMatchObject({
+          show: 'counter',
+          name: 'request bytes',
+          from: 70406,
+          to: 9907,
+          delta: -86,
+        });
+        const count = scene.direction!.beats.find(
+          (b) => b.verb === 'count' && b.element === counter.id,
+        )!;
+        expect(count).toBeDefined();
+        // The sheet shows it settled (landed, centered, its change in percent faded in), the very
+        // frame QC reads the scene at.
+        expect(tiles).toContain(settledFrame(timeline, index));
+        expect(tiles).toContain(
+          sceneFrame(timeline, index, scene.start + metricSettledAt(scene.direction!, counter)),
+        );
+        expect(metricSettledAt(scene.direction!, counter)).toBeGreaterThan(count.t + count.seconds);
+        // It lands once the terminal beside it has typed the output its number comes from.
+        expect(count.t + count.seconds).toBeGreaterThanOrEqual(
+          settledAt(scene.visual, scene.end - scene.start, scene.phases) - 1e-3,
+        );
+        // Where the scene has settled (its count has landed), the counter is the largest text.
+        const frames = JSON.parse(
+          readFileSync(join(result.runDir, 'video', 'frames.json'), 'utf8'),
+        ) as { layouts: LayoutReport[] };
+        const settled = frames.layouts.find((l) => l.frame === settledFrame(timeline, index))!;
+        const fonts = settled.items
+          .filter((i) => i.font !== undefined)
+          .sort((a, b) => b.font! - a.font!);
+        const unit = computeRegions(timeline).unit;
+        expect(fonts[0]!.font! / unit).toBeGreaterThanOrEqual(120);
+        const x = fonts[0]!.rect.x + fonts[0]!.rect.width / 2;
+        expect(x).toBeGreaterThan(counter.rect.x);
+        expect(x).toBeLessThan(counter.rect.x + counter.rect.width);
+        expect(fonts[1]!.font!).toBeLessThan(0.6 * fonts[0]!.font!);
+        // The terminal's code beside it stays at its floor.
+        const code = settled.items.filter((i) => i.text === 'code');
+        expect(code.length).toBeGreaterThan(0);
+        for (const c of code) expect(c.font! / unit).toBeGreaterThanOrEqual(TEXT_FLOOR.code - 0.1);
       }
     }, 600_000);
   }

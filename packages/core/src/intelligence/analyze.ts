@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { CoviConfig } from '../config/schema.ts';
+import { describeMetric } from '../evidence/metrics.ts';
 import { LANGUAGE_NAME, type Language } from '../i18n/language.ts';
 import type { CodeChange } from '../model/change.ts';
 import type { ReviewContext } from '../model/context.ts';
@@ -67,6 +68,12 @@ export async function buildAnalysisSystemPrompt(): Promise<string> {
   ].join('\n\n');
 }
 
+/**
+ * How many captured items the analysis prompt lists: metrics come last in the registry, so they
+ * have their own budget, and many captures cannot crowd the numbers out.
+ */
+const PROMPT_EVIDENCE = { captures: 60, metrics: 20 } as const;
+
 export interface ModelAnalysis {
   explanation: Explanation;
   findings: FindingsFile;
@@ -108,10 +115,11 @@ export async function analyzeWithModel(
     evidence: f.evidence,
     evidenceIds: f.evidenceIds,
   }));
-  const captured = (input.evidence ?? [])
-    .filter((e) => e.kind !== 'diff-hunk')
-    .slice(0, 60)
-    .map((e) => `- \`${e.id}\`: ${e.label}`);
+  const listed = (input.evidence ?? []).filter((e) => e.kind !== 'diff-hunk');
+  const captured = [
+    ...listed.filter((e) => e.kind !== 'metric').slice(0, PROMPT_EVIDENCE.captures),
+    ...listed.filter((e) => e.kind === 'metric').slice(0, PROMPT_EVIDENCE.metrics),
+  ].map((e) => `- \`${e.id}\`: ${describeMetric(e)}`);
   const prompt = [
     material,
     '## Rule findings (JSON)',

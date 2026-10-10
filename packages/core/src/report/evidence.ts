@@ -1,4 +1,5 @@
 import type { EvidenceIndex } from '../evidence/cite.ts';
+import { describeMetric } from '../evidence/metrics.ts';
 import type { EvidenceItem } from '../model/evidence.ts';
 import { DEMO_PATHS } from '../run/paths.ts';
 import { truncate } from '../util/text.ts';
@@ -44,6 +45,8 @@ export function evidenceRefs(
   return (ids ?? []).slice(0, MAX_REFS).map((id) => {
     const item = index?.find(id);
     if (!item) return span(id);
+    // A measured number reads as what it measured and its values.
+    if (item.kind === 'metric') return span(describeMetric(item));
     if (item.kind === 'diff-hunk' || item.path === DEMO_PATHS.captures) return span(item.label);
     const file = options.style === 'path' ? item.path : (item.path.split('/').at(-1) ?? item.path);
     const text = span(`${file}${partOf(id, item)}`);

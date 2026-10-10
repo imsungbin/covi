@@ -26,6 +26,16 @@ const trace: EvidenceItem = {
   refs: ['trace:flow-cart-head#n2'],
 };
 
+const bytes: EvidenceItem = {
+  id: 'metric:terminal-1:request-bytes',
+  kind: 'metric',
+  path: 'demo/captures.json',
+  revision: 'both',
+  sha256: '0'.repeat(64),
+  label: 'request bytes',
+  metric: { name: 'request-bytes', base: 70406, head: 9907 },
+};
+
 const finding = (over: Partial<FindingInput>): FindingInput => ({
   title: 'Quantity can no longer go negative',
   certainty: 'likely',
@@ -66,17 +76,62 @@ describe('model findings and evidence', () => {
       redactor: new Redactor(),
       maxDiffChars: 20_000,
       runId: 'r',
-      evidence: [...diffHunkEvidence(a.change.files), trace],
+      evidence: [...diffHunkEvidence(a.change.files), trace, bytes],
     });
     const { prompt, system } = requests[0]!;
     expect(prompt).toContain('## Captured evidence (ids)');
     expect(prompt).toContain('- `trace:flow-cart-head`: Cart (desktop) · head');
+    // A measured number is listed with its values, so a finding can cite it for what it says.
+    expect(prompt).toContain('- `metric:terminal-1:request-bytes`: request bytes: 70406 → 9907');
     // Hunks are not listed: the model reads them from the diff's own headers.
     expect(prompt).not.toContain('- `diff-hunk:');
     // The citation rule is methodology: it reaches the model from the covi-review skill, once.
     expect(system).toContain('**Cite the evidence by id.**');
     expect(system.split('A `confirmed` or `likely` finding cites at least one').length).toBe(2);
     expect(PIPELINE_PREAMBLE).not.toMatch(/evidenceIds/);
+  });
+
+  it('keeps room for 20 measured numbers however many captures come first', async () => {
+    a = await analyze(
+      { 'src/cart.ts': 'export const dec = (q) => q - 1;\n' },
+      { 'src/cart.ts': 'export const dec = (q) => Math.max(0, q - 1);\n' },
+    );
+    let prompt = '';
+    const provider: ModelProvider = {
+      id: 'command',
+      async generate<T>(request: GenerateRequest<T>): Promise<T> {
+        prompt = request.prompt;
+        return request.schema.parse({
+          explanation: {
+            depth: 'brief',
+            headline: 'Clamp quantities',
+            summary: 's',
+            intent: { statement: 's', confidence: 'high' },
+          },
+          review: { findings: [] },
+        });
+      },
+    };
+    const traces = Array.from({ length: 70 }, (_, i) => ({ ...trace, id: `trace:t${i + 1}` }));
+    const metrics = Array.from({ length: 25 }, (_, i) => ({
+      ...bytes,
+      id: `metric:terminal-1:m${i + 1}`,
+    }));
+    await analyzeWithModel(provider, {
+      change: a.change,
+      context: a.context,
+      ruleFindings: a.findings,
+      redactor: new Redactor(),
+      maxDiffChars: 20_000,
+      runId: 'r',
+      evidence: [...traces, ...metrics],
+    });
+    const listed = (prefix: string) =>
+      prompt.split('\n').filter((line) => line.startsWith(`- \`${prefix}`)).length;
+    expect(listed('trace:')).toBe(60);
+    expect(listed('metric:')).toBe(20);
+    expect(prompt).toContain('- `metric:terminal-1:m20`: request bytes: 70406 → 9907');
+    expect(prompt).not.toContain('`metric:terminal-1:m21`');
   });
 
   const index = indexEvidence({

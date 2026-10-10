@@ -40,7 +40,17 @@ export {
   unknownCitations,
 } from './evidence/cite.ts';
 export { collectEvidence, loadEvidence, writeEvidence } from './evidence/collect.ts';
-export { evidenceId, evidencePart } from './evidence/ids.ts';
+export { evidenceId, evidencePart, metricSource } from './evidence/ids.ts';
+export {
+  describeMetric,
+  type MetricReading,
+  metricSlug,
+  metricValue,
+  type PairedMetric,
+  pairMetrics,
+  readJsonMetrics,
+  readMetrics,
+} from './evidence/metrics.ts';
 export {
   type ExecResult,
   exec,
@@ -233,7 +243,7 @@ export {
   writeFileAtomic,
   writeJson,
 } from './util/fs.ts';
-export { matchesAny, matchesGlob } from './util/glob.ts';
+export { escapeRegExp, matchesAny, matchesGlob } from './util/glob.ts';
 export { seededRandom, seedFrom, sha256, sha256File, shortHash } from './util/hash.ts';
 export { type Logger, type LogRecord, MemoryLogger, silentLogger, TeeLogger } from './util/log.ts';
 export * from './util/text.ts';

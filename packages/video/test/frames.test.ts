@@ -8,7 +8,11 @@ import {
   framesKey,
   sheetColumns,
 } from '../src/render/renderer.ts';
-import type { TimelineScene } from '../src/timeline/types.ts';
+import { COMPARE_RISE, DELTA_FADE } from '../src/runtime/numbers.ts';
+import { settledFrame } from '../src/timeline/cues.ts';
+import type { DirectionElement, SceneDirection, TimelineScene } from '../src/timeline/types.ts';
+
+type Metric = Extract<DirectionElement, { kind: 'metric' }>;
 
 const roots: string[] = [];
 afterEach(() => {
@@ -107,6 +111,76 @@ describe('the contact sheet', () => {
     });
     // 0.3 s; middles 2 and 7; the morph 4 + 2 + 0.8 s in. A camera beat gets no tile.
     expect(frames).toEqual([9, 60, 204, 210]);
+  });
+
+  describe('where every count lands', () => {
+    const metric = (id: string, extra: Partial<Metric> = {}): Metric => ({
+      id,
+      kind: 'metric',
+      rect: { x: 0, y: 0, width: 400, height: 300 },
+      show: 'counter',
+      name: 'request bytes',
+      from: 70406,
+      to: 9907,
+      decimals: 0,
+      ...extra,
+    });
+    const count = (element: string, t: number, seconds: number) =>
+      ({ verb: 'count', element, t, seconds }) as const;
+    const sheet = (
+      elements: Metric[],
+      beats: SceneDirection['beats'],
+      next: Partial<TimelineScene> = { transition: { kind: 'cut', seconds: 0 } },
+    ) => {
+      const timeline = {
+        fps: 30,
+        frames: 400,
+        transition: 0.45,
+        scenes: [
+          s('s1', 0, 4),
+          s('s2', 4, 10, {
+            transition: { kind: 'cut', seconds: 0 },
+            direction: { whole: false, elements, beats },
+          }),
+          s('s3', 10, 13, next),
+        ],
+      };
+      return { timeline, frames: contactSheetFrames(timeline) };
+    };
+
+    it('tiles the scene where its metric has settled: value landed, centered, change faded in', () => {
+      // 0.3 s; middles 2, 7, and 11.5; the count lands 4 + 1 + 1.6 s in, settled 0.3 s later.
+      const { timeline, frames } = sheet([metric('m', { delta: -86 })], [count('m', 1, 1.6)]);
+      expect(frames).toEqual([9, 60, 207, 210, 345]);
+      expect(frames).toContain(settledFrame(timeline, 1));
+      // Bars without a change settle as their count ends; a compare counted quicker than its
+      // after value rises settles once it has risen and its change has faded in.
+      expect(sheet([metric('m', { show: 'bars' })], [count('m', 1, 1.6)]).frames).toContain(198);
+      expect(
+        sheet([metric('m', { show: 'compare', delta: -86 })], [count('m', 1, 0.2)]).frames,
+      ).toContain(Math.ceil((4 + 1 + COMPARE_RISE + DELTA_FADE) * 30 - 1e-6));
+    });
+
+    it('keeps the tile inside its scene, before the next one enters', () => {
+      const { frames } = sheet([metric('m', { delta: -86 })], [count('m', 5, 1)], {
+        transition: { kind: 'fade', seconds: 0.45 },
+      });
+      // Settled 10.3 s in, past where s3 starts to enter (9.55 s): the last frame before it.
+      expect(frames).toContain(286);
+      expect(frames.some((f) => f > 286 && f < 300)).toBe(false);
+    });
+
+    it('tiles a count landing on another tile once, and two counts twice', () => {
+      // Bars without a change settle as their count ends, 4 + 1 + 2 s in: the scene's middle.
+      expect(sheet([metric('m', { show: 'bars' })], [count('m', 1, 2)]).frames).toEqual([
+        9, 60, 210, 345,
+      ]);
+      const two = sheet(
+        [metric('a', { show: 'bars' }), metric('b', { show: 'bars' })],
+        [count('a', 0.5, 1), count('b', 3, 1)],
+      ).frames;
+      expect(two).toEqual([9, 60, 165, 210, 240, 345]);
+    });
   });
 
   it('samples transitions of timelines written before they had kinds', () => {

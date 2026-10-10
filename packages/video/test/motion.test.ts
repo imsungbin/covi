@@ -2,9 +2,10 @@ import { motion } from '@covi/brand';
 import { describe, expect, it } from 'vitest';
 import { easeOutCubic } from '../src/runtime/anim.ts';
 import { cameraPlan, cameraPush, heroAccent, heroPunch } from '../src/runtime/camera.ts';
+import { DELTA_FADE, VALUE_CENTER } from '../src/runtime/numbers.ts';
 import { entering, leaving, REST, sceneStyle, transitionOf } from '../src/runtime/transitions.ts';
 import { settledAt, shotSettledAt } from '../src/timeline/cues.ts';
-import type { TimelineScene } from '../src/timeline/types.ts';
+import type { SceneDirection, TimelineScene } from '../src/timeline/types.ts';
 
 const W = 1920;
 const U = 1;
@@ -271,6 +272,47 @@ describe('the camera in a directed scene', () => {
     // The code's lines have entered 0.57 s after its reveal; the label 0.5 s after its own.
     expect(shotSettledAt(scene)).toBeCloseTo(2 + settledAt(code, 4), 9);
     expect(shotSettledAt(base)).toBe(settledAt(base.visual, 6, undefined));
+  });
+
+  it('settles a metric half a second after it enters, a compare once its after value has landed, and a count when it lands', () => {
+    const metric = (show: 'counter' | 'compare', delta?: number) => ({
+      id: 'm',
+      kind: 'metric' as const,
+      rect,
+      show,
+      name: 'request bytes',
+      from: 70406,
+      to: 9907,
+      decimals: 0,
+      ...(delta === undefined ? {} : { delta }),
+    });
+    const shot = (
+      show: 'counter' | 'compare',
+      beats: SceneDirection['beats'],
+      delta?: number,
+    ): TimelineScene => ({
+      ...base,
+      direction: { whole: false, elements: [metric(show, delta)], beats },
+    });
+    const reveal = {
+      verb: 'reveal' as const,
+      element: 'm',
+      style: 'rise' as const,
+      t: 1,
+      seconds: 0.5,
+    };
+    expect(shotSettledAt(shot('counter', [reveal]))).toBeCloseTo(1.5, 9);
+    expect(shotSettledAt(shot('compare', [reveal], -86))).toBeCloseTo(1 + 0.6 + 0.6, 9);
+    const count = { verb: 'count' as const, element: 'm', t: 2, seconds: 1.6 };
+    // A counted value eases to its own width once it lands, so it ends centered.
+    expect(shotSettledAt(shot('counter', [count]))).toBeCloseTo(3.6 + VALUE_CENTER, 9);
+    // The change in percent fades in once its value has landed; without one, nothing waits for it.
+    expect(shotSettledAt(shot('compare', [reveal]))).toBeCloseTo(1 + 0.6 + 0.3, 9);
+    expect(shotSettledAt(shot('counter', [count], -86))).toBeCloseTo(
+      3.6 + Math.max(DELTA_FADE, VALUE_CENTER),
+      9,
+    );
+    expect(shotSettledAt(shot('compare', [reveal, count], -86))).toBeCloseTo(3.6 + DELTA_FADE, 9);
   });
 
   it('drifts across a capture shown alone, and holds it still beside other elements', () => {

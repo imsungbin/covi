@@ -10,7 +10,8 @@ import {
 
 /*
  * What direction elements may show, looked up by the evidence id they cite. A shot's content
- * comes only from here: the run's diff, its demo commands and start-up logs, and its captures.
+ * comes only from here: the run's diff, its demo commands and start-up logs, its captures, and
+ * the numbers it measured.
  */
 
 export interface HunkSource {
@@ -36,10 +37,21 @@ export interface CaptureSource {
   device: 'desktop' | 'mobile';
 }
 
+export interface MetricSource {
+  /** The item's id, as the registry wrote it. */
+  id: string;
+  /** What the run's output called it: the item's label. */
+  name: string;
+  unit?: string;
+  base?: number;
+  head?: number;
+}
+
 export interface DirectionSources {
   hunk(id: string): HunkSource | undefined;
   command(id: string): CommandSource | undefined;
   capture(id: string): CaptureSource | undefined;
+  metric(id: string): MetricSource | undefined;
 }
 
 export interface SourcesInput {
@@ -70,6 +82,12 @@ export function diffFiles(
     const language = languages.get(file.path);
     return { path: file.path, ...(language ? { language } : {}), hunks: file.hunks };
   });
+}
+
+/** The demo command (1-based) a terminal evidence id names, if it names one. */
+export function terminalNumber(id: string): number | undefined {
+  const n = Number(/^terminal:(\d+)$/.exec(id)?.[1]);
+  return Number.isSafeInteger(n) && evidenceId.terminal(n) === id ? n : undefined;
 }
 
 /** The revision whose app start-up log an evidence id names, if it names one. */
@@ -119,8 +137,8 @@ export function directionSources(input: SourcesInput): DirectionSources {
         const log = input.appLogs?.[revision];
         return log === undefined ? undefined : { name: found.label, command: '', output: log };
       }
-      const n = /^terminal:(\d+)$/.exec(found.id);
-      const c = n ? input.demo?.commands[Number(n[1]) - 1] : undefined;
+      const n = terminalNumber(found.id);
+      const c = n === undefined ? undefined : input.demo?.commands[n - 1];
       if (!c) return undefined;
       return {
         name: c.name,
@@ -136,6 +154,18 @@ export function directionSources(input: SourcesInput): DirectionSources {
         (s) => s.before?.path === found.path || s.after?.path === found.path,
       );
       return { path: found.path, device: shot?.viewport === 'mobile' ? 'mobile' : 'desktop' };
+    },
+    metric(id) {
+      const found = item(id);
+      const m = found?.kind === 'metric' ? found.metric : undefined;
+      if (!found || !m) return undefined;
+      return {
+        id: found.id,
+        name: found.label,
+        ...(m.unit ? { unit: m.unit } : {}),
+        ...(m.base === undefined ? {} : { base: m.base }),
+        ...(m.head === undefined ? {} : { head: m.head }),
+      };
     },
   };
 }

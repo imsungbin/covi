@@ -1,8 +1,11 @@
+import { metricSettled } from '../runtime/numbers.ts';
 import {
   type CodeLine,
+  type DirectionElement,
   type FrameMark,
   HERO_PHASE,
   type HighlightGroup,
+  type SceneDirection,
   type Timeline,
   type TimelineCue,
   type TimelineScene,
@@ -643,19 +646,31 @@ export function settledSpan(
 }
 
 /**
- * The frame QC reads a settled scene at: the first frame of its settled span, or, when the span is
- * shorter than a frame, the last frame before the next scene enters (at its very end, the next
- * scene is the one on screen).
+ * The first frame from `at` (seconds from the start of the video) at which scene `index` is alone
+ * on screen, its entrance done, or, when it leaves before then, the last frame before the next
+ * scene enters (at its very end, the next scene is the one on screen).
  */
+export function sceneFrame(
+  timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames'>,
+  index: number,
+  at: number,
+): number | undefined {
+  const scene = timeline.scenes[index];
+  if (!scene) return undefined;
+  const to = scene.end - entranceSeconds(timeline, index + 1);
+  const from = Math.min(Math.max(scene.start + entranceSeconds(timeline, index), at), to);
+  const first = Math.ceil(from * timeline.fps - 1e-6);
+  const last = Math.floor(to * timeline.fps - 1e-6);
+  return Math.max(0, Math.min(timeline.frames - 1, first, last));
+}
+
+/** The frame QC reads a settled scene at: the first frame of its settled span (`sceneFrame`). */
 export function settledFrame(
   timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames'>,
   index: number,
 ): number | undefined {
-  const span = settledSpan(timeline, index);
-  if (!span) return undefined;
-  const first = Math.ceil(span[0] * timeline.fps - 1e-6);
-  const last = Math.floor(span[1] * timeline.fps - 1e-6);
-  return Math.max(0, Math.min(timeline.frames - 1, first, last));
+  const scene = timeline.scenes[index];
+  return scene && sceneFrame(timeline, index, scene.start + shotSettledAt(scene));
 }
 
 /**
@@ -702,7 +717,7 @@ export const MORPH_SETTLE = 0.5;
 /**
  * When a directed scene's choreography is done: every element has entered and played its own (the
  * storyboard visual on the scene's phases, the others from their reveal; a morph once its added
- * tokens have settled), and every beat has ended.
+ * tokens have settled, a metric once its value and its change are in), and every beat has ended.
  */
 export function shotSettledAt(
   scene: Pick<TimelineScene, 'visual' | 'direction' | 'phases' | 'start' | 'end'>,
@@ -719,11 +734,27 @@ export function shotSettledAt(
       const beat = d.beats.find((b) => b.verb === 'morph' && b.element === e.id);
       return Math.max(at + 0.5, beat ? beat.t + beat.seconds + MORPH_SETTLE : 0);
     }
+    if (e.kind === 'metric') return metricSettledAt(d, e);
     return e.kind === 'node' || e.kind === 'label'
       ? at + 0.5
       : at + settledAt(e.visual, Math.max(0.1, duration - at));
   });
   return Math.max(0, ...elements, ...d.beats.map((b) => b.t + b.seconds));
+}
+
+/**
+ * When a directed scene's metric element has settled, in seconds since the scene started: on the
+ * element's clock from its reveal, as the runtime draws it, in half a second, or once its value
+ * has landed and centered and its change in percent has faded in.
+ */
+export function metricSettledAt(
+  d: Pick<SceneDirection, 'beats'>,
+  e: Extract<DirectionElement, { kind: 'metric' }>,
+): number {
+  const at = d.beats.find((b) => b.verb === 'reveal' && b.element === e.id)?.t ?? 0;
+  const beat = d.beats.find((b) => b.verb === 'count' && b.element === e.id);
+  const count = beat ? { t: beat.t - at, seconds: beat.seconds } : undefined;
+  return at + Math.max(0.5, metricSettled(e, count));
 }
 
 /** The summary's verdict badge rises into view. */

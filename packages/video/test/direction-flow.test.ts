@@ -353,8 +353,7 @@ describe('flow verbs in the direction file', () => {
     );
     for (const b of beats) expect(b.t).toBeGreaterThanOrEqual(first - 1e-3);
     expect(s2!.direction).not.toHaveProperty('dropped');
-    // A stack a phrase placed stays on its phrase; one with no room before the count stays where
-    // the spacing put it.
+    // A stack a phrase placed stays on its phrase, while the count ticks.
     const stackOf = (beats: unknown[]) =>
       resolve(shot(STAGE, beats))[1]!.direction.beats.find((b) => b.verb === 'stack')!;
     expect(
@@ -363,12 +362,38 @@ describe('flow verbs in the direction file', () => {
         { verb: 'count', element: 'm', at: 'request bytes' },
       ]).t,
     ).toBeCloseTo(said('request bytes'), 3);
-    expect(
-      stackOf([
-        { verb: 'stack', element: 'r' },
-        { verb: 'count', element: 'm', at: 'same command' },
-      ]).t,
-    ).toBeCloseTo(first, 3);
+    // A stack still stacking while the count ticks, which would have to start before the spacing
+    // does to end in time, stays where the spacing put it.
+    const crossed = stackOf([
+      { verb: 'stack', element: 'r' },
+      { verb: 'count', element: 'm', at: 'before and after' },
+    ]);
+    expect(crossed.t).toBeCloseTo(first, 3);
+    const landed = said('before and after');
+    expect(crossed.t).toBeLessThan(landed);
+    expect(crossed.t + crossed.seconds).toBeGreaterThan(landed - BEAT_SECONDS.count);
+    // Nor does one make way into another count: between the two, the stack and the merge keep
+    // their spaced slots.
+    const [, twice] = resolve(
+      shot(
+        [...STAGE, { id: 'm2', kind: 'metric', evidence: id('timeouts') }],
+        [
+          { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+          { verb: 'count', element: 'm2', at: 'the change' },
+          { verb: 'stack', element: 'r' },
+          { verb: 'merge', element: 'p' },
+          { verb: 'count', element: 'm', at: 'request bytes' },
+        ],
+      ),
+    );
+    const slot = (i: number) =>
+      timing.speechStart -
+      timing.start +
+      (timing.speechEnd - timing.speechStart) * (0.15 + (0.85 * i) / 5);
+    const of = (verb: string) => twice!.direction.beats.find((b) => b.verb === verb)!;
+    expect(of('stack').t).toBeCloseTo(slot(2), 3);
+    expect(of('merge').t).toBeCloseTo(slot(3), 3);
+    expect(twice!.direction).not.toHaveProperty('dropped');
   });
 
   it('stretch flows, splits, merges, and stacks toward the next beat, up to three times their length', () => {

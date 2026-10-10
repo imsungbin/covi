@@ -223,8 +223,8 @@ function counter(
       [value],
       printed,
       // The name and the value hide what runs past them, so a short card squeezes them instead
-      // of overflowing: they are kept from being clipped as QC reads it. A name too long for one
-      // line wraps, clipped whatever the size.
+      // of overflowing: they are kept from being clipped as QC reads it. A name wrapped onto two
+      // lines may be clipped whatever the size, so it is not held to this.
       () =>
         row.scrollWidth <= row.clientWidth + 1 &&
         row.scrollHeight <= 0.55 * e.rect.height + 1 &&

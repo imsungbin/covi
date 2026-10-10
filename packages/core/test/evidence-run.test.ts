@@ -152,6 +152,31 @@ describe('run evidence', () => {
     expect(evidence.items.map((i) => i.id)).toEqual(['http:1']);
   });
 
+  it('reads no numbers from a capture a damaged captures.json left without a result', async () => {
+    const run = await newRun();
+    const command = { name: 'Measure', command: 'node measure.js', changed: true };
+    const damaged = JSON.parse(
+      captures({ path: 'demo/traces/none.json' }, 'demo/screenshots/none.png', {
+        commands: [
+          { ...command, before: { exitCode: 0, output: 'chunks: 4' } },
+          { ...command, before: { exitCode: 0, output: null }, after: { exitCode: 0, output: 4 } },
+          { ...command, after: { exitCode: 0, output: 'chunks: 1' } },
+        ],
+      }),
+    );
+    damaged.requests.push({ name: 'Broken', method: 'GET', path: '/b', changed: true });
+    writeRaw(run, 'demo/captures.json', JSON.stringify(damaged));
+    const evidence = await collectEvidence(run);
+    expect(evidence.items.map((i) => i.id)).toEqual([
+      'http:1',
+      'http:2',
+      'terminal:1',
+      'terminal:2',
+      'terminal:3',
+      'metric:terminal-3:chunks',
+    ]);
+  });
+
   it('rebuilds evidence for a run without evidence.json and writes nothing', async () => {
     const run = await newRun();
     await run.writeText('diff.patch', PATCH, 'diff');

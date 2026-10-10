@@ -273,21 +273,28 @@ function metricItem(source: string, path: string, m: PairedMetric): EvidenceItem
 /**
  * The numbers the run measured, after every other item: the diff's totals, each behavior-diff
  * step's changed pixels, the numeric fields of each response, the numbers each demo command
- * printed, and the test run's. Text is redacted before it is read (or cut), so a number redaction
- * masks never becomes a metric. At most 50 per source and 500 per run.
+ * printed, and the test run's. Text is redacted before it is read (or cut), and a value redaction
+ * would mask once printed plainly is dropped, so a number redaction masks never becomes a metric.
+ * At most 50 per source and 500 per run.
  */
 function metricEvidence(
   sources: EvidenceSources,
   redact: (text: string) => string,
 ): EvidenceItem[] {
   const out: EvidenceItem[] = [];
+  // Redaction matches text: a secret printed grouped (`411,111,111,111`) or in JSON's exponent form
+  // escapes it, yet reads as the very number it masks, which the written file would then hold.
+  const hidden = (v: number | undefined) => v !== undefined && redact(String(v)) !== String(v);
   const add = (source: string, path: string, metrics: readonly PairedMetric[]) => {
-    for (const m of metrics) out.push(metricItem(source, path, m));
+    for (const m of metrics)
+      if (!hidden(m.base) && !hidden(m.head)) out.push(metricItem(source, path, m));
   };
-  const read = (text: string | undefined) =>
-    text === undefined ? undefined : readMetrics(redact(text));
-  const json = (text: string | undefined) =>
-    text === undefined ? undefined : readJsonMetrics(redact(text));
+  // captures.json is read without a shape check: a side a damaged file holds as anything but text
+  // gives no readings, rather than failing the whole registry.
+  const read = (text: unknown) =>
+    typeof text === 'string' ? readMetrics(redact(text)) : undefined;
+  const json = (text: unknown) =>
+    typeof text === 'string' ? readJsonMetrics(redact(text)) : undefined;
   const files = sources.diff ?? [];
   if (files.length) {
     const lines = files.flatMap((f) => f.hunks.flatMap((h) => h.lines));
@@ -312,18 +319,21 @@ function metricEvidence(
           },
         ]);
       }
+  // A capture a damaged file left without its result is skipped: there is nothing to compare.
   for (const [i, r] of (sources.demo?.requests ?? []).entries())
-    add(
-      metricSource.http(i + 1),
-      DEMO_PATHS.captures,
-      pairMetrics(json(r.before?.body), json(r.after.body)),
-    );
+    if (r.after)
+      add(
+        metricSource.http(i + 1),
+        DEMO_PATHS.captures,
+        pairMetrics(json(r.before?.body), json(r.after.body)),
+      );
   for (const [i, c] of (sources.demo?.commands ?? []).entries())
-    add(
-      metricSource.terminal(i + 1),
-      DEMO_PATHS.captures,
-      pairMetrics(read(c.before?.output), read(c.after.output)),
-    );
+    if (c.after)
+      add(
+        metricSource.terminal(i + 1),
+        DEMO_PATHS.captures,
+        pairMetrics(read(c.before?.output), read(c.after.output)),
+      );
   if (sources.tests?.output !== undefined)
     add(
       metricSource.testRun(),

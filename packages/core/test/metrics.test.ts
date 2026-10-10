@@ -105,6 +105,15 @@ describe('reading metrics from output', () => {
       'port: 3000',
       'request id: 99',
       'requestId=99',
+      // A number next to a credential is the credential, never a measurement.
+      'password: 12345678',
+      'api key: 123456',
+      'otp=482913',
+      'apiKey=123456',
+      'PIN: 1234',
+      'SSN: 123456789',
+      'secret count: 3',
+      'Your passcode = 9911',
       // Longer than a line Covi reads.
       'a=1 '.repeat(Math.ceil(METRIC_LIMITS.lineChars / 4) + 1),
     ])
@@ -116,6 +125,17 @@ describe('reading metrics from output', () => {
       ['build-time', 12.3, 's'],
       ['line-coverage', 87.5, '%'],
     ]);
+  });
+
+  it('reads keys counted, and a name where key is not the last word', () => {
+    expect(values('cache keys: 12\nkey count: 3')).toEqual([
+      ['cache-keys', 12, undefined],
+      ['key-count', 3, undefined],
+    ]);
+    // The same words in a JSON body: a field named after a credential is not read.
+    expect(
+      readJsonMetrics('{"auth":{"token":123456,"apiKey":42},"cacheKeys":12}').map((m) => m.name),
+    ).toEqual(['cache-keys']);
   });
 
   it('strips terminal colors before reading', () => {

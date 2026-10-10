@@ -91,6 +91,49 @@ describe('model findings and evidence', () => {
     expect(PIPELINE_PREAMBLE).not.toMatch(/evidenceIds/);
   });
 
+  it('keeps room for 20 measured numbers however many captures come first', async () => {
+    a = await analyze(
+      { 'src/cart.ts': 'export const dec = (q) => q - 1;\n' },
+      { 'src/cart.ts': 'export const dec = (q) => Math.max(0, q - 1);\n' },
+    );
+    let prompt = '';
+    const provider: ModelProvider = {
+      id: 'command',
+      async generate<T>(request: GenerateRequest<T>): Promise<T> {
+        prompt = request.prompt;
+        return request.schema.parse({
+          explanation: {
+            depth: 'brief',
+            headline: 'Clamp quantities',
+            summary: 's',
+            intent: { statement: 's', confidence: 'high' },
+          },
+          review: { findings: [] },
+        });
+      },
+    };
+    const traces = Array.from({ length: 70 }, (_, i) => ({ ...trace, id: `trace:t${i + 1}` }));
+    const metrics = Array.from({ length: 25 }, (_, i) => ({
+      ...bytes,
+      id: `metric:terminal-1:m${i + 1}`,
+    }));
+    await analyzeWithModel(provider, {
+      change: a.change,
+      context: a.context,
+      ruleFindings: a.findings,
+      redactor: new Redactor(),
+      maxDiffChars: 20_000,
+      runId: 'r',
+      evidence: [...traces, ...metrics],
+    });
+    const listed = (prefix: string) =>
+      prompt.split('\n').filter((line) => line.startsWith(`- \`${prefix}`)).length;
+    expect(listed('trace:')).toBe(60);
+    expect(listed('metric:')).toBe(20);
+    expect(prompt).toContain('- `metric:terminal-1:m20`: request bytes: 70406 → 9907');
+    expect(prompt).not.toContain('`metric:terminal-1:m21`');
+  });
+
   const index = indexEvidence({
     items: [
       trace,

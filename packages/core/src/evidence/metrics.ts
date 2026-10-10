@@ -5,7 +5,8 @@ import { escapeUnprintable, hasUnprintable } from '../util/text.ts';
  * Numbers measured in a run's own text: a demo command's output, a response body, the test run's
  * output. Pure and deterministic. Silence over noise: a line counts only when it is a name and a
  * number (and a unit) and nothing else, so versions, times, dates, addresses, and paths give
- * nothing, and a name that ends in an identifier word (`pid`, `port`, `request id`) gives nothing.
+ * nothing, and a name that ends in an identifier word (`pid`, `port`, `request id`) or holds a
+ * credential word (`password`, `otp`, `api key`) gives nothing.
  */
 
 /** One number read from one text. */
@@ -70,6 +71,26 @@ const IDENTIFIERS = new Set([
   'rev',
   'revision',
 ]);
+/**
+ * Words that name a credential anywhere in a name (`password`, `token count`): the number beside
+ * one is the secret itself, which the redactor masks only in shapes it recognizes.
+ */
+const CREDENTIALS = new Set([
+  'password',
+  'passcode',
+  'passphrase',
+  'pin',
+  'otp',
+  'token',
+  'secret',
+  'cvv',
+  'ssn',
+  'credential',
+  'credentials',
+]);
+/** `key` names a credential only as the last word: `api key`, not `key count` or `cache keys`. */
+const isCredential = (words: readonly string[]) =>
+  words.at(-1) === 'key' || words.some((w) => CREDENTIALS.has(w));
 
 /** A parsed number as a metric value: rounded to six decimals, undefined when out of bounds. */
 function bounded(value: number): number | undefined {
@@ -123,12 +144,13 @@ export const metricLabel = (text: string) =>
     .trimEnd();
 
 /**
- * Keeps a reading unless its value is out of bounds or its name ends in an identifier word
- * (`request id`, not `build time`). Before the cap, so identifiers never take a reading's place.
+ * Keeps a reading unless its value is out of bounds, its name ends in an identifier word
+ * (`request id`, not `build time`), or it names a credential. Before the cap, so neither ever takes
+ * a reading's place.
  */
 function add(found: Found[], printed: string, value: number | undefined, unit?: string): void {
   const words = wordsOf(printed);
-  if (value === undefined || IDENTIFIERS.has(words.at(-1) ?? '')) return;
+  if (value === undefined || IDENTIFIERS.has(words.at(-1) ?? '') || isCredential(words)) return;
   found.push({ label: metricLabel(printed), words, value, ...(unit ? { unit } : {}) });
 }
 

@@ -109,10 +109,13 @@ export async function analyzeWithModel(
     evidence: f.evidence,
     evidenceIds: f.evidenceIds,
   }));
-  const captured = (input.evidence ?? [])
-    .filter((e) => e.kind !== 'diff-hunk')
-    .slice(0, 60)
-    .map((e) => `- \`${e.id}\`: ${describeMetric(e)}`);
+  const listed = (input.evidence ?? []).filter((e) => e.kind !== 'diff-hunk');
+  // Metrics come last in the registry, so they have their own budget: many captures cannot crowd
+  // the numbers out.
+  const captured = [
+    ...listed.filter((e) => e.kind !== 'metric').slice(0, 60),
+    ...listed.filter((e) => e.kind === 'metric').slice(0, 20),
+  ].map((e) => `- \`${e.id}\`: ${describeMetric(e)}`);
   const prompt = [
     material,
     '## Rule findings (JSON)',

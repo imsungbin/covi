@@ -465,22 +465,38 @@ describe('metric evidence', () => {
   });
 
   it('reads text after redaction: a number the redactor masks never becomes a metric', () => {
-    // Below the size limit, so only redaction keeps it out.
+    // Below the size limit, so only redaction keeps them out.
     const secret = '411111111111';
+    const other = '422222222222';
     expect(Number(secret)).toBeLessThan(METRIC_LIMITS.magnitude);
     const redacted = buildEvidence({
       demo: {
         ...DEMO,
-        commands: [{ ...measure, after: { exitCode: 0, output: `card: ${secret}\nchunks: 1` } }],
+        commands: [
+          {
+            ...measure,
+            // Printed plainly the text redaction masks it; grouped it reads as the same number.
+            before: { exitCode: 0, output: 'card: 411,111,111,111\nchunks: 4' },
+            after: { exitCode: 0, output: `card: ${secret}\nchunks: 1\npan: 422_222_222_222` },
+          },
+        ],
+        // JSON spells a number other ways too: 4.11111111111e11 is the secret.
+        requests: [
+          {
+            ...users,
+            after: { status: 200, body: '{"total":4.11111111111e11,"page":{"size":20}}' },
+          },
+        ],
       },
-      redact: (text) => text.split(secret).join('[REDACTED]'),
+      // As the Redactor masks a literal: its exact text only.
+      redact: (text) => [secret, other].reduce((t, s) => t.split(s).join('[REDACTED]'), text),
     });
     expect(redacted.items.filter((i) => i.kind === 'metric').map((i) => i.id)).toEqual([
+      'metric:http-1:page-size',
       'metric:terminal-1:chunks',
-      'metric:terminal-1:request-bytes',
-      'metric:terminal-1:timeouts',
     ]);
     expect(JSON.stringify(redacted)).not.toContain(secret);
+    expect(JSON.stringify(redacted)).not.toContain(other);
   });
 
   it('keeps at most 500 metrics in a run', () => {

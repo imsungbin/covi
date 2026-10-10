@@ -38,10 +38,14 @@ const demo = {
     {
       name: 'Measure the review request',
       command: 'node scripts/measure.js',
-      before: { exitCode: 0, output: 'request bytes: 70406\nchunks: 4\nratio: 0.25\nretries: 0' },
+      before: {
+        exitCode: 0,
+        output: 'request bytes: 70406\nchunks: 4\nratio: 0.25\nretries: 0\npayload: 300 KB',
+      },
       after: {
         exitCode: 0,
-        output: 'request bytes: 9907\nchunks: 1\nratio: 0.125\nretries: 2\ncache hits: 3',
+        output:
+          'request bytes: 9907\nchunks: 1\nratio: 0.125\nretries: 2\ncache hits: 3\npayload: 120 KB',
       },
       changed: true,
     },
@@ -209,9 +213,19 @@ describe('metrics in the direction file', () => {
         metric('retries', 'retries', { show: 'compare' }),
         { id: 'adds', kind: 'metric', evidence: 'metric:diff:additions' },
         metric('size', 'request-bytes', { label: 'Request size' }),
+        metric('payload', 'payload', { show: 'compare' }),
       ]),
     );
     const byId = new Map(s2!.direction.elements.map((e) => [e.id, e]));
+    // The unit is the output's, as printed: the file cannot state one.
+    expect(byId.get('payload')).toMatchObject({
+      show: 'compare',
+      name: 'payload',
+      unit: 'KB',
+      from: 300,
+      to: 120,
+      delta: -60,
+    });
     expect(byId.get('bytes')).toEqual({
       id: 'bytes',
       kind: 'metric',

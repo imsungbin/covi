@@ -548,7 +548,8 @@ function sequenced(
   written: readonly Written[],
   limit: number,
 ): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
-  const last = new Map<string, Written>();
+  // The last flow verb on each element: as it was timed (a phrase's moment), and as placed.
+  const last = new Map<string, { written: Written; placed: DirectionBeat }>();
   const lost = new Set<string>();
   const beats: DirectionBeat[] = [];
   const dropped: DroppedBeat[] = [];
@@ -561,14 +562,15 @@ function sequenced(
     }
     const key = moved(b);
     const before = key === undefined ? undefined : last.get(key);
-    const earliest = Math.max(w.ready, before ? before.beat.t + before.beat.seconds : 0);
+    const earliest = Math.max(w.ready, before ? before.placed.t + before.placed.seconds : 0);
     let t = Math.max(b.t, earliest);
     const seconds = Math.min(b.seconds, Math.max(FLOW_MIN, limit - t));
     let reason: string | undefined;
     if (key !== undefined && b.verb === 'flow' && lost.has(key))
       reason = `${named(b)} follows a trip of "${key}" that was left out`;
-    else if (before && w.phrased && before.phrased && b.t < before.beat.t) {
-      const what = before.beat.verb === b.verb ? `previous ${b.verb}` : before.beat.verb;
+    // Phrases in the written order never drop a beat, however close: it waits its turn instead.
+    else if (before?.written.phrased && w.phrased && b.t < before.written.beat.t) {
+      const what = before.placed.verb === b.verb ? `previous ${b.verb}` : before.placed.verb;
       reason = `${named(b)} at ${b.t.toFixed(1)} s comes before its ${what}`;
     } else if (t + seconds > limit + 1e-9) {
       t = limit - seconds;
@@ -585,7 +587,7 @@ function sequenced(
     const placed = { t: round(t), seconds: round(seconds) };
     const beat = placed.t === b.t && placed.seconds === b.seconds ? b : { ...b, ...placed };
     beats.push(beat);
-    if (key !== undefined) last.set(key, { ...w, beat });
+    if (key !== undefined) last.set(key, { written: w, placed: beat });
   }
   return { beats, dropped };
 }

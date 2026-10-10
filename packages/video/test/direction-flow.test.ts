@@ -581,6 +581,82 @@ describe('flow verbs in the direction file', () => {
     const split = pulled.beats.find((b) => b.verb === 'split')!;
     expect(pulled.beats.find((b) => b.verb === 'merge')!.t).toBeCloseTo(split.t + split.seconds, 3);
     expect(pulled).not.toHaveProperty('dropped');
+    // Phrases close together in the written order never drop a trip: each waits its turn.
+    const words = resolve(
+      shot(
+        [...three, node('d', 'Writer'), { id: 'p', kind: 'packet' }],
+        [
+          { verb: 'flow', from: 'a', to: 'b', packet: 'p', at: 'is' },
+          { verb: 'flow', from: 'b', to: 'c', packet: 'p', at: 'same' },
+          { verb: 'flow', from: 'c', to: 'd', packet: 'p', at: 'command' },
+        ],
+      ),
+    )[1]!.direction;
+    expect(words.beats.map((b) => b.verb === 'flow' && b.to)).toEqual(['b', 'c', 'd']);
+    words.beats.slice(1).forEach((b, i) => {
+      expect(b.t).toBeCloseTo(ends(words.beats)[i]!, 3);
+    });
+    expect(words).not.toHaveProperty('dropped');
+  });
+
+  it('leave out a split, a merge, or a stack with no room to end before the scene moves on', () => {
+    const d = resolve(
+      shot(STAGE, [
+        { verb: 'reveal', element: 'p', at: 'request bytes' },
+        { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+        { verb: 'merge', element: 'p' },
+        { verb: 'reveal', element: 'r', at: '9907' },
+        { verb: 'stack', element: 'r' },
+      ]),
+    )[1]!.direction;
+    // The split plays once the packet is in, ending in time; nothing after it fits.
+    const split = d.beats.find((b) => b.verb === 'split')!;
+    const reveal = d.beats.find((b) => b.verb === 'reveal' && b.element === 'p')!;
+    expect(split.t).toBeCloseTo(reveal.t + reveal.seconds, 3);
+    expect(split.t + split.seconds).toBeLessThanOrEqual(LIMIT + 1e-6);
+    expect(d.beats.map((b) => b.verb)).toEqual(['reveal', 'split', 'reveal']);
+    const late = 'has no room to end 0.5 s before the scene moves on at 8.9 s';
+    expect(d.dropped).toEqual([
+      { verb: 'merge', element: 'p', reason: `the merge of "p" ${late}` },
+      { verb: 'stack', element: 'r', reason: `the stack of "r" ${late}` },
+    ]);
+  });
+
+  it('end flow verbs before the next scene comes in, when one follows', () => {
+    const three = [
+      ...scenes,
+      SceneSchema.parse({
+        id: 's3',
+        beat: 's3',
+        narration: 'The reader now takes ten steps.',
+        visual: { kind: 'callout', title: 'After' },
+      }),
+    ];
+    const timed = layoutScenes(three, new Map(), new Map(), 'en', pacingFor(spec));
+    const [, s2] = resolveDirection({
+      plan: DirectionSchema.parse(
+        shot(STAGE, [
+          { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
+          { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+          { verb: 'merge', element: 'p' },
+          { verb: 'stack', element: 'r' },
+        ]),
+      ),
+      scenes: three,
+      layout: timed,
+      spec,
+      language: 'en',
+      sources,
+      image: () => ({ src: '', width: 1, height: 1 }),
+      seed: 5,
+      redact: (value) => value,
+    });
+    // Half a second before s3 starts to come in, which is before s2 ends.
+    const limit = timed.scenes[2]!.start - timed.scenes[1]!.start - 0.5;
+    expect(timed.scenes[2]!.start).toBeLessThan(timed.scenes[1]!.end);
+    const beats = s2!.direction.beats;
+    for (const end of ends(beats)) expect(end).toBeLessThanOrEqual(limit + 1e-6);
+    expect(Math.max(...ends(beats))).toBeCloseTo(limit, 3);
   });
 
   it('keep a packet that split beside a node there until it merges back', () => {

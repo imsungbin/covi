@@ -471,7 +471,7 @@ export interface Timeline {
 export interface LayoutItem {
   role: 'media' | 'text' | 'focus';
   rect: Rect;
-  /** Text that does not fit its box. */
+  /** Text that does not fit its box, or a pile whose items its card cannot draw at their least. */
   overflow?: boolean;
   /**
    * The size of the item's smallest text that QC holds to a floor, in stage pixels as drawn (the

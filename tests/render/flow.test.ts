@@ -21,6 +21,7 @@ import { elementSlots } from '../../packages/video/src/direction/layout.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import {
   edgeRoute,
+  PILE_ITEM_MIN,
   pointAlong,
   stackCount,
   stackRows,
@@ -655,6 +656,59 @@ describe.skipIf(!available)('piles and count-ups', () => {
       expect(r.y + r.height).toBeLessThanOrEqual(card.y + card.height + 1);
     }
     expect((await v.report(frame)).items.some((i) => i.overflow)).toBe(false);
+  });
+
+  it('keeps a pile’s items at their smallest size or more, or reports the pile', async () => {
+    const SQUARE = { width: 540, height: 540 };
+    /** A pile of `[before, after]` counts in half the frame, stacked: its smallest item and its
+     * numbers' size in design units, and whether QC hears about it. */
+    const pileOf = async (counts: [number, number], size: Size) => {
+      const v = await staged(
+        (r) => [
+          {
+            id: 'reads',
+            kind: 'pile',
+            rect: r.right,
+            name: 'request bytes',
+            rows: [
+              { side: 'base', count: counts[0] },
+              { side: 'head', count: counts[1] },
+            ],
+          },
+        ],
+        [STACK],
+        size,
+      );
+      const frame = v.frameAt(3);
+      const drawn = (await v.seek(
+        frame,
+        `const scene = document.querySelector('[data-scene="s2"]');
+         const items = [...scene.querySelectorAll('.pitem')].map((n) => n.getBoundingClientRect().width);
+         const nums = [...scene.querySelectorAll('.pnum')].map((n) => Number.parseFloat(n.style.fontSize));
+         return [Math.min(...items), Math.min(...nums)];`,
+      )) as [number, number];
+      const unit = v.r.regions.unit;
+      return {
+        item: drawn[0] / unit,
+        num: drawn[1] / unit,
+        reported: (await v.report(frame)).items.some((i) => i.overflow),
+      };
+    };
+    // Two-digit counts in a square frame's half: the number gives the items room.
+    const small = await pileOf([28, 10], SQUARE);
+    expect(small.item).toBeGreaterThanOrEqual(PILE_ITEM_MIN - 0.1);
+    expect(small.reported).toBe(false);
+    for (const [counts, size] of [
+      [[70406, 9907], SQUARE],
+      [[1234567890, 3], LANDSCAPE],
+    ] as const) {
+      const pile = await pileOf([...counts], size);
+      // The number never drops below the body floor; items smaller than their least are reported,
+      // and only those.
+      expect(pile.num).toBeGreaterThanOrEqual(TEXT_FLOOR.body - 0.1);
+      if (pile.reported) expect(pile.item).toBeLessThan(PILE_ITEM_MIN);
+      else expect(pile.item).toBeGreaterThanOrEqual(PILE_ITEM_MIN - 0.1);
+    }
   });
 
   it('wraps a long name onto two lines, and reports one too long even for that', async () => {

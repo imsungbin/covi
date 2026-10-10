@@ -24,6 +24,8 @@ import {
   legPoint,
   legProgress,
   nodeBoxRect,
+  PER_LINE,
+  PILE_ITEM_MIN,
   pileGrid,
   pointAlong,
   routeLength,
@@ -32,7 +34,7 @@ import {
   stackRows,
 } from '../routes.ts';
 import { TEXT_FLOOR } from '../sizing.ts';
-import { fitName, textItem, visible } from './metric.ts';
+import { fitName, largest, textItem, visible } from './metric.ts';
 
 /*
  * Flow verbs, drawn: edges between nodes with packets travelling them, splits that fan a packet
@@ -471,6 +473,16 @@ export function nodeSplit(
   };
 }
 
+/** The most of a pile row's width its number takes; the items keep the rest. */
+const PILE_NUMBER_SHARE = 0.3;
+
+/** Holds `parts` at the widest one's width, so every row's columns line up. */
+function holdWidest(parts: readonly HTMLElement[]): void {
+  for (const p of parts) p.style.minWidth = '';
+  const widest = Math.max(...parts.map((p) => p.scrollWidth)) + 2;
+  for (const p of parts) p.style.minWidth = `${widest}px`;
+}
+
 /**
  * A pile: a card with what is counted (the run's own word for it, or the agent's label, set as
  * text) and a row per side, before above after, each up to twelve items and the true number. A
@@ -497,20 +509,30 @@ export function pile(e: PileElement, ctx: ComponentContext, spans: FlowSpans): C
   });
   // The name first: wrapped onto a second line, it leaves the rows less room.
   fitName(name, card, ctx);
-  const rowHeight = rows[0]?.row.clientHeight ?? 0;
-  const numFont = Math.max(u(36), Math.min(u(72), 0.55 * rowHeight));
-  for (const r of rows) {
-    r.cap.style.fontSize = `${u(30)}px`;
-    r.num.style.fontSize = `${numFont}px`;
-  }
-  // Every row's caption and number take the widest one's width, so the rows' items line up; the
-  // numbers are measured at the true counts, so counting up never moves the items.
-  for (const parts of [rows.map((r) => r.cap), rows.map((r) => r.num)]) {
-    const widest = Math.max(...parts.map((p) => p.scrollWidth)) + 2;
-    for (const p of parts) p.style.minWidth = `${widest}px`;
-  }
+  const caps = rows.map((r) => r.cap);
+  const nums = rows.map((r) => r.num);
+  for (const cap of caps) cap.style.fontSize = `${u(30)}px`;
+  holdWidest(caps);
+  // The number as large as its row's height allows, at most its share of the row's width, and
+  // smaller still, to the body floor, while it would leave the items less than their least size.
+  // It is measured at the true count, so counting up never moves the items.
+  const gap = u(10);
+  const least = PER_LINE * u(PILE_ITEM_MIN) + (PER_LINE - 1) * gap;
+  const share = PILE_NUMBER_SHARE * (rows[0]?.row.clientWidth ?? 0);
+  const floor = u(TEXT_FLOOR.body);
+  largest(
+    (size) => {
+      for (const num of nums) num.style.fontSize = `${size}px`;
+      holdWidest(nums);
+    },
+    () =>
+      nums.every((num) => num.scrollWidth <= share + 1) &&
+      rows.every((r) => r.grid.clientWidth >= least),
+    floor,
+    Math.max(floor, Math.min(u(72), 0.55 * (rows[0]?.row.clientHeight ?? 0))),
+  );
   const items = rows.map((r) =>
-    pileGrid(r.count, { width: r.grid.clientWidth, height: r.grid.clientHeight }, u(10)).map(
+    pileGrid(r.count, { width: r.grid.clientWidth, height: r.grid.clientHeight }, gap).map(
       (rect) => {
         const item = el('div', `pitem ${r.side}`, r.grid);
         place(item, rect);
@@ -518,6 +540,8 @@ export function pile(e: PileElement, ctx: ComponentContext, spans: FlowSpans): C
       },
     ),
   );
+  // Items smaller than their least read as dots, not a pile: QC hears the pile does not fit.
+  const cramped = items.some((row) => row.some(({ rect }) => rect.width < u(PILE_ITEM_MIN)));
   return {
     update(clock) {
       const t = clock.t;
@@ -545,7 +569,7 @@ export function pile(e: PileElement, ctx: ComponentContext, spans: FlowSpans): C
       });
     },
     report: () => [
-      { role: 'media', rect: rectOf(card) },
+      { role: 'media', rect: rectOf(card), ...(cramped ? { overflow: true } : {}) },
       textItem(name),
       ...rows.flatMap((r) => [textItem(r.cap), ...(visible(r.num) ? [textItem(r.num)] : [])]),
     ],

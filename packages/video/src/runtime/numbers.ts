@@ -110,11 +110,26 @@ export function valueCentering(
   return [at, at + VALUE_CENTER];
 }
 
+/** A counter's count, when it ticks: only from a value before. */
+const ticking = (e: { from?: number }, count: CountSpan | undefined) =>
+  count && e.from !== undefined ? count : undefined;
+
+/**
+ * The span a counter's value lands on: its count when that ticks, else its count-up. What it
+ * shows (`counterValue`), when its change fades in, and when it settles all follow this span.
+ */
+export function counterLands(
+  e: { from?: number },
+  count: CountSpan | undefined,
+  up?: CountSpan,
+): CountSpan | undefined {
+  return ticking(e, count) ?? up;
+}
+
 /**
  * When all a metric draws is in place, on its element's clock: its value, then its change, and a
- * counted value centered. A counter's value lands on its count, else on its count-up (`up`; bars
- * and a compare never count up); only a count moves it off its own width, so only a count
- * centers it.
+ * counted value centered. A counter's value lands where `counterLands` says (bars and a compare
+ * never count up); only a count moves it off its own width, so only a count centers it.
  */
 export function metricSettled(
   e: Pick<MetricElement, 'show' | 'from' | 'delta'>,
@@ -122,7 +137,7 @@ export function metricSettled(
   up?: CountSpan,
 ): number {
   const show = drawnShow(e);
-  const lands = count ?? (show === 'counter' ? up : undefined);
+  const lands = show === 'counter' ? counterLands(e, count, up) : count;
   const fade = e.delta === undefined ? undefined : deltaWindow(show, lands);
   const centering = valueCentering(e, count);
   return Math.max(fade ? fade[1] : valueLanded(show, lands), centering ? centering[1] : 0);
@@ -144,7 +159,7 @@ export function counterValue(
   count?: CountSpan,
   up?: CountUpSpan,
 ): number {
-  const ticks = count && e.from !== undefined ? count : undefined;
+  const ticks = ticking(e, count);
   if (up && (!ticks || t < ticks.t))
     return tickValue(0, up.value, countProgress(t, up), e.decimals);
   if (ticks) return tickValue(e.from!, e.to, countProgress(t, ticks), e.decimals);

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COMPARE_LANDS,
   COMPARE_RISE,
+  counterLands,
   counterValue,
   countProgress,
   DELTA_FADE,
@@ -109,6 +110,13 @@ describe('numbers as a video draws them', () => {
     );
     // Bars never count up, so a count-up never holds them back.
     expect(metricSettled({ ...counter, show: 'bars' }, undefined, up)).toBe(0);
+    // One value alone never ticks on a count: it lands, and settles, on its count-up.
+    const late = { t: 3, seconds: 1.6 };
+    const single = { to: 28, decimals: 0 };
+    expect(metricSettled({ show: 'counter' }, late, up)).toBeCloseTo(2.6, 9);
+    expect(counterValue(single, 4, late, { ...up, value: 28 })).toBe(28);
+    expect(counterLands({ from: undefined }, late, up)).toBe(up);
+    expect(counterLands(counter, late, up)).toBe(late);
     // With a count after it, the count lands it and centers it.
     const count = { t: 3, seconds: 1.6 };
     expect(metricSettled(counter, count, up)).toBeCloseTo(4.6 + VALUE_CENTER, 9);

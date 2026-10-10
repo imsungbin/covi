@@ -15,6 +15,7 @@ import {
   type CountSpan,
   type CountUpSpan,
   compareLands,
+  counterLands,
   counterValue,
   countProgress,
   deltaWindow,
@@ -118,7 +119,7 @@ const scaled = (sizes: Sizes, u: (n: number) => number): Sizes => ({
  * The largest size in [min, max], to half a pixel, at which `fits` holds once `apply` has set it;
  * `min` when none does.
  */
-function largest(
+export function largest(
   apply: (size: number) => void,
   fits: () => boolean,
   min: number,
@@ -235,7 +236,7 @@ function counter(
   const own = widths.at(-1)!;
   const centering = valueCentering(e, count);
   // The change shows once the number has landed: on its count, else on its count-up.
-  const fade = deltaWindow('counter', count ?? up);
+  const fade = deltaWindow('counter', counterLands(e, count, up));
   let shown = '';
   let held = '';
   return {

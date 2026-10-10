@@ -14,6 +14,8 @@ const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) *
 export const DRAWN_ITEMS = 12;
 /** Items in one line of a pile or a fan. */
 export const PER_LINE = 6;
+/** The smallest a pile's items are drawn, in design units: smaller, they read as dots. */
+export const PILE_ITEM_MIN = 24;
 
 export function center(r: Rect): Point {
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };

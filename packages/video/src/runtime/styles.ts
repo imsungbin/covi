@@ -224,7 +224,6 @@ ${languageRules(t)}
   padding: ${u(28)} ${u(32)}; border-radius: ${u(28)}; border: ${u(3)} solid ${c.line}; background: ${c.surface}; box-shadow: ${c.shadow};
   overflow: hidden; text-align: center; }
 .mcard .mname { max-width: 100%; color: ${c.textMuted}; font-weight: 650; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mcard .mname.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .mcard .mrow { display: flex; justify-content: safe center; align-items: baseline; gap: 0.12em; width: 100%; white-space: nowrap; line-height: 1; overflow: hidden; }
 .mcard .mvalue, .mcard .mnum { font-weight: 800; letter-spacing: -0.02em; color: ${c.text}; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.05; text-align: right; }
 .mcard .munit { font-weight: 650; color: ${c.textMuted}; }
@@ -252,20 +251,22 @@ ${languageRules(t)}
 .fbadge .fside { overflow: hidden; text-overflow: ellipsis; color: ${c.textMuted}; font-weight: 650; line-height: 1.15; }
 .fbadge .fline { display: flex; align-items: baseline; justify-content: center; gap: ${u(12)}; }
 .fbadge .fname { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: ${c.text}; font-weight: 700; line-height: 1.15; }
-.fbadge .fname.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .fbadge .fnum { flex: none; color: ${c.primary}; font-weight: 800; font-size: 1.35em; line-height: 1.05; font-variant-numeric: tabular-nums; }
 
-/* Piles: a name too long for one line wraps onto two, as a metric's does; one too long for that is
-   cut off, where text-fits sees it. Before's items take the line color and after's the primary. */
+/* Piles: before's items take the line color and after's the primary, as bars do. The name wraps
+   as a metric's does (the shared rule below). */
 .pcard { position: absolute; display: flex; flex-direction: column; gap: ${u(18)}; padding: ${u(28)} ${u(32)}; border-radius: ${u(28)};
   border: ${u(3)} solid ${c.line}; background: ${c.surface}; box-shadow: ${c.shadow}; overflow: hidden; }
 .pcard .pname { flex: none; color: ${c.textMuted}; font-weight: 650; line-height: 1.2; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pcard .pname.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .pcard .prow { flex: 1 1 0; min-height: 0; display: flex; align-items: center; gap: ${u(18)}; }
 .pcard .pcap { flex: none; color: ${c.textMuted}; font-weight: 650; white-space: nowrap; line-height: 1.15; }
 .pcard .pgrid { position: relative; flex: 1 1 auto; align-self: stretch; min-width: 0; }
 .pcard .pitem { position: absolute; border-radius: ${u(8)}; background: ${c.line}; transform-origin: center; }
 .pcard .pitem.head { background: ${c.primary}; }
 .pcard .pnum { flex: none; text-align: right; color: ${c.text}; font-weight: 800; line-height: 1.05; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Names that wrap: a metric's, a count caption's, and a pile's, too long for one line at the floor,
+   go onto two (more is cut off, where text-fits sees it). One rule, so they wrap alike. */
+.mcard .mname.wrap, .fbadge .fname.wrap, .pcard .pname.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 `;
 }

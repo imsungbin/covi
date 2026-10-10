@@ -144,8 +144,8 @@ const MORPH_TILE = 0.5;
  * Frames for the contact sheet, in time order: the opening, every scene's middle, the middle of
  * every transition (a cut has none; timelines without kinds faded over `transition`), the hero's
  * accent, the middle of every morph, so the sheet shows the code changing, and where every count
- * lands, once its metric has settled (value centered, change in percent faded in), read as QC
- * reads a settled scene: the moment its number is judged.
+ * (or count-up) lands, once its metric has settled (value centered, change in percent faded in),
+ * read as QC reads a settled scene: the moment its number is judged.
  */
 export function contactSheetFrames(
   timeline: Pick<Timeline, 'fps' | 'frames' | 'scenes' | 'transition'>,
@@ -162,8 +162,11 @@ export function contactSheetFrames(
     const d = s.direction;
     for (const beat of d?.beats ?? []) {
       if (beat.verb === 'morph') frames.add(frame(s.start + beat.t + beat.seconds * MORPH_TILE));
+      // A count-up followed by a count settles where the count does: one tile for both.
       const counted =
-        beat.verb === 'count' ? d!.elements.find((e) => e.id === beat.element) : undefined;
+        beat.verb === 'count' || beat.verb === 'count-up'
+          ? d!.elements.find((e) => e.id === beat.element)
+          : undefined;
       if (counted?.kind === 'metric')
         frames.add(sceneFrame(timeline, i, s.start + metricSettledAt(d!, counted))!);
     }

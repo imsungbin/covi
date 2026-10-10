@@ -71,10 +71,12 @@ const IDENTIFIERS = new Set([
   'rev',
   'revision',
 ]);
-/**
- * Words that name a credential anywhere in a name (`password`, `token count`): the number beside
- * one is the secret itself, which the redactor masks only in shapes it recognizes.
+/*
+ * Credentials come in families: a word, the same word run into others or numbered, or a short word
+ * after one that says what kind. The number beside one is the secret itself, which the redactor
+ * masks only in shapes it recognizes. Each list grows as new spellings turn up.
  */
+/** Words that name a credential anywhere in a name (`password`, `token count`), or numbered. */
 const CREDENTIALS = new Set([
   'password',
   'passcode',
@@ -87,39 +89,76 @@ const CREDENTIALS = new Set([
   'ssn',
   'credential',
   'credentials',
-  // Run together or cut short, as keys and flags often are.
+  // Cut short or run together, as keys and flags often are.
   'apikey',
-  'authtoken',
-  'accesstoken',
-  'secretkey',
-  'csrftoken',
   'sessionid',
-  'passwd',
   'pwd',
   'pw',
   'cvc',
   'totp',
 ]);
-/** Credentials named by words in order, found among a name's words: `verification code`. */
-const CREDENTIAL_PHRASES = ['verification-code', 'auth-code', 'one-time-code'];
+/** Words that name a credential inside any other, separators taken out: `userPassword`. */
+const CREDENTIAL_PARTS = ['password', 'passwd', 'passcode', 'passphrase', 'secret', 'credential'];
 /**
- * Credential words in other languages, found anywhere in the name as printed (NFKC, lowercase):
- * the ASCII word split drops other scripts, and German joins words into one (`Benutzerpasswort`).
+ * Short words that name a credential only right after a word saying what kind (`refreshToken`,
+ * `auth code`, `smspin`), separators taken out: alone, `tokens`, `spinner`, and `exit code` are
+ * measurements.
  */
-const CREDENTIAL_TEXT = ['비밀번호', '암호', 'パスワード', '密码', '口令', 'passwort', 'kennwort'];
+const CREDENTIAL_KINDS = [
+  'refresh',
+  'access',
+  'auth',
+  'api',
+  'csrf',
+  'session',
+  'id',
+  'otp',
+  'onetime',
+  'verification',
+  'sms',
+];
+const KIND_OF_CREDENTIAL = new RegExp(`(?:${CREDENTIAL_KINDS.join('|')})(?:token|code|pin)`);
+
+/** A name's letters and digits as one run, NFKC, lowercase: `Refresh-Token` is `refreshtoken`. */
+const collapsed = (text: string) =>
+  text
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
 
 /**
- * Whether a name names a credential: by a word, a phrase, or a word of another language, or by
- * `key` as its last word (`api key`, not `key count` or `cache keys`).
+ * Credential words of other languages, found anywhere in the name: the ASCII word split drops other
+ * scripts, and German joins words into one (`Benutzerpasswort`).
+ */
+const CREDENTIAL_TEXT = [
+  '비밀번호',
+  '암호',
+  '패스워드',
+  '인증번호',
+  'パスワード',
+  '暗証番号',
+  '密码',
+  '密碼',
+  '口令',
+  'passwort',
+  'kennwort',
+  'mot de passe',
+  'пароль',
+].map(collapsed);
+
+/**
+ * Whether a name names a credential: by a word of one (numbered or not), a long one inside another
+ * word, a short one after a word saying what kind, or one of another language; or by `key` as its
+ * last word (`api key`, not `key count` or `cache keys`).
  */
 function isCredential(printed: string, words: readonly string[]): boolean {
-  const slug = `-${words.join('-')}-`;
-  const folded = printed.normalize('NFKC').toLowerCase();
+  const run = collapsed(printed);
   return (
     words.at(-1) === 'key' ||
-    words.some((w) => CREDENTIALS.has(w)) ||
-    CREDENTIAL_PHRASES.some((phrase) => slug.includes(`-${phrase}-`)) ||
-    CREDENTIAL_TEXT.some((word) => folded.includes(word))
+    words.some((w) => CREDENTIALS.has(w) || CREDENTIALS.has(w.replace(/\d+$/, ''))) ||
+    CREDENTIAL_PARTS.some((part) => run.includes(part)) ||
+    KIND_OF_CREDENTIAL.test(run) ||
+    CREDENTIAL_TEXT.some((word) => run.includes(word))
   );
 }
 

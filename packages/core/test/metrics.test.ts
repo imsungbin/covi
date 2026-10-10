@@ -186,6 +186,53 @@ describe('reading metrics from output', () => {
     ]);
   });
 
+  it('stays silent on whole credential families, in any spelling or language', () => {
+    for (const name of [
+      // Long words anywhere in the name, separators taken out.
+      'userpassword',
+      'dbPassword',
+      'clientsecret',
+      'client_secret',
+      'devicepasscode',
+      'credentialCount',
+      // Token, code, and pin after a word that says what kind.
+      'refreshtoken',
+      'apitoken',
+      'sessionToken',
+      'idtoken',
+      'authcode',
+      'verificationcode',
+      'otpcode',
+      'onetimecode',
+      'oauth code',
+      'smspin',
+      // A credential word with a number after it.
+      'cvv2',
+      // Other languages.
+      '密碼',
+      '패스워드',
+      '인증번호',
+      '暗証番号',
+      'mot de passe',
+      'Mot_de_passe',
+      'пароль',
+      'ПАРОЛЬ',
+    ]) {
+      expect(values(`${name}: 48291357`), name).toEqual([]);
+      expect(readJsonMetrics(JSON.stringify({ [name]: 48291357 })), name).toEqual([]);
+    }
+    // The same short words alone, or inside another word, are measurements.
+    expect(
+      values('tokens: 1200\nspinner: 3\nexit code: 1\ncache keys: 12\nstatus code: 200'),
+    ).toEqual([
+      ['tokens', 1200, undefined],
+      ['spinner', 3, undefined],
+      ['exit-code', 1, undefined],
+      ['cache-keys', 12, undefined],
+      ['status-code', 200, undefined],
+    ]);
+  });
+
   it('reads keys counted, and a name where key is not the last word', () => {
     expect(values('cache keys: 12\nkey count: 3')).toEqual([
       ['cache-keys', 12, undefined],

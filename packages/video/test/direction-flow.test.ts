@@ -86,6 +86,8 @@ const resolve = (direction: DirectionInput, redactor = new Redactor()) =>
     redact: (value) => redactor.redactDeep(value),
   });
 const rejected = (value: unknown) => !DirectionSchema.safeParse(value).success;
+/** When s2's flow verbs must end by: half a second before the outro starts to come in. */
+const LIMIT = layout.outro!.start - layout.scenes[1]!.start - 0.5;
 
 const node = (name: string, label = 'Reader') => ({ id: name, kind: 'node', label });
 const STAGE = [
@@ -95,6 +97,41 @@ const STAGE = [
   { id: 'r', kind: 'pile', evidence: id('reader-steps') },
   { id: 'm', kind: 'metric', evidence: id('request-bytes') },
 ];
+/**
+ * A square frame split for seven nodes: the six beside the first are rows too short for a node's
+ * pieces and its count beside its label.
+ */
+const CROWD = [
+  node('a', 'Request builder'),
+  node('b'),
+  node('c', 'Cache'),
+  node('d', 'Writer'),
+  node('e', 'Queue'),
+  node('f', 'Store'),
+  node('g', 'Index'),
+  { id: 'p', kind: 'packet', label: 'Request' },
+];
+const SQUARE = resolveVideoSpec(DEFAULT_CONFIG, { mode: 'custom', width: 1080, height: 1080 });
+const crowded = (beats: unknown[]) => {
+  const plan = DirectionSchema.parse({
+    shots: [{ scene: 's2', layout: 'split', elements: CROWD, beats }],
+  });
+  const direction = resolveDirection({
+    plan,
+    scenes,
+    layout: layoutScenes(scenes, new Map(), new Map(), 'en', pacingFor(SQUARE)),
+    spec: SQUARE,
+    language: 'en',
+    sources,
+    image: () => ({ src: '', width: 1, height: 1 }),
+    seed: 5,
+    redact: (value) => value,
+  })[1]!.direction;
+  return { shot: plan.shots[0]!, direction };
+};
+/** Where each beat ends. */
+const ends = (beats: ReadonlyArray<{ t: number; seconds: number }>) =>
+  beats.map((b) => b.t + b.seconds);
 const STORY = [
   { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
   { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
@@ -298,11 +335,50 @@ describe('flow verbs in the direction file', () => {
       const own = BEAT_SECONDS[b.verb as 'split' | 'stack' | 'merge'];
       // The last beat keeps its own length: the shot settles before the next scene comes in.
       const next = beats[i + 1];
-      const room = next ? next.t - 0.15 - b.t : 0;
+      const room = next ? Math.min(next.t - 0.15, LIMIT) - b.t : 0;
       expect(b.seconds, b.verb).toBeCloseTo(Math.min(3 * own, Math.max(own, room)), 3);
     });
     expect(beats[0]!.seconds).toBeGreaterThan(BEAT_SECONDS.split);
     expect(beats.at(-1)!.seconds).toBe(BEAT_SECONDS.merge);
+    for (const end of ends(beats)) expect(end).toBeLessThanOrEqual(LIMIT + 1e-6);
+  });
+
+  it('end every flow verb half a second before the scene moves on, shortened if need be', () => {
+    // Three trips, a split and its merge, then a stack at the last spaced slot, which would run
+    // to the very end of the scene: the outro would come in over a pile still stacking.
+    const [, s2] = resolve(
+      shot(
+        [
+          node('a', 'Request builder'),
+          node('b'),
+          node('c', 'Cache'),
+          node('d', 'Writer'),
+          { id: 'p', kind: 'packet' },
+          { id: 'r', kind: 'pile', evidence: id('reader-steps') },
+        ],
+        [
+          { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
+          { verb: 'flow', from: 'b', to: 'c', packet: 'p' },
+          { verb: 'flow', from: 'c', to: 'd', packet: 'p' },
+          { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+          { verb: 'merge', element: 'p' },
+          { verb: 'stack', element: 'r' },
+        ],
+      ),
+    );
+    const beats = s2!.direction.beats;
+    expect(beats.map((b) => b.verb)).toEqual(['flow', 'flow', 'flow', 'split', 'merge', 'stack']);
+    expect(s2!.direction).not.toHaveProperty('dropped');
+    for (const end of ends(beats)) expect(end).toBeLessThanOrEqual(LIMIT + 1e-6);
+    const stack = beats.at(-1)!;
+    expect(stack.t + stack.seconds).toBeCloseTo(LIMIT, 3);
+    expect(stack.seconds).toBeLessThan(BEAT_SECONDS.stack);
+    expect(stack.seconds).toBeGreaterThanOrEqual(0.6);
+    // The packet's trips, its split, and its merge play one after another, never overlapping.
+    const own = beats.slice(0, 5);
+    own.slice(1).forEach((b, i) => {
+      expect(b.t).toBeGreaterThanOrEqual(ends(own)[i]! - 1e-6);
+    });
   });
 
   it('caption what a split merges into only when the run measured exactly one', () => {
@@ -354,7 +430,7 @@ describe('flow verbs in the direction file', () => {
     const staging = resolve(plan);
     expect(droppedBeatNotes(plan, scenes, staging)).toEqual([
       expect.stringMatching(
-        /^Direction: shot 1 \(scene s2\) leaves out its merge of "p": the merge of "p" at \d+\.\d s comes before its split\.$/,
+        /^Direction: shot 1 \(scene s2\) leaves out a merge: the merge of "p" at \d+\.\d s comes before its split\.$/,
       ),
     ]);
     expect(
@@ -390,15 +466,14 @@ describe('flow verbs in the direction file', () => {
       id('request-bytes'),
       id('chunks'),
     ]);
-    // A split that was left out draws no count, so it grounds nothing.
-    const early = DirectionSchema.parse(
-      shot(
-        [node('a'), node('b'), { id: 'p', kind: 'packet' }],
-        [{ verb: 'split', element: 'p', count: id('chunks'), side: 'base' }],
-      ),
-    ).shots[0]!;
-    const drawn = resolve({ shots: [early] })[1]!.direction;
-    expect(shownShot(early, { ...drawn, beats: [] })?.beats).toEqual([]);
+    // A split that was left out (its slot has no room) draws no count, so it grounds nothing.
+    const left = crowded([{ verb: 'split', element: 'c', count: id('chunks'), side: 'base' }]);
+    expect(left.direction.dropped).toHaveLength(1);
+    expect(sceneEvidence(scenes[1]!, evidence, [], left.shot)).toEqual([id('chunks')]);
+    expect(shownShot(left.shot, left.direction)?.beats).toEqual([]);
+    expect(sceneEvidence(scenes[1]!, evidence, [], shownShot(left.shot, left.direction))).toEqual(
+      [],
+    );
   });
 
   it('wait for the reveals of what they act on, a flow for both its nodes and its packet', () => {
@@ -417,6 +492,133 @@ describe('flow verbs in the direction file', () => {
     };
     expect(beats.find((b) => b.verb === 'flow')!.t).toBeCloseTo(end('b'), 3);
     expect(beats.find((b) => b.verb === 'stack')!.t).toBeCloseTo(end('r'), 3);
+    // A flow waits for the last of its nodes and its packet to be revealed, whichever it is.
+    const flowAfter = (phrases: Record<'a' | 'b' | 'p', string>) => {
+      const d = resolve(
+        shot(STAGE, [
+          { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
+          ...(['a', 'b', 'p'] as const).map((e) => ({
+            verb: 'reveal',
+            element: e,
+            at: phrases[e],
+          })),
+        ]),
+      )[1]!.direction;
+      const reveal = (e: string) => d.beats.find((b) => b.verb === 'reveal' && b.element === e)!;
+      return { flow: d.beats.find((b) => b.verb === 'flow')!, reveal };
+    };
+    const lastPacket = flowAfter({ a: 'before and after', b: 'the change', p: 'it now prints' });
+    expect(lastPacket.flow.t).toBeCloseTo(ends([lastPacket.reveal('p')])[0]!, 3);
+    const lastNode = flowAfter({ a: 'before and after', b: 'it now prints', p: 'the change' });
+    expect(lastNode.flow.t).toBeCloseTo(ends([lastNode.reveal('b')])[0]!, 3);
+    // A split, a merge, and a count-up wait for theirs, a count-up without a phrase no longer.
+    const acts = resolve(
+      shot(STAGE, [
+        { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+        { verb: 'merge', element: 'p' },
+        { verb: 'count-up', element: 'm', side: 'head' },
+        { verb: 'reveal', element: 'p', at: 'the change' },
+        { verb: 'reveal', element: 'm', at: 'it now prints' },
+      ]),
+    )[1]!.direction.beats;
+    const at = (verb: string) => acts.find((b) => b.verb === verb)!;
+    const revealed = (e: string) =>
+      ends([acts.find((b) => b.verb === 'reveal' && b.element === e)!])[0]!;
+    expect(at('split').t).toBeCloseTo(revealed('p'), 3);
+    expect(at('merge').t).toBeCloseTo(at('split').t + at('split').seconds, 3);
+    expect(at('count-up').t).toBeCloseTo(revealed('m'), 3);
+  });
+
+  it('keep each element’s flow verbs in the order written, after the reveals they wait for', () => {
+    const three = [node('a', 'Request builder'), node('b'), node('c', 'Cache')];
+    const trips = (phrase: string) =>
+      resolve(
+        shot(
+          [...three, node('d', 'Writer'), { id: 'p', kind: 'packet' }],
+          [
+            { verb: 'reveal', element: 'p', at: phrase },
+            { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
+            { verb: 'flow', from: 'b', to: 'c', packet: 'p' },
+            { verb: 'flow', from: 'c', to: 'd', packet: 'p' },
+          ],
+        ),
+      )[1]!.direction;
+    // Revealed late, the packet still makes each trip, one after another.
+    const late = trips('the change');
+    const legs = late.beats.filter((b) => b.verb === 'flow');
+    expect(legs.map((b) => b.verb === 'flow' && b.to)).toEqual(['b', 'c', 'd']);
+    expect(legs[0]!.t).toBeCloseTo(ends(late.beats.filter((b) => b.verb === 'reveal'))[0]!, 3);
+    legs.slice(1).forEach((b, i) => {
+      expect(b.t).toBeCloseTo(ends(legs)[i]!, 3);
+    });
+    expect(late).not.toHaveProperty('dropped');
+    // Revealed later still, the trips that no longer fit before the scene moves on are left out,
+    // the ones after them too.
+    const later = trips('request bytes');
+    expect(
+      later.beats.filter((b) => b.verb === 'flow').map((b) => b.verb === 'flow' && b.to),
+    ).toEqual(['b']);
+    expect(later.dropped).toEqual([
+      {
+        verb: 'flow',
+        element: 'p',
+        reason: 'the flow of "p" has no room to end 0.5 s before the scene moves on at 8.9 s',
+      },
+      {
+        verb: 'flow',
+        element: 'p',
+        reason: 'the flow of "p" follows a trip of "p" that was left out',
+      },
+    ]);
+    // A split and its merge after a late reveal: the merge follows the split.
+    const pulled = resolve(
+      shot(STAGE, [
+        { verb: 'reveal', element: 'p', at: 'it now prints' },
+        { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+        { verb: 'merge', element: 'p' },
+      ]),
+    )[1]!.direction;
+    const split = pulled.beats.find((b) => b.verb === 'split')!;
+    expect(pulled.beats.find((b) => b.verb === 'merge')!.t).toBeCloseTo(split.t + split.seconds, 3);
+    expect(pulled).not.toHaveProperty('dropped');
+  });
+
+  it('keep a packet that split beside a node there until it merges back', () => {
+    const d = resolve(
+      shot(
+        [node('a', 'Request builder'), node('b'), node('c', 'Cache'), { id: 'p', kind: 'packet' }],
+        [
+          { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
+          { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+          { verb: 'flow', from: 'b', to: 'c', packet: 'p' },
+          { verb: 'merge', element: 'p' },
+        ],
+      ),
+    )[1]!.direction;
+    expect(d.beats.map((b) => b.verb)).toEqual(['flow', 'split', 'merge']);
+    expect(d.dropped).toEqual([
+      {
+        verb: 'flow',
+        element: 'p',
+        reason: expect.stringMatching(
+          /^the flow of "p" at \d+\.\d s leaves while "p" is split; merge it first$/,
+        ),
+      },
+    ]);
+    // Merged first, it travels on.
+    const merged = resolve(
+      shot(
+        [node('a', 'Request builder'), node('b'), node('c', 'Cache'), { id: 'p', kind: 'packet' }],
+        [
+          { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
+          { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+          { verb: 'merge', element: 'p' },
+          { verb: 'flow', from: 'b', to: 'c', packet: 'p' },
+        ],
+      ),
+    )[1]!.direction;
+    expect(merged.beats.map((b) => b.verb)).toEqual(['flow', 'split', 'merge', 'flow']);
+    expect(merged).not.toHaveProperty('dropped');
   });
 
   it('start a packet that rides from a node that splits on the box the split leaves it', () => {
@@ -436,20 +638,7 @@ describe('flow verbs in the direction file', () => {
   });
 
   it('leave out a node’s split, or a resting packet’s, when the slot has no room for its pieces', () => {
-    // A square frame split for seven nodes: the six beside the first are rows too short for a
-    // node's pieces and its count beside its label.
-    const crowd = [
-      node('a', 'Request builder'),
-      node('b'),
-      node('c', 'Cache'),
-      node('d', 'Writer'),
-      node('e', 'Queue'),
-      node('f', 'Store'),
-      node('g', 'Index'),
-      { id: 'p', kind: 'packet', label: 'Request' },
-    ];
-    const square = resolveVideoSpec(DEFAULT_CONFIG, { mode: 'custom', width: 1080, height: 1080 });
-    const squareRegions = computeRegions({ ...square, orientation: 'square' });
+    const squareRegions = computeRegions({ ...SQUARE, orientation: 'square' });
     const slots = elementSlots(
       Array(7).fill('node'),
       'split',
@@ -458,24 +647,10 @@ describe('flow verbs in the direction file', () => {
       28 * squareRegions.unit,
     );
     expect(arrangedSplit(slots[2]!, squareRegions.unit, false, 4)).toBeUndefined();
-    const inSquare = (beats: unknown[]) =>
-      resolveDirection({
-        plan: DirectionSchema.parse({
-          shots: [{ scene: 's2', layout: 'split', elements: crowd, beats }],
-        }),
-        scenes,
-        layout: layoutScenes(scenes, new Map(), new Map(), 'en', pacingFor(square)),
-        spec: square,
-        language: 'en',
-        sources,
-        image: () => ({ src: '', width: 1, height: 1 }),
-        seed: 5,
-        redact: (value) => value,
-      })[1]!.direction;
-    const own = inSquare([
+    const own = crowded([
       { verb: 'split', element: 'c', count: id('chunks'), side: 'base' },
       { verb: 'merge', element: 'c' },
-    ]);
+    ]).direction;
     expect(own.beats).toEqual([]);
     expect(own.dropped).toEqual([
       {
@@ -499,7 +674,7 @@ describe('flow verbs in the direction file', () => {
     )[1]!.direction;
     expect(roomy.beats.map((b) => b.verb)).toEqual(['flow', 'split']);
     expect(roomy).not.toHaveProperty('dropped');
-    const cramped = inSquare(arrived);
+    const cramped = crowded(arrived).direction;
     expect(cramped.beats.map((b) => b.verb)).toEqual(['flow']);
     expect(cramped.dropped).toEqual([
       {

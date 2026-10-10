@@ -490,6 +490,23 @@ describe.skipIf(!available)('splits and merges', () => {
     expect(v.errors).toEqual([]);
   });
 
+  it('lets the first split to reach a node take its room, in a timeline built by hand', async () => {
+    // A resolved direction never has both; drawn anyway, the node's own split gives way.
+    const v = await staged(twoNodes(true), [
+      FLOW,
+      { verb: 'split', element: 'p', count: 4, name: 'chunks', side: 'base', t: 2.6, seconds: 0.9 },
+      { verb: 'split', element: 'b', count: 3, name: 'jobs', side: 'head', t: 3, seconds: 0.9 },
+    ]);
+    const frame = v.frameAt(4.4);
+    const b = await node(v, frame, 'b');
+    expect(b.pieces).toEqual([]);
+    expect(b.badges).toEqual([]);
+    const drawn = await read(v, frame);
+    expect(drawn.pieces).toHaveLength(4);
+    expect(drawn.badges.map((x) => x.name)).toEqual(['chunks']);
+    expect(v.errors).toEqual([]);
+  });
+
   it('fits a count’s caption to its slot, and reports a name too long to fit there', async () => {
     const split = (name: string) =>
       staged(

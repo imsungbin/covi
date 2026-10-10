@@ -125,15 +125,19 @@ export function resolveDirection(input: ResolveInput): SceneStaging[] {
     labels: timelineLabels(input.language),
     redact: input.redact,
   };
-  const timings = new Map(input.layout.scenes.map((t) => [t.id, t]));
+  const timings = new Map(input.layout.scenes.map((t, k) => [t.id, k]));
   const staged = input.scenes.map((scene, i): SceneStaging => {
     const id = scene.id ?? `s${i + 1}`;
-    const timing = timings.get(id);
+    const k = timings.get(id);
+    const timing = k === undefined ? undefined : input.layout.scenes[k];
     const stop = stops[i];
     // Beats timed against another scene's line would land on the wrong words: refuse instead.
-    if (!timing || !stop) throw new Error(`Story scene ${i + 1} has no timing in the layout.`);
+    if (k === undefined || !timing || !stop)
+      throw new Error(`Story scene ${i + 1} has no timing in the layout.`);
+    // The shot is alone on screen until the next scene, or the outro, starts to come in.
+    const next = input.layout.scenes[k + 1]?.start ?? input.layout.outro?.start ?? timing.end;
     const shot = shots.get(id) ?? visualOnly(id);
-    return { stop, direction: resolveShot(shot, scene, timing, ctx) };
+    return { stop, direction: resolveShot(shot, scene, timing, next - timing.start, ctx) };
   });
   return input.redact(staged);
 }
@@ -160,8 +164,8 @@ export function shownShot(
 
 /**
  * What the render says of each beat a direction asked for that cannot play: the shot (its number
- * in the file, and its scene), the beat (its verb and element: each acts on an element once), and
- * why. The run warns with each, and notes it.
+ * in the file, and its scene), the beat's verb, and why, which names what it acts on. The run
+ * warns with each, and notes it.
  */
 export function droppedBeatNotes(
   plan: Pick<Direction, 'shots'>,
@@ -172,8 +176,7 @@ export function droppedBeatNotes(
     const id = scenes[i]?.id ?? `s${i + 1}`;
     const shot = plan.shots.findIndex((x) => x.scene === id) + 1;
     return (s.direction.dropped ?? []).map(
-      (d) =>
-        `Direction: shot ${shot} (scene ${id}) leaves out its ${d.verb} of "${d.element}": ${d.reason}.`,
+      (d) => `Direction: shot ${shot} (scene ${id}) leaves out a ${d.verb}: ${d.reason}.`,
     );
   });
 }
@@ -194,7 +197,14 @@ const visualOnly = (scene: string): Shot => ({
   beats: [],
 });
 
-function resolveShot(given: Shot, scene: Scene, timing: SceneTiming, ctx: Context): SceneDirection {
+/** `settle`: when the scene starts to leave, in seconds since it started. */
+function resolveShot(
+  given: Shot,
+  scene: Scene,
+  timing: SceneTiming,
+  settle: number,
+  ctx: Context,
+): SceneDirection {
   const shot = withMorphs(given);
   const revealed = new Set(shot.beats.flatMap((b) => (b.verb === 'reveal' ? [b.element] : [])));
   let whole =
@@ -221,13 +231,14 @@ function resolveShot(given: Shot, scene: Scene, timing: SceneTiming, ctx: Contex
   const countable = new Set(
     elements.flatMap((e) => (e.kind === 'metric' && e.from !== undefined ? [e.id] : [])),
   );
-  const timed = timeBeats(shot, scene, timing, ctx.options, shown, ctx).filter(
-    (b) => b.verb !== 'count' || countable.has(b.element),
-  );
-  const roomy = fanRoom(timed, elements, ctx);
-  const ordered = flowOrder(roomy.beats, elements);
-  const beats = stretchFlows(ordered.beats);
-  const dropped = [...roomy.dropped, ...ordered.dropped];
+  const limit = settle - SETTLE_LEAD;
+  const timed = timeBeats(shot, scene, timing, ctx.options, shown, ctx, limit);
+  const counted = timed.beats.filter((b) => b.verb !== 'count' || countable.has(b.element));
+  const roomy = fanRoom(counted, elements, ctx);
+  const travels = travelsWhole(roomy.beats);
+  const ordered = flowOrder(travels.beats, elements);
+  const beats = stretchFlows(ordered.beats, limit);
+  const dropped = [timed, roomy, travels, ordered].flatMap((pass) => pass.dropped);
   // A packet riding from a node a split fans out of starts on the box the split leaves that node.
   const fans = new Map([...nodeFans({ elements, beats })].map(([id, fan]) => [id, fan.count]));
   if (fans.size) {
@@ -377,7 +388,8 @@ function codeWindow(view: readonly DiffLine[], max: number): DiffLine[] {
  * place yet: a beat that moves the camera toward, acts on, or (a flow) travels between or carries
  * a revealed element starts once its (first) reveal is done (the latest of them, for a flow); a
  * count or a count-up that waited is shortened (to `COUNT_MIN` at the least) to land on its phrase
- * still.
+ * still. Flow verbs then keep each element's written order and end by `limit` (`sequenced`); the
+ * ones that cannot are left out, and said why.
  */
 function timeBeats(
   shot: Shot,
@@ -386,7 +398,8 @@ function timeBeats(
   options: CaptionOptions,
   shown: readonly DirectionElement[],
   ctx: Pick<Context, 'sources' | 'labels'>,
-): DirectionBeat[] {
+  limit: number,
+): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
   const duration = timing.end - timing.start;
   const text = parseEmphasis(scene.narration).text;
   const kept = new Set(shown.map((e) => e.id));
@@ -412,9 +425,21 @@ function timeBeats(
   };
   // Where each count or count-up with a phrase lands, for when it has to wait for its reveal.
   const lands = new Map<DirectionBeat, number>();
+  // The beats a phrase placed, rather than the spacing.
+  const phrased = new Set<DirectionBeat>();
   const beats = live.flatMap((beat, i): DirectionBeat[] => {
     if (!beatTargets(beat).every((id) => kept.has(id))) return [];
     const pinned = beat.at === undefined ? undefined : phraseMoment(text, beat.at, timing, options);
+    const placed = timed(beat, i, pinned);
+    if (pinned !== undefined) for (const b of placed) phrased.add(b);
+    return placed;
+  });
+  /** Beat `i` with its moment: at its phrase (`pinned`), else at its spaced slot. */
+  function timed(
+    beat: (typeof live)[number],
+    i: number,
+    pinned: number | undefined,
+  ): DirectionBeat[] {
     const spaced = from + span * (SPACED_FROM + ((1 - SPACED_FROM) * i) / live.length);
     if (beat.verb === 'count' || beat.verb === 'count-up') {
       const timed =
@@ -465,7 +490,7 @@ function timeBeats(
         seconds,
       },
     ];
-  });
+  }
   const firstReveal = new Map<string, DirectionBeat>();
   for (const b of [...beats].sort((a, b) => a.t - b.t))
     if (b.verb === 'reveal' && !firstReveal.has(b.element)) firstReveal.set(b.element, b);
@@ -475,19 +500,94 @@ function timeBeats(
     const reveal = firstReveal.get(id);
     return reveal ? reveal.t + reveal.seconds : 0;
   };
-  const aimed = beats.map((b) => {
-    if (b.verb === 'reveal') return b;
-    const start = Math.max(...resolvedTargets(b).map(ready));
+  const aimed = beats.map((b): Written => {
+    const was = { phrased: phrased.has(b), ready: Math.max(...resolvedTargets(b).map(ready)) };
+    if (b.verb === 'reveal') return { beat: b, ...was };
     const at = lands.get(b);
     if (at !== undefined && (b.verb === 'count' || b.verb === 'count-up'))
-      return b.t >= start ? b : { ...b, ...landing(at, start, b.verb) };
+      return { beat: b.t >= was.ready ? b : { ...b, ...landing(at, was.ready, b.verb) }, ...was };
     // A count without a phrase waits for its number to be typed; a count-up shows the value
     // before it, which no terminal types.
-    const begin = Math.max(start, b.verb === 'count' ? typed - BEAT_SECONDS.count : 0);
-    return b.t >= begin ? b : { ...b, ...moment(b.verb, begin) };
+    const begin = Math.max(was.ready, b.verb === 'count' ? typed - BEAT_SECONDS.count : 0);
+    return { beat: b.t >= begin ? b : { ...b, ...moment(b.verb, begin) }, ...was };
   });
+  const out = sequenced(aimed, limit);
   // Stable: beats at the same moment keep the order the agent wrote.
-  return aimed.sort((a, b) => a.t - b.t);
+  return { beats: out.beats.sort((a, b) => a.t - b.t), dropped: out.dropped };
+}
+
+/** A timed beat, in the order the agent wrote it: whether a phrase placed it, and when it may start. */
+interface Written {
+  beat: DirectionBeat;
+  phrased: boolean;
+  ready: number;
+}
+
+/** The element a flow verb moves: a flow's packet (a dot is no element), else what it acts on. */
+const moved = (b: DirectionBeat): string | undefined =>
+  b.verb === 'flow' ? b.packet : b.verb === 'camera' ? undefined : b.element;
+
+/** A flow verb as a reason names it. */
+const named = (b: DirectionBeat): string =>
+  b.verb === 'flow'
+    ? b.packet === undefined
+      ? `the flow from "${b.from}" to "${b.to}"`
+      : `the flow of "${b.packet}"`
+    : `the ${b.verb} of "${moved(b)}"`;
+
+/**
+ * Flow verbs (flows, splits, merges, stacks) in each element's written order, ending by `limit`:
+ * one starts no earlier than the one written before it on the same element ends, so a packet's
+ * trips play one after another and a merge after its split, unless phrases placed both and this
+ * one first, which leaves it out. One that would end after `limit` is shortened, to `FLOW_MIN` at
+ * the least, then started earlier, never before what it names is in place or the one before it
+ * ends; one with no room even so is left out, and so are the later trips of a packet whose trip
+ * was left out, which would leave from where it never arrived.
+ */
+function sequenced(
+  written: readonly Written[],
+  limit: number,
+): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
+  const last = new Map<string, Written>();
+  const lost = new Set<string>();
+  const beats: DirectionBeat[] = [];
+  const dropped: DroppedBeat[] = [];
+  const round = (n: number) => Math.round(n * 1000) / 1000;
+  for (const w of written) {
+    const b = w.beat;
+    if (!STRETCHES.has(b.verb)) {
+      beats.push(b);
+      continue;
+    }
+    const key = moved(b);
+    const before = key === undefined ? undefined : last.get(key);
+    const earliest = Math.max(w.ready, before ? before.beat.t + before.beat.seconds : 0);
+    let t = Math.max(b.t, earliest);
+    const seconds = Math.min(b.seconds, Math.max(FLOW_MIN, limit - t));
+    let reason: string | undefined;
+    if (key !== undefined && b.verb === 'flow' && lost.has(key))
+      reason = `${named(b)} follows a trip of "${key}" that was left out`;
+    else if (before && w.phrased && before.phrased && b.t < before.beat.t) {
+      const what = before.beat.verb === b.verb ? `previous ${b.verb}` : before.beat.verb;
+      reason = `${named(b)} at ${b.t.toFixed(1)} s comes before its ${what}`;
+    } else if (t + seconds > limit + 1e-9) {
+      t = limit - seconds;
+      if (t < earliest - 1e-9)
+        reason = `${named(b)} has no room to end ${SETTLE_LEAD} s before the scene moves on at ${(limit + SETTLE_LEAD).toFixed(1)} s`;
+    }
+    if (reason !== undefined) {
+      // Only a dot has no element: it is said by the node it leaves.
+      const element = b.verb === 'flow' ? (b.packet ?? b.from) : moved(b)!;
+      dropped.push({ verb: b.verb, element, reason });
+      if (b.verb === 'flow' && key !== undefined) lost.add(key);
+      continue;
+    }
+    const placed = { t: round(t), seconds: round(seconds) };
+    const beat = placed.t === b.t && placed.seconds === b.seconds ? b : { ...b, ...placed };
+    beats.push(beat);
+    if (key !== undefined) last.set(key, { ...w, beat });
+  }
+  return { beats, dropped };
 }
 
 /** The elements a resolved beat moves the camera toward, acts on, travels between, or carries. */
@@ -564,34 +664,59 @@ function fanRoom(
 }
 
 /**
- * The flow beats that still make sense once timed: a merge after the split it pulls back (a pile
+ * A packet travels whole: one that split beside a node (`fanRoom` keeps only splits with room)
+ * and has not merged back when its next trip leaves stays where it is, so its pieces never cross
+ * to the next node, over its label. That trip is left out, and so are the trips after it.
+ */
+function travelsWhole(beats: DirectionBeat[]): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
+  const split = new Map(
+    beats.flatMap((b) => (b.verb === 'split' ? [[b.element, b] as const] : [])),
+  );
+  const merge = new Map(
+    beats.flatMap((b) => (b.verb === 'merge' ? [[b.element, b] as const] : [])),
+  );
+  const lost = new Set<string>();
+  const dropped: DroppedBeat[] = [];
+  const kept = beats.filter((b) => {
+    if (b.verb !== 'flow' || b.packet === undefined) return true;
+    const s = split.get(b.packet);
+    const m = merge.get(b.packet);
+    let reason: string | undefined;
+    if (lost.has(b.packet))
+      reason = `the flow of "${b.packet}" follows a trip of "${b.packet}" that was left out`;
+    else if (s && s.t <= b.t && !(m && m.t + m.seconds <= b.t + 1e-9))
+      reason = `the flow of "${b.packet}" at ${b.t.toFixed(1)} s leaves while "${b.packet}" is split; merge it first`;
+    if (reason === undefined) return true;
+    dropped.push({ verb: b.verb, element: b.packet, reason });
+    lost.add(b.packet);
+    return false;
+  });
+  return { beats: kept, dropped };
+}
+
+/**
+ * The flow beats that still make sense once timed: a merge with its split still there (a pile
  * merges any time), and a count-up that has landed by the time its counter's count starts (which
- * then ticks from where the count-up ended). Phrases can put beats out of the written order; the
- * ones that cannot play are left out, and said why.
+ * then ticks from where the count-up ended). The ones that cannot play are left out, and said why.
  */
 function flowOrder(
   beats: DirectionBeat[],
   elements: readonly DirectionElement[],
 ): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
   const piles = new Set(elements.flatMap((e) => (e.kind === 'pile' ? [e.id] : [])));
-  const split = new Map(
-    beats.flatMap((b) => (b.verb === 'split' ? [[b.element, b.t] as const] : [])),
-  );
+  const split = new Set(beats.flatMap((b) => (b.verb === 'split' ? [b.element] : [])));
   const count = new Map(
     beats.flatMap((b) => (b.verb === 'count' ? [[b.element, b.t] as const] : [])),
   );
   /** Why a beat cannot play where it was timed, as the beat left out; nothing when it can. */
   const out = (b: DirectionBeat): DroppedBeat | undefined => {
-    if (b.verb === 'merge' && !piles.has(b.element)) {
-      const at = split.get(b.element);
-      const reason =
-        at === undefined
-          ? `the merge of "${b.element}" pulls back a split that was left out`
-          : at >= b.t
-            ? `the merge of "${b.element}" at ${b.t.toFixed(1)} s comes before its split`
-            : undefined;
-      return reason === undefined ? undefined : { verb: b.verb, element: b.element, reason };
-    }
+    // `sequenced` keeps a merge after its split, so one without its split lost the split.
+    if (b.verb === 'merge' && !piles.has(b.element) && !split.has(b.element))
+      return {
+        verb: b.verb,
+        element: b.element,
+        reason: `the merge of "${b.element}" pulls back a split that was left out`,
+      };
     const at = b.verb === 'count-up' ? count.get(b.element) : undefined;
     if (b.verb === 'count-up' && at !== undefined && b.t + b.seconds > at + 1e-9)
       return {
@@ -610,8 +735,15 @@ function flowOrder(
   return { beats: kept, dropped };
 }
 
-/** Flow verbs that may take longer than their own length. */
+/** Flow verbs that may take longer than their own length, and end before the shot settles. */
 const STRETCHES: ReadonlySet<DirectionBeat['verb']> = new Set(['flow', 'split', 'merge', 'stack']);
+/**
+ * Flow verbs end at least this long before the scene starts to leave, so the frame QC reads it
+ * settled at shows them done…
+ */
+const SETTLE_LEAD = 0.5;
+/** …shortened for it to this many seconds at the least. */
+const FLOW_MIN = 0.6;
 /** A stretched beat ends this long before the next one starts… */
 const STRETCH_GAP = 0.15;
 /** …and takes at most this many times its own length. */
@@ -619,15 +751,16 @@ const STRETCH_MAX = 3;
 
 /**
  * Flows, splits, merges, and stacks take the time until the next beat starts, up to three times
- * their own length, so a staged story keeps moving between its beats instead of freezing. The last
- * beat keeps its own length: the shot settles before the next scene comes in.
+ * their own length and never past `limit`, so a staged story keeps moving between its beats
+ * instead of freezing. The last beat keeps its own length: the shot settles before the next scene
+ * comes in.
  */
-function stretchFlows(beats: DirectionBeat[]): DirectionBeat[] {
+function stretchFlows(beats: DirectionBeat[], limit: number): DirectionBeat[] {
   return beats.map((b, i) => {
     const next = beats[i + 1];
     if (!STRETCHES.has(b.verb) || !next) return b;
     const own = BEAT_SECONDS[b.verb];
-    const room = next.t - STRETCH_GAP - b.t;
+    const room = Math.min(next.t - STRETCH_GAP, limit) - b.t;
     const seconds =
       Math.round(Math.min(STRETCH_MAX * own, Math.max(b.seconds, room)) * 1000) / 1000;
     return seconds === b.seconds ? b : { ...b, seconds };

@@ -69,10 +69,10 @@ function along(region: Rect, weights: readonly number[], axis: 'x' | 'y', gap: n
  * Deterministic slots for a shot's elements, in stop-local stage pixels. One element fills the
  * region whatever the layout. `auto` picks from the count: two split it, three line up (a row on
  * wide frames, a column on tall ones), and more make a grid of two columns on tall frames or two
- * rows on wide ones. A square frame's split that leads with a number puts it in a row beside the
- * next element (7 parts to its 6, as a row gives a number there), above the rest in a row of their
- * own: half the width would leave the counter under its floor, and a pile beside it under its
- * items' least size.
+ * rows on wide ones. A square frame's split that leads with a number and stages a pile puts the
+ * number in a row beside the next element (7 parts to its 6, as a row gives a number there), above
+ * the rest in a row of their own: half the width would leave the counter under its floor, and 7
+ * parts to 6 side by side would leave the pile's items under their least size.
  */
 export function elementSlots(
   kinds: readonly ShotElement['kind'][],
@@ -102,11 +102,17 @@ export function elementSlots(
   if (resolved === 'single') slots = kinds.map(() => region);
   else if (resolved === 'row') slots = along(region, weights, 'x', gap);
   else if (resolved === 'column') slots = along(region, weights, 'y', gap);
-  else if (resolved === 'split' && orientation === 'square' && kinds[0] === 'metric') {
-    const pair = along(region, n > 2 ? [1, 1] : [1], 'y', gap);
+  else if (
+    resolved === 'split' &&
+    orientation === 'square' &&
+    kinds[0] === 'metric' &&
+    n > 2 &&
+    kinds.includes('pile')
+  ) {
+    const [pair, rest] = along(region, [1, 1], 'y', gap) as [Rect, Rect];
     slots = [
-      ...along(pair[0]!, [SQUARE_METRIC, WEIGHT.visual], 'x', gap),
-      ...(n > 2 ? along(pair[1]!, weights.slice(2), 'x', gap) : []),
+      ...along(pair, [SQUARE_METRIC, WEIGHT.visual], 'x', gap),
+      ...along(rest, weights.slice(2), 'x', gap),
     ];
   } else if (resolved === 'split') {
     const [first, rest] = along(region, [1, 1], tall ? 'y' : 'x', gap) as [Rect, Rect];

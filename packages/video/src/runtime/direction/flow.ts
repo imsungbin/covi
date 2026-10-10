@@ -150,7 +150,9 @@ export function flowSpans(
     t: time(b.t),
     seconds: time(b.t + b.seconds) - time(b.t),
   });
-  const split = splitOf(direction, id);
+  // The first split to reach a node takes its room: a node a packet's split took never splits.
+  const at = fans.get(id);
+  const split = at && at.element !== id ? undefined : splitOf(direction, id);
   const merge = direction.beats.find((b): b is Merge => b.verb === 'merge' && b.element === id);
   const stack = direction.beats.find((b): b is Stack => b.verb === 'stack' && b.element === id);
   const legs: Leg[] = [];
@@ -160,7 +162,7 @@ export function flowSpans(
     const to = boxes.get(b.to);
     if (from && to) legs.push({ ...on(b), route: edgeRoute(from, to) });
   }
-  const fan = fans.get(id) ?? [...fans.values()].find((f) => f.element === id);
+  const fan = at ?? [...fans.values()].find((f) => f.element === id);
   return {
     legs,
     ...(fan ? { fan: fan.layout } : {}),

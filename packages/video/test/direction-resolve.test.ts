@@ -155,7 +155,7 @@ describe('element slots', () => {
     expect(square.map((r) => r.width)).toEqual([527.69, 452.31]);
     expect(elementSlots(['code', 'label'], 'row', region, 'square', 20)[0]!.width).toBe(735);
   });
-  it('lay a square frame’s split that leads with a number as a row above the rest', () => {
+  it('lay a square frame’s split that stages a pile beside a number as a row above the rest', () => {
     // A 1080 × 1080 frame's media region. Side by side, half the width leaves the counter under
     // its 120-unit floor, and 7 parts to 6 leaves a pile's items under their least size; a row of
     // the counter and the packet above a pile as wide as the frame keeps both (measured: 127.5
@@ -166,15 +166,24 @@ describe('element slots', () => {
       { x: 589.54, y: 250, width: 426.46, height: 286 },
       { x: 64, y: 564, width: 952, height: 286 },
     ]);
-    // Two elements make the row alone, as a row gives a number in a square frame.
-    expect(elementSlots(['metric', 'visual'], 'split', square, 'square', 28)).toEqual(
-      elementSlots(['metric', 'visual'], 'row', square, 'square', 28),
-    );
-    // Wide and tall frames, and a split led by anything else, still halve the region.
-    expect(elementSlots(['metric', 'packet', 'pile'], 'split', square, 'landscape', 28)[0]).toEqual(
+    // Without a pile, a split led by a number halves the region as before: three elements, and
+    // two (`auto` splits two).
+    const halves = [
       { x: 64, y: 250, width: 462, height: 600 },
+      { x: 554, y: 250, width: 462, height: 286 },
+      { x: 554, y: 564, width: 462, height: 286 },
+    ];
+    expect(elementSlots(['metric', 'code', 'output'], 'split', square, 'square', 28)).toEqual(
+      halves,
     );
-    expect(elementSlots(['visual', 'metric'], 'split', square, 'square', 28)[0]!.width).toBe(462);
+    const two = [halves[0], { x: 554, y: 250, width: 462, height: 600 }];
+    expect(elementSlots(['metric', 'visual'], 'auto', square, 'square', 28)).toEqual(two);
+    expect(elementSlots(['metric', 'visual'], 'split', square, 'square', 28)).toEqual(two);
+    // Nor do two elements, a pile among them, or wide frames.
+    expect(elementSlots(['metric', 'pile'], 'split', square, 'square', 28)).toEqual(two);
+    expect(elementSlots(['metric', 'packet', 'pile'], 'split', square, 'landscape', 28)[0]).toEqual(
+      halves[0],
+    );
   });
   it('give one element the whole region, whatever the layout', () => {
     for (const layout of ['auto', 'single', 'row', 'column', 'split'] as const)

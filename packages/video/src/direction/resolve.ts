@@ -5,7 +5,14 @@ import { orientationOf, type VideoSpec } from '../spec.ts';
 import { clipLines } from '../storyboard/draft.ts';
 import { parseEmphasis } from '../storyboard/grammar.ts';
 import type { Scene } from '../storyboard/schema.ts';
-import { type Layout, phraseMoment, type SceneTiming, timelineLabels } from '../timeline/build.ts';
+import {
+  type Layout,
+  phraseMoment,
+  type SceneTiming,
+  scenePhases,
+  timelineLabels,
+} from '../timeline/build.ts';
+import { settledAt } from '../timeline/cues.ts';
 import type {
   CodeLine,
   DirectionBeat,
@@ -25,7 +32,10 @@ import { morphHunk } from './tokens.ts';
 
 /** How long each verb takes, in seconds. */
 export const BEAT_SECONDS = { reveal: 0.5, camera: 0.8, morph: 1.6, count: 1.6 } as const;
-/** A count that lands on its phrase ticks for at least this long, even near the scene's start. */
+/**
+ * A count that lands on its phrase ticks for at least this long, even near the scene's start or
+ * after a late reveal.
+ */
 const COUNT_MIN = 0.6;
 /** Code elements show at most this many lines (wide, tall frames), as morphs do a side. */
 export const CODE_LINES = { landscape: 14, vertical: 18 } as const;
@@ -158,7 +168,7 @@ function resolveShot(given: Shot, scene: Scene, timing: SceneTiming, ctx: Contex
     return resolved ? [resolved] : [];
   });
   // Beats move only what the shot shows: when nothing is left, none of them has a target.
-  const kept = new Set(elements.map((e) => e.id));
+  const shown = elements;
   // Content a validated shot cites is in the run; should all of it be gone, the visual stays.
   if (!elements.length) {
     whole = true;
@@ -170,7 +180,7 @@ function resolveShot(given: Shot, scene: Scene, timing: SceneTiming, ctx: Contex
   const countable = new Set(
     elements.flatMap((e) => (e.kind === 'metric' && e.from !== undefined ? [e.id] : [])),
   );
-  const beats = timeBeats(shot, scene, timing, ctx.options, kept).filter(
+  const beats = timeBeats(shot, scene, timing, ctx.options, shown).filter(
     (b) => b.verb !== 'count' || countable.has(b.element),
   );
   return { whole, elements, beats };
@@ -300,52 +310,63 @@ function codeWindow(view: readonly DiffLine[], max: number): DiffLine[] {
  * phrase as the captions time it; a beat without one, or whose phrase redaction removed, takes an
  * evenly spaced slot over the line from 0.15 of it (over the scene when it has no line). A count
  * with `at` ticks in the moments before its phrase instead, so the number on screen lands as it
- * is said. `place` is the default made explicit, so it resolves to nothing; beats on elements
- * that are gone drop. The camera never aims at an element that is not in place yet, nor does a
- * morph or a count play on one: a beat toward, or a morph or a count of, a revealed element
- * starts once its (first) reveal is done.
+ * is said; one without never lands before the terminals beside it have typed their output, where
+ * its number comes from. `place` is the default made explicit, so it resolves to nothing; beats on
+ * elements that are gone drop. The camera never aims at an element that is not in place yet, nor
+ * does a morph or a count play on one: a beat toward, or a morph or a count of, a revealed element
+ * starts once its (first) reveal is done; a count that waited is shortened (to `COUNT_MIN` at the
+ * least) to land on its phrase still.
  */
 function timeBeats(
   shot: Shot,
   scene: Scene,
   timing: SceneTiming,
   options: CaptionOptions,
-  kept: ReadonlySet<string>,
+  shown: readonly DirectionElement[],
 ): DirectionBeat[] {
   const duration = timing.end - timing.start;
   const text = parseEmphasis(scene.narration).text;
+  const kept = new Set(shown.map((e) => e.id));
   const live = shot.beats.filter((b) => b.verb !== 'place');
   const spoken = timing.speechEnd > timing.speechStart;
   const from = spoken ? timing.speechStart - timing.start : 0;
   const span = spoken ? timing.speechEnd - timing.speechStart : duration;
   const round = (n: number) => Math.round(n * 1000) / 1000;
-  /** A beat from `start`, kept inside the scene. */
-  const moment = (verb: keyof typeof BEAT_SECONDS, start: number) => {
+  /** A beat from `start` lasting `seconds`, kept inside the scene. */
+  const inside = (start: number, seconds: number) => {
     const t = round(Math.min(Math.max(0, start), Math.max(0, duration - 0.1)));
-    return { t, seconds: round(Math.min(BEAT_SECONDS[verb], Math.max(0.1, duration - t))) };
+    return { t, seconds: round(Math.min(seconds, Math.max(0.1, duration - t))) };
   };
+  const moment = (verb: keyof typeof BEAT_SECONDS, start: number) =>
+    inside(start, BEAT_SECONDS[verb]);
   /**
-   * A count that lands at `at`: it starts a count's length before, never before the scene does,
-   * and ticks at least `COUNT_MIN`, kept inside the scene.
+   * A count that lands at `at`: it starts a count's length before, never before the scene does or
+   * `ready`, and ticks at least `COUNT_MIN`.
    */
-  const landing = (at: number) => {
-    const t = round(Math.min(Math.max(0, at - BEAT_SECONDS.count), Math.max(0, duration - 0.1)));
-    const length = Math.max(COUNT_MIN, at - t);
-    return { t, seconds: round(Math.min(length, Math.max(0.1, duration - t))) };
+  const landing = (at: number, ready = 0) => {
+    const start = Math.max(ready, at - BEAT_SECONDS.count);
+    return inside(start, Math.max(COUNT_MIN, at - start));
   };
+  // Where each count with a phrase lands, for when it has to wait for its reveal.
+  const lands = new Map<DirectionBeat, number>();
   const beats = live.flatMap((beat, i): DirectionBeat[] => {
     const target = beat.verb === 'camera' ? beat.to : beat.element;
     if (!kept.has(target)) return [];
     const pinned = beat.at === undefined ? undefined : phraseMoment(text, beat.at, timing, options);
     const spaced = from + span * (SPACED_FROM + ((1 - SPACED_FROM) * i) / live.length);
-    const { t, seconds } =
-      beat.verb === 'count' && pinned !== undefined
-        ? landing(pinned)
-        : moment(beat.verb, pinned ?? spaced);
+    if (beat.verb === 'count') {
+      const count: DirectionBeat = {
+        verb: 'count',
+        element: beat.element,
+        ...(pinned === undefined ? moment('count', spaced) : landing(pinned)),
+      };
+      if (pinned !== undefined) lands.set(count, pinned);
+      return [count];
+    }
+    const { t, seconds } = moment(beat.verb, pinned ?? spaced);
     if (beat.verb === 'reveal')
       return [{ verb: 'reveal', element: beat.element, style: beat.style ?? 'rise', t, seconds }];
     if (beat.verb === 'morph') return [{ verb: 'morph', element: beat.element, t, seconds }];
-    if (beat.verb === 'count') return [{ verb: 'count', element: beat.element, t, seconds }];
     return [
       {
         verb: 'camera',
@@ -357,16 +378,47 @@ function timeBeats(
       },
     ];
   });
-  const inPlace = new Map<string, number>();
+  const firstReveal = new Map<string, DirectionBeat>();
   for (const b of [...beats].sort((a, b) => a.t - b.t))
-    if (b.verb === 'reveal' && !inPlace.has(b.element)) inPlace.set(b.element, b.t + b.seconds);
+    if (b.verb === 'reveal' && !firstReveal.has(b.element)) firstReveal.set(b.element, b);
+  const typed = typedAt(shown, scene, timing, options, (id) => firstReveal.get(id)?.t ?? 0);
   const aimed = beats.map((b) => {
     if (b.verb !== 'camera' && b.verb !== 'morph' && b.verb !== 'count') return b;
-    const ready = inPlace.get(b.verb === 'camera' ? b.to : b.element);
-    return ready === undefined || b.t >= ready ? b : { ...b, ...moment(b.verb, ready) };
+    const reveal = firstReveal.get(b.verb === 'camera' ? b.to : b.element);
+    const ready = reveal ? reveal.t + reveal.seconds : 0;
+    const at = lands.get(b);
+    if (at !== undefined) return b.t >= ready ? b : { ...b, ...landing(at, ready) };
+    const start = Math.max(ready, b.verb === 'count' ? typed - BEAT_SECONDS.count : 0);
+    return b.t >= start ? b : { ...b, ...moment(b.verb, start) };
   });
   // Stable: beats at the same moment keep the order the agent wrote.
   return aimed.sort((a, b) => a.t - b.t);
+}
+
+/**
+ * When every terminal a shot shows has typed its output, in seconds since the scene started, as
+ * `shotSettledAt` times them: the storyboard visual on the scene's phases, an output element from
+ * its reveal. 0 when the shot shows none.
+ */
+function typedAt(
+  shown: readonly DirectionElement[],
+  scene: Scene,
+  timing: SceneTiming,
+  options: CaptionOptions,
+  revealedAt: (id: string) => number,
+): number {
+  const duration = timing.end - timing.start;
+  const text = parseEmphasis(scene.narration).text;
+  return Math.max(
+    0,
+    ...shown.map((e) => {
+      if (e.kind === 'visual' && scene.visual.kind === 'terminal')
+        return settledAt(scene.visual, duration, scenePhases(scene, text, timing, options));
+      if (e.kind !== 'output') return 0;
+      const at = revealedAt(e.id);
+      return at + settledAt(e.visual, Math.max(0.1, duration - at));
+    }),
+  );
 }
 
 /** The run images a direction shows (its captures), for the composition to prepare. */

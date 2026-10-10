@@ -21,6 +21,8 @@ import { directionSources, type MetricSource } from '../src/direction/sources.ts
 import { resolveVideoSpec } from '../src/spec.ts';
 import { type Scene, SceneSchema } from '../src/storyboard/schema.ts';
 import { layoutScenes, pacingFor, phraseMoment, timelineLabels } from '../src/timeline/build.ts';
+import { settledAt } from '../src/timeline/cues.ts';
+import type { TimelineVisual } from '../src/timeline/types.ts';
 
 const hunk: Hunk = {
   oldStart: 1,
@@ -323,7 +325,64 @@ describe('metrics in the direction file', () => {
     expect(reveal).toMatchObject({ verb: 'reveal', element: 'bytes' });
     expect(count).toMatchObject({ verb: 'count', element: 'bytes' });
     expect(count!.t).toBeCloseTo(reveal!.t + reveal!.seconds, 3);
+    // Too late for its phrase: it ticks for the shortest count, landing as soon after as it can.
+    expect(count!.seconds).toBe(0.6);
+  });
+
+  it('shorten a count that waited for its reveal, so it still lands on its phrase', () => {
+    const [, s2] = resolve(
+      shot(
+        [metric('bytes', 'request-bytes')],
+        [
+          { verb: 'reveal', element: 'bytes', at: 'and it now prints' },
+          { verb: 'count', element: 'bytes', at: 'request bytes' },
+        ],
+      ),
+    );
+    const timing = layout.scenes[1]!;
+    const options = { ...captionOptionsFor('landscape'), language: 'en' as const };
+    const moment = phraseMoment(NARRATION, 'request bytes', timing, options)!;
+    const [reveal, count] = s2!.direction.beats;
+    const ready = reveal!.t + reveal!.seconds;
+    // In place less than a full count before its phrase, more than the shortest one before it.
+    expect(moment - ready).toBeLessThan(BEAT_SECONDS.count);
+    expect(moment - ready).toBeGreaterThan(0.6);
+    expect(count!.t).toBeCloseTo(ready, 3);
+    expect(count!.t + count!.seconds).toBeCloseTo(moment, 2);
+  });
+
+  it('land a count without a phrase only once the terminal beside it has typed its output', () => {
+    const timing = layout.scenes[1]!;
+    const duration = timing.end - timing.start;
+    // The storyboard's terminal, typing its after run on the scene's own clock.
+    const [, beside] = resolve(
+      shot(
+        [metric('bytes', 'request-bytes'), { id: 'visual', kind: 'visual' }],
+        [{ verb: 'count', element: 'bytes' }],
+      ),
+    );
+    const typed = settledAt(scenes[1]!.visual as TimelineVisual, duration);
+    const spaced =
+      timing.speechStart - timing.start + (timing.speechEnd - timing.speechStart) * 0.15;
+    expect(spaced + BEAT_SECONDS.count).toBeLessThan(typed);
+    const [count] = beside!.direction.beats;
     expect(count!.seconds).toBe(BEAT_SECONDS.count);
+    expect(count!.t + count!.seconds).toBeCloseTo(typed, 2);
+    // A demo command's output, typing from its reveal.
+    const [, output] = resolve(
+      shot(
+        [metric('bytes', 'request-bytes'), { id: 'out', kind: 'output', evidence: 'terminal:1' }],
+        [
+          { verb: 'reveal', element: 'out', at: 'request bytes' },
+          { verb: 'count', element: 'bytes' },
+        ],
+      ),
+    );
+    const revealed = output!.direction.beats.find((b) => b.verb === 'reveal')!;
+    const out = output!.direction.elements.find((e) => e.kind === 'output')!;
+    const printed = revealed.t + settledAt(out.visual, duration - revealed.t);
+    const counted = output!.direction.beats.find((b) => b.verb === 'count')!;
+    expect(counted.t + counted.seconds).toBeCloseTo(printed, 2);
   });
 
   it('drop a count on a metric that shows one value: it has nothing to tick', () => {

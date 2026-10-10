@@ -2022,6 +2022,20 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
       join(run, 'video', 'storyboard.json'),
       `${JSON.stringify(StoryboardSchema.parse(storyboard), null, 2)}\n`,
     );
+    // Covi's director would send dots along the diagram's edges; an agent's shot keeps the
+    // storyboard's diagram whole, so the diagram and its edge labels are drawn and checked here.
+    writeFileSync(
+      join(run, 'video', 'direction.json'),
+      `${JSON.stringify(
+        DirectionSchema.parse({
+          schemaVersion: 1,
+          draft: false,
+          shots: [{ scene: 'flow', elements: [{ id: 'visual', kind: 'visual' }] }],
+        }),
+        null,
+        2,
+      )}\n`,
+    );
 
     const rendered = covi(['render', '--repo', repo, '--run', draft.runId]);
     expect(rendered.video.rendered).toBe(true);
@@ -2052,6 +2066,7 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
     expect(scene('flow').visual).toMatchObject({
       edges: [{ label: 'input' }, { label: 'disables' }],
     });
+    expect(scene('flow').direction?.whole).toBe(true);
     expect(scene('flow').evidenceIds).toContain('diff-hunk:app.js:1');
 
     // Sounds land where the picture put their moments.

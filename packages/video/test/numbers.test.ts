@@ -11,6 +11,8 @@ import {
   metricSettled,
   percentChange,
   tickValue,
+  VALUE_CENTER,
+  valueCentering,
 } from '../src/runtime/numbers.ts';
 
 describe('numbers as a video draws them', () => {
@@ -75,5 +77,23 @@ describe('numbers as a video draws them', () => {
     // One value alone is drawn as a counter, whatever it asks for.
     expect(drawnShow({ show: 'compare' })).toBe('counter');
     expect(metricSettled({ show: 'compare' }, undefined)).toBe(0);
+  });
+
+  it('center a counted value once it has landed, and settle when it is centered', () => {
+    const count = { t: 1, seconds: 1.6 };
+    const counter = { show: 'counter' as const, from: 70406 };
+    expect(valueCentering(counter, count)).toEqual([2.6, 2.6 + VALUE_CENTER]);
+    // Without a count, or a value to count from, the value is drawn centered from the start.
+    expect(valueCentering(counter, undefined)).toBeUndefined();
+    expect(valueCentering({ show: 'counter' }, count)).toBeUndefined();
+    // Bars and a compare hold their values' columns; only the counter's value is alone in its row.
+    expect(valueCentering({ ...counter, show: 'bars' }, count)).toBeUndefined();
+    expect(valueCentering({ ...counter, show: 'compare' }, count)).toBeUndefined();
+    expect(metricSettled(counter, count)).toBeCloseTo(2.6 + VALUE_CENTER, 9);
+    expect(metricSettled({ ...counter, delta: -86 }, count)).toBeCloseTo(
+      2.6 + Math.max(VALUE_CENTER, DELTA_FADE),
+      9,
+    );
+    expect(metricSettled({ ...counter, show: 'bars' }, count)).toBeCloseTo(2.6, 9);
   });
 });

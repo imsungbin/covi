@@ -117,6 +117,8 @@ interface Read {
   /** The card's direct parts: the name, the value row, bars, or pair, and the change. */
   parts: Rect[];
   valueBox: Rect | null;
+  /** The value's text as drawn, inside its box. */
+  valueText: Rect | null;
   /** The value's text is wider than its box. */
   valueClipped: boolean | null;
   unitBox: Rect | null;
@@ -223,6 +225,7 @@ async function staged(
          card: q('.mcard') ? box(q('.mcard')) : null,
          parts: q('.mcard') ? [...q('.mcard').children].map(box) : [],
          valueBox: value ? box(value) : null,
+         valueText: value ? (() => { const r = document.createRange(); r.selectNodeContents(value); return box(r); })() : null,
          valueClipped: value ? value.scrollWidth > value.clientWidth + 1 : null,
          unitBox: q('.munit') ? box(q('.munit')) : null,
          numBoxes: all('.mnum').map(box),
@@ -317,6 +320,27 @@ describe.skipIf(!available)('a metric on screen', () => {
     expect(unit).toMatchObject({ text: 'body', overflow: false });
     expect(unit!.font! / v.unit).toBeGreaterThanOrEqual(TEXT_FLOOR.body - 0.1);
     for (const part of parts) expect(inside(part, card!)).toBe(true);
+  });
+
+  it('eases the landed value to its own width once it lands, so it ends centered', async () => {
+    const v = await staged();
+    const end = COUNT.t + COUNT.seconds;
+    const center = (r: Rect) => r.x + r.width / 2;
+    const landed = await v.read(v.frameAt(end));
+    // Held at the widest value as it lands: 9,907 sits right of center in 70,406's width.
+    expect(landed.value).toBe('9,907');
+    expect(landed.valueBox!.width).toBeGreaterThan(landed.valueText!.width + 4);
+    expect(center(landed.valueText!) - center(landed.card!)).toBeGreaterThan(2);
+    const easing = v.frameAt(end + 0.15);
+    const mid = await v.read(easing);
+    expect(mid.valueBox!.width).toBeLessThan(landed.valueBox!.width);
+    expect(mid.valueBox!.width).toBeGreaterThan(mid.valueText!.width);
+    const settled = await v.read(v.frameAt(end + 0.4));
+    expect(settled.valueBox!.width).toBeCloseTo(settled.valueText!.width, 0);
+    expect(Math.abs(center(settled.valueText!) - center(settled.card!))).toBeLessThan(1);
+    // A pure function of the clock: the same frame, however it is reached.
+    await v.read(v.frameAt(COUNT.t));
+    expect((await v.read(easing)).valueBox).toEqual(mid.valueBox);
   });
 
   it('grows or shrinks the after bar with the count, on one scale with the before bar', async () => {

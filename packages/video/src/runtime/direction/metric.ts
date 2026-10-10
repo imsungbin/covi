@@ -1,6 +1,6 @@
 import type { Span } from '../../timeline/cues.ts';
 import type { DirectionElement } from '../../timeline/types.ts';
-import { rise, seg } from '../anim.ts';
+import { easeInOutCubic, lerp, rise, seg } from '../anim.ts';
 import {
   type Component,
   type ComponentContext,
@@ -20,6 +20,7 @@ import {
   formatNumber,
   formatPercent,
   tickValue,
+  valueCentering,
 } from '../numbers.ts';
 import { TEXT_FLOOR } from '../sizing.ts';
 
@@ -137,17 +138,20 @@ const each = (nodes: readonly HTMLElement[], texts: readonly string[], fits: () 
     return fits();
   });
 
+/** The used width of `nodes` with each of `texts` set, unrounded and untransformed, in pixels. */
+function widthsOf(nodes: readonly HTMLElement[], texts: readonly string[]): number[] {
+  return texts.map((text) => {
+    for (const node of nodes) node.textContent = text;
+    return Math.ceil((Number.parseFloat(getComputedStyle(nodes[0]!).width) || 0) * 100) / 100;
+  });
+}
+
 /**
  * Holds `nodes` at the width of the widest of `texts`, so a count moves neither them nor what is
  * beside them: digits are tabular, so no value a count passes through is wider than its two ends.
  */
 function holdWidth(nodes: readonly HTMLElement[], texts: readonly string[]): void {
-  const widths = texts.map((text) => {
-    for (const node of nodes) node.textContent = text;
-    // The used width, unrounded and untransformed.
-    return Number.parseFloat(getComputedStyle(nodes[0]!).width) || 0;
-  });
-  const widest = Math.ceil(Math.max(...widths) * 100) / 100;
+  const widest = Math.max(...widthsOf(nodes, texts));
   for (const node of nodes) node.style.minWidth = `${widest}px`;
 }
 
@@ -205,13 +209,22 @@ function counter(e: MetricElement, ctx: ComponentContext, count?: CountSpan): Co
     ),
     scaled(COUNTER_FONT, u),
   );
-  holdWidth([value], printed);
+  // Held at the widest value while it counts, then eased to the landed value's own width: its
+  // digits are set to the right of the box, and the row is centered.
+  const widths = widthsOf([value], printed);
+  const widest = Math.max(...widths);
+  const own = widths.at(-1)!;
+  const centering = valueCentering(e, count);
   const fade = deltaWindow('counter', count);
   let shown = '';
+  let held = '';
   return {
     update(clock) {
       const now = print(shownValue(e, e.from, clock.t, count));
       if (now !== shown) value.textContent = shown = now;
+      const k = centering ? easeInOutCubic(seg(clock.t, ...centering)) : 1;
+      const width = `${lerp(widest, own, k).toFixed(2)}px`;
+      if (width !== held) value.style.minWidth = held = width;
       if (delta) delta.style.opacity = deltaOpacity(clock.t, fade);
     },
     report: () => [

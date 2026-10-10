@@ -2,7 +2,7 @@ import { motion } from '@covi/brand';
 import { describe, expect, it } from 'vitest';
 import { easeOutCubic } from '../src/runtime/anim.ts';
 import { cameraPlan, cameraPush, heroAccent, heroPunch } from '../src/runtime/camera.ts';
-import { DELTA_FADE } from '../src/runtime/numbers.ts';
+import { DELTA_FADE, VALUE_CENTER } from '../src/runtime/numbers.ts';
 import { entering, leaving, REST, sceneStyle, transitionOf } from '../src/runtime/transitions.ts';
 import { settledAt, shotSettledAt } from '../src/timeline/cues.ts';
 import type { SceneDirection, TimelineScene } from '../src/timeline/types.ts';
@@ -304,10 +304,14 @@ describe('the camera in a directed scene', () => {
     expect(shotSettledAt(shot('counter', [reveal]))).toBeCloseTo(1.5, 9);
     expect(shotSettledAt(shot('compare', [reveal], -86))).toBeCloseTo(1 + 0.6 + 0.6, 9);
     const count = { verb: 'count' as const, element: 'm', t: 2, seconds: 1.6 };
-    expect(shotSettledAt(shot('counter', [count]))).toBeCloseTo(3.6, 9);
+    // A counted value eases to its own width once it lands, so it ends centered.
+    expect(shotSettledAt(shot('counter', [count]))).toBeCloseTo(3.6 + VALUE_CENTER, 9);
     // The change in percent fades in once its value has landed; without one, nothing waits for it.
     expect(shotSettledAt(shot('compare', [reveal]))).toBeCloseTo(1 + 0.6 + 0.3, 9);
-    expect(shotSettledAt(shot('counter', [count], -86))).toBeCloseTo(3.6 + DELTA_FADE, 9);
+    expect(shotSettledAt(shot('counter', [count], -86))).toBeCloseTo(
+      3.6 + Math.max(DELTA_FADE, VALUE_CENTER),
+      9,
+    );
     expect(shotSettledAt(shot('compare', [reveal, count], -86))).toBeCloseTo(3.6 + DELTA_FADE, 9);
   });
 

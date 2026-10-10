@@ -15,6 +15,11 @@ export const COMPARE_LANDS = 0.6;
 export const COMPARE_RISE = 0.3;
 /** A metric's change in percent fades in over this long, once its value has landed. */
 export const DELTA_FADE = 0.3;
+/**
+ * A counted value is held at the widest value's width while it counts, so it never moves
+ * sideways; once it has landed, its box eases to its own width over this long, so it ends centered.
+ */
+export const VALUE_CENTER = 0.3;
 
 /** A value as drawn: digits grouped by three, `decimals` after the point, a real minus sign. */
 export function formatNumber(value: number, decimals: number): string {
@@ -91,12 +96,30 @@ export function deltaWindow(
   return [at, at + DELTA_FADE];
 }
 
-/** When all a metric draws is in place, on its element's clock: its value, then its change. */
+/**
+ * When a counter's value eases from the widest value's width to its own, on its element's clock:
+ * once it has landed. None when nothing counts (it is drawn at its own width from the start), and
+ * for bars and a compare, whose values keep their columns.
+ */
+export function valueCentering(
+  e: Pick<MetricElement, 'show' | 'from'>,
+  count: CountSpan | undefined,
+): readonly [number, number] | undefined {
+  if (!count || e.from === undefined || drawnShow(e) !== 'counter') return undefined;
+  const at = valueLanded('counter', count);
+  return [at, at + VALUE_CENTER];
+}
+
+/**
+ * When all a metric draws is in place, on its element's clock: its value, then its change, and a
+ * counted value centered.
+ */
 export function metricSettled(
   e: Pick<MetricElement, 'show' | 'from' | 'delta'>,
   count: CountSpan | undefined,
 ): number {
   const show = drawnShow(e);
   const fade = e.delta === undefined ? undefined : deltaWindow(show, count);
-  return fade ? fade[1] : valueLanded(show, count);
+  const centering = valueCentering(e, count);
+  return Math.max(fade ? fade[1] : valueLanded(show, count), centering ? centering[1] : 0);
 }

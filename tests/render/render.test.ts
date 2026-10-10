@@ -40,6 +40,7 @@ import { DirectionSchema } from '../../packages/video/src/direction/schema.ts';
 import { contactSheetFrames, sheetColumns } from '../../packages/video/src/render/renderer.ts';
 import { tileLayout } from '../../packages/video/src/render/sheet.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
+import { DELTA_FADE } from '../../packages/video/src/runtime/numbers.ts';
 import { TEXT_FLOOR } from '../../packages/video/src/runtime/sizing.ts';
 import {
   edgeEntrance,
@@ -1575,6 +1576,42 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         const tiles = contactSheetFrames(timeline);
         for (const { s, b } of morphs)
           expect(tiles).toContain(Math.round((s.start + b.t + b.seconds / 2) * timeline.fps));
+        // The key number is a metric: request bytes count down from 70,406 to 9,907 beside the
+        // command that printed them.
+        const index = timeline.scenes.findIndex((s) =>
+          s.direction?.elements.some((e) => e.kind === 'metric'),
+        );
+        const scene = timeline.scenes[index]!;
+        const counter = scene.direction!.elements.find((e) => e.kind === 'metric')!;
+        expect(counter).toMatchObject({
+          show: 'counter',
+          name: 'request bytes',
+          from: 70406,
+          to: 9907,
+          delta: -86,
+        });
+        const count = scene.direction!.beats.find(
+          (b) => b.verb === 'count' && b.element === counter.id,
+        )!;
+        expect(count).toBeDefined();
+        // The sheet shows it landed, its change in percent faded in.
+        expect(tiles).toContain(
+          Math.round((scene.start + count.t + count.seconds + DELTA_FADE) * timeline.fps),
+        );
+        // Where the scene has settled (its count has landed), the counter is the largest text.
+        const frames = JSON.parse(
+          readFileSync(join(result.runDir, 'video', 'frames.json'), 'utf8'),
+        ) as { layouts: LayoutReport[] };
+        const settled = frames.layouts.find((l) => l.frame === settledFrame(timeline, index))!;
+        const fonts = settled.items
+          .filter((i) => i.font !== undefined)
+          .sort((a, b) => b.font! - a.font!);
+        const unit = computeRegions(timeline).unit;
+        expect(fonts[0]!.font! / unit).toBeGreaterThanOrEqual(120);
+        const x = fonts[0]!.rect.x + fonts[0]!.rect.width / 2;
+        expect(x).toBeGreaterThan(counter.rect.x);
+        expect(x).toBeLessThan(counter.rect.x + counter.rect.width);
+        expect(fonts[1]!.font!).toBeLessThan(0.6 * fonts[0]!.font!);
       }
     }, 600_000);
   }

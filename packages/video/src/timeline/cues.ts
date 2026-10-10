@@ -1,3 +1,4 @@
+import { metricSettled } from '../runtime/numbers.ts';
 import {
   type CodeLine,
   type FrameMark,
@@ -702,7 +703,7 @@ export const MORPH_SETTLE = 0.5;
 /**
  * When a directed scene's choreography is done: every element has entered and played its own (the
  * storyboard visual on the scene's phases, the others from their reveal; a morph once its added
- * tokens have settled), and every beat has ended.
+ * tokens have settled, a metric once its value and its change are in), and every beat has ended.
  */
 export function shotSettledAt(
   scene: Pick<TimelineScene, 'visual' | 'direction' | 'phases' | 'start' | 'end'>,
@@ -718,6 +719,13 @@ export function shotSettledAt(
     if (e.kind === 'morph') {
       const beat = d.beats.find((b) => b.verb === 'morph' && b.element === e.id);
       return Math.max(at + 0.5, beat ? beat.t + beat.seconds + MORPH_SETTLE : 0);
+    }
+    if (e.kind === 'metric') {
+      // On the element's clock, as the runtime draws it: in half a second, or once its value has
+      // landed and its change in percent has faded in.
+      const beat = d.beats.find((b) => b.verb === 'count' && b.element === e.id);
+      const count = beat ? { t: beat.t - at, seconds: beat.seconds } : undefined;
+      return at + Math.max(0.5, metricSettled(e, count));
     }
     return e.kind === 'node' || e.kind === 'label'
       ? at + 0.5

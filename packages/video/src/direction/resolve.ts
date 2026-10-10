@@ -330,8 +330,8 @@ function timeBeats(
   for (const b of [...beats].sort((a, b) => a.t - b.t))
     if (b.verb === 'reveal' && !inPlace.has(b.element)) inPlace.set(b.element, b.t + b.seconds);
   const aimed = beats.map((b) => {
-    const waits = b.verb === 'camera' ? b.to : b.verb === 'morph' ? b.element : undefined;
-    const ready = waits === undefined ? undefined : inPlace.get(waits);
+    if (b.verb !== 'camera' && b.verb !== 'morph') return b;
+    const ready = inPlace.get(b.verb === 'camera' ? b.to : b.element);
     return ready === undefined || b.t >= ready ? b : { ...b, ...moment(b.verb, ready) };
   });
   // Stable: beats at the same moment keep the order the agent wrote.

@@ -85,6 +85,19 @@ describe('lead kinds with direction', () => {
     expect(lead(capture)).toBe('screenshot');
     expect(lead({ id: 'n', kind: 'node', rect, label: 'Reader' })).toBe('diagram');
     expect(lead(label)).toBe('callout');
+    const counter: DirectionElement = {
+      id: 'm',
+      kind: 'metric',
+      rect,
+      show: 'counter',
+      name: 'request bytes',
+      from: 70406,
+      to: 9907,
+      decimals: 0,
+      delta: -86,
+    };
+    // A measured number leads as its own kind: it breaks a run of terminal cards.
+    expect(lead(counter)).toBe('metric');
   });
 
   it('let a shot break a run of one kind, or continue it', () => {

@@ -1,8 +1,19 @@
-import { decimalsOf, evidenceId, METRIC_LIMITS, metricSource } from '@covi/core';
-import { percentChange } from '../runtime/numbers.ts';
+import {
+  decimalsOf,
+  type EvidenceIndex,
+  type EvidenceItem,
+  evidenceId,
+  METRIC_LIMITS,
+  metricSource,
+} from '@covi/core';
+import { sceneEvidence } from '../grounding.ts';
+import { formatNumber, percentChange } from '../runtime/numbers.ts';
+import type { Orientation } from '../spec.ts';
+import { findPhrase, parseEmphasis } from '../storyboard/grammar.ts';
+import type { Scene } from '../storyboard/schema.ts';
 import type { DirectionElement, Rect, TimelineLabels } from '../timeline/types.ts';
 import { shown } from './echo.ts';
-import type { ShotElement } from './schema.ts';
+import type { Shot, ShotElement } from './schema.ts';
 import type { MetricSource } from './sources.ts';
 
 /*
@@ -127,5 +138,93 @@ export function resolveMetric(
     to,
     decimals,
     ...(delta === undefined ? {} : { delta }),
+  };
+}
+
+/** A counter needs at least this many printable steps between its values to tick; fewer compare. */
+export const COUNTER_STEPS = 10;
+
+/** A value on a log scale that keeps its sign, so a change through zero spans both sides. */
+const signedLog = (v: number) => Math.sign(v) * Math.log1p(Math.abs(v));
+
+/**
+ * How much a metric changed, for choosing the one to show: how many times larger or smaller its
+ * magnitude became, each plus one (a fold change with a pseudocount), so `1 → 0` (one timeout
+ * gone) does not outrank `70406 → 9907` (the request shrank sevenfold). A value that changes sign
+ * travels through zero, so `−5 → 5` is a change, not none.
+ */
+export function metricChange(base: number, head: number): number {
+  return Math.abs(signedLog(head) - signedLog(base));
+}
+
+/**
+ * The metric a terminal scene's command measured that changed most between base and head (the
+ * earliest on a tie), or nothing: a scene that shows no command, a command that printed nothing
+ * measurable at both revisions, or nothing that changed. Read from what the scene shows, never
+ * from what it cites.
+ */
+export function keyMetric(
+  scene: Pick<Scene, 'visual'>,
+  evidence: EvidenceIndex | undefined,
+): EvidenceItem | undefined {
+  if (scene.visual.kind !== 'terminal' || !evidence) return undefined;
+  const prefixes = sceneEvidence({ visual: scene.visual }, evidence).flatMap((id) => {
+    const n = /^terminal:(\d+)$/.exec(id);
+    return n ? [`metric:${metricSource.terminal(Number(n[1]))}:`] : [];
+  });
+  let best: EvidenceItem | undefined;
+  let most = 0;
+  for (const item of evidence.items) {
+    const m = item.metric;
+    if (item.kind !== 'metric' || m?.base === undefined || m.head === undefined) continue;
+    if (!prefixes.some((p) => item.id.startsWith(p))) continue;
+    const change = metricChange(m.base, m.head);
+    if (change > most) {
+      best = item;
+      most = change;
+    }
+  }
+  return best;
+}
+
+/**
+ * The default director's shot for a terminal scene with a key metric: the number beside the
+ * output it came from (above it in a tall frame), counted so it lands as the narration names it,
+ * or, when the change has too few steps to tick, revealed as a before/after comparison.
+ */
+export function metricShot(
+  scene: Pick<Scene, 'visual' | 'narration'>,
+  evidence: EvidenceIndex | undefined,
+  orientation: Orientation,
+): Pick<Shot, 'layout' | 'elements' | 'beats'> | undefined {
+  const item = keyMetric(scene, evidence);
+  const m = item?.metric;
+  if (!item || m?.base === undefined || m.head === undefined) return undefined;
+  const decimals = Math.min(
+    METRIC_LIMITS.decimals,
+    Math.max(decimalsOf(m.base), decimalsOf(m.head)),
+  );
+  // Printed values are whole steps apart; rounding keeps floating point (2.3 − 1.3 is
+  // 0.9999999999999998) from losing one.
+  const steps = Math.round(Math.abs(m.head - m.base) * 10 ** decimals);
+  const show = steps >= COUNTER_STEPS ? 'counter' : 'compare';
+  // Where the narration says it: its printed name, else its value as drawn or as printed. Trimmed
+  // as the direction schema trims a phrase, so the draft reads back as written.
+  const text = parseEmphasis(scene.narration).text;
+  const at = [item.label, formatNumber(m.head, decimals), String(m.head)]
+    .map((phrase) => phrase.trim())
+    .find((phrase) => phrase && findPhrase(text, phrase).count === 1);
+  const elements: ShotElement[] = [
+    { id: 'metric', kind: 'metric', evidence: item.id, show },
+    { id: 'visual', kind: 'visual' },
+  ];
+  return {
+    layout: orientation === 'vertical' ? 'column' : 'row',
+    elements,
+    beats: [
+      show === 'counter'
+        ? { verb: 'count', element: 'metric', ...(at ? { at } : {}) }
+        : { verb: 'reveal', element: 'metric', style: 'pop', ...(at ? { at } : {}) },
+    ],
   };
 }

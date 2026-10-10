@@ -17,6 +17,7 @@ import {
 } from '@covi/video';
 import { type Browser, chromium } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { elementSlots } from '../../packages/video/src/direction/layout.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import {
   countProgress,
@@ -24,6 +25,7 @@ import {
   tickValue,
 } from '../../packages/video/src/runtime/numbers.ts';
 import { TEXT_FLOOR } from '../../packages/video/src/runtime/sizing.ts';
+import { orientationOf } from '../../packages/video/src/spec.ts';
 import { canUseBrowser } from '../helpers/env.ts';
 
 /*
@@ -46,6 +48,7 @@ afterAll(async () => {
 
 const LANDSCAPE = { width: 640, height: 360 };
 const VERTICAL = { width: 360, height: 640 };
+const SQUARE = { width: 360, height: 360 };
 type Size = typeof LANDSCAPE;
 type Metric = Extract<DirectionElement, { kind: 'metric' }>;
 
@@ -57,29 +60,18 @@ const terminal = {
   output: 'request bytes: 9907\nchunks: 1',
 } as const;
 
-/**
- * The metric's slot and the visual's beside it (below it when tall), 2 parts to 3, as the director
- * lays them out.
- */
+/** The metric's slot and the visual's beside it (below it when tall), as the director lays them out. */
 function slots(size: Size) {
-  const tall = size.height > size.width;
-  const r = computeRegions({ ...size, orientation: tall ? 'vertical' : 'landscape' });
-  const gap = 28 * r.unit;
-  const m = r.media;
-  if (tall) {
-    const h = (m.height - gap) * 0.4;
-    return {
-      regions: r,
-      metric: { ...m, height: h },
-      visual: { ...m, y: m.y + h + gap, height: m.height - h - gap },
-    };
-  }
-  const w = (m.width - gap) * 0.4;
-  return {
-    regions: r,
-    metric: { ...m, width: w },
-    visual: { ...m, x: m.x + w + gap, width: m.width - w - gap },
-  };
+  const orientation = orientationOf(size.width, size.height);
+  const r = computeRegions({ ...size, orientation });
+  const [metric, visual] = elementSlots(
+    ['metric', 'visual'],
+    orientation === 'vertical' ? 'column' : 'row',
+    r.media,
+    orientation,
+    28 * r.unit,
+  ) as [Rect, Rect];
+  return { regions: r, metric, visual };
 }
 
 const bytes = (rect: Rect, extra: Partial<Metric> = {}): Metric => ({
@@ -278,6 +270,7 @@ describe.skipIf(!available)('a metric on screen', () => {
   for (const [size, label] of [
     [LANDSCAPE, '16:9'],
     [VERTICAL, '9:16'],
+    [SQUARE, '1:1'],
   ] as const)
     it(`is the largest text on screen when it lands, at least 120 px at 1080p (${label})`, async () => {
       const v = await staged(undefined, [COUNT], size);
@@ -291,6 +284,10 @@ describe.skipIf(!available)('a metric on screen', () => {
       expect(top.font! / v.unit).toBeGreaterThanOrEqual(120);
       for (const other of items)
         if (other !== top) expect(other.font!).toBeLessThan(0.6 * top.font!);
+      // The terminal beside it keeps its code readable.
+      const code = items.filter((i) => i.text === 'code');
+      expect(code.length).toBeGreaterThan(0);
+      for (const c of code) expect(c.font! / v.unit).toBeGreaterThanOrEqual(TEXT_FLOOR.code - 0.1);
       // The card holds its name, value, and change: none is cut off at its edges.
       expect(parts).toHaveLength(3);
       for (const part of parts) expect(inside(part, card!)).toBe(true);

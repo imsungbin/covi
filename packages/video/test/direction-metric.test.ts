@@ -450,6 +450,19 @@ describe('a metric element on its own', () => {
       ).not.toHaveProperty('delta');
   });
 
+  it('names a counted side only on a counter: bars and a compare draw both sides', () => {
+    expect(countProblem(element({ side: 'base' }), source(1, 20))).toBe(
+      'count ticks from base to head, and "x" shows only its base side',
+    );
+    // The element's own problem names the side it should leave out; the count has none of its own.
+    for (const show of ['bars', 'compare'] as const) {
+      expect(countProblem(element({ show, side: 'base' }), source(1, 20))).toBeUndefined();
+      expect(metricProblems(element({ show, side: 'base' }), source(1, 20))).toEqual([
+        `show "${show}" draws both sides; leave "side" out`,
+      ]);
+    }
+  });
+
   it('echoes a cited id escaped and bounded', () => {
     const hostile = `metric:\u001b[2J‮${'x'.repeat(380)}`;
     const found = [

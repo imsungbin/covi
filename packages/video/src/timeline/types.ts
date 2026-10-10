@@ -119,7 +119,7 @@ export type DirectionElement =
       decimals: number;
       /**
        * Covi's change from `from` to `to` in percent, rounded for display; absent without a
-       * nonzero `from`.
+       * nonzero `from`, and for a change of 10,000% or more, too large to read as a percentage.
        */
       delta?: number;
     }

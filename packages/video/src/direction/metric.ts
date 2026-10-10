@@ -66,13 +66,14 @@ export function metricProblems(element: MetricShotElement, metric: MetricSource)
 
 /**
  * Why a `count` beat cannot tick a metric element from its base value to its head value, or
- * nothing when it can. That a count names a metric element, once, is `ACTS_ON`'s check.
+ * nothing when it can. That a count names a metric element, once, is `ACTS_ON`'s check; a side on
+ * bars or a compare, which draw both, is `metricProblems`'.
  */
 export function countProblem(
   element: MetricShotElement,
   metric: MetricSource | undefined,
 ): string | undefined {
-  if (element.side)
+  if (element.side && (element.show ?? 'counter') === 'counter')
     return `count ticks from base to head, and "${element.id}" shows only its ${element.side} side`;
   if (metric && (metric.base === undefined || metric.head === undefined))
     return `count needs a base and a head value, and "${shown(element.evidence)}" has only a ${sides(metric)}`;

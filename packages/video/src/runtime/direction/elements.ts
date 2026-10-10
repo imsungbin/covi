@@ -21,6 +21,8 @@ import {
 } from '../components/types.ts';
 import { el, fitText, place } from '../dom.ts';
 import { union } from '../narrator.ts';
+import { textBoxRect } from '../routes.ts';
+import { type FlowSpans, flowSpans, mountFlows, nodeBoxes, nodeSplit, packet } from './flow.ts';
 import { metric } from './metric.ts';
 import { morph } from './morph.ts';
 
@@ -64,6 +66,9 @@ export function mountShot(
   drawVisual: (ctx: ComponentContext) => Component,
 ): ShotComponent {
   const direction = scene.direction!;
+  // Flows first: the edges go under every element, joining the nodes as they are drawn.
+  const boxes = nodeBoxes(direction, ctx);
+  const flows = mountFlows(direction, ctx, boxes);
   const drawn: Drawn[] = direction.elements.map((element) => {
     // A full-stage layer per element, so components keep laying out in stage pixels.
     const layer = el('div', 'layer element', ctx.root);
@@ -81,15 +86,19 @@ export function mountShot(
       (b): b is Reveal => b.verb === 'reveal' && b.element === element.id,
     );
     const placed = { element, layer, ...(reveal ? { reveal } : {}) };
+    // A packet travels over the nodes it joins.
+    if (element.kind === 'packet') layer.style.zIndex = '2';
     // The element's own beat (a morph's or a metric's count), on the element's own clock. A morph
-    // without one (a timeline built by hand) shows the code after the change from the start.
+    // without one (a timeline built by hand) shows the code after the change from the start. Flow
+    // verbs reach an element through its `FlowSpans` instead, since it can have several.
     const beat = direction.beats.find(
-      (b) => b.verb !== 'reveal' && b.verb !== 'camera' && b.element === element.id,
+      (b) => (b.verb === 'morph' || b.verb === 'count') && b.element === element.id,
     );
     const span = beat
       ? ([elementTime(placed, beat.t), elementTime(placed, beat.t + beat.seconds)] as const)
       : ([0, 0] as const);
-    return { ...placed, ...draw(element, sub, drawVisual, span) };
+    const spans = flowSpans(direction, element.id, boxes, (t) => elementTime(placed, t));
+    return { ...placed, ...draw(element, sub, drawVisual, span, spans) };
   });
   const shown = drawn.find((d) => d.element.kind === 'visual');
   const visual = shown?.component;
@@ -103,6 +112,7 @@ export function mountShot(
     ...(laidOut ? { laidOut } : {}),
     update(clock) {
       now = clock.t;
+      flows.update(clock.t);
       for (const d of drawn) {
         const { reveal } = d;
         if (reveal) appear(d, reveal.style, seg(clock.t, reveal.t, reveal.t + reveal.seconds), ctx);
@@ -165,6 +175,7 @@ function draw(
   ctx: ComponentContext,
   drawVisual: (ctx: ComponentContext) => Component,
   span: Span,
+  spans: FlowSpans,
 ): Part {
   switch (element.kind) {
     case 'visual':
@@ -179,8 +190,15 @@ function draw(
       return { component: morph(element.morph, ctx, span) };
     case 'metric':
       return { component: metric(element, ctx, span) };
-    case 'node':
-      return textBox(element.label, element.rect, 'node dnode', ctx);
+    case 'packet':
+      return { component: packet(element, ctx, spans) };
+    case 'node': {
+      const part = textBox(element.label, element.rect, 'node dnode', ctx);
+      const { split } = spans;
+      return split
+        ? { ...part, component: nodeSplit(part.component, element, ctx, { ...spans, split }) }
+        : part;
+    }
     case 'label':
       return textBox(element.text, element.rect, 'dlabel', ctx, toneColor(element.tone, ctx));
   }
@@ -208,15 +226,9 @@ function textBox(
 ): Part {
   const u = ctx.u;
   const tall = ctx.timeline.orientation === 'vertical';
-  const width = Math.min(slot.width, u(tall ? 760 : 520));
-  const height = Math.min(slot.height, u(tall ? 220 : 170));
   const box = el('div', className, ctx.root);
-  place(box, {
-    x: slot.x + (slot.width - width) / 2,
-    y: slot.y + (slot.height - height) / 2,
-    width,
-    height,
-  });
+  // The box edges join and packets travel to (see `nodeBoxes`): one computation for both.
+  place(box, textBoxRect(slot, ctx.regions.unit, tall));
   // The tone marks the box; the text keeps the theme's color, which reads on any tint.
   if (color) Object.assign(box.style, { borderColor: color, background: `${color}1f` });
   const label = el('div', 'nlabel', box, text);

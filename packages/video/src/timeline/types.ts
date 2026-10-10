@@ -47,6 +47,16 @@ export type CameraMove = 'zoom' | 'pan' | 'follow';
 /** How a metric element draws its number: large and counting, as bars, or before beside after. */
 export type MetricShow = 'counter' | 'bars' | 'compare';
 
+/**
+ * The verbs that stage a flow: a packet travelling an edge, one thing breaking into pieces and
+ * the pieces pulling back together, a pile stacking up, a counter counting up from zero. A shot
+ * with any of them leads as a flow.
+ */
+export const FLOW_VERBS = ['flow', 'split', 'merge', 'stack', 'count-up'] as const;
+
+/** Which side of the change a count is from: before it (base) or after it (head). */
+export type ChangeSide = 'base' | 'head';
+
 /** A code token's syntax color: a `tk-` class of the code panel. */
 export type TokenTone = 'keyword' | 'string' | 'number' | 'comment' | 'fn' | 'type' | 'prop';
 
@@ -124,6 +134,8 @@ export type DirectionElement =
       delta?: number;
     }
   | { id: string; kind: 'node'; rect: Rect; label: string }
+  /** A packet: a pill that travels edges between nodes, or sits in its slot; it can split. */
+  | { id: string; kind: 'packet'; rect: Rect; label?: string }
   | {
       id: string;
       kind: 'label';
@@ -137,7 +149,27 @@ export type DirectionBeat =
   | { verb: 'reveal'; element: string; style: RevealStyle; t: number; seconds: number }
   | { verb: 'camera'; move: CameraMove; to: string; zoom?: number; t: number; seconds: number }
   | { verb: 'morph'; element: string; t: number; seconds: number }
-  | { verb: 'count'; element: string; t: number; seconds: number };
+  | { verb: 'count'; element: string; t: number; seconds: number }
+  | { verb: 'flow'; from: string; to: string; packet?: string; t: number; seconds: number }
+  | {
+      verb: 'split';
+      element: string;
+      /** The pieces it breaks into: a measured count, of which at most twelve are drawn. */
+      count: number;
+      /** What the pieces are, as the run's output called the count. */
+      name: string;
+      side: ChangeSide;
+      t: number;
+      seconds: number;
+    }
+  | {
+      verb: 'merge';
+      element: string;
+      /** What a split merges into, when the run measured exactly one on the other side. */
+      into?: { count: 1; name: string; side: ChangeSide };
+      t: number;
+      seconds: number;
+    };
 
 /** A scene's shot, resolved. */
 export interface SceneDirection {

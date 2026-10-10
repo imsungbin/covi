@@ -735,6 +735,8 @@ export function shotSettledAt(
       return Math.max(at + 0.5, beat ? beat.t + beat.seconds + MORPH_SETTLE : 0);
     }
     if (e.kind === 'metric') return metricSettledAt(d, e);
+    // A packet is in place half a second after it enters; its verbs end with the beats.
+    if (e.kind === 'packet') return at + 0.5;
     return e.kind === 'node' || e.kind === 'label'
       ? at + 0.5
       : at + settledAt(e.visual, Math.max(0.1, duration - at));

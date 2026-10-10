@@ -240,5 +240,19 @@ ${languageRules(t)}
 .mcard .mside .mcap { font-size: ${u(30)}; }
 .mcard .marrow { display: flex; align-items: center; color: ${c.primary}; }
 .mcard .marrow svg { display: block; fill: none; stroke: currentColor; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Flows: a packet's label or a count's name cut short ends in an ellipsis, where text-fits sees it. */
+.flows svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.fdot { position: absolute; left: 0; top: 0; border-radius: 50%; background: ${c.primary}; box-shadow: ${c.shadow}; }
+.fpacket { position: absolute; left: 0; top: 0; display: flex; align-items: center; justify-content: center; padding: 0 ${u(24)};
+  border-radius: 999px; border: ${u(3)} solid ${c.primary}; background: ${c.primarySoft}; color: ${c.text}; box-shadow: ${c.shadow}; white-space: nowrap; }
+.fpacket .nlabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 720; line-height: 1.1; }
+.fpiece { position: absolute; left: 0; top: 0; border-radius: ${u(12)}; background: ${c.primary}; box-shadow: ${c.shadow}; }
+.fbadge { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: stretch; gap: ${u(4)}; text-align: center; white-space: nowrap; }
+.fbadge .fside { overflow: hidden; text-overflow: ellipsis; color: ${c.textMuted}; font-weight: 650; line-height: 1.15; }
+.fbadge .fline { display: flex; align-items: baseline; justify-content: center; gap: ${u(12)}; }
+.fbadge .fname { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: ${c.text}; font-weight: 700; line-height: 1.15; }
+.fbadge .fname.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.fbadge .fnum { flex: none; color: ${c.primary}; font-weight: 800; font-size: 1.35em; line-height: 1.05; font-variant-numeric: tabular-nums; }
 `;
 }

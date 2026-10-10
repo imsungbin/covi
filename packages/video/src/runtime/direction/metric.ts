@@ -167,7 +167,7 @@ const deltaOpacity = (t: number, window: readonly [number, number] | undefined) 
   (window ? seg(t, ...window) : 1).toFixed(3);
 
 /** A text box as QC reads it: body text, its size as drawn. */
-const textItem = (node: HTMLElement): LayoutItem => ({
+export const textItem = (node: HTMLElement): LayoutItem => ({
   role: 'text',
   rect: rectOf(node),
   overflow: overflows(node),
@@ -175,7 +175,8 @@ const textItem = (node: HTMLElement): LayoutItem => ({
   text: 'body',
 });
 
-const visible = (node: HTMLElement) => Number.parseFloat(node.style.opacity || '1') > 0;
+/** Whether a part is on screen: its opacity, as `update` set it. */
+export const visible = (node: HTMLElement) => Number.parseFloat(node.style.opacity || '1') > 0;
 
 /** The change's text item, once it is on screen. */
 const shownDelta = (delta: HTMLElement | undefined): LayoutItem[] =>

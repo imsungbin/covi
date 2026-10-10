@@ -31,9 +31,11 @@ const sceneId = (scene: Pick<Scene, 'id'>, i: number) => scene.id ?? `s${i + 1}`
  * Covi's own direction, for every run without an agent's (CI and `--json` runs get the same
  * motion as interactive ones): a code scene whose hunk is small enough morphs it, the camera
  * following the changed lines; a terminal scene whose command measured a change shows the biggest
- * one as a number beside its output; a diagram scene whose names are labels becomes its nodes,
- * with something travelling each edge in order; every other scene keeps its storyboard visual, and
- * a code scene that highlights lines zooms toward them as they light. Each scene after the first
+ * one as a number beside its output; a diagram scene becomes its nodes, with something
+ * travelling each edge in order and the nodes' details left out, unless a name is not a label, it
+ * singles out some nodes as changed, or an edge has words of its own (Covi never discards an
+ * emphasis or words the storyboard wrote); every other scene keeps its storyboard visual, and a
+ * code scene that highlights lines zooms toward them as they light. Each scene after the first
  * gets its entrance from the rotation unless the storyboard set its `transition`. Pure and
  * deterministic. It never invents content: morphs and metrics come from evidence, and a diagram's
  * nodes and flows from the storyboard's own diagram.

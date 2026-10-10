@@ -2022,8 +2022,8 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
       join(run, 'video', 'storyboard.json'),
       `${JSON.stringify(StoryboardSchema.parse(storyboard), null, 2)}\n`,
     );
-    // Covi's director would send dots along the diagram's edges; an agent's shot keeps the
-    // storyboard's diagram whole, so the diagram and its edge labels are drawn and checked here.
+    // An agent's shot keeps the storyboard's diagram whole, whatever Covi's director makes of a
+    // diagram, so the diagram and its edge labels are drawn and checked here.
     writeFileSync(
       join(run, 'video', 'direction.json'),
       `${JSON.stringify(

@@ -13,7 +13,9 @@ import { el, fitText, place, svg } from '../dom.ts';
 import {
   COMPARE_RISE,
   type CountSpan,
+  type CountUpSpan,
   compareLands,
+  counterValue,
   countProgress,
   deltaWindow,
   drawnShow,
@@ -50,14 +52,20 @@ const BARS_FALLBACK = 20;
 /** The share of the bars' width their tracks keep beside the captions and values. */
 const TRACK_SHARE = 0.35;
 
-export function metric(e: MetricElement, ctx: ComponentContext, span: Span): Component {
+export function metric(
+  e: MetricElement,
+  ctx: ComponentContext,
+  span: Span,
+  up?: CountUpSpan,
+): Component {
   // The element's own beat is its count; `[0, 0]` means nothing counts.
   const count = span[1] > span[0] ? { t: span[0], seconds: span[1] - span[0] } : undefined;
   // Bars and a compare need the value before; one value alone is drawn as a counter.
   const show = drawnShow(e);
   if (show === 'bars' && e.from !== undefined) return bars(e, e.from, ctx, count);
   if (show === 'compare' && e.from !== undefined) return compare(e, e.from, ctx, count);
-  return counter(e, ctx, count);
+  // Bars and a compare never count up; the direction file's checks refuse it.
+  return counter(e, ctx, count, up);
 }
 
 /** The card a metric is drawn on: its whole slot, its parts centered in it. */
@@ -68,17 +76,22 @@ function card(e: MetricElement, ctx: ComponentContext, className: string): HTMLD
 }
 
 /**
- * The metric's name, set as text and fitted to the card's width on one line; one too long for
- * that at the floor wraps onto a second line rather than being cut short.
+ * A card's name, fitted to the card's width on one line; one too long for that at the floor wraps
+ * onto a second line (its `wrap` class) rather than being cut short.
  */
-function nameOf(e: MetricElement, box: HTMLElement, ctx: ComponentContext): HTMLDivElement {
-  const name = el('div', 'mname', box, e.name);
+export function fitName(name: HTMLElement, box: HTMLElement, ctx: ComponentContext): void {
   const style = getComputedStyle(box);
   const padding = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
   const tall = ctx.timeline.orientation === 'vertical';
   const maxWidth = box.clientWidth - padding;
   fitText(name, { max: ctx.u(tall ? 48 : 44), min: ctx.u(TEXT_FLOOR.body), maxWidth });
   if (name.scrollWidth > maxWidth + 1) name.classList.add('wrap');
+}
+
+/** The metric's name, set as text and fitted (see `fitName`). */
+function nameOf(e: MetricElement, box: HTMLElement, ctx: ComponentContext): HTMLDivElement {
+  const name = el('div', 'mname', box, e.name);
+  fitName(name, box, ctx);
   return name;
 }
 
@@ -182,7 +195,12 @@ export const visible = (node: HTMLElement) => Number.parseFloat(node.style.opaci
 const shownDelta = (delta: HTMLElement | undefined): LayoutItem[] =>
   delta && visible(delta) ? [textItem(delta)] : [];
 
-function counter(e: MetricElement, ctx: ComponentContext, count?: CountSpan): Component {
+function counter(
+  e: MetricElement,
+  ctx: ComponentContext,
+  count?: CountSpan,
+  up?: CountUpSpan,
+): Component {
   const u = ctx.u;
   const box = card(e, ctx, 'mcounter');
   const name = nameOf(e, box, ctx);
@@ -216,12 +234,13 @@ function counter(e: MetricElement, ctx: ComponentContext, count?: CountSpan): Co
   const widest = Math.max(...widths);
   const own = widths.at(-1)!;
   const centering = valueCentering(e, count);
-  const fade = deltaWindow('counter', count);
+  // The change shows once the number has landed: on its count, else on its count-up.
+  const fade = deltaWindow('counter', count ?? up);
   let shown = '';
   let held = '';
   return {
     update(clock) {
-      const now = print(shownValue(e, e.from, clock.t, count));
+      const now = print(counterValue(e, clock.t, count, up));
       if (now !== shown) value.textContent = shown = now;
       const k = centering ? easeInOutCubic(seg(clock.t, ...centering)) : 1;
       const width = `${lerp(widest, own, k).toFixed(2)}px`;

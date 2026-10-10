@@ -6,14 +6,14 @@ import type {
   Rect,
   SceneDirection,
 } from '../../timeline/types.ts';
-import { easeInOutCubic, easeOutCubic, seg } from '../anim.ts';
+import { easeInOutCubic, easeOutBack, easeOutCubic, seg } from '../anim.ts';
 import {
   type Component,
   type ComponentContext,
   type LayoutItem,
   rectOf,
 } from '../components/types.ts';
-import { el, fitText, svg } from '../dom.ts';
+import { el, fitText, place, svg } from '../dom.ts';
 import { formatNumber } from '../numbers.ts';
 import {
   arrowHead,
@@ -24,23 +24,29 @@ import {
   legPoint,
   legProgress,
   nodeBoxRect,
+  pileGrid,
   pointAlong,
   routeLength,
   type SplitLayout,
+  stackCount,
+  stackRows,
 } from '../routes.ts';
 import { TEXT_FLOOR } from '../sizing.ts';
-import { textItem, visible } from './metric.ts';
+import { fitName, textItem, visible } from './metric.ts';
 
 /*
- * Flow verbs, drawn: edges between nodes with packets travelling them, and splits that fan a
- * packet or a node into pieces and merges that pull them back together. Every position is a pure
- * function of the clock (geometry from `routes.ts`), and all text is set as text.
+ * Flow verbs, drawn: edges between nodes with packets travelling them, splits that fan a packet
+ * or a node into pieces and merges that pull them back together, and piles that stack up to a
+ * measured count. Every position is a pure function of the clock (geometry from `routes.ts`),
+ * and all text is set as text.
  */
 
 type PacketElement = Extract<DirectionElement, { kind: 'packet' }>;
+type PileElement = Extract<DirectionElement, { kind: 'pile' }>;
 type Flow = Extract<DirectionBeat, { verb: 'flow' }>;
 type Split = Extract<DirectionBeat, { verb: 'split' }>;
 type Merge = Extract<DirectionBeat, { verb: 'merge' }>;
+type Stack = Extract<DirectionBeat, { verb: 'stack' }>;
 
 /** A beat's span on an element's own clock, in seconds. */
 export interface BeatSpan {
@@ -64,6 +70,8 @@ export interface MergeSpan extends BeatSpan {
 export interface FlowSpans {
   split?: SplitSpan;
   merge?: MergeSpan;
+  /** A pile's stack, which fills its rows. */
+  stack?: BeatSpan;
   /** A packet's trips along edges, in time order. */
   legs: Leg[];
 }
@@ -103,6 +111,7 @@ export function flowSpans(
   });
   const split = splitOf(direction, id);
   const merge = direction.beats.find((b): b is Merge => b.verb === 'merge' && b.element === id);
+  const stack = direction.beats.find((b): b is Stack => b.verb === 'stack' && b.element === id);
   const legs: Leg[] = [];
   for (const b of direction.beats) {
     if (b.verb !== 'flow' || b.packet !== id) continue;
@@ -116,6 +125,7 @@ export function flowSpans(
       ? { split: { ...on(split), count: split.count, name: split.name, side: split.side } }
       : {}),
     ...(merge ? { merge: { ...on(merge), ...(merge.into ? { into: merge.into } : {}) } } : {}),
+    ...(stack ? { stack: on(stack) } : {}),
   };
 }
 
@@ -458,5 +468,86 @@ export function nodeSplit(
       split.update(clock.t, layout.origin);
     },
     report: () => [...node.report(), ...split.report()],
+  };
+}
+
+/**
+ * A pile: a card with what is counted (the run's own word for it, or the agent's label, set as
+ * text) and a row per side, before above after, each up to twelve items and the true number. A
+ * stack fills the rows one after the other, item by item, the number counting up with them; a
+ * merge collapses each row into its first item.
+ */
+export function pile(e: PileElement, ctx: ComponentContext, spans: FlowSpans): Component {
+  const u = ctx.u;
+  const labels = ctx.timeline.labels;
+  const card = el('div', 'pcard', ctx.root);
+  place(card, e.rect);
+  const name = el('div', 'pname', card, e.name);
+  const rows = e.rows.map((r) => {
+    const row = el('div', 'prow', card);
+    const cap = el(
+      'div',
+      'pcap',
+      row,
+      r.side === 'base' ? (labels?.before ?? 'Before') : (labels?.after ?? 'After'),
+    );
+    const grid = el('div', 'pgrid', row);
+    const num = el('div', 'pnum', row, formatNumber(r.count, 0));
+    return { ...r, cap, grid, num, row };
+  });
+  // The name first: wrapped onto a second line, it leaves the rows less room.
+  fitName(name, card, ctx);
+  const rowHeight = rows[0]?.row.clientHeight ?? 0;
+  const numFont = Math.max(u(36), Math.min(u(72), 0.55 * rowHeight));
+  for (const r of rows) {
+    r.cap.style.fontSize = `${u(30)}px`;
+    r.num.style.fontSize = `${numFont}px`;
+  }
+  // Every row's caption and number take the widest one's width, so the rows' items line up; the
+  // numbers are measured at the true counts, so counting up never moves the items.
+  for (const parts of [rows.map((r) => r.cap), rows.map((r) => r.num)]) {
+    const widest = Math.max(...parts.map((p) => p.scrollWidth)) + 2;
+    for (const p of parts) p.style.minWidth = `${widest}px`;
+  }
+  const items = rows.map((r) =>
+    pileGrid(r.count, { width: r.grid.clientWidth, height: r.grid.clientHeight }, u(10)).map(
+      (rect) => {
+        const item = el('div', `pitem ${r.side}`, r.grid);
+        place(item, rect);
+        return { item, rect };
+      },
+    ),
+  );
+  return {
+    update(clock) {
+      const t = clock.t;
+      const { stack, merge } = spans;
+      const k = stack ? seg(t, stack.t, stack.t + stack.seconds) : 1;
+      const km = merge ? easeInOutCubic(seg(t, merge.t, merge.t + merge.seconds)) : 0;
+      const progress = stackRows(k, rows.length);
+      rows.forEach((r, i) => {
+        const row = items[i]!;
+        const n = row.length;
+        // A merge gathers every item onto the row's first, and the rest fade as they arrive.
+        const first = row[0]?.rect;
+        row.forEach(({ item, rect }, j) => {
+          const p = seg(progress[i]!, j / n, (j + 1) / n);
+          const dx = ((first?.x ?? rect.x) - rect.x) * km;
+          const dy = ((first?.y ?? rect.y) - rect.y) * km;
+          const scale = p >= 1 ? 1 : 0.4 + 0.6 * easeOutBack(p);
+          item.style.transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) scale(${scale.toFixed(4)})`;
+          const gone = j > 0 ? seg(km, 0.8, 1) : 0;
+          item.style.opacity = (p > 0 ? Math.min(1, p * 3) * (1 - gone) : 0).toFixed(3);
+        });
+        const text = formatNumber(stackCount(r.count, progress[i]!), 0);
+        if (r.num.textContent !== text) r.num.textContent = text;
+        r.num.style.opacity = (1 - km).toFixed(3);
+      });
+    },
+    report: () => [
+      { role: 'media', rect: rectOf(card) },
+      textItem(name),
+      ...rows.flatMap((r) => [textItem(r.cap), ...(visible(r.num) ? [textItem(r.num)] : [])]),
+    ],
   };
 }

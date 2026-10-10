@@ -254,5 +254,18 @@ ${languageRules(t)}
 .fbadge .fname { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: ${c.text}; font-weight: 700; line-height: 1.15; }
 .fbadge .fname.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .fbadge .fnum { flex: none; color: ${c.primary}; font-weight: 800; font-size: 1.35em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+
+/* Piles: a name too long for one line wraps onto two, as a metric's does; one too long for that is
+   cut off, where text-fits sees it. Before's items take the line color and after's the primary. */
+.pcard { position: absolute; display: flex; flex-direction: column; gap: ${u(18)}; padding: ${u(28)} ${u(32)}; border-radius: ${u(28)};
+  border: ${u(3)} solid ${c.line}; background: ${c.surface}; box-shadow: ${c.shadow}; overflow: hidden; }
+.pcard .pname { flex: none; color: ${c.textMuted}; font-weight: 650; line-height: 1.2; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pcard .pname.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pcard .prow { flex: 1 1 0; min-height: 0; display: flex; align-items: center; gap: ${u(18)}; }
+.pcard .pcap { flex: none; color: ${c.textMuted}; font-weight: 650; white-space: nowrap; line-height: 1.15; }
+.pcard .pgrid { position: relative; flex: 1 1 auto; align-self: stretch; min-width: 0; }
+.pcard .pitem { position: absolute; border-radius: ${u(8)}; background: ${c.line}; transform-origin: center; }
+.pcard .pitem.head { background: ${c.primary}; }
+.pcard .pnum { flex: none; text-align: right; color: ${c.text}; font-weight: 800; line-height: 1.05; white-space: nowrap; font-variant-numeric: tabular-nums; }
 `;
 }

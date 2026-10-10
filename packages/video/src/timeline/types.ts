@@ -57,6 +57,12 @@ export const FLOW_VERBS = ['flow', 'split', 'merge', 'stack', 'count-up'] as con
 /** Which side of the change a count is from: before it (base) or after it (head). */
 export type ChangeSide = 'base' | 'head';
 
+/** One row of a pile: the count of one side, drawn as up to twelve items and the true number. */
+export interface PileRow {
+  side: ChangeSide;
+  count: number;
+}
+
 /** A code token's syntax color: a `tk-` class of the code panel. */
 export type TokenTone = 'keyword' | 'string' | 'number' | 'comment' | 'fn' | 'type' | 'prop';
 
@@ -136,6 +142,8 @@ export type DirectionElement =
   | { id: string; kind: 'node'; rect: Rect; label: string }
   /** A packet: a pill that travels edges between nodes, or sits in its slot; it can split. */
   | { id: string; kind: 'packet'; rect: Rect; label?: string }
+  /** A pile: a measured count of each side, stacked as items, with its true number. */
+  | { id: string; kind: 'pile'; rect: Rect; name: string; rows: PileRow[] }
   | {
       id: string;
       kind: 'label';
@@ -169,7 +177,9 @@ export type DirectionBeat =
       into?: { count: 1; name: string; side: ChangeSide };
       t: number;
       seconds: number;
-    };
+    }
+  | { verb: 'stack'; element: string; t: number; seconds: number }
+  | { verb: 'count-up'; element: string; value: number; t: number; seconds: number };
 
 /** A scene's shot, resolved. */
 export interface SceneDirection {

@@ -204,6 +204,7 @@ const LOOKS_LIKE = {
   node: 'diagram',
   label: 'callout',
   packet: 'flow',
+  pile: 'flow',
 } as const satisfies Record<Exclude<DirectionElement['kind'], 'visual'>, LeadKind>;
 
 /**

@@ -21,8 +21,17 @@ import {
 } from '../components/types.ts';
 import { el, fitText, place } from '../dom.ts';
 import { union } from '../narrator.ts';
+import type { CountUpSpan } from '../numbers.ts';
 import { splitLayout, textBoxRect } from '../routes.ts';
-import { type FlowSpans, flowSpans, mountFlows, nodeBoxes, nodeSplit, packet } from './flow.ts';
+import {
+  type FlowSpans,
+  flowSpans,
+  mountFlows,
+  nodeBoxes,
+  nodeSplit,
+  packet,
+  pile,
+} from './flow.ts';
 import { metric } from './metric.ts';
 import { morph } from './morph.ts';
 
@@ -44,6 +53,7 @@ export interface ShotComponent extends Component {
 }
 
 type Reveal = Extract<DirectionBeat, { verb: 'reveal' }>;
+type CountUp = Extract<DirectionBeat, { verb: 'count-up' }>;
 
 interface Part {
   component: Component;
@@ -98,7 +108,12 @@ export function mountShot(
       ? ([elementTime(placed, beat.t), elementTime(placed, beat.t + beat.seconds)] as const)
       : ([0, 0] as const);
     const spans = flowSpans(direction, element.id, boxes, (t) => elementTime(placed, t));
-    return { ...placed, ...draw(element, sub, drawVisual, span, spans) };
+    // A counter's count-up, on its clock too: it counts up before its count, if it has one.
+    const up = direction.beats.find(
+      (b): b is CountUp => b.verb === 'count-up' && b.element === element.id,
+    );
+    const countUp = up && { t: elementTime(placed, up.t), seconds: up.seconds, value: up.value };
+    return { ...placed, ...draw(element, sub, drawVisual, span, spans, countUp) };
   });
   const shown = drawn.find((d) => d.element.kind === 'visual');
   const visual = shown?.component;
@@ -176,6 +191,7 @@ function draw(
   drawVisual: (ctx: ComponentContext) => Component,
   span: Span,
   spans: FlowSpans,
+  up?: CountUpSpan,
 ): Part {
   const tall = ctx.timeline.orientation === 'vertical';
   // A node's or a label's box in its slot; edges join a node where it is drawn (see `nodeBoxes`).
@@ -192,9 +208,11 @@ function draw(
     case 'morph':
       return { component: morph(element.morph, ctx, span) };
     case 'metric':
-      return { component: metric(element, ctx, span) };
+      return { component: metric(element, ctx, span, up) };
     case 'packet':
       return { component: packet(element, ctx, spans) };
+    case 'pile':
+      return { component: pile(element, ctx, spans) };
     case 'node': {
       const { split } = spans;
       if (!split) return textBox(element.label, box(), 'node dnode', ctx);

@@ -19,7 +19,13 @@ import { type Browser, chromium } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { elementSlots } from '../../packages/video/src/direction/layout.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
-import { edgeRoute, pointAlong } from '../../packages/video/src/runtime/routes.ts';
+import {
+  edgeRoute,
+  pointAlong,
+  stackCount,
+  stackRows,
+} from '../../packages/video/src/runtime/routes.ts';
+import { TEXT_FLOOR } from '../../packages/video/src/runtime/sizing.ts';
 import { orientationOf } from '../../packages/video/src/spec.ts';
 import { canUseBrowser } from '../helpers/env.ts';
 
@@ -553,5 +559,235 @@ describe.skipIf(!available)('splits and merges', () => {
       const frame = c.frameAt(t);
       expect((await d.shot(frame)).equals(await c.shot(frame))).toBe(true);
     }
+  });
+});
+
+const READS = (r: ReturnType<typeof regionsOf>): DirectionElement[] => [
+  {
+    id: 'reads',
+    kind: 'pile',
+    rect: r.media,
+    name: 'reader steps',
+    rows: [
+      { side: 'base', count: 28 },
+      { side: 'head', count: 10 },
+    ],
+  },
+];
+const STACK = { verb: 'stack', element: 'reads', t: 1, seconds: 1.8 } as const;
+/** A counter's change in percent: its opacity at a frame. */
+const deltaAt = (v: Staged, frame: number) =>
+  v.seek(
+    frame,
+    `return Number.parseFloat(document.querySelector('[data-scene="s2"] .mdelta').style.opacity || '1');`,
+  ) as Promise<number>;
+
+describe.skipIf(!available)('piles and count-ups', () => {
+  it('stacks a pile item by item, before then after, the number counting up to the true count', async () => {
+    const v = await staged(READS, [STACK]);
+    expect((await read(v, v.frameAt(0.5))).rows).toEqual([
+      { cap: 'Before', items: 0, num: '0', numOpacity: 1 },
+      { cap: 'After', items: 0, num: '0', numOpacity: 1 },
+    ]);
+    const frame = v.frameAt(STACK.t + STACK.seconds / 4);
+    const [base, head] = stackRows((v.local(frame) - STACK.t) / STACK.seconds, 2);
+    const mid = await read(v, frame);
+    const visible = (k: number, n: number) =>
+      Array.from({ length: n }, (_, j) => j).filter((j) => k * n > j).length;
+    expect(mid.rows.map((r) => r.items)).toEqual([visible(base!, 12), visible(head!, 10)]);
+    expect(mid.rows.map((r) => r.num)).toEqual([
+      String(stackCount(28, base!)),
+      String(stackCount(10, head!)),
+    ]);
+    expect(mid.rows[0]!.items).toBeGreaterThan(0);
+    expect(mid.rows[0]!.items).toBeLessThan(12);
+    const done = await read(v, v.frameAt(STACK.t + STACK.seconds + 0.2));
+    expect(done.rows.map((r) => [r.items, r.num])).toEqual([
+      [12, '28'],
+      [10, '10'],
+    ]);
+    expect(done.pileName).toBe('reader steps');
+    // The rows' items line up, whatever their captions and numbers.
+    const lefts = (await v.seek(
+      v.frameAt(3),
+      `return [...document.querySelectorAll('.prow')].map((row) => row.querySelector('.pitem').getBoundingClientRect().x);`,
+    )) as number[];
+    expect(lefts[1]).toBeCloseTo(lefts[0]!, 1);
+    // Body text, at least the body floor, and nothing overflows.
+    const items = (await v.report(v.frameAt(3))).items.filter((i) => i.role === 'text');
+    expect(items.length).toBeGreaterThanOrEqual(5);
+    for (const item of items) {
+      expect(item.overflow).toBe(false);
+      expect(item.font! / v.r.regions.unit).toBeGreaterThanOrEqual(TEXT_FLOOR.body - 0.1);
+    }
+    expect(v.errors).toEqual([]);
+  });
+
+  it('shows a pile with no stack whole from the start, and collapses it when it merges', async () => {
+    const v = await staged(READS, [{ verb: 'merge', element: 'reads', t: 2, seconds: 0.8 }]);
+    expect((await read(v, v.frameAt(0.3))).rows.map((r) => [r.items, r.num])).toEqual([
+      [12, '28'],
+      [10, '10'],
+    ]);
+    const merged = await read(v, v.frameAt(3.1));
+    expect(merged.rows.map((r) => [r.items, r.numOpacity])).toEqual([
+      [1, 0],
+      [1, 0],
+    ]);
+  });
+
+  it('fits two rows in a tall frame', async () => {
+    const v = await staged(READS, [STACK], VERTICAL);
+    const frame = v.frameAt(3);
+    const card = (await v.seek(
+      frame,
+      `const r = document.querySelector('.pcard').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };`,
+    )) as Rect;
+    const inside = (await v.seek(
+      frame,
+      `return [...document.querySelectorAll('.pitem')].map((n) => { const r = n.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; });`,
+    )) as Rect[];
+    expect(inside).toHaveLength(22);
+    for (const r of inside) {
+      expect(r.x).toBeGreaterThanOrEqual(card.x - 1);
+      expect(r.x + r.width).toBeLessThanOrEqual(card.x + card.width + 1);
+      expect(r.y).toBeGreaterThanOrEqual(card.y - 1);
+      expect(r.y + r.height).toBeLessThanOrEqual(card.y + card.height + 1);
+    }
+    expect((await v.report(frame)).items.some((i) => i.overflow)).toBe(false);
+  });
+
+  it('wraps a long name onto two lines, and reports one too long even for that', async () => {
+    // Half the frame's width, as a staged shot gives a pile beside its counter.
+    const named = (name: string) =>
+      staged(
+        (r) => [{ ...(READS(r)[0] as DirectionElement & { kind: 'pile' }), rect: r.right, name }],
+        [STACK],
+      );
+    const nameOf = (v: Staged) =>
+      v.seek(
+        v.frameAt(3),
+        `const n = document.querySelector('.pname'); return [Number.parseFloat(n.style.fontSize), n.getBoundingClientRect().height];`,
+      ) as Promise<[number, number]>;
+    const overflowing = async (v: Staged) =>
+      (await v.report(v.frameAt(3))).items.filter((item) => item.overflow).length;
+    const two = await named(
+      'documents the reader fetched one at a time from the request queue, in the order they came',
+    );
+    const [size, height] = await nameOf(two);
+    expect(size).toBeGreaterThanOrEqual(TEXT_FLOOR.body * two.r.regions.unit - 0.01);
+    expect(height).toBeGreaterThan(2 * size);
+    expect(await overflowing(two)).toBe(0);
+    const long = await named(
+      'documents the reader fetched one at a time from the request queue, in the order they came, again and again, until the queue was empty and nothing else was left to read',
+    );
+    expect(await overflowing(long)).toBeGreaterThan(0);
+  });
+
+  it('sets a pile’s name as text, whatever it holds', async () => {
+    const hostile = '<b onmouseover="window.__pwned=2">steps</b>';
+    const v = await staged(
+      (r) => [
+        {
+          id: 'reads',
+          kind: 'pile',
+          rect: r.media,
+          name: hostile,
+          rows: [{ side: 'head', count: 3 }],
+        },
+      ],
+      [],
+    );
+    const frame = v.frameAt(1);
+    expect((await read(v, frame)).pileName).toBe(hostile);
+    expect(
+      await v.seek(frame, 'return document.querySelectorAll("[data-element] b").length;'),
+    ).toBe(0);
+  });
+
+  it('draws the same pile frame every time', async () => {
+    const make = () =>
+      staged(READS, [STACK, { verb: 'merge', element: 'reads', t: 3.2, seconds: 0.8 }]);
+    const [a, b] = [await make(), await make()];
+    for (const t of [1.6, 3.6]) {
+      const frame = a.frameAt(t);
+      expect((await b.shot(frame)).equals(await a.shot(frame))).toBe(true);
+    }
+  });
+
+  it('counts a counter up from zero, holds it, then counts it from before to after', async () => {
+    const v = await staged(
+      (r) => [
+        {
+          id: 'bytes',
+          kind: 'metric',
+          rect: r.media,
+          show: 'counter',
+          name: 'request bytes',
+          from: 70406,
+          to: 9907,
+          decimals: 0,
+          delta: -86,
+        },
+      ],
+      [
+        { verb: 'count-up', element: 'bytes', value: 70406, t: 0.5, seconds: 1.6 },
+        { verb: 'count', element: 'bytes', t: 2.6, seconds: 1.6 },
+      ],
+    );
+    expect((await read(v, v.frameAt(0.3))).value).toBe('0');
+    const rising = Number((await read(v, v.frameAt(1.3))).value!.replace(/,/g, ''));
+    expect(rising).toBeGreaterThan(0);
+    expect(rising).toBeLessThan(70406);
+    expect((await read(v, v.frameAt(2.3))).value).toBe('70,406');
+    expect((await read(v, v.frameAt(4.5))).value).toBe('9,907');
+    // The change shows once the count has landed it, not while it counts up.
+    for (const [t, opacity] of [
+      [1.3, 0],
+      [2.3, 0],
+      [4.8, 1],
+    ] as const)
+      expect(await deltaAt(v, v.frameAt(t))).toBe(opacity);
+  });
+
+  it('shows a counter’s change once its count-up has landed, when no count follows', async () => {
+    const v = await staged(
+      (r) => [
+        {
+          id: 'bytes',
+          kind: 'metric',
+          rect: r.media,
+          show: 'counter',
+          name: 'request bytes',
+          from: 70406,
+          to: 9907,
+          decimals: 0,
+          delta: -86,
+        },
+      ],
+      [{ verb: 'count-up', element: 'bytes', value: 9907, t: 0.5, seconds: 1.6 }],
+    );
+    expect(await deltaAt(v, v.frameAt(1.3))).toBe(0);
+    expect((await read(v, v.frameAt(2.7))).value).toBe('9,907');
+    expect(await deltaAt(v, v.frameAt(2.7))).toBe(1);
+  });
+
+  it('counts a single value up from zero', async () => {
+    const v = await staged(
+      (r) => [
+        {
+          id: 'n',
+          kind: 'metric',
+          rect: r.media,
+          show: 'counter',
+          name: 'reader steps',
+          to: 28,
+          decimals: 0,
+        },
+      ],
+      [{ verb: 'count-up', element: 'n', value: 28, t: 0.5, seconds: 1.6 }],
+    );
+    expect((await read(v, v.frameAt(0.3))).value).toBe('0');
+    expect((await read(v, v.frameAt(2.5))).value).toBe('28');
   });
 });

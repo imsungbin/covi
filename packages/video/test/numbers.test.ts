@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COMPARE_LANDS,
   COMPARE_RISE,
+  counterValue,
   countProgress,
   DELTA_FADE,
   deltaWindow,
@@ -95,5 +96,47 @@ describe('numbers as a video draws them', () => {
       9,
     );
     expect(metricSettled({ ...counter, show: 'bars' }, count)).toBeCloseTo(2.6, 9);
+  });
+
+  it('settle a counter that only counts up once it has landed, with no centering to wait for', () => {
+    const up = { t: 1, seconds: 1.6 };
+    const counter = { show: 'counter' as const, from: 70406 };
+    // It counts up to its own value, already at its own width: it lands, and its change fades in.
+    expect(metricSettled(counter, undefined, up)).toBeCloseTo(2.6, 9);
+    expect(metricSettled({ ...counter, delta: -86 }, undefined, up)).toBeCloseTo(
+      2.6 + DELTA_FADE,
+      9,
+    );
+    // Bars never count up, so a count-up never holds them back.
+    expect(metricSettled({ ...counter, show: 'bars' }, undefined, up)).toBe(0);
+    // With a count after it, the count lands it and centers it.
+    const count = { t: 3, seconds: 1.6 };
+    expect(metricSettled(counter, count, up)).toBeCloseTo(4.6 + VALUE_CENTER, 9);
+    expect(metricSettled({ ...counter, delta: -86 }, count, up)).toBeCloseTo(
+      4.6 + Math.max(VALUE_CENTER, DELTA_FADE),
+      9,
+    );
+  });
+});
+
+describe('counting up', () => {
+  it('rise from zero to one side, hold it, then tick from before to after', () => {
+    const bytes = { from: 70406, to: 9907, decimals: 0 };
+    const up = { t: 1, seconds: 2, value: 70406 };
+    const count = { t: 4, seconds: 1 };
+    expect(counterValue(bytes, 0.5, count, up)).toBe(0);
+    expect(counterValue(bytes, 2, count, up)).toBe(Math.round(70406 * 0.875));
+    expect(counterValue(bytes, 3.5, count, up)).toBe(70406);
+    expect(counterValue(bytes, 9, count, up)).toBe(9907);
+    // Without a count-up, as B4 drew it: from before the count, to after it.
+    expect(counterValue(bytes, 0.5, count)).toBe(70406);
+    expect(counterValue(bytes, 9)).toBe(9907);
+    // One value, counted up and held.
+    expect(
+      counterValue({ to: 28, decimals: 0 }, 0.5, undefined, { t: 1, seconds: 1, value: 28 }),
+    ).toBe(0);
+    expect(
+      counterValue({ to: 28, decimals: 0 }, 5, undefined, { t: 1, seconds: 1, value: 28 }),
+    ).toBe(28);
   });
 });

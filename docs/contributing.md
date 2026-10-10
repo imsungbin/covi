@@ -290,7 +290,7 @@ The renderer splits a video into segments and renders them in parallel browser p
 - **Text must fit its box.** Use `fitText` for text with a size range. Components report their layout, and video QC fails when captions cover demonstrated content. It also flags text overflow and warns when the narrator, tail included, covers content, captions, or header text. A component with something highlighted returns it from `target()`, and the narrator's tail points at it.
 - **Use the design tokens** from `packages/brand` through the timeline's theme. Don't hard-code colors (see [visual system](visual-system.md)).
 
-`npm run typecheck` checks the runtime against DOM types. To see a change, render an example. Then open `video/contact-sheet.jpg` (the opening, every scene, every transition, and the hero's accent) and `video/poster.png` in the run directory. With ffmpeg and Chromium installed, `npm test` includes a determinism test that renders the same frame from two compositions and compares the bytes.
+`npm run typecheck` checks the runtime against DOM types. To see a change, render an example. Then open `video/contact-sheet.jpg` (the opening, every scene, every transition, the hero's accent, and every morph's middle) and `video/poster.png` in the run directory. With ffmpeg and Chromium installed, `npm test` includes a determinism test that renders the same frame from two compositions and compares the bytes.
 
 A moment that makes a sound (a click, the before/after reveal, a finding card, the verdict) is timed by a function in `packages/video/src/timeline/cues.ts`, which the component draws with and the sound engine places effects with. Change the timing there, never as a number in the component; a test checks that the components import it.
 

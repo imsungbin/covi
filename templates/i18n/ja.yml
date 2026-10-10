@@ -715,6 +715,7 @@ video:
     terminal: ターミナル
     signOff: Covi でレビュー済み
   moreLines: { other: '… ほか {count} 行' }
+  elided: { other: '… {count} 行' }
   musicHint: '音楽: Covi のテーマ。変えるには `covi render --run {run} --music none` か `--music compose` を実行してください。'
 
 narration:

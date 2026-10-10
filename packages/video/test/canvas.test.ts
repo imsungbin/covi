@@ -7,6 +7,7 @@ import {
   clampView,
   clipRect,
   drawnRect,
+  follower,
   gridStyle,
   insetOf,
   isCameraMove,
@@ -118,6 +119,70 @@ describe('the canvas camera', () => {
     const later = viewAt(steps, 2, rest);
     expect(later.scale).toBeCloseTo(halfway.scale + (b.scale - halfway.scale) * 0.5, 9);
     expect(viewAt(steps, 2.6, rest)).toEqual(b);
+  });
+
+  it('keeps up with a moving target once a follow beat has eased in, until the next beat', () => {
+    const rest = restView(pivot);
+    // A target drifting down 100 px a second, framed at 2×.
+    const moving = (t: number) => ({ x: 900, y: 500 + 100 * t, scale: 2 });
+    const later = { x: 700, y: 520, scale: 1.25 };
+    const steps: CameraStep[] = [
+      { t: 1, seconds: 1, to: moving },
+      { t: 4, seconds: 1, to: later },
+    ];
+    expect(viewAt(steps, 0.5, rest)).toEqual(rest);
+    // Halfway through its ease, the camera is halfway to where the target is by then.
+    const easing = viewAt(steps, 1.5, rest);
+    expect(easing.y).toBeCloseTo(rest.y + easeInOutCubic(0.5) * (moving(1.5).y - rest.y), 9);
+    // Eased in, it sits on the target at every moment.
+    for (const t of [2, 2.7, 3.9]) expect(viewAt(steps, t, rest)).toEqual(moving(t));
+    // The next beat starts from where the target had got to.
+    const next = viewAt(steps, 4.5, rest);
+    expect(next.y).toBeCloseTo(moving(4).y + easeInOutCubic(0.5) * (later.y - moving(4).y), 9);
+  });
+
+  it('follows a moving target at one scale: the zoom given, else what fits every box it takes', () => {
+    const bounds = { x: 800, y: 400, width: 200, height: 300 };
+    const fit = beatView('zoom', bounds, undefined, restView(pivot), media, pivot).scale;
+    const fitted = follower(bounds, undefined, media, pivot);
+    for (const height of [20, 150, 300]) expect(fitted({ ...bounds, height }).scale).toBe(fit);
+    const zoomed = follower(bounds, 1.6, media, pivot);
+    expect(zoomed({ ...bounds, height: 20 }).scale).toBe(1.6);
+    // Clear of its clamps, it frames as a beat does: a target that fits centered, one wider than
+    // the view from its start.
+    const small = { x: 940, y: 527, width: 40, height: 20 };
+    const wide = { x: 420, y: 527, width: 1800, height: 20 };
+    for (const target of [small, wide])
+      expect(zoomed(target)).toEqual(
+        beatView('follow', target, 1.6, restView(pivot), media, pivot),
+      );
+  });
+
+  it('eases into its clamps: the camera slows down rather than stopping dead, inside the region', () => {
+    const frame = follower(media, 2, media, pivot);
+    /** How much the speed changes from one step to the next, at most. */
+    const jerk = (v: number[]) =>
+      Math.max(...v.slice(2).map((x, i) => Math.abs(x - 2 * v[i + 1]! + v[i]!)));
+    // A target growing down from a fixed top, a pixel a step, until it is twice the view's height:
+    // centered while it fits, then showing its start (from a top where both stay clear of the
+    // region's edges).
+    const top = pivot.y - 85;
+    const grown = Array.from(
+      { length: 700 },
+      (_, i) => frame({ x: pivot.x, y: top, width: 10, height: 10 + i }).y,
+    );
+    expect(grown[0]).toBe(top + 5);
+    expect(grown.at(-1)).toBe(top + media.height / 4);
+    expect(jerk(grown)).toBeLessThan(0.01);
+    // A target sliding right, a pixel a step, past where the view meets the region's edge.
+    const edge = media.x + media.width - (media.x + media.width - pivot.x) / 2;
+    const slid = Array.from(
+      { length: 1000 },
+      (_, i) => frame({ x: pivot.x + i, y: pivot.y, width: 10, height: 10 }).x,
+    );
+    expect(Math.max(...slid)).toBeLessThanOrEqual(edge);
+    expect(slid.at(-1)).toBe(edge);
+    expect(jerk(slid)).toBeLessThan(0.01);
   });
 
   it('pans and zooms between stops, continuous at both ends', () => {

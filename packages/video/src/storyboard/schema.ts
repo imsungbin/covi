@@ -119,7 +119,13 @@ export const VisualSchema = z.discriminatedUnion('kind', [
         z.strictObject({
           type: z.enum(['add', 'del', 'context']),
           text: z.string(),
-          number: z.number().int().optional(),
+          number: z
+            .number()
+            .int()
+            .optional()
+            .describe(
+              "The line's number in its file, as the diff numbers it: a deleted line's before the change, an added or unchanged line's after it. Covi's default direction finds the hunk a scene shows by these numbers.",
+            ),
         }),
       )
       .min(1)

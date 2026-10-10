@@ -20,7 +20,7 @@ import { el, escapeHtml } from '../dom.ts';
 import { center, marksCamera, tourNote } from '../framing.ts';
 import { highlightLine } from '../highlight.ts';
 import { union } from '../narrator.ts';
-import { CARD_FILL, cardHeight, codeFont } from '../sizing.ts';
+import { CARD_FILL, cardHeight, codeCard, codeFont } from '../sizing.ts';
 import { choreograph, Frame } from './frame.ts';
 import {
   type Component,
@@ -515,25 +515,18 @@ export function code(v: V<'code'>, ctx: ComponentContext): Component {
       body.append(rows[i]!.row);
       rows[i]!.place = place;
     });
-  // Size code by its typical (90th percentile) line so one long line does not shrink everything;
-  // longer lines end in an ellipsis rather than wrapping.
-  const lengths = v.lines.map((l) => l.text.length + 7).sort((a, b) => a - b);
-  const typical = Math.max(28, lengths[Math.floor((lengths.length - 1) * 0.9)] ?? 28);
-  const fontByWidth = (box.width - ctx.u(40)) / (typical * 0.61);
-  const fontByHeight = (box.height - ctx.u(90)) / (v.lines.length * 1.55 + 1.2);
-  const font = codeFont(
-    Math.min(fontByWidth, fontByHeight),
+  const { font, height, top, padding } = codeCard(
+    v.lines.map((l) => l.text),
+    v.lines.length,
+    box,
     ctx.timeline.orientation,
     ctx.regions.unit,
   );
   body.style.fontSize = `${font}px`;
-  // A short block still gets a card that fills most of the region, its lines in the middle.
-  const natural = Math.min(box.height, v.lines.length * font * 1.55 + font * 1.2 + ctx.u(66));
-  const height = cardHeight(box, box.width, natural);
-  body.style.paddingTop = `${ctx.u(14) + (height - natural) / 2}px`;
+  body.style.paddingTop = `${padding}px`;
   Object.assign(panel.style, {
     left: `${box.x}px`,
-    top: `${box.y + (box.height - height) / 2}px`,
+    top: `${top}px`,
     width: `${box.width}px`,
     height: `${height}px`,
   });

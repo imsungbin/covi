@@ -1,4 +1,4 @@
-import { type EvidenceItem, indexEvidence } from '@covi/core';
+import { buildEvidence, type EvidenceItem, type Hunk, indexEvidence } from '@covi/core';
 import { describe, expect, it } from 'vitest';
 import { TRANSITION_MIN, TRANSITION_SHARE } from '../src/density.ts';
 import {
@@ -250,5 +250,182 @@ describe('the default director', () => {
       expect(moves.filter((k) => k === (seed % 2 === 0 ? 'pan' : 'push'))).toHaveLength(6);
       expect(most(moves) / moves.length).toBeLessThanOrEqual(TRANSITION_SHARE);
     }
+  });
+});
+
+describe('the default director’s morphs', () => {
+  // One small replacement, and one hunk with more added lines than a morph shows.
+  const small: Hunk = {
+    oldStart: 10,
+    oldLines: 3,
+    newStart: 10,
+    newLines: 3,
+    lines: [
+      { kind: 'context', text: 'function take(qty) {', oldLine: 10, newLine: 10 },
+      { kind: 'del', text: '  qty = qty - 1;', oldLine: 11 },
+      { kind: 'add', text: '  qty = Math.max(0, qty - 1);', newLine: 11 },
+      { kind: 'context', text: '}', oldLine: 12, newLine: 12 },
+    ],
+  };
+  const large: Hunk = {
+    oldStart: 1,
+    oldLines: 1,
+    newStart: 1,
+    newLines: 14,
+    lines: [
+      { kind: 'context', text: 'start();', oldLine: 1, newLine: 1 },
+      ...Array.from({ length: 13 }, (_, i) => ({
+        kind: 'add' as const,
+        text: `step${i}();`,
+        newLine: i + 2,
+      })),
+    ],
+  };
+  // A one-line replacement at `at`: small enough to morph on its own.
+  const swap = (at: number, from: string, to: string): Hunk => ({
+    oldStart: at,
+    oldLines: 1,
+    newStart: at,
+    newLines: 1,
+    lines: [
+      { kind: 'del', text: from, oldLine: at },
+      { kind: 'add', text: to, newLine: at },
+    ],
+  });
+  // A replacement after 30 added lines: its deleted line sits 30 lines before where it now begins.
+  const shifted: Hunk = {
+    oldStart: 40,
+    oldLines: 3,
+    newStart: 70,
+    newLines: 3,
+    lines: [
+      { kind: 'context', text: 'open();', oldLine: 40, newLine: 70 },
+      { kind: 'del', text: 'read(1);', oldLine: 41 },
+      { kind: 'add', text: 'read(2);', newLine: 71 },
+      { kind: 'context', text: 'close();', oldLine: 42, newLine: 72 },
+    ],
+  };
+  const grown: Hunk = {
+    oldStart: 1,
+    oldLines: 1,
+    newStart: 1,
+    newLines: 31,
+    lines: [
+      { kind: 'context', text: 'init();', oldLine: 1, newLine: 1 },
+      ...Array.from({ length: 30 }, (_, i) => ({
+        kind: 'add' as const,
+        text: `setup${i}();`,
+        newLine: i + 2,
+      })),
+    ],
+  };
+  const files = [
+    { path: 'src/cart.ts', language: 'typescript', hunks: [small] },
+    { path: 'src/steps.ts', language: 'typescript', hunks: [large] },
+    {
+      path: 'src/pair.ts',
+      language: 'typescript',
+      hunks: [swap(1, 'a();', 'b();'), swap(20, 'c();', 'd();')],
+    },
+    { path: 'src/shift.ts', language: 'typescript', hunks: [grown, shifted] },
+  ];
+  const run = indexEvidence(buildEvidence({ diff: files }));
+  const sources = directionSources({ files, evidence: run });
+  const shows = (path: string, extra: Record<string, unknown> = {}) => ({
+    kind: 'code',
+    path,
+    lines: [
+      { type: 'del', text: 'qty = qty - 1;', number: 11 },
+      { type: 'add', text: 'qty = Math.max(0, qty - 1);', number: 11 },
+    ],
+    highlight: [1],
+    ...extra,
+  });
+  const direct = (scenes: Scene[]) =>
+    defaultDirection({ scenes, evidence: run, seed: 0, sources }).shots;
+
+  it('morphs a code scene’s small hunk, the camera following its changed lines', () => {
+    const fix = scene('s2', shows('src/cart.ts'), {
+      narration: 'The fix clamps the quantity at zero.',
+      sync: { highlight1: 'clamps the quantity' },
+    });
+    const [, shot] = direct([scene('s1', callout), fix]);
+    expect(shot).toEqual({
+      scene: 's2',
+      enter: expect.any(String),
+      elements: [{ id: 'morph', kind: 'morph', evidence: 'diff-hunk:src/cart.ts:10' }],
+      beats: [
+        { verb: 'camera', move: 'follow', to: 'morph', zoom: CODE_ZOOM },
+        { verb: 'morph', element: 'morph', at: 'clamps the quantity' },
+      ],
+    });
+    // Without a phrase, the morph spreads through the line.
+    const [plain] = direct([scene('s1', shows('src/cart.ts'))]);
+    expect(plain!.beats.at(-1)).toEqual({ verb: 'morph', element: 'morph' });
+  });
+
+  it('keeps the visual of a line morph, a captioned card, a hunk too large, or a run without sources or evidence', () => {
+    const kept = (visual: unknown) => direct([scene('s1', visual)])[0]!.elements;
+    const visual = [{ id: 'visual', kind: 'visual' }];
+    expect(kept(shows('src/cart.ts', { mode: 'morph' }))).toEqual(visual);
+    expect(kept(shows('src/cart.ts', { caption: 'Clamped at zero' }))).toEqual(visual);
+    expect(
+      kept({
+        kind: 'code',
+        path: 'src/steps.ts',
+        lines: [{ type: 'add', text: 'step0();', number: 2 }],
+        highlight: [],
+      }),
+    ).toEqual(visual);
+    const scenes = [scene('s1', shows('src/cart.ts'))];
+    expect(defaultDirection({ scenes, evidence: run, seed: 0 }).shots[0]!.elements).toEqual(visual);
+    expect(defaultDirection({ scenes, seed: 0, sources }).shots[0]!.elements).toEqual(visual);
+  });
+
+  it('morphs only the one hunk whose changed lines the scene shows', () => {
+    const elements = (path: string, lines: unknown[]) =>
+      direct([scene('s1', { kind: 'code', path, lines, highlight: [0] })])[0]!.elements;
+    const visual = [{ id: 'visual', kind: 'visual' }];
+    const morph = (evidence: string) => [{ id: 'morph', kind: 'morph', evidence }];
+    // Unchanged lines are what the scene is about, not the change beside them.
+    const take = { type: 'context', text: 'function take(qty) {', number: 10 };
+    expect(elements('src/cart.ts', [take])).toEqual(visual);
+    // Either hunk alone morphs; a scene showing both does not pick one.
+    const b = { type: 'add', text: 'b();', number: 1 };
+    const d = { type: 'add', text: 'd();', number: 20 };
+    expect(elements('src/pair.ts', [b])).toEqual(morph('diff-hunk:src/pair.ts:1'));
+    expect(elements('src/pair.ts', [b, d])).toEqual(visual);
+    // An unchanged line far from the change does not reach the other hunk.
+    const far = { type: 'context', text: 'e();', number: 25 };
+    expect(elements('src/pair.ts', [b, far])).toEqual(morph('diff-hunk:src/pair.ts:1'));
+    // A changed line no hunk has, or one without a number, shows no hunk: never the nearest one.
+    expect(elements('src/pair.ts', [{ type: 'add', text: 'z();', number: 15 }])).toEqual(visual);
+    const unnumbered = [
+      { type: 'del', text: 'qty = qty - 1;' },
+      { type: 'add', text: 'qty = Math.max(0, qty - 1);' },
+    ];
+    expect(elements('src/cart.ts', unnumbered)).toEqual(visual);
+    // A deleted line carries its number from before the change, though the hunk now starts later.
+    const read = { type: 'del', text: 'read(1);', number: 41 };
+    expect(elements('src/shift.ts', [read])).toEqual(morph('diff-hunk:src/shift.ts:70'));
+  });
+
+  it('passes Covi’s own checks, and reads what scenes show, never what they cite', () => {
+    // A padded phrase is trimmed as the direction schema trims it, so the draft reads back as is.
+    const fix = scene('s2', shows('src/cart.ts'), {
+      narration: 'The fix clamps the quantity at zero.',
+      sync: { highlight1: '  clamps the quantity ' },
+    });
+    const scenes = [scene('s1', callout), fix];
+    const plan = defaultDirection({ scenes, evidence: run, seed: 4, sources });
+    expect(plan.shots[1]!.beats.at(-1)).toEqual({
+      verb: 'morph',
+      element: 'morph',
+      at: 'clamps the quantity',
+    });
+    expect(DirectionSchema.parse(plan)).toEqual(plan);
+    expect(directionProblems(plan, scenes, run, sources)).toEqual([]);
+    const cited = scenes.map((s) => ({ ...s, evidenceIds: ['diff-hunk:src/steps.ts:1'] }));
+    expect(defaultDirection({ scenes: cited, evidence: run, seed: 4, sources })).toEqual(plan);
   });
 });

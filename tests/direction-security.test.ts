@@ -333,8 +333,20 @@ describe.skipIf(!(await canUseBrowser()))('text from a direction, on the page', 
               rect: { ...slot(20, 600), y: 210, height: 100 },
               visual: { kind: 'terminal', ...command },
             },
+            {
+              id: 'f',
+              kind: 'morph',
+              rect: { ...slot(20, 600), y: 0, height: 70 },
+              morph: {
+                path: 'x.js',
+                base: [{ type: 'del', tokens: [{ text: smuggled }] }],
+                head: [{ type: 'add', tokens: [{ text: line }] }],
+                rows: [],
+                tokens: [],
+              },
+            },
           ],
-          beats: [],
+          beats: [{ verb: 'morph', element: 'f', t: 0.5, seconds: 1 }],
         },
       },
     ];
@@ -372,6 +384,7 @@ describe.skipIf(!(await canUseBrowser()))('text from a direction, on the page', 
              texts: labels.map((n) => n.textContent),
              children: labels.map((n) => n.children.length),
              code: document.querySelector('[data-element="d"] .ln .txt').textContent,
+             morph: [...document.querySelectorAll('[data-element="f"] .mlive [data-token]')].map((n) => n.textContent),
              output: {
                title: document.querySelector('[data-element="e"] .term-head .label').textContent,
                command: document.querySelector('[data-element="e"] .cmd').textContent,
@@ -386,6 +399,7 @@ describe.skipIf(!(await canUseBrowser()))('text from a direction, on the page', 
         texts: string[];
         children: number[];
         code: string;
+        morph: string[];
         output: typeof command;
       };
       expect(seen).toEqual({
@@ -395,6 +409,7 @@ describe.skipIf(!(await canUseBrowser()))('text from a direction, on the page', 
         texts: [passing, smuggled, script],
         children: [0, 0, 0],
         code: line,
+        morph: [smuggled, line],
         output: command,
       });
       expect(errors).toEqual([]);

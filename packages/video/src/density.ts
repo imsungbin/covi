@@ -190,6 +190,7 @@ const LOOKS_LIKE = {
   code: 'code',
   output: 'terminal',
   capture: 'screenshot',
+  morph: 'code',
   node: 'diagram',
   label: 'callout',
 } as const satisfies Record<Exclude<DirectionElement['kind'], 'visual'>, TimelineVisual['kind']>;

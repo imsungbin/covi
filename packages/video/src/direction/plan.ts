@@ -46,6 +46,7 @@ export function planDirection(input: PlanInput): DirectionPlan {
     scenes: input.scenes,
     evidence: input.evidence,
     seed: input.seed,
+    sources: input.sources,
   });
   const own = input.file && !input.file.draft ? input.file : undefined;
   if (own) {

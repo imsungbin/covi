@@ -45,10 +45,44 @@ export type RevealStyle = 'rise' | 'pop' | 'wipe' | 'type';
 /** How a camera beat moves inside a stop. */
 export type CameraMove = 'zoom' | 'pan' | 'follow';
 
+/** A code token's syntax color: a `tk-` class of the code panel. */
+export type TokenTone = 'keyword' | 'string' | 'number' | 'comment' | 'fn' | 'type' | 'prop';
+
+/** A token of a line a morph moves: its text (a whitespace run is layout only) and its color. */
+export interface MorphToken {
+  text: string;
+  tone?: TokenTone;
+}
+
+/** A row of a morph's base or head layout: a line of the hunk, or a run of lines it leaves out. */
+export interface MorphRow {
+  type: 'context' | 'del' | 'add' | 'elided';
+  /** The line's number on its side; none for an elided run. */
+  number?: number;
+  /** The line's tokens; an elided run has one, its marker ("… 4 lines"). */
+  tokens: MorphToken[];
+}
+
+/**
+ * A hunk as a morph draws it: its lines before the change (`base`) and after it (`head`), at most
+ * 14 rows a side (18 on tall frames), and what moves between them. `rows` links a base row to the
+ * head row it becomes (context lines, replaced lines, and elided runs on both sides); `tokens`
+ * links a token that stays, as `[baseRow, baseToken, headRow, headToken]`. A token in no link is
+ * removed (base) or added (head).
+ */
+export interface MorphVisual {
+  path: string;
+  language?: string;
+  base: MorphRow[];
+  head: MorphRow[];
+  rows: Array<[number, number]>;
+  tokens: Array<[number, number, number, number]>;
+}
+
 /**
  * An element of a directed scene, resolved: content from the run's evidence (never from the
  * agent, labels excepted) and its slot in stop-local stage pixels. Code, output, and captures are
- * drawn by the components that draw those visuals, inside their slot.
+ * drawn by the components that draw those visuals, inside their slot; a morph by its own.
  */
 export type DirectionElement =
   | { id: string; kind: 'visual'; rect: Rect }
@@ -65,6 +99,7 @@ export type DirectionElement =
       rect: Rect;
       visual: Extract<TimelineVisual, { kind: 'screenshot' }>;
     }
+  | { id: string; kind: 'morph'; rect: Rect; morph: MorphVisual }
   | { id: string; kind: 'node'; rect: Rect; label: string }
   | {
       id: string;
@@ -77,7 +112,8 @@ export type DirectionElement =
 /** A beat, resolved: when it starts (seconds since the scene started) and how long it takes. */
 export type DirectionBeat =
   | { verb: 'reveal'; element: string; style: RevealStyle; t: number; seconds: number }
-  | { verb: 'camera'; move: CameraMove; to: string; zoom?: number; t: number; seconds: number };
+  | { verb: 'camera'; move: CameraMove; to: string; zoom?: number; t: number; seconds: number }
+  | { verb: 'morph'; element: string; t: number; seconds: number };
 
 /** A scene's shot, resolved. */
 export interface SceneDirection {

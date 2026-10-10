@@ -715,6 +715,7 @@ video:
     terminal: 终端
     signOff: 使用 Covi 完成审查
   moreLines: { other: '… 另有 {count} 行' }
+  elided: { other: '… {count} 行' }
   musicHint: '音乐：Covi 主题曲。如需更改，请运行 `covi render --run {run} --music none` 或 `--music compose`。'
 
 narration:

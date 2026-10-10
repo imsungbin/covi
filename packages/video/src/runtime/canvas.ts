@@ -23,11 +23,14 @@ export interface View {
 
 export type CameraKind = (typeof CAMERA_TRANSITIONS)[number];
 
-/** A camera beat inside a stop: from `t` (seconds since the scene started) for `seconds`, toward `to`. */
+/**
+ * A camera beat inside a stop: from `t` (seconds since the scene started) for `seconds`, toward
+ * `to`, or, following a moving target, toward where it is at each moment.
+ */
 export interface CameraStep {
   t: number;
   seconds: number;
-  to: View;
+  to: View | ((t: number) => View);
 }
 
 /** The most a camera beat magnifies. */
@@ -88,8 +91,7 @@ export function beatView(
   region: Rect,
   pivot: Point,
 ): View {
-  const fitted = Math.min(region.width / target.width, region.height / target.height) * FIT;
-  const scale = move === 'pan' ? from.scale : clamp(zoom ?? fitted, 1, MAX_ZOOM);
+  const scale = move === 'pan' ? from.scale : clamp(zoom ?? fitted(target, region), 1, MAX_ZOOM);
   const focus = (
     start: number,
     size: number,
@@ -108,10 +110,66 @@ export function beatView(
   );
 }
 
+/** The scale at which a target fills its share of the region. */
+function fitted(target: Rect, region: Rect): number {
+  return Math.min(region.width / target.width, region.height / target.height) * FIT;
+}
+
+/** A follow's clamps ease in over this share of the view, so the camera's speed never jumps. */
+const EASE_IN = 1 / 4;
+
+/** `min(a, b)`, rounded off where they are within `k` of each other, so its slope is continuous. */
+function softMin(a: number, b: number, k: number): number {
+  if (k <= 0) return Math.min(a, b);
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - (h * h * k) / 4;
+}
+
+/**
+ * How a follow beat frames a target that moves (stop-local): at one scale for the whole beat, the
+ * beat's zoom, else what fits `bounds` (every box the target takes), so only the position tracks
+ * it. As in `beatView`, a target that fits is centered, one that outgrows the view shows its start,
+ * and the view stays inside `region`; here each of those clamps eases in, so the camera slows down
+ * rather than stopping dead as the target grows past the view or nears the region's edge.
+ */
+export function follower(
+  bounds: Rect,
+  zoom: number | undefined,
+  region: Rect,
+  pivot: Point,
+): (target: Rect) => View {
+  const scale = clamp(zoom ?? fitted(bounds, region), 1, MAX_ZOOM);
+  const axis = (
+    start: number,
+    size: number,
+    regionStart: number,
+    regionSize: number,
+    p: number,
+  ) => {
+    const k = (regionSize / scale) * EASE_IN;
+    // How far past its start the view centers on the target: its middle, or, once it outgrows the
+    // view, where its start meets the region's.
+    const lead = (p - regionStart) / scale;
+    const focus = start + softMin(size / 2, lead, k);
+    const lo = regionStart + lead;
+    const hi = regionStart + regionSize - (regionStart + regionSize - p) / scale;
+    // Kept inside the region as `clampView` keeps it, each end rounded within at most half the
+    // room, so the two roundings never meet and the view never leaves the region.
+    const edge = Math.min(k, (hi - lo) / 2);
+    return softMin(-softMin(-focus, -lo, edge), hi, edge);
+  };
+  return (target) => ({
+    x: axis(target.x, target.width, region.x, region.width, pivot.x),
+    y: axis(target.y, target.height, region.y, region.height, pivot.y),
+    scale,
+  });
+}
+
 /**
  * The view at `t` (seconds since the scene started): each beat eases from where the camera was
  * when it started, which is where the beat before it had got to by then. `steps` must be in time
- * order: the walk stops at the first step that has not started.
+ * order: the walk stops at the first step that has not started. A beat that follows a moving
+ * target keeps up with it once it has eased in, until the next beat starts.
  */
 export function viewAt(steps: readonly CameraStep[], t: number, rest: View): View {
   let view = rest;
@@ -119,9 +177,10 @@ export function viewAt(steps: readonly CameraStep[], t: number, rest: View): Vie
     if (t < step.t) break;
     const next = steps[i + 1];
     const until = next && next.t < t ? next.t : t;
+    const to = typeof step.to === 'function' ? step.to(until) : step.to;
     view = lerpView(
       view,
-      step.to,
+      to,
       easeInOutCubic(clamp((until - step.t) / Math.max(step.seconds, 1e-6))),
     );
   }

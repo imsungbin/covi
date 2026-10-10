@@ -31,6 +31,7 @@
     "packages/video/test/cold-open.test.ts",
     "packages/video/test/density.test.ts",
     "packages/video/test/drawn-font.test.ts",
+    "packages/video/test/highlight.test.ts",
     "packages/video/test/marks.test.ts",
     "packages/video/test/morph.test.ts",
     "packages/video/test/motion.test.ts",

@@ -43,7 +43,25 @@ export const DIRECTION_LIMITS = {
   /** Items a pile or a split draws at most (later verbs); the counter shows the true value. */
   drawnItems: 12,
   evidencePerElement: 4,
+  /**
+   * A morph: at most `changedLines` deleted and as many added lines (a landscape card's 14 rows,
+   * less two for context), read from the first `hunkLines` lines of its hunk, each cut at
+   * `lineChars` characters as a code card cuts its lines (`codeLineText`) and split into at most
+   * `tokensPerLine` tokens (the rest of a longer line stays one token).
+   */
+  morph: { changedLines: 12, hunkLines: 400, lineChars: 96, tokensPerLine: 64 },
 } as const;
+
+/**
+ * A code line as code cards and morphs draw it, so both draw the same text: tabs as two spaces,
+ * cut at `morph.lineChars` characters, never between the halves of one (an emoji's), which would
+ * draw as a broken glyph that is not in the code.
+ */
+export function codeLineText(text: string): string {
+  const line = text.replace(/\t/g, '  ');
+  const max = DIRECTION_LIMITS.morph.lineChars;
+  return line.slice(0, (line.codePointAt(max - 1) ?? 0) > 0xffff ? max - 1 : max);
+}
 
 /** An element id: a lowercase letter, then lowercase letters, digits, or dashes, `idChars` in all. */
 export const DIRECTION_ID = new RegExp(`^[a-z][a-z0-9-]{0,${DIRECTION_LIMITS.idChars - 1}}$`);
@@ -165,6 +183,15 @@ export const ShotElementSchema = z.discriminatedUnion('kind', [
     kind: z.literal('capture'),
     evidence: EvidenceRefSchema.describe('A screenshot: id.'),
   }),
+  z
+    .strictObject({
+      id: ElementIdSchema,
+      kind: z.literal('morph'),
+      evidence: EvidenceRefSchema.describe('A diff-hunk: id from `covi evidence --run <id>`.'),
+    })
+    .describe(
+      "The hunk's code before the change, turning token by token into the code after it on its `morph` beat. A morph element that no beat names morphs anyway, on a beat spaced through the line like any beat without `at`.",
+    ),
   z.strictObject({
     id: ElementIdSchema,
     kind: z.literal('node'),
@@ -198,7 +225,7 @@ export const ShotBeatSchema = z.discriminatedUnion('verb', [
     move: z
       .enum(CAMERA_MOVES)
       .describe(
-        'zoom: frame the element; pan: center it at the same scale; follow: frame what it highlights.',
+        'zoom: frame the element; pan: center it at the same scale; follow: frame what it highlights; on a morph, keep its changed lines framed as they move.',
       ),
     to: ElementIdSchema,
     zoom: z
@@ -209,6 +236,15 @@ export const ShotBeatSchema = z.discriminatedUnion('verb', [
       .describe('1–2.5; default: fit the element to the region.'),
     at: PhraseSchema.optional(),
   }),
+  z
+    .strictObject({
+      verb: z.literal('morph'),
+      element: ElementIdSchema,
+      at: PhraseSchema.optional(),
+    })
+    .describe(
+      'A morph element turns from the code before the change into the code after it, once: removed lines fold away, new ones slide in, and the tokens that stay travel to their new places. A morph element that no beat names morphs anyway; a morph of a revealed element waits for its reveal.',
+    ),
 ]);
 
 export const ShotSchema = z.strictObject({

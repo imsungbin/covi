@@ -726,6 +726,7 @@ video:
     terminal: Terminal
     signOff: Reviewed with Covi
   moreLines: { one: '… {count} more line', other: '… {count} more lines' }
+  elided: { one: '… {count} line', other: '… {count} lines' }
   musicHint: 'Music: Covi theme. To change it, run `covi render --run {run} --music none` or `--music compose`.'
 
 # Narration and on-screen text Covi drafts for videos (packages/video/src/storyboard/draft.ts).

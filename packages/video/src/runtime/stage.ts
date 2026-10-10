@@ -27,6 +27,7 @@ import {
   clampView,
   clipRect,
   drawnRect,
+  follower,
   gridStyle,
   insetOf,
   isCameraMove,
@@ -909,7 +910,10 @@ export class Stage {
     return target && m.component.laidOut ? this.onCanvas(m, target, time) : target;
   }
 
-  /** The camera's beats in a directed scene, each toward its target as drawn when the beat ends. */
+  /**
+   * The camera's beats in a directed scene, each toward its target as drawn when the beat ends, or,
+   * following an element that moves, toward where it is laid out at each frame.
+   */
   private cameraSteps(m: MountedScene): CameraStep[] {
     const d = m.scene.direction;
     if (!d || !m.scene.stop) return [];
@@ -922,6 +926,23 @@ export class Stage {
     for (const beat of beats) {
       const element = d.elements.find((e) => e.id === beat.to);
       if (!element) continue;
+      // Following an element that moves (a morph's changed lines) tracks it at every frame, at one
+      // scale that frames every box it takes from the beat on.
+      const shot = beat.move === 'follow' ? m.shot : undefined;
+      const first = shot?.track(element.id, beat.t);
+      if (shot && first) {
+        // An element that follows has a box at every moment or at none (a morph card without
+        // rows), so the first box stands in only for the type.
+        const box = (t: number) => shot.track(element.id, t) ?? first;
+        // It travels from one box to another, so where it starts and where it ends bound it.
+        const bounds = union([first, box(m.scene.end - m.scene.start)]);
+        const frame = follower(bounds, beat.zoom, m.region, this.pivot);
+        const to = (t: number) => frame(box(t));
+        steps.push({ t: beat.t, seconds: beat.seconds, to });
+        // A pan after it keeps the scale it holds throughout.
+        from = to(beat.t + beat.seconds);
+        continue;
+      }
       // A beat frames its target as drawn when it ends: what the visual highlights then (its
       // lines, its focus), or the element's box.
       const measured = this.targetAt(m, element, beat.t + beat.seconds);

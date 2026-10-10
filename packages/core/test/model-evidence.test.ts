@@ -26,6 +26,16 @@ const trace: EvidenceItem = {
   refs: ['trace:flow-cart-head#n2'],
 };
 
+const bytes: EvidenceItem = {
+  id: 'metric:terminal-1:request-bytes',
+  kind: 'metric',
+  path: 'demo/captures.json',
+  revision: 'both',
+  sha256: '0'.repeat(64),
+  label: 'request bytes',
+  metric: { name: 'request-bytes', base: 70406, head: 9907 },
+};
+
 const finding = (over: Partial<FindingInput>): FindingInput => ({
   title: 'Quantity can no longer go negative',
   certainty: 'likely',
@@ -66,11 +76,13 @@ describe('model findings and evidence', () => {
       redactor: new Redactor(),
       maxDiffChars: 20_000,
       runId: 'r',
-      evidence: [...diffHunkEvidence(a.change.files), trace],
+      evidence: [...diffHunkEvidence(a.change.files), trace, bytes],
     });
     const { prompt, system } = requests[0]!;
     expect(prompt).toContain('## Captured evidence (ids)');
     expect(prompt).toContain('- `trace:flow-cart-head`: Cart (desktop) · head');
+    // A measured number is listed with its values, so a finding can cite it for what it says.
+    expect(prompt).toContain('- `metric:terminal-1:request-bytes`: request bytes: 70406 → 9907');
     // Hunks are not listed: the model reads them from the diff's own headers.
     expect(prompt).not.toContain('- `diff-hunk:');
     // The citation rule is methodology: it reaches the model from the covi-review skill, once.

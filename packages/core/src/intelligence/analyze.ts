@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { CoviConfig } from '../config/schema.ts';
+import { describeMetric } from '../evidence/metrics.ts';
 import { LANGUAGE_NAME, type Language } from '../i18n/language.ts';
 import type { CodeChange } from '../model/change.ts';
 import type { ReviewContext } from '../model/context.ts';
@@ -111,7 +112,7 @@ export async function analyzeWithModel(
   const captured = (input.evidence ?? [])
     .filter((e) => e.kind !== 'diff-hunk')
     .slice(0, 60)
-    .map((e) => `- \`${e.id}\`: ${e.label}`);
+    .map((e) => `- \`${e.id}\`: ${describeMetric(e)}`);
   const prompt = [
     material,
     '## Rule findings (JSON)',

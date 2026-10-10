@@ -40,8 +40,9 @@ export {
   unknownCitations,
 } from './evidence/cite.ts';
 export { collectEvidence, loadEvidence, writeEvidence } from './evidence/collect.ts';
-export { evidenceId, evidencePart } from './evidence/ids.ts';
+export { evidenceId, evidencePart, metricSource } from './evidence/ids.ts';
 export {
+  describeMetric,
   type MetricReading,
   metricSlug,
   metricValue,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { escapeUnprintable } from '../src/util/text.ts';
+import { escapeUnprintable, hasUnprintable } from '../src/util/text.ts';
 import { formatIssues, parseOrThrow } from '../src/util/zod.ts';
 
 const issuesOf = (schema: z.ZodType, value: unknown) => {
@@ -71,5 +71,14 @@ describe('escapeUnprintable', () => {
     expect(escapeUnprintable('abcdefg', 6)).toBe('abcdef…');
     expect(escapeUnprintable('🦊'.repeat(10), 3)).toBe('🦊🦊🦊…');
     expect(escapeUnprintable('x'.repeat(1_000_000), 4)).toBe('xxxx…');
+  });
+
+  it('tells whether text holds such a character, the same way on every call', () => {
+    for (const text of ['plain', '요청이 너무 큼', 'emoji 🦊', 'a\u00a0b'])
+      expect(hasUnprintable(text), text).toBe(false);
+    for (const text of ['a\u0000', '\u001b[2J', '\u202etotal', 'a\u200b', '\u2028', 'x\ud800'])
+      expect(hasUnprintable(text), JSON.stringify(text)).toBe(true);
+    // A global pattern's test keeps its place between calls; the answer must not depend on it.
+    expect([hasUnprintable('ab\u200b'), hasUnprintable('ab\u200b')]).toEqual([true, true]);
   });
 });

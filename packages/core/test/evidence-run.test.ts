@@ -126,6 +126,9 @@ describe('run evidence', () => {
       'trace:home-desktop-head',
       'http:1',
       'test-run:tests',
+      'metric:diff:files',
+      'metric:diff:additions',
+      'metric:diff:deletions',
     ]);
     expect(evidence.items.find((i) => i.id === 'trace:home-desktop-head')!.refs).toEqual([
       'trace:home-desktop-head#load',
@@ -154,7 +157,12 @@ describe('run evidence', () => {
     await run.writeText('diff.patch', PATCH, 'diff');
     const rebuilt = await loadEvidence(run);
     expect(rebuilt.source).toBe('rebuilt');
-    expect(rebuilt.evidence.items.map((i) => i.id)).toEqual(['diff-hunk:src/cart.ts:10']);
+    expect(rebuilt.evidence.items.map((i) => i.id)).toEqual([
+      'diff-hunk:src/cart.ts:10',
+      'metric:diff:files',
+      'metric:diff:additions',
+      'metric:diff:deletions',
+    ]);
     expect(existsSync(run.path('evidence.json'))).toBe(false);
     await writeEvidence(run);
     expect((await loadEvidence(run)).source).toBe('file');

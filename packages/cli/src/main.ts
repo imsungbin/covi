@@ -9,6 +9,7 @@ import {
   configFromEnv,
   DEMO_PATHS,
   describeCommands,
+  describeMetric,
   EvidenceFileSchema,
   ExitCode,
   ExplanationSchema,
@@ -1222,7 +1223,8 @@ Non-interactive runs need --yes. In CI, Covi reads configuration from the base r
       else {
         for (const item of evidence.items)
           process.stdout.write(
-            `${item.id}  ${pc.dim(item.kind)}  ${pc.dim(item.revision)}  ${item.label}\n`,
+            // A measured number shows its values: `request bytes: 70406 → 9907`.
+            `${item.id}  ${pc.dim(item.kind)}  ${pc.dim(item.revision)}  ${describeMetric(item)}\n`,
           );
         if (source === 'rebuilt')
           process.stdout.write(

@@ -25,6 +25,20 @@ export const evidenceId = {
   /** Why the app did not start at a revision (`demo/app-<revision>.log`). */
   appStart: (revision: DemoRevision) => `terminal:app-start-${revision}`,
   testRun: () => 'test-run:tests',
+  /** A number measured in a source (see `metricSource`), by its name there. */
+  metric: (source: string, name: string) => `metric:${source}:${name}`,
+} as const;
+
+/**
+ * Where a metric was measured, the middle of its id: the n-th demo command or request (1-based,
+ * as their own ids count), a behavior-diff step's changed pixels, the diff's totals, the test run.
+ */
+export const metricSource = {
+  terminal: (n: number) => `terminal-${n}`,
+  http: (n: number) => `http-${n}`,
+  pixel: (scenario: string, step: string) => `pixel-${scenario}-${step}`,
+  diff: () => 'diff',
+  testRun: () => 'test-run',
 } as const;
 
 /** Parts of an item that a claim can cite on their own. */

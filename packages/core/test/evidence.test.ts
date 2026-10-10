@@ -9,7 +9,12 @@ import { evidenceId, evidencePart } from '../src/evidence/ids.ts';
 import type { BehaviorDiff, Trace } from '../src/model/behavior.ts';
 import type { Hunk } from '../src/model/change.ts';
 import type { Demonstration } from '../src/model/demo.ts';
-import { EVIDENCE_LIMITS, EvidenceFileSchema } from '../src/model/evidence.ts';
+import {
+  EVIDENCE_LIMITS,
+  EvidenceFileSchema,
+  EvidenceItemSchema,
+  METRIC_LIMITS,
+} from '../src/model/evidence.ts';
 import { demoPath, RUN_PATHS } from '../src/run/paths.ts';
 
 const hunk = (oldStart: number, oldLines: number, newStart: number, newLines: number): Hunk => ({
@@ -231,6 +236,8 @@ describe('buildEvidence', () => {
       'terminal:1',
       'terminal:app-start-head',
       'test-run:tests',
+      // The step's changed pixels, measured.
+      'metric:pixel-home-desktop-load:changed',
     ]);
     expect(byId.get('screenshot:home-desktop-before')).toMatchObject({
       kind: 'screenshot',
@@ -271,7 +278,12 @@ describe('buildEvidence', () => {
       { path: 'a.ts', hunks: [hunk(1, 1, 1, 1)] },
       { path: 'a.ts', hunks: [hunk(1, 1, 1, 1)] },
     ];
-    expect(buildEvidence({ diff: twice }).items.map((i) => i.id)).toEqual(['diff-hunk:a.ts:1']);
+    expect(buildEvidence({ diff: twice }).items.map((i) => i.id)).toEqual([
+      'diff-hunk:a.ts:1',
+      'metric:diff:files',
+      'metric:diff:additions',
+      'metric:diff:deletions',
+    ]);
   });
 
   it('redacts labels and keeps them within the label limit when redaction lengthens them', () => {
@@ -370,5 +382,178 @@ describe('buildEvidence', () => {
       'demo/app-head.log',
       'tests.log',
     ]);
+  });
+});
+
+describe('metric evidence', () => {
+  const measure = {
+    name: 'Measure the review request',
+    command: 'node scripts/measure.js',
+    before: { exitCode: 0, output: 'request bytes: 70406\nchunks: 4\ntimeouts: 1' },
+    after: { exitCode: 0, output: 'request bytes: 9907\nchunks: 1\ncache hits: 3' },
+    changed: true,
+  };
+  const users = {
+    name: 'Users',
+    method: 'GET',
+    path: '/api/users',
+    before: { status: 200, body: '{"total":120,"page":{"size":50}}' },
+    after: { status: 200, body: '{"total":120,"page":{"size":20}}' },
+    changed: true,
+  };
+  const evidence = buildEvidence({
+    diff: [{ path: 'src/request.js', hunks: [hunk(1, 2, 1, 1)] }],
+    demo: { ...DEMO, commands: [measure], requests: [users] },
+    behavior: BEHAVIOR,
+    tests: { command: 'npm test', output: 'Tests: 5 passed\nDuration: 1.2 s' },
+  });
+  const metrics = evidence.items.filter((i) => i.kind === 'metric');
+
+  it('measures the diff, each step’s pixels, each response, each command, and the tests, after every other item', () => {
+    expect(EvidenceFileSchema.parse(evidence)).toEqual(evidence);
+    expect(metrics.map((i) => i.id)).toEqual([
+      'metric:diff:files',
+      'metric:diff:additions',
+      'metric:diff:deletions',
+      'metric:pixel-home-desktop-load:changed',
+      'metric:http-1:total',
+      'metric:http-1:page-size',
+      'metric:terminal-1:request-bytes',
+      'metric:terminal-1:chunks',
+      'metric:terminal-1:cache-hits',
+      'metric:terminal-1:timeouts',
+      'metric:test-run:tests',
+      'metric:test-run:duration',
+    ]);
+    expect(evidence.items.slice(-metrics.length)).toEqual(metrics);
+    const byId = new Map(metrics.map((i) => [i.id, i]));
+    expect(byId.get('metric:terminal-1:request-bytes')).toMatchObject({
+      path: 'demo/captures.json',
+      revision: 'both',
+      label: 'request bytes',
+      sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      metric: { name: 'request-bytes', base: 70406, head: 9907 },
+    });
+    // Printed at one revision only: the other side is absent, never zero.
+    expect(byId.get('metric:terminal-1:cache-hits')).toMatchObject({
+      revision: 'head',
+      metric: { name: 'cache-hits', head: 3 },
+    });
+    expect(byId.get('metric:terminal-1:timeouts')).toMatchObject({
+      revision: 'base',
+      metric: { name: 'timeouts', base: 1 },
+    });
+    expect(byId.get('metric:terminal-1:timeouts')!.metric).not.toHaveProperty('head');
+    expect(byId.get('metric:http-1:page-size')).toMatchObject({
+      label: 'page.size',
+      metric: { base: 50, head: 20 },
+    });
+    expect(byId.get('metric:pixel-home-desktop-load:changed')).toMatchObject({
+      path: 'demo/behavior-diff.json',
+      revision: 'head',
+      label: '/ (desktop) · load',
+      metric: { unit: '%', head: 10 },
+    });
+    expect(byId.get('metric:diff:additions')).toMatchObject({
+      path: 'diff.patch',
+      metric: { head: 1 },
+    });
+    expect(byId.get('metric:test-run:duration')).toMatchObject({
+      path: 'tests.log',
+      metric: { unit: 's', head: 1.2 },
+    });
+  });
+
+  it('reads text after redaction: a number the redactor masks never becomes a metric', () => {
+    // Below the size limit, so only redaction keeps it out.
+    const secret = '411111111111';
+    expect(Number(secret)).toBeLessThan(METRIC_LIMITS.magnitude);
+    const redacted = buildEvidence({
+      demo: {
+        ...DEMO,
+        commands: [{ ...measure, after: { exitCode: 0, output: `card: ${secret}\nchunks: 1` } }],
+      },
+      redact: (text) => text.split(secret).join('[REDACTED]'),
+    });
+    expect(redacted.items.filter((i) => i.kind === 'metric').map((i) => i.id)).toEqual([
+      'metric:terminal-1:chunks',
+      'metric:terminal-1:request-bytes',
+      'metric:terminal-1:timeouts',
+    ]);
+    expect(JSON.stringify(redacted)).not.toContain(secret);
+  });
+
+  it('keeps at most 500 metrics in a run', () => {
+    const lines = Array.from({ length: 60 }, (_, i) => `m${i}: ${i}`).join('\n');
+    const many = buildEvidence({
+      demo: {
+        ...DEMO,
+        commands: Array.from({ length: 12 }, () => ({
+          ...measure,
+          before: undefined,
+          after: { exitCode: 0, output: lines },
+        })),
+      },
+    });
+    const kept = many.items.filter((i) => i.kind === 'metric');
+    expect(kept).toHaveLength(METRIC_LIMITS.perRun);
+    expect(kept.filter((i) => i.id.startsWith('metric:terminal-1:'))).toHaveLength(
+      METRIC_LIMITS.perSource,
+    );
+    expect(EvidenceFileSchema.safeParse(many).success).toBe(true);
+  });
+
+  it('labels a step’s pixels within 60 characters, and only with text people can read', () => {
+    const pixels = (name: string, redact?: (text: string) => string) =>
+      buildEvidence({
+        behavior: { ...BEHAVIOR, scenarios: [{ ...BEHAVIOR.scenarios[0]!, name }] },
+        fileSha: (path) => (path === 'demo/diffs/home-desktop.png' ? 'a'.repeat(64) : undefined),
+        redact,
+      }).items;
+    const long = pixels('/'.repeat(100)).find((i) => i.kind === 'metric')!;
+    expect(long.label).toBe('/'.repeat(METRIC_LIMITS.labelChars));
+    // Redacted before it is cut: a secret the cut would halve is masked whole, never left in part.
+    const secret = 'tok12345';
+    const masked = pixels(`${'/'.repeat(55)}${secret}`, (text) =>
+      text.split(secret).join('[REDACTED]'),
+    ).find((i) => i.kind === 'metric')!;
+    expect(masked.label).toBe(`${'/'.repeat(55)}[REDA`);
+    // A name that turns text around gives no metric; the pixel diff itself is still listed.
+    expect(pixels('/\u202enigol').map((i) => i.id)).toEqual(['pixel-diff:home-desktop#load']);
+  });
+
+  it('holds values Covi could draw, and nothing else', () => {
+    const item = {
+      id: 'metric:terminal-1:bytes',
+      kind: 'metric',
+      path: 'demo/captures.json',
+      revision: 'head',
+      sha256: '0'.repeat(64),
+      label: 'bytes',
+      metric: { name: 'bytes', head: 9907 },
+    };
+    expect(EvidenceItemSchema.safeParse(item).success).toBe(true);
+    for (const metric of [
+      { name: 'bytes' },
+      { name: 'Bytes', head: 1 },
+      { name: '-bytes', head: 1 },
+      { name: 'bytes', head: 1e15 },
+      { name: 'bytes', head: 0.1234567 },
+      { name: 'bytes', head: Number.NaN },
+      { name: 'bytes', unit: 'bytes!', head: 1 },
+      { name: 'bytes', unit: 'kilobytes', head: 1 },
+      { name: 'bytes', head: 1, value: 2 },
+    ])
+      expect(
+        EvidenceItemSchema.safeParse({ ...item, metric }).success,
+        JSON.stringify(metric),
+      ).toBe(false);
+    // Only a metric item carries values, and every metric item does.
+    expect(EvidenceItemSchema.safeParse({ ...item, metric: undefined }).success).toBe(false);
+    expect(
+      EvidenceItemSchema.safeParse({ ...item, id: 'terminal:1', kind: 'terminal' }).success,
+    ).toBe(false);
+    // People and models read a metric's label with its values: one that hides text is refused.
+    expect(EvidenceItemSchema.safeParse({ ...item, label: 'by\u202etes' }).success).toBe(false);
   });
 });

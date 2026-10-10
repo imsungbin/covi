@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  describeMetric,
   metricSlug,
   metricValue,
   pairMetrics,
@@ -184,6 +185,13 @@ describe('reading metrics from output', () => {
     expect(metricSlug('x'.repeat(50))).toHaveLength(METRIC_LIMITS.nameChars);
   });
 
+  it('cuts a long label between characters, never inside one', () => {
+    // Sixty letters, the last outside the basic plane: a cut at 60 code units would halve it.
+    const name = `${'a'.repeat(59)}𝒜`;
+    expect(readMetrics(`${name}: 1`)[0]!.label).toBe('a'.repeat(59));
+    expect(readJsonMetrics(JSON.stringify({ [name]: 1 }))[0]!.label).toBe('a'.repeat(59));
+  });
+
   it('reads at most 50 metrics from one text', () => {
     const many = Array.from({ length: 200 }, (_, i) => `m${i}: ${i}`).join('\n');
     const read = readMetrics(many);
@@ -224,5 +232,24 @@ describe('pairing base and head', () => {
   it('pairs at most 50 metrics', () => {
     const head = readMetrics(Array.from({ length: 50 }, (_, i) => `h${i}: ${i}`).join('\n'));
     expect(pairMetrics(readMetrics('base only: 1'), head)).toHaveLength(METRIC_LIMITS.perSource);
+  });
+
+  it('describes a metric as people read it', () => {
+    expect(
+      describeMetric({
+        label: 'request bytes',
+        metric: { name: 'request-bytes', base: 70406, head: 9907 },
+      }),
+    ).toBe('request bytes: 70406 → 9907');
+    expect(
+      describeMetric({ label: 'coverage', metric: { name: 'coverage', unit: '%', head: 87 } }),
+    ).toBe('coverage: 87 %');
+    expect(describeMetric({ label: 'node cli.js --help' })).toBe('node cli.js --help');
+  });
+
+  it('describes any label printably: what a terminal acts on is spelled as an escape', () => {
+    expect(describeMetric({ label: 'node \u001b[2Jcli.js\n--help \u202e' })).toBe(
+      'node \\u001b[2Jcli.js\\u000a--help \\u202e',
+    );
   });
 });

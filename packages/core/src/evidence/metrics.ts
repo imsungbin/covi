@@ -1,5 +1,5 @@
-import { isMetricValue, METRIC_LIMITS } from '../model/evidence.ts';
-import { UNPRINTABLE } from '../util/text.ts';
+import { type EvidenceItem, isMetricValue, METRIC_LIMITS } from '../model/evidence.ts';
+import { escapeUnprintable, hasUnprintable } from '../util/text.ts';
 
 /*
  * Numbers measured in a run's own text: a demo command's output, a response body, the test run's
@@ -49,8 +49,6 @@ const PAIR = new RegExp(
 );
 /** Terminal colors and cursor moves, which commands print around their numbers. */
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
-/** One test at a time: the shared pattern is global, and a global `test` keeps its place. */
-const HIDES_TEXT = new RegExp(UNPRINTABLE.source, 'u');
 /** Words that name an identifier rather than a measurement; a pid differs between runs. */
 const IDENTIFIERS = new Set([
   'pid',
@@ -115,8 +113,14 @@ export function metricSlug(label: string): string {
   return slugOf(wordsOf(label));
 }
 
-const label = (text: string) =>
-  text.replace(/\s+/g, ' ').trim().slice(0, METRIC_LIMITS.labelChars).trimEnd();
+/** A metric's label as kept: spaces collapsed, at most 60 code units, never half a character. */
+export const metricLabel = (text: string) =>
+  text
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, METRIC_LIMITS.labelChars)
+    .replace(/[\ud800-\udbff]$/, '')
+    .trimEnd();
 
 /**
  * Keeps a reading unless its value is out of bounds or its name ends in an identifier word
@@ -125,7 +129,7 @@ const label = (text: string) =>
 function add(found: Found[], printed: string, value: number | undefined, unit?: string): void {
   const words = wordsOf(printed);
   if (value === undefined || IDENTIFIERS.has(words.at(-1) ?? '')) return;
-  found.push({ label: label(printed), words, value, ...(unit ? { unit } : {}) });
+  found.push({ label: metricLabel(printed), words, value, ...(unit ? { unit } : {}) });
 }
 
 /** Gives each reading a name unique in its text, in order, and stops at the per-source cap. */
@@ -156,7 +160,7 @@ function leaves(value: unknown, path: string[], out: Found[]): void {
   if (path.length >= METRIC_LIMITS.jsonDepth) return;
   for (const [key, child] of Object.entries(value)) {
     // People and models read the key: one that moves the cursor or turns text around is skipped.
-    if (!HIDES_TEXT.test(key)) leaves(child, [...path, key], out);
+    if (!hasUnprintable(key)) leaves(child, [...path, key], out);
   }
 }
 
@@ -247,4 +251,16 @@ export function pairMetrics(
         base: b.value,
       });
   return out.slice(0, METRIC_LIMITS.perSource);
+}
+
+/**
+ * A metric item as people read it: `request bytes: 70406 → 9907`, `coverage: 87 %`; the label alone
+ * for other items. Printable: labels come from the run, so what a terminal acts on is escaped.
+ */
+export function describeMetric(item: Pick<EvidenceItem, 'label' | 'metric'>): string {
+  const m = item.metric;
+  if (!m) return escapeUnprintable(item.label);
+  const unit = m.unit ? ` ${m.unit}` : '';
+  const values = [m.base, m.head].filter((v): v is number => v !== undefined).join(' → ');
+  return escapeUnprintable(`${item.label}: ${values}${unit}`);
 }

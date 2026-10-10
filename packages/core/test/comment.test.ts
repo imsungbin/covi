@@ -16,6 +16,7 @@ import {
   renderLedger,
 } from '../src/outcomes/ledger.ts';
 import { anchorsFor, COMMENT_MARKER, MAX_ANCHORS, renderComment } from '../src/report/comment.ts';
+import { evidenceRefs } from '../src/report/evidence.ts';
 import { renderReview } from '../src/report/markdown.ts';
 
 /** Removes fenced blocks and code spans, where GitHub and GitLab render text literally. */
@@ -190,6 +191,25 @@ describe('evidence footnotes', () => {
     expect(renderComment(review, explanation, context, {}, 'ko', evidence)).toContain(
       '인용한 근거:',
     );
+  });
+
+  it('reads a cited metric as what it measured and its values', () => {
+    const measured = indexEvidence({
+      items: [
+        {
+          id: 'metric:terminal-1:request-bytes',
+          kind: 'metric',
+          path: 'demo/captures.json',
+          revision: 'both',
+          sha256: zero,
+          label: 'request bytes',
+          metric: { name: 'request-bytes', base: 70406, head: 9907 },
+        },
+      ],
+    });
+    expect(evidenceRefs(['metric:terminal-1:request-bytes'], measured, { style: 'path' })).toEqual([
+      '`request bytes: 70406 → 9907`',
+    ]);
   });
 
   it('finds an id cited as written in a registry that redacted it', () => {

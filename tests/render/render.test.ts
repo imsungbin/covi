@@ -1608,8 +1608,9 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
           sceneFrame(timeline, index, scene.start + metricSettledAt(scene.direction!, counter)),
         );
         expect(metricSettledAt(scene.direction!, counter)).toBeGreaterThan(count.t + count.seconds);
-        // It lands no earlier than the terminal it replaces would have typed the output its number
-        // comes from, and settles before the next scene starts to come in.
+        // Here it lands after the moment the terminal it replaces would have typed its output
+        // (the staged shot shows no terminal, so nothing waits for that: it is so on this line),
+        // and the counter settles before the next scene starts to come in.
         expect(count.t + count.seconds).toBeGreaterThanOrEqual(
           settledAt(scene.visual, scene.end - scene.start, scene.phases) - 1e-3,
         );
@@ -1621,6 +1622,9 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
           readFileSync(join(result.runDir, 'video', 'frames.json'), 'utf8'),
         ) as { layouts: LayoutReport[] };
         const settled = frames.layouts.find((l) => l.frame === settledFrame(timeline, index))!;
+        // Nothing settled is cut off, and a pile whose items fall under their least size reports
+        // itself as overflowing, so this holds its items there too.
+        expect(settled.items.filter((i) => i.overflow)).toEqual([]);
         const fonts = settled.items
           .filter((i) => i.font !== undefined)
           .sort((a, b) => b.font! - a.font!);

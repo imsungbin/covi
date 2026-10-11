@@ -52,6 +52,7 @@ import {
   interactionTiming,
   metricSettledAt,
   morphTiming,
+  openingSpan,
   sceneFrame,
   screenshotMarks,
   settledFrame,
@@ -1553,12 +1554,24 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
       };
       expect(result.video.rendered).toBe(true);
       expect(result.video.qc).not.toBe('fail');
-      // Every render is checked for small text, empty frames, and monotony.
+      // Every render is checked for small text, empty frames, monotony, and motion.
       const qc = JSON.parse(readFileSync(join(result.runDir, 'video', 'qc.json'), 'utf8')) as {
-        checks: Array<{ id: string }>;
+        checks: Array<{ id: string; status: string; message: string }>;
       };
       expect(qc.checks.map((c) => c.id)).toEqual(
-        expect.arrayContaining(['text-size', 'empty-frame', 'monotony', 'transition-variety']),
+        expect.arrayContaining([
+          'text-size',
+          'empty-frame',
+          'monotony',
+          'transition-variety',
+          'motion-gap',
+          'motion-busy',
+          'reading-time',
+          'empty-opening',
+          'overlap',
+          'out-of-frame',
+          'dropped-beats',
+        ]),
       );
       // Drawn on the canvas by Covi's default director: every story scene at a stop, the camera
       // travelling between them, no fades, and, from four moves, no entrance taking more than
@@ -1663,6 +1676,37 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
             { side: 'head', count: 10 },
           ],
         });
+        // The benchmark moves whenever it speaks and fills its frame as it comes in: every motion
+        // check passes, and so does `still` (its first scene used to hold for 1.7 s).
+        for (const id of [
+          'still',
+          'motion-gap',
+          'motion-busy',
+          'reading-time',
+          'empty-opening',
+          'overlap',
+          'out-of-frame',
+          'dropped-beats',
+        ])
+          expect(
+            qc.checks.find((c) => c.id === id),
+            id,
+          ).toMatchObject({ status: 'pass' });
+        // Nothing else in its QC warns either, except two square layouts older than the motion
+        // checks: the closing summary card needs 644 px under its fox where 513 px are left, so
+        // its stats spill out of the card (`text-fits` in s4), and the code slot draws s2's lines
+        // at 22.3 px (`text-size`), which the methodology for square and vertical code takes up.
+        const known = timeline.width === timeline.height ? ['text-fits', 'text-size'] : [];
+        expect(qc.checks.filter((c) => c.status !== 'pass' && !known.includes(c.id))).toEqual([]);
+        // Its poster is where the byte count lands, the counter the largest thing on screen: the
+        // count's tile on the sheet, past s1's opening, where its pieces are still coming in.
+        expect(posterFrame(timeline)).toBe(
+          sceneFrame(timeline, index, scene.start + metricSettledAt(scene.direction!, counter)),
+        );
+        expect(posterFrame(timeline) / timeline.fps).toBeGreaterThanOrEqual(
+          openingSpan(timeline, 0)?.[1] ?? 0,
+        );
+        expect(existsSync(join(result.runDir, 'video', 'poster.png'))).toBe(true);
       }
     }, 600_000);
   }

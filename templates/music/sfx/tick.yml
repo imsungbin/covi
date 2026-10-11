@@ -1,0 +1,15 @@
+# One tick of a counting number: a tiny wooden tap on the tonic over a dry click. Covi plays a train
+# of them, one for each step of the count, so a tick is shorter than the closest two can be (0.06 s)
+# and never smears. The tap is written in C, so it moves into the music's key; the click is in Hz.
+id: tick
+description: One tick of a counting number - a tiny wooden tap on the tonic.
+license: original
+duration: 0.05
+layers:
+  - gen: modal
+    freq: C6
+    partials:
+      - { ratio: 1, gain: 1, decay: 0.018 }
+      - { ratio: 3.93, gain: 0.25, decay: 0.007 }
+    strike: { noise: 0.3, ms: 0.4 }
+  - { gen: noise-sweep, color: white, filter: highpass, from: 6000, q: 0.7, env: { a: 0.0005, d: 0.003 }, gain: -16 }

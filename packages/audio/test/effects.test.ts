@@ -13,6 +13,7 @@ const config: SoundEffectsConfig = {
   verdictBoostDb: 2,
   outroBoostDb: 2,
   swellCutDb: 4,
+  softCutDb: 4,
   minSpacing: 0.15,
   maxPerSecond: 3,
   recipes: {
@@ -29,6 +30,10 @@ const config: SoundEffectsConfig = {
     transition: 'transition',
     riser: 'riser',
     hero: 'hero',
+    camera: 'camera',
+    count: 'tick',
+    merge: 'thump',
+    appear: 'accent',
   },
 };
 
@@ -37,6 +42,14 @@ const cue = (t: number, kind: EffectCue['kind'], detail?: string): EffectCue => 
   kind,
   scene: 's',
   ...(detail ? { detail } : {}),
+});
+
+/** A counter counting from `t` for `seconds`. */
+const count = (t: number, seconds: number): EffectCue => ({
+  t,
+  kind: 'count',
+  scene: 's',
+  seconds,
 });
 
 describe('effect recipes', () => {
@@ -222,5 +235,71 @@ describe('the hero stack and the swells', () => {
     const verdictFirst = placeEffects([cue(3.05, 'hero'), cue(3, 'verdict', 'looks-good')], config);
     expect(verdictFirst.placed.map((p) => p.kind)).toEqual(['verdict']);
     expect(verdictFirst.dropped.map((d) => d.kind)).toEqual(['hero']);
+  });
+});
+
+describe('the sounds of a directed shot', () => {
+  it('map the camera, a count, a merge, and an appearance to their recipes and ranks', () => {
+    expect(effectRecipe(cue(1, 'camera', 'zoom'), config)).toEqual({
+      recipe: 'camera',
+      priority: 0,
+    });
+    expect(effectRecipe(count(1, 1.6), config)).toEqual({ recipe: 'tick', priority: 1 });
+    expect(effectRecipe(cue(1, 'merge'), config)).toEqual({ recipe: 'thump', priority: 1 });
+    expect(effectRecipe(cue(1, 'appear'), config)).toEqual({ recipe: 'accent', priority: 0.5 });
+  });
+
+  it('play the thump with the landings, ticks and accents softer, the camera as a swell', () => {
+    const { placed, dropped } = placeEffects(
+      [cue(1, 'camera'), count(2, 1.6), cue(4.5, 'merge'), cue(6, 'appear')],
+      config,
+    );
+    expect(dropped).toEqual([]);
+    expect(placed).toEqual([
+      { t: 1, kind: 'camera', recipe: 'camera', gainDb: BED_DB - 3 },
+      { t: 2, kind: 'count', recipe: 'tick', gainDb: BED_DB - 3, seconds: 1.6, ticks: 10 },
+      { t: 4.5, kind: 'merge', recipe: 'thump', gainDb: BED_DB + 1 },
+      { t: 6, kind: 'appear', recipe: 'accent', gainDb: BED_DB - 3 },
+    ]);
+  });
+
+  it("count a counter's ticks as one effect, so a busy second never thins them out", () => {
+    // Thirteen ticks in 2.4 s, then two clicks inside the count: three effects in the second.
+    const { placed, dropped } = placeEffects(
+      [count(1, 2.4), cue(1.4, 'click'), cue(1.8, 'click')],
+      config,
+    );
+    expect(dropped).toEqual([]);
+    expect(placed.map((p) => [p.kind, p.ticks])).toEqual([
+      ['count', 13],
+      ['click', undefined],
+      ['click', undefined],
+    ]);
+  });
+
+  it('never ticks two counters at once: the later count gives way', () => {
+    const { placed, dropped } = placeEffects([count(2, 1.6), count(2.5, 1.6)], config);
+    expect(placed.map((p) => p.t)).toEqual([2]);
+    expect(dropped).toEqual([
+      { t: 2.5, kind: 'count', recipe: 'tick', reason: 'while another counter ticks' },
+    ]);
+  });
+
+  it('ticks a count-up and the count that follows it on the same counter', () => {
+    const { placed, dropped } = placeEffects([count(0.5, 1.6), count(2.6, 1.6)], config);
+    expect(dropped).toEqual([]);
+    expect(placed.map((p) => [p.t, p.ticks])).toEqual([
+      [0.5, 10],
+      [2.6, 10],
+    ]);
+  });
+
+  it('let an accent give way to a landing, and a camera whoosh to an accent', () => {
+    const landing = placeEffects([cue(3, 'appear'), cue(3.05, 'merge')], config);
+    expect(landing.placed.map((p) => p.kind)).toEqual(['merge']);
+    expect(landing.dropped.map((d) => d.kind)).toEqual(['appear']);
+    const swell = placeEffects([cue(3, 'camera'), cue(3.05, 'appear')], config);
+    expect(swell.placed.map((p) => p.kind)).toEqual(['appear']);
+    expect(swell.dropped.map((d) => d.kind)).toEqual(['camera']);
   });
 });

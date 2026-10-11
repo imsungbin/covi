@@ -136,7 +136,7 @@ describe('counting up', () => {
     expect(counterValue(bytes, 2, count, up)).toBe(Math.round(70406 * 0.875));
     expect(counterValue(bytes, 3.5, count, up)).toBe(70406);
     expect(counterValue(bytes, 9, count, up)).toBe(9907);
-    // Without a count-up, as B4 drew it: from before the count, to after it.
+    // Without a count-up, the count alone: the before value until it ticks, then the after value.
     expect(counterValue(bytes, 0.5, count)).toBe(70406);
     expect(counterValue(bytes, 9)).toBe(9907);
     // One value, counted up and held.

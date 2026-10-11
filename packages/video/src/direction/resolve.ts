@@ -213,38 +213,44 @@ function resolveShot(
     !revealed.has(shot.elements[0]!.id);
   const region = shotRegion(whole, scene.visual, ctx.regions);
   const gap = 28 * ctx.regions.unit;
-  const slots = flowSlots(shot, region, ctx.orientation, gap, ctx.regions.unit);
-  let elements = shot.elements.flatMap((e, k) => {
-    const resolved = element(e, slots[k]!, ctx);
-    return resolved ? [resolved] : [];
-  });
+  // What an element shows does not depend on where it goes, and where a packet goes depends on
+  // which of its trips play: elements are placed once the beats are timed.
+  const resolved = shot.elements.map((e) => element(e, region, ctx));
   // Beats move only what the shot shows: when nothing is left, none of them has a target.
-  const shown = elements;
+  const shown = resolved.filter((e) => e !== undefined);
+  // A count ticks from one value to another: on a metric showing one value it has nothing to do.
+  const countable = new Set(
+    shown.flatMap((e) => (e.kind === 'metric' && e.from !== undefined ? [e.id] : [])),
+  );
+  const limit = settle - SETTLE_LEAD;
+  const timed = timeBeats(shot, scene, timing, ctx.options, shown, ctx, limit);
+  const counted = timed.beats.filter((b) => b.verb !== 'count' || countable.has(b.element));
+  /** The shown elements in the slots `beats` leave them (`fans`: see `flowSlots`). */
+  const placed = (beats: readonly DirectionBeat[], fans?: ReadonlyMap<string, number>) => {
+    const slots = flowSlots(shot, beats, region, ctx.orientation, gap, ctx.regions.unit, fans);
+    return resolved.flatMap((e, k) => (e ? [{ ...e, rect: slots[k]! }] : []));
+  };
+  // Which packets travel decides the layout, and the layout which splits have room. A trip that
+  // leaves while its packet is split is left out, so a packet left with no trip takes a slot of
+  // its own; on that layout, splits find their room, and a trip left out only for a split that
+  // then has no room travels after all.
+  const travelling = travelsWhole(counted).beats;
+  let elements = placed(travelling);
+  const roomy = fanRoom(travelling, elements, ctx);
+  const room = new Set(roomy.beats);
+  const travels = travelsWhole(counted.filter((b) => b.verb !== 'split' || room.has(b)));
+  const ordered = flowOrder(travels.beats, elements);
+  const beats = stretchFlows(ordered.beats, limit);
+  const dropped = [timed, roomy, travels, ordered].flatMap((pass) => pass.dropped);
+  // A packet riding from a node a split fans out of starts on the box the split leaves that node.
+  const fans = new Map([...nodeFans({ elements, beats })].map(([id, fan]) => [id, fan.count]));
+  if (fans.size) elements = placed(beats, fans);
   // Content a validated shot cites is in the run; should all of it be gone, the visual stays.
   if (!elements.length) {
     whole = true;
     elements = [
       { id: 'visual', kind: 'visual', rect: shotRegion(true, scene.visual, ctx.regions) },
     ];
-  }
-  // A count ticks from one value to another: on a metric showing one value it has nothing to do.
-  const countable = new Set(
-    elements.flatMap((e) => (e.kind === 'metric' && e.from !== undefined ? [e.id] : [])),
-  );
-  const limit = settle - SETTLE_LEAD;
-  const timed = timeBeats(shot, scene, timing, ctx.options, shown, ctx, limit);
-  const counted = timed.beats.filter((b) => b.verb !== 'count' || countable.has(b.element));
-  const roomy = fanRoom(counted, elements, ctx);
-  const travels = travelsWhole(roomy.beats);
-  const ordered = flowOrder(travels.beats, elements);
-  const beats = stretchFlows(ordered.beats, limit);
-  const dropped = [timed, roomy, travels, ordered].flatMap((pass) => pass.dropped);
-  // A packet riding from a node a split fans out of starts on the box the split leaves that node.
-  const fans = new Map([...nodeFans({ elements, beats })].map(([id, fan]) => [id, fan.count]));
-  if (fans.size) {
-    const riding = flowSlots(shot, region, ctx.orientation, gap, ctx.regions.unit, fans);
-    const at = new Map(shot.elements.map((e, k) => [e.id, riding[k]!]));
-    elements = elements.map((e) => (e.kind === 'packet' ? { ...e, rect: at.get(e.id)! } : e));
   }
   return { whole, elements, beats, ...(dropped.length ? { dropped } : {}) };
 }
@@ -695,9 +701,9 @@ function fanRoom(
 }
 
 /**
- * A packet travels whole: one that split beside a node (`fanRoom` keeps only splits with room)
- * and has not merged back when its next trip leaves stays where it is, so its pieces never cross
- * to the next node, over its label. That trip is left out, and so are the trips after it.
+ * A packet travels whole: one that has split (among `beats`) and not merged back when its next
+ * trip leaves stays where it is, so its pieces never cross to the next node, over its label. That
+ * trip is left out, and so are the trips after it.
  */
 function travelsWhole(beats: DirectionBeat[]): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
   const split = new Map(

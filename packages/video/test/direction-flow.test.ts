@@ -23,6 +23,7 @@ import { arrangedSplit, nodeBoxRect, textBoxRect } from '../src/runtime/routes.t
 import { resolveVideoSpec } from '../src/spec.ts';
 import { type Scene, SceneSchema } from '../src/storyboard/schema.ts';
 import { layoutScenes, pacingFor, phraseMoment } from '../src/timeline/build.ts';
+import type { Rect, SceneDirection } from '../src/timeline/types.ts';
 
 const demo = {
   commands: [
@@ -869,6 +870,90 @@ describe('flow verbs in the direction file', () => {
     )[1]!.direction;
     expect(merged.beats.map((b) => b.verb)).toEqual(['flow', 'split', 'merge', 'flow']);
     expect(merged).not.toHaveProperty('dropped');
+  });
+
+  it('give a packet whose trips are all left out a slot of its own, clear of the node it would leave', () => {
+    const elements = [
+      node('a', 'Request builder'),
+      node('b'),
+      { id: 'p', kind: 'packet', label: 'Request' },
+    ];
+    // Where a packet no flow carries goes: beside the nodes, in a slot of its own.
+    const alone = elementSlots(
+      ['node', 'node', 'packet'],
+      'auto',
+      regions.media,
+      'landscape',
+      28 * regions.unit,
+    );
+    const overlaps = (a: Rect, b: Rect) =>
+      Math.min(a.x + a.width, b.x + b.width) > Math.max(a.x, b.x) &&
+      Math.min(a.y + a.height, b.y + b.height) > Math.max(a.y, b.y);
+    const placed = (d: SceneDirection) => new Map(d.elements.map((e) => [e.id, e.rect]));
+    // Revealed too late for its trip, the packet never leaves: its trip is left out, and it rests
+    // in its own slot rather than on the name of the node it would have left.
+    const late = resolve(
+      shot(elements, [
+        { verb: 'reveal', element: 'p', at: '9907' },
+        { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
+      ]),
+    )[1]!.direction;
+    expect(late.beats.map((b) => b.verb)).toEqual(['reveal']);
+    expect(late.dropped).toEqual([
+      {
+        verb: 'flow',
+        element: 'p',
+        reason: expect.stringMatching(/^the flow of "p" has no room to end 0\.5 s before/),
+      },
+    ]);
+    const lateAt = placed(late);
+    expect(['a', 'b', 'p'].map((e) => lateAt.get(e))).toEqual(alone);
+    expect(overlaps(lateAt.get('p')!, textBoxRect(lateAt.get('a')!, regions.unit, false))).toBe(
+      false,
+    );
+    // Split before its trip and never merged, it cannot travel: the trip is left out, it breaks
+    // apart in its own slot, and the node it would have rested against keeps the room for a
+    // split of its own.
+    const split = resolve(
+      shot(elements, [
+        { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+        { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
+        { verb: 'split', element: 'a', count: id('reader-steps'), side: 'head' },
+      ]),
+    )[1]!.direction;
+    expect(split.beats.map((b) => b.verb === 'split' && b.element)).toEqual(['p', 'a']);
+    expect(split.dropped).toEqual([
+      {
+        verb: 'flow',
+        element: 'p',
+        reason: expect.stringMatching(/leaves while "p" is split; merge it first$/),
+      },
+    ]);
+    const splitAt = placed(split);
+    expect(['a', 'b', 'p'].map((e) => splitAt.get(e))).toEqual(alone);
+    for (const box of [
+      textBoxRect(splitAt.get('a')!, regions.unit, false),
+      nodeBoxRect(splitAt.get('a')!, regions.unit, false, 10),
+    ])
+      expect(overlaps(splitAt.get('p')!, box)).toBe(false);
+  });
+
+  it('let a trip left out for a split that then has no room travel after all', () => {
+    // The packet arrives at "c", splits there, and travels on: its split has no room beside the
+    // name of "c", so it never splits, and its next trip carries it whole.
+    const d = crowded([
+      { verb: 'flow', from: 'a', to: 'c', packet: 'p' },
+      { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+      { verb: 'flow', from: 'c', to: 'd', packet: 'p' },
+    ]).direction;
+    expect(d.beats.map((b) => b.verb === 'flow' && b.to)).toEqual(['c', 'd']);
+    expect(d.dropped).toEqual([
+      {
+        verb: 'split',
+        element: 'p',
+        reason: 'the slot of node "c", where "p" rests, has no room beside its label for 4 pieces',
+      },
+    ]);
   });
 
   it('start a packet that rides from a node that splits on the box the split leaves it', () => {

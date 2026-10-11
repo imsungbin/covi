@@ -1,6 +1,12 @@
 import type { EvidenceIndex } from '@covi/core';
 import { nodeBoxRect } from '../runtime/routes.ts';
-import type { ChangeSide, DirectionElement, Rect, TimelineLabels } from '../timeline/types.ts';
+import type {
+  ChangeSide,
+  DirectionBeat,
+  DirectionElement,
+  Rect,
+  TimelineLabels,
+} from '../timeline/types.ts';
 import { shown } from './echo.ts';
 import { elementSlots } from './layout.ts';
 import { metricName, sides } from './metric.ts';
@@ -27,28 +33,28 @@ export function beatTargets(beat: ShotBeat): string[] {
   return [beat.element];
 }
 
-/** The packets a shot's flows carry: they ride the edges, so they take no slot of their own. */
-export function ridingPackets(shot: Pick<Shot, 'beats'>): Set<string> {
-  return new Set(
-    shot.beats.flatMap((b) => (b.verb === 'flow' && b.packet !== undefined ? [b.packet] : [])),
-  );
-}
-
 /**
  * Slots for a shot's elements, aligned with them: each gets its slot for the shot's layout, except
- * a packet a flow carries, which travels between nodes; its box is the drawn box of the node its
- * first flow leaves (`fans`: the count of a split that fans out of that node, which moves it).
+ * a packet one of `beats` (the resolved ones, in time order) carries, which travels between nodes;
+ * its box is the drawn box of the node its first flow leaves (`fans`: the count of a split that
+ * fans out of that node, which moves it). A packet whose trips were all left out takes a slot of
+ * its own, as one no flow carries does, rather than rest on that node's name.
  */
 export function flowSlots(
-  shot: Pick<Shot, 'elements' | 'beats' | 'layout'>,
+  shot: Pick<Shot, 'elements' | 'layout'>,
+  beats: readonly DirectionBeat[],
   region: Rect,
   orientation: 'vertical' | 'landscape' | 'square',
   gap: number,
   unit: number,
   fans: ReadonlyMap<string, number> = new Map(),
 ): Rect[] {
-  const riders = ridingPackets(shot);
-  const placed = shot.elements.filter((e) => !riders.has(e.id));
+  // The node each travelling packet leaves first.
+  const leaves = new Map<string, string>();
+  for (const b of beats)
+    if (b.verb === 'flow' && b.packet !== undefined && !leaves.has(b.packet))
+      leaves.set(b.packet, b.from);
+  const placed = shot.elements.filter((e) => !leaves.has(e.id));
   const slots = elementSlots(
     placed.map((e) => e.kind),
     shot.layout ?? 'auto',
@@ -60,11 +66,9 @@ export function flowSlots(
   return shot.elements.map((e) => {
     const own = slotOf.get(e.id);
     if (own) return own;
-    const first = shot.beats.find((b): b is FlowBeat => b.verb === 'flow' && b.packet === e.id);
-    const from = first && slotOf.get(first.from);
-    return from
-      ? nodeBoxRect(from, unit, orientation === 'vertical', fans.get(first.from))
-      : region;
+    const from = leaves.get(e.id)!;
+    const slot = slotOf.get(from);
+    return slot ? nodeBoxRect(slot, unit, orientation === 'vertical', fans.get(from)) : region;
   });
 }
 

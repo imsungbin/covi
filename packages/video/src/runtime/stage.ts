@@ -1,4 +1,4 @@
-import { blendPoses, type FoxOptions, foxPose, foxSvg, type Pose } from '@covi/brand';
+import { blendPoses, type FoxOptions, foxPose, foxSvg, motion, type Pose } from '@covi/brand';
 import {
   type CameraKind,
   type DirectionElement,
@@ -1004,7 +1004,16 @@ export class Stage {
         const box = (t: number) => shot.track(element.id, t) ?? first;
         // It travels from one box to another, so where it starts and where it ends bound it.
         const bounds = union([first, box(m.scene.end - m.scene.start)]);
-        const frame = follower(bounds, beat.zoom, m.region, this.pivot);
+        // A morph's changed lines move inside its code card, which the camera keeps whole.
+        const card =
+          element.kind === 'morph' ? this.targetAt(m, element, beat.t + beat.seconds) : undefined;
+        const frame = follower(
+          bounds,
+          beat.zoom,
+          m.region,
+          this.pivot,
+          card && { rect: card, width: this.timeline.width, push: motion.linger },
+        );
         const to = (t: number) => frame(box(t));
         steps.push({ t: beat.t, seconds: beat.seconds, to });
         // A pan after it keeps the scale it holds throughout.

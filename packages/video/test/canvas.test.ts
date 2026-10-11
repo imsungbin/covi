@@ -190,6 +190,62 @@ describe('the canvas camera', () => {
       );
   });
 
+  it('keeps a followed card whole across the frame, its top row in the region, at a modest zoom', () => {
+    for (const orientation of ['landscape', 'vertical'] as const) {
+      const [width, height] = orientation === 'landscape' ? [1920, 1080] : [1080, 1920];
+      const r = computeRegions({ width, height, orientation }).media;
+      const p = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      // A code card as wide as the region, its changed lines travelling down it and growing.
+      const card = { x: r.x, y: r.y + 20, width: r.width, height: r.height - 40 };
+      const first = { x: r.x + 60, y: r.y + 0.4 * r.height, width: 0.6 * r.width, height: 40 };
+      const last = {
+        x: r.x + 60,
+        y: r.y + 0.5 * r.height,
+        width: 0.7 * r.width,
+        height: 0.3 * r.height,
+      };
+      const bounds = {
+        x: first.x,
+        y: first.y,
+        width: last.width,
+        height: last.y + last.height - first.y,
+      };
+      const frame = follower(bounds, 1.25, r, p, { rect: card, width, push: 0.02 });
+      for (const k of [0, 0.25, 0.5, 0.75, 1]) {
+        const lines = lerpRect(first, last, k);
+        const view = frame(lines);
+        // Held back to where the card fits the frame under the push-in, which may magnify it 2%.
+        expect(view.scale).toBeCloseTo(width / card.width / 1.02, 9);
+        for (const push of [0, 0.02]) {
+          const pushed = withPush(view, push);
+          const drawn = drawnRect(card, pushed, { x: 0, y: 0 }, p);
+          expect(drawn.x, orientation).toBeGreaterThanOrEqual(-1e-6);
+          expect(drawn.x + drawn.width, orientation).toBeLessThanOrEqual(width + 1e-6);
+          expect(drawn.y, orientation).toBeGreaterThanOrEqual(r.y - 1e-6);
+          const shown = drawnRect(lines, pushed, { x: 0, y: 0 }, p);
+          expect(shown.y + shown.height, orientation).toBeLessThanOrEqual(r.y + r.height + 1e-6);
+        }
+      }
+      // It still follows the lines as they move down the card.
+      expect(frame(last).y).toBeGreaterThan(frame(first).y + 1);
+    }
+  });
+
+  it('follows at the zoom given when its card fits, and leaves a close-up of the lines alone', () => {
+    const p = pivot;
+    const lines = { x: 900, y: 560, width: 120, height: 40 };
+    const keep = (rect: typeof lines) => ({ rect, width: 1920, push: 0.02 });
+    // A card narrow enough to fit at 1.25×, its top row well clear of the lines.
+    const narrow = { x: 800, y: media.y + 200, width: 400, height: 300 };
+    const fits = follower(lines, 1.25, media, p, keep(narrow));
+    expect(fits(lines).scale).toBe(1.25);
+    // A zoom far past what keeps a wide card whole is a close-up: framed as without a card.
+    const wide = { ...media };
+    expect(follower(lines, 2.5, media, p, keep(wide))(lines)).toEqual(
+      follower(lines, 2.5, media, p)(lines),
+    );
+  });
+
   it('eases into its clamps: the camera slows down rather than stopping dead, inside the region', () => {
     const frame = follower(media, 2, media, pivot);
     /** How much the speed changes from one step to the next, at most. */

@@ -113,41 +113,93 @@ function softMin(a: number, b: number, k: number): number {
 }
 
 /**
+ * A follow framing a card (a morph's code) keeps the card whole when its zoom asks for at most
+ * this many times the scale that would: closer, it would cut only a sliver off the card's sides
+ * or its header row, which reads as a mistake. A zoom past that is a close-up of the lines.
+ */
+const HOLD_BACK = 1.25;
+
+/**
+ * The card a follow frames its target in, kept whole: its box (stop-local), the frame's width,
+ * and how far the push-in may magnify the view on top of the follow.
+ */
+export interface FollowedCard {
+  rect: Rect;
+  width: number;
+  push: number;
+}
+
+/**
+ * The scale at which a card stays whole across the frame, with its top row and the lowest box
+ * its target takes inside the region, even once the push-in has magnified it.
+ */
+function wholeScale(card: FollowedCard, bounds: Rect, region: Rect): number {
+  const below = bounds.y + bounds.height - card.rect.y;
+  const rows = below > 0 ? region.height / below : Number.POSITIVE_INFINITY;
+  return Math.min(card.width / card.rect.width, rows) / (1 + card.push);
+}
+
+/**
  * How a follow beat frames a target that moves (stop-local): at one scale for the whole beat, the
  * beat's zoom, else what fits `bounds` (every box the target takes), so only the position tracks
  * it. As in `beatView`, a target that fits is centered, one that outgrows the view shows its start,
  * and the view stays inside `region`; here each of those clamps eases in, so the camera slows down
- * rather than stopping dead as the target grows past the view or nears the region's edge.
+ * rather than stopping dead as the target grows past the view or nears the region's edge. With a
+ * `card`, a modest zoom holds back to where the card stays whole (see `HOLD_BACK`), and the view
+ * then also keeps the card across the frame and its top row below the region's top, so its header
+ * never slides under the header band.
  */
 export function follower(
   bounds: Rect,
   zoom: number | undefined,
   region: Rect,
   pivot: Point,
+  card?: FollowedCard,
 ): (target: Rect) => View {
-  const scale = clamp(zoom ?? fitted(bounds, region), 1, MAX_ZOOM);
+  const asked = clamp(zoom ?? fitted(bounds, region), 1, MAX_ZOOM);
+  const whole = card ? wholeScale(card, bounds, region) : Number.POSITIVE_INFINITY;
+  // A modest zoom holds back to the card; a close-up frames the lines alone.
+  const held = card && asked <= whole * HOLD_BACK ? card : undefined;
+  const scale = held ? clamp(whole, 1, asked) : asked;
+  // The scale the push-in may reach, at which the card's bounds must still hold.
+  const most = scale * (1 + (held?.push ?? 0));
+  /** Where the view's center may go on one axis: inside the region, as `clampView` keeps it. */
+  const range = (regionStart: number, regionSize: number, p: number): [number, number] => [
+    regionStart + (p - regionStart) / scale,
+    regionStart + regionSize - (regionStart + regionSize - p) / scale,
+  ];
+  /** The same range narrowed to `[lo, hi]`, never past the region's. */
+  const within = ([a, b]: [number, number], lo: number, hi: number): [number, number] => {
+    const from = clamp(Math.max(a, lo), a, b);
+    return [from, clamp(Math.min(b, hi), from, b)];
+  };
+  let xs = range(region.x, region.width, pivot.x);
+  let ys = range(region.y, region.height, pivot.y);
+  if (held) {
+    const c = held.rect;
+    xs = within(xs, c.x + c.width - (held.width - pivot.x) / most, c.x + pivot.x / most);
+    ys = within(ys, Number.NEGATIVE_INFINITY, c.y + (pivot.y - region.y) / most);
+  }
   const axis = (
     start: number,
     size: number,
     regionStart: number,
     regionSize: number,
     p: number,
+    [lo, hi]: [number, number],
   ) => {
     const k = (regionSize / scale) * EASE_IN;
     // How far past its start the view centers on the target: its middle, or, once it outgrows the
     // view, where its start meets the region's.
-    const lead = (p - regionStart) / scale;
-    const focus = start + softMin(size / 2, lead, k);
-    const lo = regionStart + lead;
-    const hi = regionStart + regionSize - (regionStart + regionSize - p) / scale;
-    // Kept inside the region as `clampView` keeps it, each end rounded within at most half the
-    // room, so the two roundings never meet and the view never leaves the region.
+    const focus = start + softMin(size / 2, (p - regionStart) / scale, k);
+    // Kept inside its range as `clampView` keeps it inside the region, each end rounded within at
+    // most half the room, so the two roundings never meet and the view never leaves the range.
     const edge = Math.min(k, (hi - lo) / 2);
     return softMin(-softMin(-focus, -lo, edge), hi, edge);
   };
   return (target) => ({
-    x: axis(target.x, target.width, region.x, region.width, pivot.x),
-    y: axis(target.y, target.height, region.y, region.height, pivot.y),
+    x: axis(target.x, target.width, region.x, region.width, pivot.x, xs),
+    y: axis(target.y, target.height, region.y, region.height, pivot.y, ys),
     scale,
   });
 }

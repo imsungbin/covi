@@ -203,8 +203,10 @@ function fallbackScene(beat: Beat, budget: number, ctx: BeatContext): Scene | un
   // The explanation's lead quotes the commit subject: when the opening keeps a subject in another
   // script out of the narrator's voice, the callout that would read it goes, as it does in English
   // (where it repeats the opening). An explanation written in the narration's language keeps it.
+  // A subject with sentences of its own reaches past the explanation's first one.
   const lead = stripMarkdown(intentSentence(ctx.context, ctx.language)).trim();
-  if (!readsSummary(ctx.context, ctx.language) && first.startsWith(lead)) return undefined;
+  const quotes = first.startsWith(lead) || (first !== '' && lead.startsWith(first));
+  if (!readsSummary(ctx.context, ctx.language) && quotes) return undefined;
   const text = fitWords(first, budget, ctx.language);
   return {
     beat: beat.id,

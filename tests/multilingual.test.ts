@@ -207,6 +207,18 @@ describe('the opening line in Korean, Japanese, and Chinese', () => {
       }
   });
 
+  it('reads no sentence of an English subject that holds two', async () => {
+    // The explanation's first sentence is shorter than the subject it quotes: the callout still goes.
+    const repo = fixRepo('Keep accented letters. Collapse repeated separators');
+    for (const mode of ['short', 'standard'] as const)
+      for (const language of ['ko', 'ja'] as const) {
+        const { storyboard } = await draftIn(repo.root, language, mode);
+        expect(heard(storyboard.scenes), `${language} ${mode}`).not.toMatch(
+          /accented letters|repeated separators/i,
+        );
+      }
+  });
+
   it('reads a subject already written in the narration’s script', async () => {
     const korean = await draftIn(koreanCliRepo().root, 'ko', 'standard');
     expect(korean.storyboard.scenes[0]!.narration).toMatch(

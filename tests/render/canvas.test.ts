@@ -1095,4 +1095,25 @@ describe.skipIf(!available)('what a scene visibly draws', () => {
       expect(right(box)).toBeLessThanOrEqual(right(regions.media) + 0.5);
     }
   });
+
+  it('reports a card’s parts to the layout checks only once they are drawn', async () => {
+    const terminal = {
+      kind: 'terminal',
+      command: 'node scripts/measure.js',
+      before: 'request bytes: 70406',
+      output: 'request bytes: 9907',
+    } as const;
+    const v = await directed(
+      story.map((s) => (s.id === 's3' ? { ...s, visual: terminal } : s)),
+      [],
+      { off: true },
+    );
+    const s3 = v.scene('s3');
+    const media = async (t: number) =>
+      (await v.report(v.frameAt('s3', t))).items.filter((i) => i.role === 'media');
+    // The after run rises 42% of the way in, laid out from the start: until then the captions
+    // cannot cover it, so it is not reported.
+    expect(await media(1)).toHaveLength(1);
+    expect(await media(s3.end - s3.start - 0.6)).toHaveLength(2);
+  });
 });

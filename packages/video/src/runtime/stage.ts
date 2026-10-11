@@ -67,7 +67,7 @@ import {
   type SceneClock,
 } from './components/types.ts';
 import { mountShot, type ShotComponent } from './direction/elements.ts';
-import { drawnBox, el, fitText, place } from './dom.ts';
+import { drawnBox, drawnRects, el, fitText, place } from './dom.ts';
 import { computeRegions, gridSpacing, type Regions } from './layout.ts';
 import {
   aimAt,
@@ -741,11 +741,15 @@ export class Stage {
     // On the canvas, what lies outside the viewport is not drawn, so it is not reported either;
     // a focus computed from layout is reported where the camera draws it.
     const clip = active?.viewport ? this.drawnClip(active, time) : undefined;
+    const visible = active ? drawnRects(active.media) : [];
     const drawn = (active?.component.report() ?? []).flatMap((item) => {
       const at =
         active?.component.laidOut && item.role === 'focus'
           ? { ...item, rect: this.onCanvas(active, item.rect, time) }
           : item;
+      // A part laid out but not shown yet (an entrance still to come) is not on screen for the
+      // captions or the narrator to cover; a focus marks a place, it draws nothing of its own.
+      if (at.role !== 'focus' && !visible.some((r) => clipRect(r, at.rect))) return [];
       if (!clip) return [at];
       const rect = clipRect(at.rect, clip);
       return rect ? [{ ...at, rect }] : [];
@@ -769,7 +773,7 @@ export class Stage {
       headerText: active?.headerText.length ? active.headerText : undefined,
       imagesLoaded: this.imagesOk,
       shot: active ? this.shotReport(active, time) : undefined,
-      content: active ? drawnBox(active.media, clip ?? active.region) : undefined,
+      content: active ? drawnBox(visible, clip ?? active.region) : undefined,
       fontsFailed: this.fontsFailed.length ? this.fontsFailed : undefined,
     };
   }

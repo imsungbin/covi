@@ -106,27 +106,16 @@ const DRAWN = new Set([
 ]);
 
 /**
- * The box around what `root` visibly draws inside `clip`, in stage pixels: text, images, and boxes
- * with a fill, a border, or a shadow, at an opacity (its own times every ancestor's up to `root`)
- * above a tenth. Containers that draw nothing and parts not shown yet (an entrance still to come)
- * do not count, so this is what a viewer sees of the scene, not where its parts are laid out.
+ * The boxes `root` visibly draws, in stage pixels: text, images, and boxes with a fill, a border,
+ * or a shadow, at an opacity (its own times every ancestor's up to `root`) above a tenth.
+ * Containers that draw nothing and parts not shown yet (an entrance still to come) are left out,
+ * so these are what a viewer sees of the scene, not where its parts are laid out.
  */
-export function drawnBox(root: HTMLElement, clip: Rect): Rect | undefined {
-  let box: { left: number; top: number; right: number; bottom: number } | undefined;
+export function drawnRects(root: HTMLElement): Rect[] {
+  const rects: Rect[] = [];
   const add = (r: DOMRect) => {
-    const left = Math.max(r.left, clip.x);
-    const top = Math.max(r.top, clip.y);
-    const right = Math.min(r.right, clip.x + clip.width);
-    const bottom = Math.min(r.bottom, clip.y + clip.height);
-    if (right <= left || bottom <= top) return;
-    box = box
-      ? {
-          left: Math.min(box.left, left),
-          top: Math.min(box.top, top),
-          right: Math.max(box.right, right),
-          bottom: Math.max(box.bottom, bottom),
-        }
-      : { left, top, right, bottom };
+    if (r.width > 0 && r.height > 0)
+      rects.push({ x: r.left, y: r.top, width: r.width, height: r.height });
   };
   const range = document.createRange();
   const walk = (node: Element, opacity: number) => {
@@ -149,6 +138,27 @@ export function drawnBox(root: HTMLElement, clip: Rect): Rect | undefined {
     }
   };
   walk(root, 1);
+  return rects;
+}
+
+/** The box around the parts of `drawn` (see `drawnRects`) inside `clip`, if any lies inside it. */
+export function drawnBox(drawn: readonly Rect[], clip: Rect): Rect | undefined {
+  let box: { left: number; top: number; right: number; bottom: number } | undefined;
+  for (const r of drawn) {
+    const left = Math.max(r.x, clip.x);
+    const top = Math.max(r.y, clip.y);
+    const right = Math.min(r.x + r.width, clip.x + clip.width);
+    const bottom = Math.min(r.y + r.height, clip.y + clip.height);
+    if (right <= left || bottom <= top) continue;
+    box = box
+      ? {
+          left: Math.min(box.left, left),
+          top: Math.min(box.top, top),
+          right: Math.max(box.right, right),
+          bottom: Math.max(box.bottom, bottom),
+        }
+      : { left, top, right, bottom };
+  }
   return (
     box && { x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }
   );

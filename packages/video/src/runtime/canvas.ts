@@ -46,7 +46,7 @@ export function withPush(view: View, push: number): View {
   return { ...view, scale: view.scale * (1 + push) };
 }
 
-function lerpView(a: View, b: View, k: number): View {
+export function lerpView(a: View, b: View, k: number): View {
   return { x: lerp(a.x, b.x, k), y: lerp(a.y, b.y, k), scale: lerp(a.scale, b.scale, k) };
 }
 

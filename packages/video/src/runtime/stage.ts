@@ -34,6 +34,7 @@ import {
   gridStyle,
   layerTransform,
   lerpRect,
+  lerpView,
   PULL_MARGIN,
   pullBack,
   restView,
@@ -618,7 +619,7 @@ export class Stage {
       const front = this.scenes.findLast((m) => m.viewport && m.root.style.display === 'block');
       if (front) {
         const { position, size } = gridStyle(
-          this.cameraAt(front.index, time),
+          this.gridView(front, time),
           this.pivot,
           gridSpacing(this.regions.unit),
         );
@@ -845,6 +846,32 @@ export class Stage {
     const push = m.camera && !m.component.camera ? cameraPush(local, m.camera) : 0;
     const view = viewAt(m.steps, local, restView(this.pivot));
     return clampView(withPush(view, push), m.region, this.pivot);
+  }
+
+  /**
+   * The view the dot grid is drawn with while scene `m` is in front: its camera, or, while it comes
+   * in without the camera travelling (a fade, a push), a blend from the camera of the scene it
+   * replaces, so the dots carry on from where that one's drift or push-in left them instead of
+   * snapping back, as gently as a drift moves. Stops sit on the grid, so that camera moved to
+   * `m`'s stop draws the same dots.
+   */
+  private gridView(m: MountedScene, time: number): View {
+    const view = this.cameraAt(m.index, time);
+    const before = this.scenes[m.index - 1];
+    if (!before?.scene.stop || !m.scene.stop || this.travels(before, m)) return view;
+    const k = seg(
+      time,
+      m.scene.start,
+      m.scene.start + transitionOf(m.scene, this.timeline).seconds,
+    );
+    if (k >= 1) return view;
+    const left = this.cameraAt(before.index, time);
+    const from = {
+      x: left.x - before.scene.stop.x + m.scene.stop.x,
+      y: left.y - before.scene.stop.y + m.scene.stop.y,
+      scale: left.scale,
+    };
+    return lerpView(from, view, easeInOutSine(k));
   }
 
   /** Where the camera looks at `time` as it arrives at scene `j`'s stop, or rests there. */

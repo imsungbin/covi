@@ -354,6 +354,40 @@ describe.skipIf(!available)('the canvas', () => {
     expect(travelling.size).toBe(3);
   });
 
+  it('carries the dots on from a drifting capture across an entrance that does not travel', async () => {
+    const page = {
+      id: 's2',
+      beat: 'problem',
+      eyebrow: 'The page',
+      narration: 'The page waited for every document to arrive.',
+      visual: { kind: 'screenshot', image: { path: 'demo/a.png' }, device: 'desktop' },
+    } satisfies StoryboardInput['scenes'][number];
+    const fade: DirectionInput['shots'] = [
+      { scene: 's2', enter: 'pan', elements: [{ id: 'visual', kind: 'visual' }] },
+      { scene: 's3', enter: 'fade', elements: [{ id: 'visual', kind: 'visual' }] },
+    ];
+    const v = await directed([story[0]!, page, story[2]!, story[3]!], fade, { capture: true });
+    expect(v.scene('s3').transition!.kind).toBe('fade');
+    const at = (position: string) => position.split(' ').map((p) => Number.parseFloat(p));
+    const seen: Array<{ position: number[]; size: number }> = [];
+    for (let frame = v.frameAt('s3', -0.3); frame <= v.frameAt('s3', 0.8); frame++) {
+      const g = (await v.grid(frame))!;
+      seen.push({ position: at(g.position), size: Number.parseFloat(g.size) });
+    }
+    // The capture has drifted in 2% by its end, and the code starts at rest: the dots get there
+    // over the fade, never by a jump (a position is a remainder of the dot spacing, so it wraps).
+    expect(seen[0]!.size).toBeGreaterThan(seen.at(-1)!.size * 1.015);
+    for (const [k, now] of seen.entries()) {
+      if (k === 0) continue;
+      const was = seen[k - 1]!;
+      expect(Math.abs(now.size - was.size)).toBeLessThan(0.1);
+      for (const axis of [0, 1]) {
+        const d = Math.abs(now.position[axis]! - was.position[axis]!) % now.size;
+        expect(Math.min(d, now.size - d)).toBeLessThan(1);
+      }
+    }
+  });
+
   it('is deterministic: the same timeline renders the same frame bytes', async () => {
     const [a, b] = [await directed(story, moves), await directed(story, moves)];
     for (const [id, seconds] of [

@@ -68,7 +68,8 @@ This file is the canonical guidance for every agent client. `CLAUDE.md` imports 
   video/               decision.json, storyboard.json, direction.json (drafted, or the agent's), speech.json,
                        timeline.json, narration.wav, score.json (composed music), audio.json, music.wav,
                        captions.vtt/.srt, composition/, covi-review.mp4, frames.json, poster.png,
-                       contact-sheet.jpg, qc.json
+                       contact-sheet.jpg, qc.json, draft/ (covi render --draft: preview.mp4, poster.png,
+                       contact-sheet.jpg, qc.json, timeline.json, composition/)
 ```
 
 The runs directory ignores itself (it contains a `.gitignore` with `*`); Covi never edits the user's `.gitignore`. The subject model, `.covi/subject/subject.json` (`subject.store`), is the one file Covi keeps outside its ignored directories: what demonstrations saw of the software, small and meant to be committed. `covi subject` prints it.

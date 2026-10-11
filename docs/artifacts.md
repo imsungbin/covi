@@ -62,7 +62,7 @@ The manifest records what was asked, what ran, what was produced, and how it end
 | `outcome` | `status` (`success`, `partial`, `failed`, `gated`), `exitCode`, `verdict`, finding counts by certainty, `gateFailures`, `video` (`rendered`, `reason`, `path` relative to the run, `seconds`), and a `message` |
 | `publish` | Where `covi publish` posted the comment: `platform`, `repository`, `number`, `comment.id` and `url`, `at`. |
 
-Stage names are `understand`, `demonstrate`, `rules`, `model-analysis`, `tests`, `video`, and `report`. A run that stops on an error keeps the failed stage and the error, but has no `outcome`.
+Stage names are `understand`, `demonstrate`, `rules`, `model-analysis`, `tests`, `video`, `draft` (`covi render --draft`), and `report`. A run that stops on an error keeps the failed stage and the error, but has no `outcome`.
 
 ## Files
 
@@ -113,7 +113,7 @@ Written when a demonstration runs: `covi demo` and `covi review --demo` on reque
 
 ### Video
 
-Written by `covi video`, `covi render`, and `covi ci` when a video is rendered. See [Video](video.md).
+Written by `covi video`, `covi render`, and `covi ci` when a video is rendered; `covi render --draft` writes only `video/draft/`. See [Video](video.md).
 
 | File | Kind | Content |
 |---|---|---|
@@ -131,9 +131,15 @@ Written by `covi video`, `covi render`, and `covi ci` when a video is rendered. 
 | `video/composition/` | `composition` | The HTML composition that draws each frame: `index.html`, `runtime.js`, `timeline.json`, and `assets/` (images and fonts). Only `index.html` is recorded in `run.json`. |
 | `video/covi-review.mp4` | `video` | The video: H.264, with the mix (AAC, 192 kb/s, 48 kHz stereo) when anything plays |
 | `video/frames.json` | `composition` | A hash of the composition the frames were drawn from, and the layout reports QC sampled. When `covi render` finds the same hash, it keeps the frames and muxes only the new sound. |
-| `video/poster.png` | `poster` | A representative frame |
+| `video/poster.png` | `poster` | The change at its best: where the key number's count lands, else the hero after its accent, else 1.6 s in |
 | `video/contact-sheet.jpg` | `contact-sheet` | A grid of frames for checking the video at a glance |
 | `video/qc.json` | `qc` | Quality checks with `pass`, `warn`, or `fail` and the measured format, duration, and loudness |
+| `video/draft/preview.mp4` | `draft` | A draft of the video (`covi render --draft`): half size, 15 fps, the voice alone. Never the video |
+| `video/draft/poster.png` | `draft` | The draft's poster, at the moment the video's poster is taken |
+| `video/draft/contact-sheet.jpg` | `draft` | The draft's contact sheet, tiled like the video's |
+| `video/draft/qc.json` | `draft` | The draft's checks: the video's, motion included, without those of the music and the effects |
+| `video/draft/timeline.json` | `draft` | The timeline the draft was drawn from: the video's moments, at the draft's size |
+| `video/draft/composition/` | — | The composition that draws the draft (not recorded in `run.json`) |
 
 ### CI reports
 

@@ -1734,8 +1734,14 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         }
         // The shots the non-render tests plan are the ones Covi drew, scene by scene: the same
         // elements and the same beats asked for. The voice times lines the estimate only guesses,
-        // so a beat may play in one and be left out in the other; both count.
+        // so a beat may play in one and be left out in the other, and in whichever order the
+        // voice's timing puts them (a shorter take pulls a morph in front of a camera move): both
+        // count, and each scene's verbs are compared sorted.
         const planned = (await directedTimeline(await readVideoRun(result.runDir, dir))).timeline;
+        // Equal because both stage the change, not because neither stages anything.
+        expect(planned.scenes.some((s) => s.direction?.beats.some((b) => b.verb === 'morph'))).toBe(
+          true,
+        );
         const shots = (t: Timeline) =>
           t.scenes.map((s) => [
             s.id,

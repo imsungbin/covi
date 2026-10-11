@@ -21,6 +21,7 @@ import {
   orientationOf,
   pacingFor,
   type QcCheck,
+  resolveSpeechLanguage,
   type Storyboard,
   StoryboardSchema,
   type Timeline,
@@ -42,6 +43,7 @@ import {
   directionSources,
 } from '../../packages/video/src/direction/sources.ts';
 import { storyboardImages } from '../../packages/video/src/pipeline.ts';
+import { stripEmphasis } from '../../packages/video/src/storyboard/grammar.ts';
 import type { Rect } from '../../packages/video/src/timeline/types.ts';
 
 /**
@@ -49,7 +51,10 @@ import type { Rect } from '../../packages/video/src/timeline/types.ts';
  * (packages/video/src/pipeline.ts) from the storyboard to the timeline, with Covi's estimate of
  * each line's speech in place of a voice. For a captions-only run that is Covi's timeline exactly
  * (a captions-only render test checks it); for a narrated one it is an estimate, since the render
- * times each line by its take.
+ * times each line by its take. "Exactly" leaves out what the benchmark never uses: the configured
+ * language and a voice's locale, `video.direction: off`, subject focus (`resolveSubjectFocus`),
+ * and redaction (the identity here); and what never moves a frame of the story: each scene's
+ * `evidenceIds`, the narrator's mouth, and the outro's verdict.
  */
 
 /** What a run holds for directing its video. */
@@ -111,8 +116,13 @@ export async function directedTimeline(
 ): Promise<{ plan: Direction; timeline: Timeline }> {
   const { storyboard, evidence, sources, spec } = run;
   const scenes = storyboard.scenes.map((s, i) => ({ ...s, id: s.id ?? `s${i + 1}` }));
-  // As the render resolves it: a language the request named wins over the storyboard's.
-  const language = spec.language ?? storyboard.language ?? 'en';
+  // As the render resolves it: the request's language, the storyboard's, then the narration's
+  // script.
+  const { language } = resolveSpeechLanguage({
+    flag: spec.language,
+    storyboard: storyboard.language,
+    text: storyboard.scenes.map((s) => stripEmphasis(s.say ?? s.narration).trim()),
+  });
   const seed = seedFrom(storyboard.title);
   const directed = planDirection({
     mode: 'auto',

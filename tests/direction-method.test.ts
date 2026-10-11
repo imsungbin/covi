@@ -1,6 +1,6 @@
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadSkill, methodologyOf } from '@covi/core';
+import { loadSkill, methodologyOf, UsageError } from '@covi/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { DirectionSchema } from '../packages/video/src/direction/schema.ts';
@@ -46,10 +46,12 @@ describe('the benchmark’s default direction', () => {
     expect(kinds).toContain('morph');
     expect(kinds).toContain('metric');
     expect(plan.shots.flatMap((s) => s.beats.map((b) => b.verb)).filter(flowing)).not.toEqual([]);
-    // The timeline draws them: the morph and the flow verbs play, and the metric is on screen.
+    // The timeline draws them: the morph, the count, and the flow verbs play, and the metric is on
+    // screen.
     const shots = timeline.scenes.flatMap((s) => (s.direction ? [s.direction] : []));
     const played = shots.flatMap((d) => d.beats.map((b) => b.verb));
     expect(played).toContain('morph');
+    expect(played).toContain('count');
     expect(played.filter(flowing)).not.toEqual([]);
     expect(shots.flatMap((d) => d.elements.map((e) => e.kind))).toContain('metric');
     const checks = timelineChecks(timeline);
@@ -127,13 +129,20 @@ describe('the direction method’s worked example', () => {
       s.id === 's3' ? { ...s, narration: 'Those four chunks are now [[one request]].' } : s,
     );
     const storyboard = rewriteScenes(drafted.storyboard, scenes);
-    await expect(directedTimeline({ ...drafted, storyboard }, example.direction)).rejects.toThrow(
+    const refused = directedTimeline({ ...drafted, storyboard }, example.direction);
+    // The usage error `covi render` exits 2 with, not an internal one.
+    await expect(refused).rejects.toBeInstanceOf(UsageError);
+    await expect(refused).rejects.toThrow(
       /shot 3 \(scene s3\), beat 3 \(count\) quotes "ten thousand"/,
     );
   });
 });
 
-/** The most words the covi-video methodology may carry into the narration prompt. */
+/**
+ * The most words the covi-video methodology may carry into the narration prompt. Every narration
+ * refinement sends it as the system prompt (`refineNarration`), so each word it gains is paid on
+ * every run and crowds the change's own material out of the model's budget.
+ */
 const PROMPT_WORDS = 2800;
 
 describe('the covi-video methodology in model prompts', () => {
@@ -141,7 +150,14 @@ describe('the covi-video methodology in model prompts', () => {
     const methodology = methodologyOf(await loadSkill('covi-video'));
     expect(methodology).toContain('**Direct the picture.**');
     expect(methodology).toContain('references/direction.md');
-    for (const term of ['--draft', 'video/draft', 'covi render', 'count-up', 'qc.json'])
+    for (const term of [
+      '--draft',
+      '--direction',
+      'video/draft',
+      'covi render',
+      'count-up',
+      'qc.json',
+    ])
       expect(methodology, term).not.toContain(term);
     expect(methodology.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(PROMPT_WORDS);
   });

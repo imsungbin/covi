@@ -4,6 +4,7 @@ import {
   type Demonstration,
   type DemoRequestResult,
   type DemoShot,
+  detectLanguage,
   type EvidenceIndex,
   type Explanation,
   endSentence,
@@ -588,20 +589,37 @@ interface Narration {
 /**
  * The opening line: what the change does, said as a statement. It is the video's hook, so it never
  * starts like the explanation's "This change …" sentence (`intentSentence`), which it otherwise
- * follows.
+ * follows. A summary in another script (an English commit subject in a Korean video) would sound
+ * broken in the narrator's voice, so the line says the kind of change, and where, instead.
  */
 function openingLine(context: ReviewContext, language: Language): string {
   const { intent } = context;
   const say = (key: string, params?: Params) => t(language, `narration.opening.${key}`, params);
   let summary = intent.summary.trim().replace(/[.!。！]$/, '');
+  const kind = t(language, `explain.kindPhrase.${intent.kind}`);
+  if (!readsSummary(context, language))
+    return endSentence(
+      language,
+      intent.scope ? say('kindScoped', { kind, scope: intent.scope }) : say('kindAlone', { kind }),
+    );
   if (intent.scope && !summary.toLowerCase().includes(intent.scope.toLowerCase()))
     summary = t(language, 'explain.sentence.scopeIn', { summary, scope: intent.scope });
-  const kind = t(language, `explain.kindPhrase.${intent.kind}`);
   if (language !== 'en') return endSentence(language, say('kind', { kind, summary }));
   if (isImperativeVerb(summary.split(/\s+/)[0] ?? ''))
     return ensurePeriod(say('imperative', { clause: toThirdPersonClause(lowerFirst(summary)) }));
   if (summary.includes(': ')) return sentenceCase(say('titled', { kind, summary }));
   return ensurePeriod(sentenceCase(say('kind', { kind, summary: lowerFirst(summary) })));
+}
+
+/**
+ * Whether the opening reads the change's summary: in English always, otherwise only when it is
+ * written in the narration's language (kanji alone count as Japanese) or has no prose to judge,
+ * only identifiers, which the speech tables spell out.
+ */
+function readsSummary(context: ReviewContext, language: Language): boolean {
+  if (language === 'en') return true;
+  const written = detectLanguage(context.intent.summary)?.language;
+  return written === undefined || written === language || (language === 'ja' && written === 'zh');
 }
 
 /**
@@ -888,6 +906,8 @@ function sameCode(a: Visual, b: Visual): boolean {
  */
 function dropRepeatedLead(scenes: Scene[], ctx: BeatContext): void {
   const { language } = ctx;
+  // An opening that said only the kind of change left saying what it does to the later scenes.
+  if (!readsSummary(ctx.context, language)) return;
   const opening = stripMarkdown(openingLine(ctx.context, language)).trim();
   if (!opening || !scenes[0]?.narration.includes(opening)) return;
   // Later scenes say it the explanation's way (a callout of the summary's first sentence).

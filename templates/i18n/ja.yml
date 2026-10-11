@@ -724,6 +724,8 @@ narration:
     imperative: 'これで{clause}'
     titled: '{kind}です。タイトルは「{summary}」です。'
     kind: '{kind}です: {summary}'
+    kindScoped: '{scope}の{kind}です。'
+    kindAlone: '{kind}です。'
   page:
     home: ホームページ
     homeHeading: ホームページ

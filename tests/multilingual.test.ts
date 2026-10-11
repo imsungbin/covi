@@ -4,6 +4,7 @@ import {
   buildReview,
   explainHeuristically,
   Git,
+  intentSentence,
   type Language,
   loadRepositoryConfig,
   renderComment,
@@ -113,6 +114,97 @@ describe('a change described in Korean', () => {
     expect(spoken).toContain('씨엘아이를');
     expect(spoken).toContain('제이슨');
     expect(spoken).not.toMatch(/\bCLI\b|\bJSON\b/);
+  });
+});
+
+/** A small fix on a branch, committed with the given subject. */
+function fixRepo(subject: string): TempRepo {
+  const repo = createRepo({
+    'src/reader.js': 'export function read(docs) {\n  return docs.map((d) => d.body);\n}\n',
+  });
+  repo.git('checkout', '-q', '-b', 'fix/reader');
+  repo.commit(subject, {
+    'src/reader.js':
+      'export function read(ids, fetch) {\n  return ids.map((id) => fetch(id).body);\n}\n',
+  });
+  repos.push(repo);
+  return repo;
+}
+
+async function draftIn(dir: string, language: Language, mode: 'short' | 'standard') {
+  const { config, change, context, review, explanation } = await analyze(dir, language);
+  const storyboard = draftStoryboard({
+    change,
+    context,
+    explanation,
+    review,
+    spec: resolveVideoSpec(config, { mode }),
+    templates: await loadTemplates(),
+    language,
+  });
+  expect(StoryboardSchema.safeParse(storyboard).success).toBe(true);
+  return { context, storyboard };
+}
+
+describe('the opening line in Korean, Japanese, and Chinese', () => {
+  /** The opening scene's words, written and spoken. */
+  const opened = (scenes: Array<{ narration: string; say?: string }>) =>
+    `${scenes[0]!.narration} ${scenes[0]!.say}`;
+
+  it('says the kind and scope of a change with an English subject, never the subject', async () => {
+    const dir = await materializeExample(
+      (await listExamples()).find((e) => e.name === 'bugfix-cli-slugify')!,
+    );
+    dirs.push(dir);
+    // In English the opening says what the change does, so the callout that says it again goes.
+    const english = await draftIn(dir, 'en', 'standard');
+    expect(english.storyboard.scenes.map((s) => s.beat)).toEqual(['fix', 'review', 'summary']);
+    const opening = {
+      ko: 'slugify의 버그 수정입니다.',
+      ja: 'slugifyのバグ修正です。',
+      zh: '这是对slugify的一次缺陷修复。',
+    };
+    for (const language of ['ko', 'ja', 'zh'] as const) {
+      const { context, storyboard } = await draftIn(dir, language, 'standard');
+      expect(context.intent).toMatchObject({ kind: 'bug-fix', scope: 'slugify' });
+      expect(storyboard.scenes[0]!.narration.startsWith(opening[language]), language).toBe(true);
+      expect(opened(storyboard.scenes), language).not.toMatch(/accented|separators/i);
+      // An opening that says only the kind repeats no later scene, and drops none: the callout
+      // saying what the change does, the explanation's way, is the one place it is said.
+      const lead = intentSentence(context, language);
+      expect(storyboard.scenes[0]!.narration, language).not.toContain(lead);
+      expect(
+        storyboard.scenes.map((s) => s.beat),
+        language,
+      ).toEqual(['fix', 'problem', 'review', 'summary']);
+      expect(storyboard.scenes[1]!.narration, language).toContain(lead);
+    }
+  });
+
+  it('says the kind alone when the subject names no scope', async () => {
+    const repo = fixRepo('fix: send document references so the reader fetches each one itself');
+    const opening = { ko: '버그 수정입니다.', ja: 'バグ修正です。', zh: '这是一次缺陷修复。' };
+    for (const language of ['ko', 'ja', 'zh'] as const) {
+      const { context, storyboard } = await draftIn(repo.root, language, 'short');
+      expect(context.intent.kind).toBe('bug-fix');
+      expect(context.intent.scope).toBeUndefined();
+      expect(storyboard.scenes[0]!.narration.startsWith(opening[language]), language).toBe(true);
+      expect(opened(storyboard.scenes), language).not.toMatch(/document|references|fetches/i);
+    }
+  });
+
+  it('reads a subject already written in the narration’s script', async () => {
+    const korean = await draftIn(koreanCliRepo().root, 'ko', 'standard');
+    expect(korean.storyboard.scenes[0]!.narration).toMatch(
+      /^새 기능입니다: C2-delegate CLI를 추가하고 JSON 출력을 지원합니다\. /,
+    );
+    // Kanji alone are Japanese too. The opening says what the change does, so the callout that
+    // would say it again goes, as in English.
+    const japanese = await draftIn(fixRepo('fix(reader): 文書参照送信').root, 'ja', 'standard');
+    expect(japanese.storyboard.scenes[0]!.narration).toMatch(
+      /^バグ修正です: readerの文書参照送信。/,
+    );
+    expect(japanese.storyboard.scenes.map((s) => s.beat)).toEqual(['fix', 'review', 'summary']);
   });
 });
 

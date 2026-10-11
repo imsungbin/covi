@@ -412,11 +412,16 @@ describe('covi CLI', () => {
       expect(draft.code).toBe(0);
       const json = draft.json() as { artifacts: Record<string, string> };
       const storyboard = JSON.parse(readFileSync(json.artifacts.storyboard!, 'utf8')) as {
-        scenes: Array<{ id: string; visual: { kind: string } }>;
+        scenes: Array<{ id: string; narration: string; visual: { kind: string } }>;
       };
       const direction = JSON.parse(readFileSync(json.artifacts.direction!, 'utf8')) as {
         shots: Array<{ scene: string }>;
       };
+      // A Korean voice never reads the English commit subject: the opening says the kind instead.
+      if (language === 'ko') {
+        expect(storyboard.scenes[0]!.narration).toMatch(/^review의 버그 수정입니다\. /);
+        expect(storyboard.scenes[0]!.narration).not.toContain('Send document references');
+      }
       const terminal = storyboard.scenes.find((s) => s.visual.kind === 'terminal')!;
       // The problem shown, not told: the request splits into its chunks and merges into one, and
       // the reader's steps pile up, beside the request bytes counting down.

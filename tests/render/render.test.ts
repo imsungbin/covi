@@ -58,6 +58,7 @@ import {
   settledFrame,
 } from '../../packages/video/src/timeline/cues.ts';
 import type { DirectionElement, TimelineVisual } from '../../packages/video/src/timeline/types.ts';
+import { directedTimeline, readVideoRun } from '../helpers/direction.ts';
 import { canRenderVideo, fullRenders } from '../helpers/env.ts';
 
 const available = await canRenderVideo();
@@ -1718,6 +1719,25 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         expect(opening).toBeDefined();
         expect(posterFrame(timeline) / timeline.fps).toBeGreaterThanOrEqual(opening![1]);
         expect(existsSync(join(result.runDir, 'video', 'poster.png'))).toBe(true);
+        // The render's own checks pass for the default direction: text large enough and frames
+        // filled (square's code under its floor aside, as above).
+        for (const id of ['text-size', 'empty-frame']) {
+          const check = qc.checks.find((c) => c.id === id)!;
+          expect(check.status === 'pass' || known(check), `${id}: ${check.message}`).toBe(true);
+        }
+        // The shots the non-render tests plan are the ones Covi drew, scene by scene: the same
+        // elements and the same beats asked for. The voice times lines the estimate only guesses,
+        // so a beat may play in one and be left out in the other; both count.
+        const planned = (await directedTimeline(await readVideoRun(result.runDir, dir))).timeline;
+        const shots = (t: Timeline) =>
+          t.scenes.map((s) => [
+            s.id,
+            s.direction?.elements.map((e) => e.kind),
+            [...(s.direction?.beats ?? []), ...(s.direction?.dropped ?? [])]
+              .map((b) => b.verb)
+              .sort(),
+          ]);
+        expect(shots(timeline)).toEqual(shots(planned));
       }
     }, 600_000);
   }

@@ -16,7 +16,7 @@ Choose by what the change does. Each template beat's `verbs` (`covi templates sh
 | fixes that | the same staging after the change: the pieces `merge`, the pile is shorter, the counter lands on the new value |
 | shows a screen or prints output | the scene's `visual` (or a `capture`, an `output`) and a `camera` move to what changed |
 
-The key number is the largest thing on screen when it lands: make its `metric` the first element of a `"layout": "split"` (the first element takes half the region, and the rest share the other half), or give it a shot of its own.
+The key number is the largest thing on screen when it lands: make its `metric` the first element of a `"layout": "split"`, or give it a shot of its own. A split gives its first element half the region and the rest the other half; in a square frame a number takes 7 parts of the width to the next element's 6, and a `pile` goes in a row under them.
 
 ## Verbs
 
@@ -56,7 +56,7 @@ Shots name scenes by id. Ids are optional (Covi numbers scenes `s1`, `s2`, …),
 ## Variety
 
 - **No more than two shots of one kind in a row.** A shot's kind is its first element's, counted as the picture it looks like (a `morph` counts as code, an `output` as a terminal, a `visual` as the storyboard visual's kind), and a shot with a flow verb counts as a flow.
-- **Camera moves over fades.** `enter: "pan"` to the next step, `"zoom"` into the hero, `"wipe"` from before to after, `"cut"` when the same subject continues; `"push"` slides in the next step of a sequence. Leave the storyboard's `transition`s unset, so scenes you give no `enter` take Covi's camera rotation, not a fade. Use no entrance for more than 60% of the scene changes.
+- **Camera moves over fades.** `enter: "pan"` to the next step, `"zoom"` into the hero, `"wipe"` from before to after, `"cut"` when the same subject continues; `"push"` slides in the next step of a sequence. Leave the storyboard's `transition`s unset, so scenes you give no `enter` take Covi's camera rotation, not a fade. No one entrance for more than 60% of the scene changes.
 - **One idea per shot.** About four elements and four beats at most. No more than three beats start within any second, and no more than two camera moves within any two seconds. In 9:16, give a `code` or `morph` element a shot alone or with one partner: a third slot draws its code too small to read.
 - **Keep it moving.** No 1.5 s of narration without a beat, a camera move, or an element arriving: spread the beats over the line, each on its own phrase.
 - **Give words time.** Anything with words on it (a label, a node, a packet's, a pile's, or a metric's name) needs 0.4 s plus a second for every 15 characters (8 in Korean, Japanese, or Chinese) before the next scene comes in, which happens about when the line ends; the code a morph adds needs as long once the morph has landed, up to 2 s. Bring them in on a phrase in the first half of the line, and keep the end of the line for beats without words: a `count`, a `merge`, a camera move.

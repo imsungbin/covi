@@ -266,4 +266,81 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
     expect(audio.music.id).toBe('crisp-cli');
     expect(read<Qc>(result.runDir, 'video/qc.json').status).not.toBe('fail');
   }, 900_000);
+
+  it("sounds the benchmark's motion, and re-mixes only the sound when only the sound changes", async () => {
+    const repo = await example('backend-slim-request');
+    const { result } = covi(['video', '--repo', repo, '--standard']);
+    expect(result.video.rendered).toBe(true);
+    const run = result.runDir;
+    type Cue = { t: number; kind: string; seconds?: number };
+    type Beat = { verb: string; t: number; seconds: number };
+    const timeline = read<{
+      scenes: Array<{ start: number; direction?: { beats: Beat[] } }>;
+      cues: Cue[];
+    }>(run, 'video/timeline.json');
+    // Each count in a shot is one cue that lasts it.
+    const counts = timeline.scenes.flatMap((s) =>
+      (s.direction?.beats ?? [])
+        .filter((b) => b.verb === 'count' || b.verb === 'count-up')
+        .map((b) => ({ t: s.start + b.t, seconds: b.seconds })),
+    );
+    expect(counts.length).toBeGreaterThan(0);
+    for (const c of counts)
+      expect(timeline.cues).toContainEqual(
+        expect.objectContaining({ kind: 'count', t: expect.closeTo(c.t, 6), seconds: c.seconds }),
+      );
+    // The mix accounts for every motion cue; the counter ticks and the merge thumps.
+    type Effect = { t: number; kind: string; recipe: string; seconds?: number; ticks?: number };
+    const audio = read<{
+      effects: { placed: Effect[]; dropped: Effect[] };
+      levels: { effectsBelowVoiceDb?: number };
+    }>(run, 'video/audio.json');
+    const heard = [...audio.effects.placed, ...audio.effects.dropped];
+    for (const cue of timeline.cues.filter((c) =>
+      ['camera', 'count', 'merge', 'appear'].includes(c.kind),
+    ))
+      expect(
+        heard.some((e) => e.kind === cue.kind && Math.abs(e.t - cue.t) < 1e-3),
+        `${cue.kind} at ${cue.t}`,
+      ).toBe(true);
+    const tick = audio.effects.placed.find((p) => p.kind === 'count');
+    expect(tick).toMatchObject({ recipe: 'tick' });
+    expect(tick!.ticks).toBeGreaterThanOrEqual(2);
+    expect(audio.effects.placed.find((p) => p.kind === 'merge')).toMatchObject({ recipe: 'thump' });
+    expect(audio.levels.effectsBelowVoiceDb).toBeGreaterThanOrEqual(8);
+    const qc = read<Qc>(run, 'video/qc.json');
+    for (const id of ['audio', 'music-under-speech', 'music-jump', 'music-range', 'sound-effects'])
+      expect(qc.checks.find((c) => c.id === id)?.status, id).toBe('pass');
+
+    // Only the sound changes: the timeline stays byte for byte, and the frames are kept.
+    const bytes = (rel: string) => readFileSync(join(run, rel));
+    const framesKey = () => read<{ key: string }>(run, 'video/frames.json').key;
+    const first = {
+      timeline: bytes('video/timeline.json'),
+      audio: bytes('video/audio.json'),
+      music: bytes('video/music.wav'),
+      key: framesKey(),
+    };
+    const remix = (...flags: string[]) => {
+      const again = covi(['render', '--repo', repo, '--run', result.runId, ...flags]).result;
+      expect(again.video.framesReused, flags.join(' ')).toBe(true);
+      expect(bytes('video/timeline.json').equals(first.timeline), flags.join(' ')).toBe(true);
+      expect(framesKey()).toBe(first.key);
+      return read<{ effects: { enabled: boolean; placed: Effect[] }; music: { source: string } }>(
+        run,
+        'video/audio.json',
+      );
+    };
+    expect(remix('--no-sound-effects').effects).toMatchObject({ enabled: false, placed: [] });
+    expect(remix('--music', 'none').music.source).toBe('none');
+    copyFileSync(
+      join(import.meta.dirname, 'fixtures', 'score.json'),
+      join(run, 'video', 'score.json'),
+    );
+    expect(remix('--music', 'compose').music.source).toBe('score');
+    // Back to the sound it was drafted with: the same effects and music, byte for byte.
+    remix();
+    expect(bytes('video/audio.json').equals(first.audio)).toBe(true);
+    expect(bytes('video/music.wav').equals(first.music)).toBe(true);
+  }, 900_000);
 });

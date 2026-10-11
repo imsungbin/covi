@@ -283,19 +283,48 @@ describe('the canvas camera', () => {
     }
     expect(between('pan', a, b, 0.5, 0.4).scale).toBe(1);
     expect(between('zoom', a, b, 0.5, 0.4).scale).toBeCloseTo(0.4, 9);
-    // A zoom pulls back as far as it has travelled: the dip's depth follows the travel's ease, so
-    // the camera does not pull back before it moves, and both peak at the middle.
+    // A zoom pulls back as it travels: the dip's depth follows the travel's ease, in proportion to
+    // it at first, so the camera never pulls back before it moves, and both peak at the middle.
     for (const k of [0.25, 0.5, 0.75]) {
       const view = between('zoom', a, b, k, 0.4);
       const travel = (view.x - a.x) / (b.x - a.x);
       expect(travel).toBeCloseTo(easeInOutCubic(k), 9);
-      expect((1 - view.scale) / (1 - 0.4)).toBeCloseTo(Math.sin(Math.PI * travel) ** 2, 9);
+      expect((1 - view.scale) / (1 - 0.4)).toBeCloseTo(4 * travel * (1 - travel), 9);
     }
-    expect(1 - between('zoom', a, b, 0.25, 0.4).scale).toBeLessThan(0.05 * (1 - 0.4));
+    // A quarter of the way through the move (6% of the travel), it has pulled back under a
+    // quarter of the way, where the clock pulled it back half of the way.
+    expect(1 - between('zoom', a, b, 0.25, 0.4).scale).toBeLessThan(0.25 * (1 - 0.4));
     // Pulled back far enough for both stops' regions to fit at once.
     const back = pullBack({ x: 0, y: 0 }, { x: 2400, y: 0 }, media);
     expect(back).toBeCloseTo(media.width / (2400 + media.width), 9);
     expect(pullBack({ x: 0, y: 0 }, { x: 0, y: 0 }, media)).toBe(1);
+  });
+
+  it('zooms between stops at a pace a frame can follow, wherever the next stop sits', () => {
+    // The landscape media region, a 0.9 s zoom at 30 fps, and the stops the path lays out: the
+    // next in a row (a quarter of a frame apart), the first of the next row, and a hero dropped
+    // half a frame below that.
+    const [W, H] = [1920, 1080];
+    const gap = 0.25 * W;
+    const frames = 0.9 * 30;
+    for (const [to, most] of [
+      [{ x: W + gap, y: 0 }, 0.1],
+      [{ x: 0, y: H + gap }, 0.11],
+      [{ x: 0, y: 1.5 * H + gap }, 0.115],
+    ] as const) {
+      const back = pullBack({ x: 0, y: 0 }, to, media) * 0.92;
+      const [a, b] = [restView(pivot), toWorld(restView(pivot), to)];
+      const scales = Array.from(
+        { length: frames + 1 },
+        (_, i) => between('zoom', a, b, i / frames, back).scale,
+      );
+      const steps = scales.slice(1).map((s, i) => Math.abs(s - scales[i]!));
+      const turns = scales.slice(2).map((s, i) => Math.abs(s - 2 * scales[i + 1]! + scales[i]!));
+      // Measured: 0.088, 0.104, and 0.111 a frame at the fastest (the clock's dip: 0.071, 0.085,
+      // 0.090), turning round at the trough by 0.06 at most.
+      expect(Math.max(...steps), `${to.x},${to.y}`).toBeLessThan(most);
+      expect(Math.max(...turns), `${to.x},${to.y}`).toBeLessThan(0.065);
+    }
   });
 
   it('knows which entrances move the camera', () => {

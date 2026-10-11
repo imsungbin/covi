@@ -240,8 +240,9 @@ export function between(kind: CameraKind, from: View, to: View, k: number, back:
   const view = lerpView(from, to, travel);
   if (kind === 'pan') return view;
   // The dip follows the travel, not the clock: on the clock it would pull back while the camera
-  // has barely moved, sweeping the frame behind the stop it leaves.
-  const dip = Math.sin(Math.PI * travel) ** 2;
+  // has barely moved, sweeping the frame behind the stop it leaves. It pulls back in proportion
+  // to the travel from the start, so it never has to catch up where the travel is fastest.
+  const dip = 4 * travel * (1 - travel);
   return { ...view, scale: lerp(view.scale, back, dip) };
 }
 

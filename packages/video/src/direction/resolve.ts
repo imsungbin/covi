@@ -508,7 +508,7 @@ function timeBeats(
     return reveal ? reveal.t + reveal.seconds : 0;
   };
   const aimed = beats.map((b): Written => {
-    const was = { phrased: phrased.has(b), ready: Math.max(...resolvedTargets(b).map(ready)) };
+    const was = { phrased: phrased.has(b), ready: Math.max(...beatTargets(b).map(ready)) };
     if (b.verb === 'reveal') return { beat: b, ...was };
     const at = lands.get(b);
     if (at !== undefined && (b.verb === 'count' || b.verb === 'count-up'))
@@ -625,13 +625,6 @@ function sequenced(
     if (key !== undefined) last.set(key, { written: w, placed: beat });
   }
   return { beats, dropped };
-}
-
-/** The elements a resolved beat moves the camera toward, acts on, travels between, or carries. */
-function resolvedTargets(b: DirectionBeat): string[] {
-  if (b.verb === 'camera') return [b.to];
-  if (b.verb === 'flow') return [b.from, b.to, ...(b.packet === undefined ? [] : [b.packet])];
-  return [b.element];
 }
 
 /**

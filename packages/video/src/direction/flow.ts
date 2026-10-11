@@ -25,8 +25,11 @@ type SplitBeat = Extract<ShotBeat, { verb: 'split' }>;
 type MergeBeat = Extract<ShotBeat, { verb: 'merge' }>;
 type CountUpBeat = Extract<ShotBeat, { verb: 'count-up' }>;
 
-/** Every element a beat names: its element, a camera's target, or a flow's nodes and packet. */
-export function beatTargets(beat: ShotBeat): string[] {
+/**
+ * Every element a beat names, as written or resolved: its element, a camera's target, or a flow's
+ * nodes and packet.
+ */
+export function beatTargets(beat: ShotBeat | DirectionBeat): string[] {
   if (beat.verb === 'camera') return [beat.to];
   if (beat.verb === 'flow')
     return [beat.from, beat.to, ...(beat.packet === undefined ? [] : [beat.packet])];

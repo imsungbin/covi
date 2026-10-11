@@ -77,6 +77,7 @@ interface Drawn {
   opacity: string;
   transform: string | null;
   clip: string | null;
+  mask: string | null;
   header: string | null;
 }
 
@@ -180,6 +181,7 @@ async function directed(
          opacity: s.style.opacity,
          transform: s.querySelector(':scope > .stop-view > .layer')?.style.transform ?? null,
          clip: s.querySelector(':scope > .stop-view')?.style.clipPath ?? null,
+         mask: s.querySelector(':scope > .stop-view')?.style.maskImage ?? null,
          header: s.querySelector(':scope > .scene-header')?.style.opacity ?? null,
        }));`,
     ) as Promise<Drawn[]>;
@@ -467,6 +469,34 @@ describe.skipIf(!available)('the canvas', () => {
       }
       expect(checked).toBeGreaterThan(4);
     }
+  });
+
+  it('feathers the clip’s top and bottom edges while it is closed, and masks nothing at rest', async () => {
+    const v = await directed(story, moves);
+    const beat = v.scene('s3').direction!.beats[0]!;
+    const at = async (id: string, seconds: number) =>
+      v.of(await v.state(v.frameAt(id, seconds)), id);
+    for (const [id, seconds] of [
+      ['s2', 1],
+      ['s3', 1.2],
+    ] as const) {
+      const rest = await at(id, seconds);
+      expect([rest.clip, rest.mask]).toEqual(['', '']);
+    }
+    // Mid-move and while a beat magnifies the stop, the picture fades out past the clip's edges.
+    expect((await at('s3', 0.45)).mask).toContain('linear-gradient');
+    const zoomed = await at('s3', beat.t + beat.seconds + 0.1);
+    const stops = [...(zoomed.mask ?? '').matchAll(/(-?[\d.]+)px/g)].map((m) => Number(m[1]));
+    // The region's rows are drawn whole; the fade lies in the gaps above and below them, so a card
+    // passing under the header fades away, and it never reaches the header or the captions.
+    const m = regions.media;
+    const feather = 16 * regions.unit;
+    expect(stops).toHaveLength(4);
+    for (const [k, y] of [m.y - feather, m.y, m.y + m.height, m.y + m.height + feather].entries())
+      expect(stops[k]).toBeCloseTo(y, 1);
+    expect(insetTop(zoomed.clip)).toBeCloseTo(m.y - feather, 1);
+    expect(stops[0]).toBeGreaterThanOrEqual(regions.header.y + regions.header.height - 0.5);
+    expect(stops[3]).toBeLessThanOrEqual(regions.captions.y + 0.5);
   });
 
   it('hands the header over across a camera move: two are never on screen at once', async () => {

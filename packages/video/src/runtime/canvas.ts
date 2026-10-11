@@ -243,6 +243,32 @@ export function insetOf(clip: Rect, width: number, height: number): string {
   return `inset(${px(clip.y)} ${px(width - clip.x - clip.width)} ${px(height - clip.y - clip.height)} ${px(clip.x)})`;
 }
 
+/**
+ * A viewport clip feathered `feather` px past its top and bottom edges, as far as the frame
+ * allows: `clip-path` reaches that far, and a mask fades the picture out over the reach, so what
+ * passes out of the clip fades rather than being cut. The clip spans the frame's width, so its
+ * sides need none.
+ */
+export function featherOf(
+  clip: Rect,
+  feather: number,
+  width: number,
+  height: number,
+): { clip: string; mask: string } {
+  const bottom = clip.y + clip.height;
+  const above = Math.min(feather, clip.y);
+  const below = Math.min(feather, height - bottom);
+  const px = (n: number) => `${n.toFixed(2)}px`;
+  return {
+    clip: insetOf(
+      { ...clip, y: clip.y - above, height: clip.height + above + below },
+      width,
+      height,
+    ),
+    mask: `linear-gradient(to bottom, transparent ${px(clip.y - above)}, #000 ${px(clip.y)}, #000 ${px(bottom)}, transparent ${px(bottom + below)})`,
+  };
+}
+
 /** The part of a box inside the clip, or nothing when none of it is. */
 export function clipRect(rect: Rect, clip: Rect): Rect | undefined {
   const x = Math.max(rect.x, clip.x);

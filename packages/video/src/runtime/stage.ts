@@ -29,9 +29,9 @@ import {
   clampView,
   clipRect,
   drawnRect,
+  featherOf,
   follower,
   gridStyle,
-  insetOf,
   layerTransform,
   lerpRect,
   PULL_MARGIN,
@@ -204,6 +204,12 @@ const EYES = { x: 70, y: 52 };
 const CLIP_RAMP = 0.2;
 /** How far a beat magnifies a stop by the time the viewport has closed (a push never closes it). */
 const CLIP_ZOOM = 0.1;
+/**
+ * How far the closed viewport fades the picture out past its band's top and bottom, in design
+ * units: no further than the gap between the media region and the header (16 at 16:9) or the
+ * captions, so neither is ever drawn over, while a card passing under the header fades away.
+ */
+const FEATHER = 16;
 /** Room kept between the tail and what it must not cover, in view-box units. */
 const TAIL_MARGIN = 4;
 
@@ -556,8 +562,11 @@ export class Stage {
       if (m.component.camera) m.component.camera(push);
       if (m.viewport && scene.stop) {
         m.media.style.transform = layerTransform(this.cameraAt(i, time), scene.stop, this.pivot);
-        const clip = this.clipAt(i, time);
-        m.viewport.style.clipPath = clip ? insetOf(clip, t.width, t.height) : '';
+        const viewport = this.viewportAt(i, time);
+        const edges =
+          viewport && featherOf(viewport.clip, FEATHER * unit * viewport.closed, t.width, t.height);
+        m.viewport.style.clipPath = edges?.clip ?? '';
+        m.viewport.style.maskImage = edges?.mask ?? '';
       } else if (!m.component.camera)
         m.media.style.transform = push > 1e-6 ? `scale(${(1 + push).toFixed(5)})` : '';
       if (m.component.fox && m.foxTaken !== undefined)
@@ -894,20 +903,21 @@ export class Stage {
   }
 
   /**
-   * Scene `i`'s viewport clip at `time`, or nothing: at rest a stop is drawn whole, as without a
-   * canvas (a card's shadow, the large fox's tail past the region).
+   * Scene `i`'s viewport at `time`: its clip and how far it has closed (0–1), or nothing: at rest
+   * a stop is drawn whole, as without a canvas (a card's shadow, the large fox's tail past the
+   * region). Its feather fades past the clip, so the clip is what it draws whole.
    */
-  private clipAt(i: number, time: number): Rect | undefined {
+  private viewportAt(i: number, time: number): { clip: Rect; closed: number } | undefined {
     const j = this.headedTo(i, time);
     const w = easeInOutCubic(this.closedInto(j, time));
     if (w <= 1e-6) return undefined;
     const frame = { x: 0, y: 0, width: this.timeline.width, height: this.timeline.height };
-    return lerpRect(frame, this.bandInto(j, time), w);
+    return { clip: lerpRect(frame, this.bandInto(j, time), w), closed: w };
   }
 
   /** Scene `m`'s clip where it is drawn (see `throughScene`), or nothing at rest. */
   private drawnClip(m: MountedScene, time: number): Rect | undefined {
-    const clip = this.clipAt(m.index, time);
+    const clip = this.viewportAt(m.index, time)?.clip;
     return clip && this.throughScene(m, clip);
   }
 

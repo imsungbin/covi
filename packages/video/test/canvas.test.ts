@@ -7,6 +7,7 @@ import {
   clampView,
   clipRect,
   drawnRect,
+  featherOf,
   follower,
   gridStyle,
   insetOf,
@@ -267,6 +268,19 @@ describe('the canvas viewport', () => {
       y: 0,
       width: 200,
       height: 100,
+    });
+  });
+
+  it('feathers a clip past its top and bottom edges, never past the frame', () => {
+    const clip = { x: 0, y: 100, width: 200, height: 50 };
+    expect(featherOf(clip, 10, 200, 300)).toEqual({
+      clip: 'inset(90.00px 0.00px 140.00px 0.00px)',
+      mask: 'linear-gradient(to bottom, transparent 90.00px, #000 100.00px, #000 150.00px, transparent 160.00px)',
+    });
+    // At the frame's edges there is no room to fade into.
+    expect(featherOf({ ...clip, y: 4, height: 290 }, 10, 200, 300)).toEqual({
+      clip: 'inset(0.00px 0.00px 0.00px 0.00px)',
+      mask: 'linear-gradient(to bottom, transparent 0.00px, #000 4.00px, #000 294.00px, transparent 300.00px)',
     });
   });
 

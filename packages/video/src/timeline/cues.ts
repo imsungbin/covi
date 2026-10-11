@@ -1,6 +1,7 @@
 import { metricSettled } from '../runtime/numbers.ts';
 import {
   type CodeLine,
+  type DirectionBeat,
   type DirectionElement,
   type FrameMark,
   HERO_PHASE,
@@ -715,33 +716,75 @@ export const MORPH_PHASES = {
 export const MORPH_SETTLE = 0.5;
 
 /**
- * When a directed scene's choreography is done: every element has entered and played its own (the
- * storyboard visual on the scene's phases, the others from their reveal; a morph once its added
- * tokens have settled, a metric once its value and its change are in), and every beat has ended.
+ * A part of a directed scene that moves: an element entering and playing its own choreography,
+ * or a beat.
+ */
+export interface ShotMotion {
+  /** The element's id, or the beat's verb. */
+  name: string;
+  beat: boolean;
+  /** Seconds since the scene started. */
+  span: Span;
+}
+
+/**
+ * When each part of a directed scene moves: every element from its reveal until it has entered
+ * and played its own choreography (the storyboard visual on the scene's phases, code typing in, a
+ * metric landing when nothing counts it), and every beat. The beat a morph plays lasts until its
+ * added tokens have settled, and the one a metric's value lands on (its count, else its count-up)
+ * until the value has centered and its change has faded in; a node, a label, a packet, or a pile
+ * is in place half a second after it enters, and its verbs are beats.
+ */
+export function shotMotion(
+  scene: Pick<TimelineScene, 'visual' | 'direction' | 'phases' | 'start' | 'end'>,
+): ShotMotion[] {
+  const d = scene.direction;
+  if (!d) return [];
+  const duration = scene.end - scene.start;
+  const own = (verb: 'reveal' | 'morph' | 'count' | 'count-up', id: string) =>
+    d.beats.find((b) => b.verb === verb && 'element' in b && b.element === id);
+  // Where a beat ends once what it moved has settled, when that is after the beat itself.
+  const settles = new Map<DirectionBeat, number>();
+  const elements = d.elements.map((e): ShotMotion => {
+    const at = own('reveal', e.id)?.t ?? 0;
+    const until = (end: number): ShotMotion => ({ name: e.id, beat: false, span: [at, end] });
+    if (e.kind === 'visual')
+      return until(Math.max(at, settledAt(scene.visual, duration, scene.phases)));
+    if (e.kind === 'code' || e.kind === 'output' || e.kind === 'capture')
+      return until(at + settledAt(e.visual, Math.max(0.1, duration - at)));
+    // As the runtime does, an element plays its first morph, count, or count-up; a later one only
+    // takes its time.
+    if (e.kind === 'morph') {
+      const beat = own('morph', e.id);
+      if (beat) settles.set(beat, beat.t + beat.seconds + MORPH_SETTLE);
+    }
+    if (e.kind === 'metric') {
+      const beat = own('count', e.id) ?? own('count-up', e.id);
+      if (!beat) return until(metricSettledAt(d, e));
+      settles.set(beat, Math.max(beat.t + beat.seconds, metricSettledAt(d, e)));
+    }
+    return until(at + 0.5);
+  });
+  const beats = d.beats.map(
+    (b): ShotMotion => ({
+      name: b.verb,
+      beat: true,
+      span: [b.t, settles.get(b) ?? b.t + b.seconds],
+    }),
+  );
+  // Beats first: at the same moment, a beat is what a viewer sees start.
+  return [...beats, ...elements];
+}
+
+/**
+ * When a directed scene's choreography is done: every element has entered and played its own,
+ * and every beat has ended (see `shotMotion`).
  */
 export function shotSettledAt(
   scene: Pick<TimelineScene, 'visual' | 'direction' | 'phases' | 'start' | 'end'>,
 ): number {
-  const duration = scene.end - scene.start;
-  const d = scene.direction;
-  if (!d) return settledAt(scene.visual, duration, scene.phases);
-  const revealedAt = (id: string) =>
-    d.beats.find((b) => b.verb === 'reveal' && b.element === id)?.t ?? 0;
-  const elements = d.elements.map((e) => {
-    if (e.kind === 'visual') return settledAt(scene.visual, duration, scene.phases);
-    const at = revealedAt(e.id);
-    if (e.kind === 'morph') {
-      const beat = d.beats.find((b) => b.verb === 'morph' && b.element === e.id);
-      return Math.max(at + 0.5, beat ? beat.t + beat.seconds + MORPH_SETTLE : 0);
-    }
-    if (e.kind === 'metric') return metricSettledAt(d, e);
-    // A packet or a pile is in place half a second after it enters; its verbs end with the beats.
-    if (e.kind === 'packet' || e.kind === 'pile') return at + 0.5;
-    return e.kind === 'node' || e.kind === 'label'
-      ? at + 0.5
-      : at + settledAt(e.visual, Math.max(0.1, duration - at));
-  });
-  return Math.max(0, ...elements, ...d.beats.map((b) => b.t + b.seconds));
+  if (!scene.direction) return settledAt(scene.visual, scene.end - scene.start, scene.phases);
+  return Math.max(0, ...shotMotion(scene).map((m) => m.span[1]));
 }
 
 /**

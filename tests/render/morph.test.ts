@@ -79,9 +79,15 @@ const grow: DiffLine[] = [
 
 /**
  * A two-scene 640×360 composition whose second scene morphs `lines` on `beats` (seconds since that
- * scene started) in a card laid out in `rect`, opened in Chromium.
+ * scene started) in a card laid out in `rect`, opened in Chromium; a `static` view holds that
+ * scene's camera still (no push-in).
  */
-async function morphed(lines: DiffLine[], beats: DirectionBeat[] = [MORPH], rect: Rect = media) {
+async function morphed(
+  lines: DiffLine[],
+  beats: DirectionBeat[] = [MORPH],
+  rect: Rect = media,
+  view?: 'static',
+) {
   const dir = mkdtempSync(join(tmpdir(), 'covi-morph-'));
   dirs.push(dir);
   const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', width: W, height: H });
@@ -101,6 +107,7 @@ async function morphed(lines: DiffLine[], beats: DirectionBeat[] = [MORPH], rect
         narration: 'Now it sends only the ids, and the reader fetches each document itself.',
         minSeconds: 7,
         visual: { kind: 'callout', title: 'After' },
+        ...(view ? { camera: view } : {}),
       },
     ],
   }).scenes;
@@ -231,7 +238,8 @@ describe.skipIf(!available)('the token morph', () => {
   });
 
   it('settles on the code after the change, reported as code for QC', async () => {
-    const v = await morphed(refs);
+    // Held still: the push-in would magnify the size QC reads.
+    const v = await morphed(refs, [MORPH], media, 'static');
     const frame = v.at(MORPH.t + MORPH.seconds + 0.6);
     const card = (await v.report(frame)).items.find((i) => i.text === 'code')!;
     // Its text is the size a code card holding both sides gets, above the floor where it fits.
@@ -381,8 +389,12 @@ describe.skipIf(!available)('the token morph', () => {
         expect(bar.bottom).toBeLessThanOrEqual(media.y + media.height + 1);
       }
     }
-    // Zoomed in, and moving with the lines: no two of these frames share a camera.
-    for (const c of cameras) expect(c.scale).toBeCloseTo(1.25, 2);
+    // Zoomed in, and moving with the lines: no two of these frames share a camera. The push-in
+    // runs under the beats, so the zoom grows by at most its 2%.
+    for (const c of cameras) {
+      expect(c.scale).toBeGreaterThanOrEqual(1.25 - 1e-3);
+      expect(c.scale).toBeLessThanOrEqual(1.25 * 1.02 + 1e-3);
+    }
     expect(new Set(cameras.map((c) => c.ty.toFixed(1))).size).toBe(3);
   });
 
@@ -424,7 +436,8 @@ describe.skipIf(!available)('the token morph', () => {
 
   it('holds one scale while it follows changed lines that grow, when no zoom is given', async () => {
     const follow: DirectionBeat = { verb: 'camera', move: 'follow', to: 'm', t: 1, seconds: 0.8 };
-    const v = await morphed(grow, [follow, MORPH]);
+    // Held still, so the scale measured is the follow's own: the push-in grows it under the beats.
+    const v = await morphed(grow, [follow, MORPH], media, 'static');
     // From the end of its ease until the scene settles and the camera starts to linger.
     const cameras: Array<{ tx: number; ty: number; scale: number }> = [];
     const [from, to] = [
@@ -448,7 +461,8 @@ describe.skipIf(!available)('the token morph', () => {
       t: 1,
       seconds: 0.8,
     };
-    const v = await morphed(grow, [follow, MORPH]);
+    // Held still, so the camera measured is the follow's own: the push-in moves it under the beats.
+    const v = await morphed(grow, [follow, MORPH], media, 'static');
     const ty: number[] = [];
     for (let frame = v.at(MORPH.t); frame <= v.at(MORPH.t + MORPH.seconds); frame++)
       ty.push((await v.camera(frame)).ty);

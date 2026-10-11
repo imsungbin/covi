@@ -232,17 +232,31 @@ describe('the camera in a directed scene', () => {
     speech: { start: 0.3, end: 5, text: 'x' },
   } as TimelineScene;
 
-  it('pushes in once the shot’s beats are done, not before', () => {
-    expect(cameraPlan(base)!.settled).toBe(0.6);
+  it('pushes in from the entrance, at an even pace, while a shot’s beats wait on its line', () => {
+    expect(cameraPlan(base)).toMatchObject({ settled: 0.6, steady: false });
+    const visual = { id: 'visual', kind: 'visual' as const, rect };
     const directed: TimelineScene = {
       ...base,
       direction: {
         whole: true,
-        elements: [{ id: 'visual', kind: 'visual', rect }],
+        elements: [visual],
         beats: [{ verb: 'camera', move: 'zoom', to: 'visual', t: 2, seconds: 0.8 }],
       },
     };
-    expect(cameraPlan(directed)!.settled).toBeCloseTo(2.8, 9);
+    const plan = cameraPlan(directed)!;
+    expect(plan).toMatchObject({ settled: 0.5, steady: true });
+    // From its entrance to the end at one pace: no stretch of the line waits for the beat.
+    expect(cameraPush(0.5, plan)).toBe(0);
+    expect(cameraPush(3.25, plan)).toBeCloseTo(motion.linger / 2, 9);
+    const step = (t: number) => cameraPush(t + 0.1, plan) - cameraPush(t, plan);
+    expect(step(0.6)).toBeGreaterThan(0);
+    expect(step(4.5)).toBeCloseTo(step(0.6), 9);
+    // A shot with nothing to wait for pushes in once it has settled, eased, as without direction.
+    const placed: TimelineScene = {
+      ...base,
+      direction: { whole: true, elements: [visual], beats: [] },
+    };
+    expect(cameraPlan(placed)).toMatchObject({ settled: 0.6, steady: false });
   });
 
   it('waits for every element’s own choreography from its reveal', () => {

@@ -121,12 +121,15 @@ interface Read {
 
 /**
  * A two-scene composition whose second scene shows a metric beside the terminal it came from (the
- * shot the default director gives a terminal scene), opened at `size`.
+ * shot the default director gives a terminal scene), opened at `size`. A `static` camera holds
+ * the shot still, for a test that measures where the metric's parts are drawn across frames: the
+ * push-in moves everything in it.
  */
 async function staged(
   make: (rect: Rect) => Metric = (rect) => bytes(rect),
   beats: DirectionBeat[] = [COUNT],
   size: Size = LANDSCAPE,
+  camera?: 'static',
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'covi-metric-'));
   dirs.push(dir);
@@ -149,6 +152,7 @@ async function staged(
           'Here is the same command before and after, and it now prints request bytes: 9907.',
         minSeconds: 6,
         visual: terminal,
+        ...(camera ? { camera } : {}),
       },
     ],
   }).scenes;
@@ -294,7 +298,12 @@ describe.skipIf(!available)('a metric on screen', () => {
     });
 
   it('keeps the value in place while it counts, its unit beside it held to the body floor', async () => {
-    const v = await staged((rect) => bytes(rect, { name: 'request size', unit: 'bytes' }));
+    const v = await staged(
+      (rect) => bytes(rect, { name: 'request size', unit: 'bytes' }),
+      [COUNT],
+      LANDSCAPE,
+      'static',
+    );
     const reads: Read[] = [];
     for (const frame of through(v)) reads.push(await v.read(frame));
     // It counts: one value per frame or so.
@@ -368,7 +377,12 @@ describe.skipIf(!available)('a metric on screen', () => {
   });
 
   it('draws the compare’s arrow as a shape, and keeps both values in place while one counts', async () => {
-    const v = await staged((rect) => bytes(rect, { show: 'compare' }));
+    const v = await staged(
+      (rect) => bytes(rect, { show: 'compare' }),
+      [COUNT],
+      LANDSCAPE,
+      'static',
+    );
     const reads: Read[] = [];
     for (const frame of through(v)) reads.push(await v.read(frame));
     const [first] = reads;

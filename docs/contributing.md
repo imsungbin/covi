@@ -265,6 +265,7 @@ A new template is used automatically only once you add a case there, with a test
 When you add a template:
 
 - Add its id to the template list in `tests/examples.test.ts`. The test "can be forced for any change" drafts and validates a storyboard with every template.
+- Give every beat `verbs`: optional in the format, but a test fails a shipped template with a beat that has none.
 - Update `skills/covi-video/references/storytelling.md` if it introduces a new pattern.
 
 ## Changing video components
@@ -329,15 +330,16 @@ Files that agents and models write are validated with Zod:
 | `findings.json` | `FindingsFileSchema`, `packages/core/src/model/finding.ts` |
 | `video/storyboard.json` | `StoryboardSchema`, `packages/video/src/storyboard/schema.ts` |
 | `video/direction.json` | `DirectionSchema`, `packages/video/src/direction/schema.ts` |
+| `video/score.json` | `ScoreSchema`, `packages/audio/src/schema/score.ts` |
 | `demo/plan.json` | `DemoPlanSchema`, `packages/capture/src/plan.ts` |
 | `.covi/config.yml` | `ConfigInputSchema`, `packages/core/src/config/schema.ts` |
 
-`covi schema <explanation|findings|storyboard|direction|demo-plan|config>` prints the JSON Schema generated from these, and the skills point agents at that command.
+`covi schema <explanation|findings|storyboard|direction|score|demo-plan|config>` prints the JSON Schema generated from these, and the skills point agents at that command.
 
 The schemas use strict objects, so a file with an unknown key is rejected. Follow these rules:
 
 - **Additive changes:** add the field as optional, so existing files stay valid.
-- **Breaking changes to a versioned file** (`explanation.json`, `findings.json`, `storyboard.json`, all at `schemaVersion` 1 today):
+- **Breaking changes to a versioned file** (`findings.json` at `schemaVersion` 2 today, which still reads version 1 files; `explanation.json`, `video/storyboard.json`, `video/direction.json`, and `video/score.json` at 1):
   1. Bump `schemaVersion`.
   2. Update the skills that describe the file.
   3. Update [artifacts](artifacts.md).

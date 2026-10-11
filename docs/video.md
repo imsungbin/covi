@@ -298,8 +298,8 @@ Templates are data in `templates/stories/*.yml`. Each one is an ordered list of 
 
 - a goal;
 - preferred visuals;
-- a narrator expression;
 - the direction verbs that suit it (`verbs`), a suggestion for whoever directs the scene;
+- a narrator expression;
 - an optional flag.
 
 A template also has a shorter beat list (`short`) for short-form videos. Covi validates templates when it loads them.

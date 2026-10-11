@@ -216,6 +216,22 @@ describe('Run', () => {
     expect(run.manifest.warnings).toEqual([shared]);
   });
 
+  it('keeps a warning raised outside any stage when a stage that raised it too runs again', async () => {
+    root = mkdtempSync(join(tmpdir(), 'covi-run-'));
+    const run = await Run.create(options());
+    const shared = 'Narration requested but unavailable: no voice. Rendering with captions only.';
+    // Raised as the run opened, then by the render: the code outside the stages still says it.
+    run.warn(shared);
+    await run.stage('video', async () => run.warn(shared));
+    expect(run.retracted('video')).toEqual(new Set());
+    await run.stage('video', async () => {});
+    expect(run.manifest.warnings).toEqual([shared]);
+    const reopened = await Run.open(run.dir, { root });
+    await reopened.stage('video', async () => reopened.warn(shared));
+    await reopened.stage('video', async () => {});
+    expect(reopened.manifest.warnings).toEqual([shared]);
+  });
+
   it('refuses artifact paths that escape the run directory', async () => {
     root = mkdtempSync(join(tmpdir(), 'covi-run-'));
     const run = await Run.create(options());

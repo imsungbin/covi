@@ -134,7 +134,7 @@ Written by `covi video`, `covi render`, and `covi ci` when a video is rendered; 
 | `video/poster.png` | `poster` | The change at its best: where the key number's count lands, else the hero after its accent, else 1.6 s in |
 | `video/contact-sheet.jpg` | `contact-sheet` | A grid of frames for checking the video at a glance |
 | `video/qc.json` | `qc` | Quality checks with `pass`, `warn`, or `fail` and the measured format, duration, and loudness |
-| `video/draft/preview.mp4` | `draft` | A draft of the video (`covi render --draft`): half size, 15 fps, the voice alone. Never the video |
+| `video/draft/preview.mp4` | `draft` | A draft of the video (`covi render --draft`): half size, at most 15 fps, the voice alone. Never the video |
 | `video/draft/poster.png` | `draft` | The draft's poster, at the moment the video's poster is taken |
 | `video/draft/contact-sheet.jpg` | `draft` | The draft's contact sheet, tiled like the video's |
 | `video/draft/qc.json` | `draft` | The draft's checks: the video's, motion included, without those of the music and the effects |

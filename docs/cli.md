@@ -256,7 +256,7 @@ Renders, or re-renders, a run's storyboard into a video. It uses the run's expla
 | `--run <id>` | Run id, run directory, or `latest` (default). |
 | `--storyboard <file>` | Storyboard to render. Default: `video/storyboard.json` in the run. |
 | `--workers <n>` | Parallel render workers, 1–64. |
-| `--draft` | Render a fast draft into `video/draft/` instead of the video: half size, 15 fps, the voice alone, with its own poster and contact sheet. The video's own files and the run's outcome are left as they are. See [Draft renders](video.md#draft-renders). |
+| `--draft` | Render a fast draft into `video/draft/` instead of the video: half size, at most 15 fps, the voice alone, with its own poster and contact sheet. The video's own files and the run's outcome are left as they are. See [Draft renders](video.md#draft-renders). |
 
 Plus video options. Without a storyboard, it exits 2 and suggests `covi video --draft`.
 

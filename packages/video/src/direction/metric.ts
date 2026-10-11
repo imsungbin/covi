@@ -31,7 +31,7 @@ export type MetricShotElement = Extract<ShotElement, { kind: 'metric' }>;
 const DELTA_MAX = 10_000;
 
 /** The sides a metric has, as a message names them: `a head value`, `a base and a head value`. */
-function sides(metric: MetricSource): string {
+export function sides(metric: MetricSource): string {
   const has = [
     ...(metric.base === undefined ? [] : ['base']),
     ...(metric.head === undefined ? [] : ['head']),
@@ -91,7 +91,7 @@ const DIFF_TOTALS = new Map<string, keyof TimelineLabels['stats']>([
  * What a metric is called on screen: the diff's totals in the video's words, else what the output
  * printed.
  */
-function metricName(metric: MetricSource, labels: Pick<TimelineLabels, 'stats'>): string {
+export function metricName(metric: MetricSource, labels: Pick<TimelineLabels, 'stats'>): string {
   const total = DIFF_TOTALS.get(metric.id);
   return total ? labels.stats[total] : metric.name;
 }
@@ -160,26 +160,33 @@ export function metricChange(base: number, head: number): number {
 }
 
 /**
- * The metric a terminal scene's command measured that changed most between base and head (the
- * earliest on a tie), or nothing: a scene that shows no command, a command that printed nothing
- * measurable at both revisions, or nothing that changed. Read from what the scene shows, never
- * from what it cites.
+ * The metrics a terminal scene's command measured, in the registry's order: none for a scene that
+ * shows no command. Read from what the scene shows, never from what it cites.
  */
-export function keyMetric(
+export function commandMetrics(
   scene: Pick<Scene, 'visual'>,
   evidence: EvidenceIndex | undefined,
-): EvidenceItem | undefined {
-  if (scene.visual.kind !== 'terminal' || !evidence) return undefined;
+): EvidenceItem[] {
+  if (scene.visual.kind !== 'terminal' || !evidence) return [];
   const prefixes = sceneEvidence({ visual: scene.visual }, evidence).flatMap((id) => {
     const n = terminalNumber(id);
     return n === undefined ? [] : [evidenceId.metric(metricSource.terminal(n), '')];
   });
+  return evidence.items.filter(
+    (item) => item.kind === 'metric' && prefixes.some((p) => item.id.startsWith(p)),
+  );
+}
+
+/**
+ * The metric among `items` that changed most between base and head (the earliest on a tie), or
+ * nothing: none was measured at both revisions, or none changed.
+ */
+export function mostChanged(items: readonly EvidenceItem[]): EvidenceItem | undefined {
   let best: EvidenceItem | undefined;
   let most = 0;
-  for (const item of evidence.items) {
+  for (const item of items) {
     const m = item.metric;
-    if (item.kind !== 'metric' || m?.base === undefined || m.head === undefined) continue;
-    if (!prefixes.some((p) => item.id.startsWith(p))) continue;
+    if (m?.base === undefined || m.head === undefined) continue;
     const change = metricChange(m.base, m.head);
     if (change > most) {
       best = item;
@@ -187,6 +194,18 @@ export function keyMetric(
     }
   }
   return best;
+}
+
+/**
+ * The metric a terminal scene's command measured that changed most (see `mostChanged`), or
+ * nothing, also for a scene that shows no command. Read from what the scene shows, never from
+ * what it cites.
+ */
+export function keyMetric(
+  scene: Pick<Scene, 'visual'>,
+  evidence: EvidenceIndex | undefined,
+): EvidenceItem | undefined {
+  return mostChanged(commandMetrics(scene, evidence));
 }
 
 /**

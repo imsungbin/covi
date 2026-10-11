@@ -110,16 +110,58 @@ export function valueCentering(
   return [at, at + VALUE_CENTER];
 }
 
+/** A counter's count, when it ticks: only from a value before. */
+const ticking = (e: { from?: number }, count: CountSpan | undefined) =>
+  count && e.from !== undefined ? count : undefined;
+
+/**
+ * The span a counter's value lands on: its count when that ticks, else its count-up. What it
+ * shows (`counterValue`), when its change fades in, and when it settles all follow this span.
+ */
+export function counterLands(
+  e: { from?: number },
+  count: CountSpan | undefined,
+  up?: CountSpan,
+): CountSpan | undefined {
+  return ticking(e, count) ?? up;
+}
+
 /**
  * When all a metric draws is in place, on its element's clock: its value, then its change, and a
- * counted value centered.
+ * counted value centered. A counter's value lands where `counterLands` says (bars and a compare
+ * never count up); only a count moves it off its own width, so only a count centers it.
  */
 export function metricSettled(
   e: Pick<MetricElement, 'show' | 'from' | 'delta'>,
   count: CountSpan | undefined,
+  up?: CountSpan,
 ): number {
   const show = drawnShow(e);
-  const fade = e.delta === undefined ? undefined : deltaWindow(show, count);
+  const lands = show === 'counter' ? counterLands(e, count, up) : count;
+  const fade = e.delta === undefined ? undefined : deltaWindow(show, lands);
   const centering = valueCentering(e, count);
-  return Math.max(fade ? fade[1] : valueLanded(show, count), centering ? centering[1] : 0);
+  return Math.max(fade ? fade[1] : valueLanded(show, lands), centering ? centering[1] : 0);
+}
+
+/** A count-up: the counter rises from zero to `value` (one side of its metric) over the span. */
+export interface CountUpSpan extends CountSpan {
+  value: number;
+}
+
+/**
+ * The value a counter shows at `t`. It rises from zero to its count-up's value while that counts
+ * up, holds it, then ticks from `from` to `to` during its count; before either starts it shows
+ * where the first one starts (zero for a count-up, `from` for a count), and without either, `to`.
+ */
+export function counterValue(
+  e: { from?: number; to: number; decimals: number },
+  t: number,
+  count?: CountSpan,
+  up?: CountUpSpan,
+): number {
+  const ticks = ticking(e, count);
+  if (up && (!ticks || t < ticks.t))
+    return tickValue(0, up.value, countProgress(t, up), e.decimals);
+  if (ticks) return tickValue(e.from!, e.to, countProgress(t, ticks), e.decimals);
+  return e.to;
 }

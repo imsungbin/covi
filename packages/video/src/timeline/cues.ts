@@ -735,6 +735,8 @@ export function shotSettledAt(
       return Math.max(at + 0.5, beat ? beat.t + beat.seconds + MORPH_SETTLE : 0);
     }
     if (e.kind === 'metric') return metricSettledAt(d, e);
+    // A packet or a pile is in place half a second after it enters; its verbs end with the beats.
+    if (e.kind === 'packet' || e.kind === 'pile') return at + 0.5;
     return e.kind === 'node' || e.kind === 'label'
       ? at + 0.5
       : at + settledAt(e.visual, Math.max(0.1, duration - at));
@@ -745,16 +747,18 @@ export function shotSettledAt(
 /**
  * When a directed scene's metric element has settled, in seconds since the scene started: on the
  * element's clock from its reveal, as the runtime draws it, in half a second, or once its value
- * has landed and centered and its change in percent has faded in.
+ * has landed (on its count, else its count-up) and centered and its change in percent has faded in.
  */
 export function metricSettledAt(
   d: Pick<SceneDirection, 'beats'>,
   e: Extract<DirectionElement, { kind: 'metric' }>,
 ): number {
   const at = d.beats.find((b) => b.verb === 'reveal' && b.element === e.id)?.t ?? 0;
-  const beat = d.beats.find((b) => b.verb === 'count' && b.element === e.id);
-  const count = beat ? { t: beat.t - at, seconds: beat.seconds } : undefined;
-  return at + Math.max(0.5, metricSettled(e, count));
+  const own = (verb: 'count' | 'count-up') => {
+    const beat = d.beats.find((b) => b.verb === verb && b.element === e.id);
+    return beat ? { t: beat.t - at, seconds: beat.seconds } : undefined;
+  };
+  return at + Math.max(0.5, metricSettled(e, own('count'), own('count-up')));
 }
 
 /** The summary's verdict badge rises into view. */

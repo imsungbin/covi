@@ -47,6 +47,23 @@ export type CameraMove = 'zoom' | 'pan' | 'follow';
 /** How a metric element draws its number: large and counting, as bars, or before beside after. */
 export type MetricShow = 'counter' | 'bars' | 'compare';
 
+/**
+ * The verbs that stage a flow: a packet travelling an edge, one thing breaking into pieces and
+ * the pieces pulling back together, a pile stacking up. A shot with any of them leads as a flow;
+ * a count-up only counts a counter up from zero, so its shot leads with the counter, as with a
+ * count.
+ */
+export const FLOW_VERBS = ['flow', 'split', 'merge', 'stack'] as const;
+
+/** Which side of the change a count is from: before it (base) or after it (head). */
+export type ChangeSide = 'base' | 'head';
+
+/** One row of a pile: the count of one side, drawn as up to twelve items and the true number. */
+export interface PileRow {
+  side: ChangeSide;
+  count: number;
+}
+
 /** A code token's syntax color: a `tk-` class of the code panel. */
 export type TokenTone = 'keyword' | 'string' | 'number' | 'comment' | 'fn' | 'type' | 'prop';
 
@@ -124,6 +141,10 @@ export type DirectionElement =
       delta?: number;
     }
   | { id: string; kind: 'node'; rect: Rect; label: string }
+  /** A packet: a pill that travels edges between nodes, or sits in its slot; it can split. */
+  | { id: string; kind: 'packet'; rect: Rect; label?: string }
+  /** A pile: a measured count of each side, stacked as items, with its true number. */
+  | { id: string; kind: 'pile'; rect: Rect; name: string; rows: PileRow[] }
   | {
       id: string;
       kind: 'label';
@@ -137,7 +158,38 @@ export type DirectionBeat =
   | { verb: 'reveal'; element: string; style: RevealStyle; t: number; seconds: number }
   | { verb: 'camera'; move: CameraMove; to: string; zoom?: number; t: number; seconds: number }
   | { verb: 'morph'; element: string; t: number; seconds: number }
-  | { verb: 'count'; element: string; t: number; seconds: number };
+  | { verb: 'count'; element: string; t: number; seconds: number }
+  | { verb: 'flow'; from: string; to: string; packet?: string; t: number; seconds: number }
+  | {
+      verb: 'split';
+      element: string;
+      /** The pieces it breaks into: a measured count, of which at most twelve are drawn. */
+      count: number;
+      /** What the pieces are, as the run's output called the count. */
+      name: string;
+      side: ChangeSide;
+      t: number;
+      seconds: number;
+    }
+  | {
+      verb: 'merge';
+      element: string;
+      /** What a split merges into, when the run measured exactly one on the other side. */
+      into?: { count: 1; name: string; side: ChangeSide };
+      t: number;
+      seconds: number;
+    }
+  | { verb: 'stack'; element: string; t: number; seconds: number }
+  | { verb: 'count-up'; element: string; value: number; t: number; seconds: number };
+
+/** A beat the direction asked for that the resolver left out, and why. */
+export interface DroppedBeat {
+  verb: DirectionBeat['verb'];
+  /** What it acted on. */
+  element: string;
+  /** Why, in a phrase the run's warning quotes after the beat's verb. */
+  reason: string;
+}
 
 /** A scene's shot, resolved. */
 export interface SceneDirection {
@@ -146,6 +198,8 @@ export interface SceneDirection {
   elements: DirectionElement[];
   /** In time order. */
   beats: DirectionBeat[];
+  /** Beats the direction asked for that cannot play where it put them; absent when none. */
+  dropped?: DroppedBeat[];
 }
 
 /** What direction adds to a story scene: its stop on the canvas and its resolved shot. */
@@ -429,7 +483,7 @@ export interface Timeline {
 export interface LayoutItem {
   role: 'media' | 'text' | 'focus';
   rect: Rect;
-  /** Text that does not fit its box. */
+  /** Text that does not fit its box, or a pile whose items its card cannot draw at their least. */
   overflow?: boolean;
   /**
    * The size of the item's smallest text that QC holds to a floor, in stage pixels as drawn (the

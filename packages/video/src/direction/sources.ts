@@ -37,6 +37,10 @@ export interface CaptureSource {
   device: 'desktop' | 'mobile';
 }
 
+/** How a check says an id is not in the run's evidence. */
+export const UNKNOWN_EVIDENCE =
+  "which the run's evidence does not have (`covi evidence --run <id>` lists it)";
+
 export interface MetricSource {
   /** The item's id, as the registry wrote it. */
   id: string;

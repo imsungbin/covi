@@ -24,7 +24,12 @@ import {
 import { toSrt, toVtt } from './captions.ts';
 import { AssetCollector, writeComposition } from './composition/build.ts';
 import { planDirection } from './direction/plan.ts';
-import { directionImages, resolveDirection, shownShot } from './direction/resolve.ts';
+import {
+  directionImages,
+  droppedBeatNotes,
+  resolveDirection,
+  shownShot,
+} from './direction/resolve.ts';
 import { DIRECTION_PATH, readDirectionFile } from './direction/schema.ts';
 import { diffFiles, directionSources } from './direction/sources.ts';
 import { groundingCheck, sceneEvidence, unknownSceneEvidence } from './grounding.ts';
@@ -473,6 +478,13 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
         redact,
       })
     : undefined;
+  // A beat that cannot play where the direction put it is left out, never silently. A shot of the
+  // agent's is named by its number in their file; Covi's own by its scene.
+  const authoredDirection = directionFile && !directionFile.draft ? directionFile : undefined;
+  for (const note of staging ? droppedBeatNotes(authoredDirection, fit.scenes, staging) : []) {
+    run.warn(note);
+    notes.push(note);
+  }
   const timeline: Timeline = buildTimeline({
     title: storyboard.title,
     // Each scene records the evidence it rests on: what it cites and what it shows (its visual,

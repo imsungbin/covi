@@ -5,6 +5,7 @@ import { localeLanguage, type SpeechRecord, unspokenAcronyms } from './narration
 import { suggestedVoice } from './narration/tts.ts';
 import type { Media } from './render/ffmpeg.ts';
 import { computeRegions } from './runtime/layout.ts';
+import { PILE_ITEM_MIN } from './runtime/routes.ts';
 import { type AudioRecord, musicLibrary, round } from './sound.ts';
 import type { VideoSpec } from './spec.ts';
 import { CAPTION_SPEED_LIMIT, captionCharacters, PACE_LIMIT, speechUnits } from './text.ts';
@@ -583,7 +584,9 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
   const covered: string[] = [];
   const outside: number[] = [];
   const spilled: number[] = [];
-  const overflow = new Set<string>();
+  const clipped = new Set<string>();
+  // Only a pile reports a media item as overflowing: one whose items are under their least size.
+  const cramped = new Set<string>();
   const narratorOverlap = new Map<string, Set<string>>();
   let imagesLoaded = true;
   const fontsFailed = new Set<string>();
@@ -598,7 +601,8 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
           covered.push(`${report.scene ?? '?'}@${report.frame}`);
       }
     }
-    for (const item of report.items) if (item.overflow) overflow.add(report.scene ?? '?');
+    for (const item of report.items)
+      if (item.overflow) (item.role === 'media' ? cramped : clipped).add(report.scene ?? '?');
     // The fox's real shapes: its tail can reach past its box, but only into empty space.
     const fox = report.narratorParts ?? (report.narrator ? [report.narrator] : []);
     const covers = (rects: readonly Rect[], what: string) => {
@@ -648,13 +652,19 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
             message: 'Captions stay inside the safe area.',
           },
   );
+  const unfit = [
+    ...(clipped.size
+      ? [`Text is clipped in scene(s) ${[...clipped].join(', ')}; shorten the storyboard text.`]
+      : []),
+    ...(cramped.size
+      ? [
+          `A pile draws its items under ${PILE_ITEM_MIN} px at 1080p in scene(s) ${[...cramped].join(', ')}; give it a larger slot.`,
+        ]
+      : []),
+  ];
   checks.push(
-    overflow.size
-      ? {
-          id: 'text-fits',
-          status: 'warn',
-          message: `Text is clipped in scene(s) ${[...overflow].join(', ')}; shorten the storyboard text.`,
-        }
+    unfit.length
+      ? { id: 'text-fits', status: 'warn', message: unfit.join(' ') }
       : { id: 'text-fits', status: 'pass', message: 'All text fits its box.' },
   );
   checks.push(

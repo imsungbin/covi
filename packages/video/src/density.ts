@@ -4,13 +4,14 @@ import { union } from './runtime/narrator.ts';
 import { TEXT_FLOOR } from './runtime/sizing.ts';
 import { storyScenes } from './timeline/build.ts';
 import { restFrame, settledFrame, settledSpan } from './timeline/cues.ts';
-import type {
-  DirectionElement,
-  LayoutReport,
-  Rect,
-  Timeline,
-  TimelineScene,
-  TimelineVisual,
+import {
+  type DirectionElement,
+  FLOW_VERBS,
+  type LayoutReport,
+  type Rect,
+  type Timeline,
+  type TimelineScene,
+  type TimelineVisual,
 } from './timeline/types.ts';
 
 /*
@@ -31,8 +32,11 @@ const SIZE_TOLERANCE = 0.1;
 /** A card scene whose content covers less of the media region than this reads as empty. */
 export const EMPTY_SHARE = 0.4;
 
-/** What a scene leads with: a visual's kind, or `metric` for a measured number. */
-export type LeadKind = TimelineVisual['kind'] | 'metric';
+/** What a scene leads with: a visual's kind, `metric` for a measured number, or `flow`. */
+export type LeadKind = TimelineVisual['kind'] | 'metric' | 'flow';
+
+/** Beats that stage a flow: a shot with one leads as `flow`, whatever its first element. */
+const FLOWING: ReadonlySet<string> = new Set(FLOW_VERBS);
 
 /**
  * What a scene leads with whose size the runtime chooses, which the empty-frame check holds to the
@@ -199,14 +203,17 @@ const LOOKS_LIKE = {
   metric: 'metric',
   node: 'diagram',
   label: 'callout',
+  packet: 'flow',
+  pile: 'flow',
 } as const satisfies Record<Exclude<DirectionElement['kind'], 'visual'>, LeadKind>;
 
 /**
- * The kind of picture a scene leads with: its shot's first element, counted as the visual it
- * looks like (an output reads as a terminal; a measured number is its own kind), else its visual's
- * kind.
+ * The kind of picture a scene leads with: a flow when its shot stages one, else its shot's first
+ * element, counted as the visual it looks like (an output reads as a terminal; a measured number
+ * is its own kind), else its visual's kind.
  */
 export function leadKind(scene: Pick<TimelineScene, 'visual' | 'direction'>): LeadKind {
+  if (scene.direction?.beats.some((b) => FLOWING.has(b.verb))) return 'flow';
   const first = scene.direction?.elements[0];
   return !first || first.kind === 'visual' ? scene.visual.kind : LOOKS_LIKE[first.kind];
 }

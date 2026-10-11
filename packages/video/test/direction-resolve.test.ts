@@ -155,6 +155,72 @@ describe('element slots', () => {
     expect(square.map((r) => r.width)).toEqual([527.69, 452.31]);
     expect(elementSlots(['code', 'label'], 'row', region, 'square', 20)[0]!.width).toBe(735);
   });
+  it('lay a square frame’s split led by a number as a row gives it, a pile under it as wide as the frame', () => {
+    // A 1080 × 1080 frame's media region. Side by side, half the width leaves the counter under
+    // its 120-unit floor (116.3 units for request bytes 70,406 → 9,907), and 7 parts to 6 leaves
+    // a pile's items under their least size; a row of the counter and the packet above a pile as
+    // wide as the frame keeps both, the row taking 3 parts of the height to the pile's 2, where
+    // the counter keeps its whole lines (measured: 127 and 39 units with reader steps 28 → 10;
+    // at half the height each, the counter fits only by cutting off its digits' feet).
+    const square = { x: 64, y: 250, width: 952, height: 600 };
+    expect(elementSlots(['metric', 'packet', 'pile'], 'split', square, 'square', 28)).toEqual([
+      { x: 64, y: 250, width: 497.54, height: 343.2 },
+      { x: 589.54, y: 250, width: 426.46, height: 343.2 },
+      { x: 64, y: 621.2, width: 952, height: 228.8 },
+    ]);
+    // A pile alone beside the number goes under it, as wide as the frame (measured: 143.2 and 39
+    // units).
+    expect(elementSlots(['metric', 'pile'], 'split', square, 'square', 28)).toEqual([
+      { x: 64, y: 250, width: 952, height: 343.2 },
+      { x: 64, y: 621.2, width: 952, height: 228.8 },
+    ]);
+    // Written before the packet, the pile still goes under the number as wide as the frame, and
+    // the packet shares the number's row; with no other element beside them, piles share the row
+    // under a number as wide as the frame.
+    const [number, packet, wide] = elementSlots(
+      ['metric', 'packet', 'pile'],
+      'split',
+      square,
+      'square',
+      28,
+    );
+    expect(elementSlots(['metric', 'pile', 'packet'], 'split', square, 'square', 28)).toEqual([
+      number,
+      wide,
+      packet,
+    ]);
+    expect(elementSlots(['metric', 'pile', 'pile'], 'split', square, 'square', 28)).toEqual([
+      { x: 64, y: 250, width: 952, height: 343.2 },
+      { x: 64, y: 621.2, width: 462, height: 228.8 },
+      { x: 554, y: 621.2, width: 462, height: 228.8 },
+    ]);
+    // Any other one element shares the number's row, 7 parts to its 6 (`auto` splits two;
+    // measured beside a packet: 127 units).
+    const beside = [
+      { x: 64, y: 250, width: 497.54, height: 600 },
+      { x: 589.54, y: 250, width: 426.46, height: 600 },
+    ];
+    expect(elementSlots(['metric', 'packet'], 'split', square, 'square', 28)).toEqual(beside);
+    expect(elementSlots(['metric', 'visual'], 'split', square, 'square', 28)).toEqual(beside);
+    expect(elementSlots(['metric', 'visual'], 'auto', square, 'square', 28)).toEqual(beside);
+    // More elements without a pile halve the region as before, and so does a split led by
+    // something else, or one in a wide frame.
+    const halves = [
+      { x: 64, y: 250, width: 462, height: 600 },
+      { x: 554, y: 250, width: 462, height: 286 },
+      { x: 554, y: 564, width: 462, height: 286 },
+    ];
+    expect(elementSlots(['metric', 'code', 'output'], 'split', square, 'square', 28)).toEqual(
+      halves,
+    );
+    expect(elementSlots(['visual', 'metric'], 'split', square, 'square', 28)[0]).toEqual(halves[0]);
+    for (const kinds of [
+      ['metric', 'packet', 'pile'],
+      ['metric', 'pile'],
+      ['metric', 'packet'],
+    ] as const)
+      expect(elementSlots(kinds, 'split', square, 'landscape', 28)[0]).toEqual(halves[0]);
+  });
   it('give one element the whole region, whatever the layout', () => {
     for (const layout of ['auto', 'single', 'row', 'column', 'split'] as const)
       expect(elementSlots(['visual'], layout, region, 'landscape', 20)).toEqual([region]);

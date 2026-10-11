@@ -215,6 +215,36 @@ describe('a hostile direction file', () => {
       expect(rejected(withMetric(extra)), JSON.stringify(extra)).toBe(true);
     expect(rejected(withMetric({}, [{ verb: 'count', element: 'm', to: 9907 }]))).toBe(true);
   });
+
+  it('cannot state a count on a pile or a split: counts come only from the metric cited', () => {
+    const staged = (elements: unknown[], beats: unknown[] = []) => ({
+      shots: [{ scene: 's1', elements, beats }],
+    });
+    const pile = { id: 'r', kind: 'pile', evidence: 'metric:terminal-1:reader-steps' };
+    const packet = { id: 'p', kind: 'packet' };
+    const split = { verb: 'split', element: 'p', count: 'metric:terminal-1:chunks', side: 'base' };
+    expect(rejected(staged([pile, packet], [split, { verb: 'stack', element: 'r' }]))).toBe(false);
+    for (const extra of [{ count: 28 }, { value: 28 }, { items: 12 }, { label: '28 reads' }])
+      expect(rejected(staged([{ ...pile, ...extra }])), JSON.stringify(extra)).toBe(true);
+    for (const beat of [
+      { ...split, count: 4 },
+      { ...split, pieces: 4 },
+      { verb: 'stack', element: 'r', count: 28 },
+      { verb: 'merge', element: 'p', into: 1 },
+      { verb: 'count-up', element: 'm', side: 'head', value: 9907 },
+      { verb: 'flow', from: 'a', to: 'b', d: 'M0 0 L9 9' },
+    ])
+      expect(rejected(staged([pile, packet], [beat])), JSON.stringify(beat)).toBe(true);
+  });
+
+  it('cannot smuggle markup, script, or links through a packet or a pile', () => {
+    for (const text of ['<script>alert(1)</script>', 'javascript:alert(1)', 'https://evil.example'])
+      for (const element of [
+        { id: 'p', kind: 'packet', label: text },
+        { id: 'r', kind: 'pile', evidence: 'metric:terminal-1:reader-steps', label: text },
+      ])
+        expect(rejected({ shots: [{ scene: 's1', elements: [element] }] }), text).toBe(true);
+  });
 });
 
 describe('a direction citing evidence the run does not have', () => {
@@ -263,6 +293,31 @@ describe('a direction citing evidence the run does not have', () => {
     ]);
   });
 
+  it('refuses a pile or a split that counts what the run never measured', () => {
+    const evidence = indexEvidence({ items: [] });
+    const found = directionProblems(
+      DirectionSchema.parse({
+        shots: [
+          {
+            scene: 's1',
+            elements: [
+              { id: 'r', kind: 'pile', evidence: 'metric:terminal-1:reader-steps' },
+              { id: 'p', kind: 'packet' },
+            ],
+            beats: [{ verb: 'split', element: 'p', count: '4', side: 'base' }],
+          },
+        ],
+      }),
+      [{ id: 's1', narration: 'One line.', visual: { kind: 'callout' } }],
+      evidence,
+      directionSources({ evidence }),
+    );
+    expect(found).toEqual([
+      'shot 1 (scene s1), element r: cites "metric:terminal-1:reader-steps", which the run\'s evidence does not have (`covi evidence --run <id>` lists it)',
+      'shot 1 (scene s1), beat 1 (split): cites "4", which the run\'s evidence does not have (`covi evidence --run <id>` lists it)',
+    ]);
+  });
+
   it('cannot reach the terminal through the ids and phrases its problems echo', () => {
     const evidence = indexEvidence({ items: [] });
     // An ANSI clear-screen and a right-to-left override, then an id at the schema's length limit.
@@ -275,8 +330,12 @@ describe('a direction citing evidence the run does not have', () => {
           elements: [
             { id: 'a', kind: 'code', evidence: hostile },
             { id: 'b', kind: 'node', label: 'Reader', evidence: ['\u001b]8;;https://evil\u0007'] },
+            { id: 'p', kind: 'packet' },
           ],
-          beats: [{ verb: 'reveal', element: 'a', at: 'One \u001b[31mline\u2028.' }],
+          beats: [
+            { verb: 'reveal', element: 'a', at: 'One \u001b[31mline\u2028.' },
+            { verb: 'split', element: 'p', count: '\u001b[2Jmetric:\u202ex', side: 'base' },
+          ],
         },
       ],
     });
@@ -290,7 +349,7 @@ describe('a direction citing evidence the run does not have', () => {
     expect(found[0]).toBe(
       'shot 1 (scene constructor): the storyboard has no scene "constructor" (it has: s1)',
     );
-    expect(found).toHaveLength(4);
+    expect(found).toHaveLength(5);
     for (const line of found) {
       expect(line).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
       expect(line.length).toBeLessThan(300);
@@ -299,6 +358,7 @@ describe('a direction citing evidence the run does not have', () => {
     expect(found[1]).toContain('x…"');
     expect(found[2]).toContain('"\\u001b]8;;https://evil\\u0007"');
     expect(found[3]).toContain('quotes "One \\u001b[31mline\\u2028."');
+    expect(found[4]).toContain('cites "\\u001b[2Jmetric:\\u202ex"');
   });
 });
 

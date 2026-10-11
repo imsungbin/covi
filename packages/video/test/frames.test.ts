@@ -161,6 +161,16 @@ describe('the contact sheet', () => {
       ).toContain(Math.ceil((4 + 1 + COMPARE_RISE + DELTA_FADE) * 30 - 1e-6));
     });
 
+    it('tiles where a counter that only counts up lands, and once when a count follows', () => {
+      const up = { verb: 'count-up', element: 'm', value: 9907, t: 1, seconds: 1.6 } as const;
+      // Landed 4 + 1 + 1.6 s in, its change faded in 0.3 s later, as a count would.
+      expect(sheet([metric('m', { delta: -86 })], [up]).frames).toEqual([9, 60, 207, 210, 345]);
+      // The count lands it 4 + 3 + 1.6 s in, centered and faded in 0.3 s later: one tile.
+      expect(sheet([metric('m', { delta: -86 })], [up, count('m', 3, 1.6)]).frames).toEqual([
+        9, 60, 210, 267, 345,
+      ]);
+    });
+
     it('keeps the tile inside its scene, before the next one enters', () => {
       const { frames } = sheet([metric('m', { delta: -86 })], [count('m', 5, 1)], {
         transition: { kind: 'fade', seconds: 0.45 },

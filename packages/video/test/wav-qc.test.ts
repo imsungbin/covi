@@ -89,6 +89,28 @@ describe('QC', () => {
     });
   });
 
+  it('names a pile whose items are too small apart from clipped text', () => {
+    const box = { x: 0, y: 0, width: 10, height: 10 };
+    const fits = (items: LayoutReport['items'][], scenes = ['s1', 's2']) =>
+      layoutChecks(
+        timeline,
+        items.map((list, i) => ({ frame: i, scene: scenes[i]!, items: list, imagesLoaded: true })),
+      ).find((c) => c.id === 'text-fits')!;
+    // A pile reports itself as a media item that overflows: its items, not its text, are cramped.
+    const pile = fits([[{ role: 'media', rect: box, overflow: true }]]);
+    expect(pile.status).toBe('warn');
+    expect(pile.message).toBe(
+      'A pile draws its items under 24 px at 1080p in scene(s) s1; give it a larger slot.',
+    );
+    const both = fits([
+      [{ role: 'text', rect: box, overflow: true }],
+      [{ role: 'media', rect: box, overflow: true }],
+    ]);
+    expect(both.message).toBe(
+      'Text is clipped in scene(s) s1; shorten the storyboard text. A pile draws its items under 24 px at 1080p in scene(s) s2; give it a larger slot.',
+    );
+  });
+
   it('checks caption overlap and narration pace', () => {
     const t = {
       ...timeline,

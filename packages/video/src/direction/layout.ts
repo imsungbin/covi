@@ -11,6 +11,9 @@ const WEIGHT: Record<ShotElement['kind'], number> = {
   morph: 3,
   // A number shares a row with what it came from: 2 parts to the visual's 3.
   metric: 2,
+  // A pile shares a row with a number as a metric does; a packet is a pill in its own slot.
+  pile: 2,
+  packet: 1,
   node: 2,
   label: 1,
 };
@@ -20,6 +23,12 @@ const WEIGHT: Record<ShotElement['kind'], number> = {
  * beside it at its 24-unit floor.
  */
 const SQUARE_METRIC = 3.5;
+/**
+ * Above a pile as wide as a square frame, the number's row takes 3 parts of the height to the
+ * pile's 2: its card holds the counter whole at its floor, its name and change above and below
+ * it, and the pile's rows lay their items in one line there, at more than their least size.
+ */
+const SQUARE_STACK = [3, 2];
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const rounded = (r: Rect): Rect => ({
@@ -66,7 +75,14 @@ function along(region: Rect, weights: readonly number[], axis: 'x' | 'y', gap: n
  * Deterministic slots for a shot's elements, in stop-local stage pixels. One element fills the
  * region whatever the layout. `auto` picks from the count: two split it, three line up (a row on
  * wide frames, a column on tall ones), and more make a grid of two columns on tall frames or two
- * rows on wide ones.
+ * rows on wide ones. A square frame's split that leads with a number gives it what a row gives it
+ * there: half the width would leave a counter under its floor. Beside one other element, the
+ * number takes 7 parts to its 6, unless that element is a pile, which goes under the number as
+ * wide as the frame: 7 parts to 6 side by side would leave the pile's items under their least
+ * size. With more elements and a pile, the number shares a row with the first element after it
+ * that is not a pile (7 parts to its 6; the row is the number's alone without one), above the rest
+ * in a row of their own, piles wherever they are written. Either way the number's row takes 3
+ * parts of the height to the pile's 2.
  */
 export function elementSlots(
   kinds: readonly ShotElement['kind'][],
@@ -96,7 +112,32 @@ export function elementSlots(
   if (resolved === 'single') slots = kinds.map(() => region);
   else if (resolved === 'row') slots = along(region, weights, 'x', gap);
   else if (resolved === 'column') slots = along(region, weights, 'y', gap);
-  else if (resolved === 'split') {
+  else if (resolved === 'split' && orientation === 'square' && kinds[0] === 'metric' && n === 2)
+    slots =
+      kinds[1] === 'pile'
+        ? along(region, SQUARE_STACK, 'y', gap)
+        : along(region, [SQUARE_METRIC, WEIGHT.visual], 'x', gap);
+  else if (
+    resolved === 'split' &&
+    orientation === 'square' &&
+    kinds[0] === 'metric' &&
+    kinds.includes('pile')
+  ) {
+    const [pair, rest] = along(region, SQUARE_STACK, 'y', gap) as [Rect, Rect];
+    // Beside the number, a pile's items would be under their least size, wherever it is written.
+    const beside = kinds.findIndex((k, i) => i > 0 && k !== 'pile');
+    const under = kinds.flatMap((_, i) => (i > 0 && i !== beside ? [i] : []));
+    const top = beside === -1 ? [pair] : along(pair, [SQUARE_METRIC, WEIGHT.visual], 'x', gap);
+    const bottom = along(
+      rest,
+      under.map((i) => weights[i]!),
+      'x',
+      gap,
+    );
+    slots = kinds.map((_, i) =>
+      i === 0 ? top[0]! : i === beside ? top[1]! : bottom[under.indexOf(i)]!,
+    );
+  } else if (resolved === 'split') {
     const [first, rest] = along(region, [1, 1], tall ? 'y' : 'x', gap) as [Rect, Rect];
     slots = [first, ...along(rest, weights.slice(1), tall ? 'x' : 'y', gap)];
   } else {

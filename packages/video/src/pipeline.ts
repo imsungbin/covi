@@ -32,6 +32,7 @@ import {
 } from './direction/resolve.ts';
 import { DIRECTION_PATH, readDirectionFile } from './direction/schema.ts';
 import { diffFiles, directionSources } from './direction/sources.ts';
+import { DRAFT_PATHS, draftSpec } from './draft.ts';
 import { groundingCheck, sceneEvidence, unknownSceneEvidence } from './grounding.ts';
 import {
   type Pronunciations,
@@ -62,6 +63,7 @@ import {
   AUDIO_PATHS,
   type AudioRecord,
   draftScore,
+  masterVoice,
   produceSound,
   resolveMusic,
   type SoundInput,
@@ -147,6 +149,11 @@ export interface ProduceVideoInput {
    * Covi's default director (`auto`, the default), or render it as 0.2.0 did (`off`).
    */
   direction?: 'auto' | 'off';
+  /**
+   * Render a draft instead (`covi render --draft`): the same video at half size and 15 fps, with
+   * the voice alone, into `video/draft/`. The video's own files are left as they are.
+   */
+  draftRender?: boolean;
 }
 
 export interface ProduceVideoResult {
@@ -172,6 +179,8 @@ export interface ProduceVideoResult {
   audio?: AudioRecord;
   /** Only the sound changed: the frames already rendered were kept and the new sound muxed in. */
   framesReused?: boolean;
+  /** A draft render: `video` is `video/draft/preview.mp4`, and `qc` its checks. */
+  draft?: { width: number; height: number; fps: number };
 }
 
 /** `video/frames.json`, next to the video whose frames it describes. */
@@ -195,7 +204,9 @@ export function storyboardImages(storyboard: {
 }
 
 export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVideoResult> {
-  const { run, spec, logger } = input;
+  const { run, logger } = input;
+  const draft = Boolean(input.draftRender);
+  const spec = draft ? draftSpec(input.spec) : input.spec;
   const notes: string[] = [];
   await mkdir(run.path('video'), { recursive: true });
 
@@ -301,7 +312,8 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   });
   // Labels and phrases are agent text: redacted like the storyboard they are matched against.
   const plan = directed.plan && redact(directed.plan);
-  await run.writeJson('video/storyboard.json', storyboard, 'storyboard');
+  // A draft render leaves the storyboard as the agent wrote it.
+  if (!draft) await run.writeJson('video/storyboard.json', storyboard, 'storyboard');
   if (input.draftOnly) {
     // Composed music starts from the theme, for the agent to rewrite before `covi render`.
     if (spec.music.use === 'compose' && !(await run.has(AUDIO_PATHS.score)))
@@ -422,7 +434,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
       : undefined,
     scenes: spoken,
   };
-  await run.writeJson('video/speech.json', speechRecord, 'narration');
+  if (!draft) await run.writeJson('video/speech.json', speechRecord, 'narration');
 
   // 3. The voice stem (at −16 LUFS) and the narrator's mouth movement, from the voice alone.
   const frames = Math.round(fit.layout.duration * spec.fps);
@@ -443,13 +455,15 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
       Float32Array.from(mix.samples, (v) => v / 32768),
       SAMPLE_RATE,
     );
-    await writeWav(run.path('video/narration.wav'), {
-      sampleRate: SAMPLE_RATE,
-      samples: Int16Array.from(voice, (v) =>
-        Math.max(-32768, Math.min(32767, Math.round(v * 32768))),
-      ),
-    });
-    await run.record('video/narration.wav', 'narration');
+    if (!draft) {
+      await writeWav(run.path('video/narration.wav'), {
+        sampleRate: SAMPLE_RATE,
+        samples: Int16Array.from(voice, (v) =>
+          Math.max(-32768, Math.min(32767, Math.round(v * 32768))),
+        ),
+      });
+      await run.record('video/narration.wav', 'narration');
+    }
     mouth = mouthEnvelope(mix, spec.fps, frames);
   } else {
     mouth = syntheticMouth(
@@ -481,8 +495,10 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   // A beat that cannot play where the direction put it is left out, never silently. A shot of the
   // agent's is named by its number in their file; Covi's own by its scene.
   const authoredDirection = directionFile && !directionFile.draft ? directionFile : undefined;
+  // A draft's notes are for whoever revises it, like its checks: the log, never the run's warnings.
   for (const note of staging ? droppedBeatNotes(authoredDirection, fit.scenes, staging) : []) {
-    run.warn(note);
+    if (draft) logger.warn(note);
+    else run.warn(note);
     notes.push(note);
   }
   const timeline: Timeline = buildTimeline({
@@ -512,6 +528,17 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
     entrances: directed.entrances,
     ...(staging ? { staging } : {}),
   });
+  if (draft)
+    return renderDraft(input, {
+      spec,
+      timeline,
+      images: assets.files,
+      voice,
+      speech: speechWindows,
+      speechRecord: redact(speechRecord),
+      media,
+      result: { storyboard, drafted, narration, notes },
+    });
   await run.writeJson('video/timeline.json', timeline, 'timeline');
   if (timeline.captions.length) {
     await run.writeText('video/captions.vtt', toVtt(timeline.captions), 'captions');
@@ -632,15 +659,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
       speech: await run.readJson<SpeechRecord>('video/speech.json'),
       audio: sound.record,
     }),
-    groundingCheck(
-      storyScenes(timeline.scenes).map((s) => ({
-        id: s.id,
-        narration: s.speech?.text ?? '',
-        kind: s.visual.kind,
-        evidenceIds: s.evidenceIds,
-      })),
-      input.explanation,
-    ),
+    timelineGrounding(timeline, input.explanation),
   );
   await run.writeJson('video/qc.json', qc, 'qc');
   for (const check of qc.checks.filter((c) => c.status !== 'pass'))
@@ -659,6 +678,102 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
     renderMs,
     audio: sound.record,
     framesReused,
+  };
+}
+
+/** Whether every story scene of the timeline, and the explanation, rest on evidence. */
+function timelineGrounding(timeline: Timeline, explanation: Explanation) {
+  return groundingCheck(
+    storyScenes(timeline.scenes).map((s) => ({
+      id: s.id,
+      narration: s.speech?.text ?? '',
+      kind: s.visual.kind,
+      evidenceIds: s.evidenceIds,
+    })),
+    explanation,
+  );
+}
+
+/** What a draft render draws from: the timeline built at the draft's size, and the voice. */
+interface DraftInput {
+  spec: VideoSpec;
+  timeline: Timeline;
+  images: Map<string, string>;
+  voice?: Float32Array;
+  speech: SoundInput['speech'];
+  speechRecord: SpeechRecord;
+  media: Media;
+  result: Pick<ProduceVideoResult, 'storyboard' | 'drafted' | 'narration' | 'notes'>;
+}
+
+/**
+ * The draft render: its timeline, its composition, a preview with the voice alone, its contact
+ * sheet, and its checks, all in `video/draft/`. Nothing of the video's own is written: not the
+ * video, its sound, or `video/frames.json`, so the next real render knows what it already has.
+ */
+async function renderDraft(input: ProduceVideoInput, d: DraftInput): Promise<ProduceVideoResult> {
+  const { run, logger } = input;
+  const { spec, timeline, media } = d;
+  await run.writeJson(DRAFT_PATHS.timeline, timeline, 'draft');
+  const compositionDir = run.path(DRAFT_PATHS.composition);
+  // An earlier draft's images may no longer be shown.
+  await rm(compositionDir, { recursive: true, force: true });
+  await writeComposition(compositionDir, timeline, d.images);
+  const output = run.path(DRAFT_PATHS.preview);
+  let rendered: Awaited<ReturnType<typeof renderComposition>>;
+  try {
+    const audio = masterVoice(
+      {
+        voice: d.voice,
+        speech: d.speech,
+        duration: timeline.duration,
+        placement: spec.music.placement,
+      },
+      run.path(DRAFT_PATHS.master),
+    );
+    logger.step(
+      `Rendering a draft: ${timeline.frames} frames at ${spec.width}×${spec.height}, ${spec.fps} fps`,
+    );
+    rendered = await renderComposition({
+      compositionDir,
+      output,
+      timeline,
+      media,
+      audio,
+      workers: input.workers,
+    });
+  } finally {
+    await rm(run.path(DRAFT_PATHS.master), { force: true });
+  }
+  await run.record(DRAFT_PATHS.preview, 'draft');
+  if (rendered.poster) await run.record(DRAFT_PATHS.poster, 'draft');
+  if (rendered.contactSheet) await run.record(DRAFT_PATHS.contactSheet, 'draft');
+  logger.step('Checking the draft');
+  const qc = withCheck(
+    await runQc({
+      video: output,
+      spec,
+      timeline,
+      layouts: rendered.layouts,
+      narrated: Boolean(d.voice),
+      media,
+      speech: d.speechRecord,
+    }),
+    timelineGrounding(timeline, input.explanation),
+  );
+  await run.writeJson(DRAFT_PATHS.qc, qc, 'draft');
+  // The draft's checks are for whoever revises it: they go to its qc.json, not the run's warnings.
+  for (const check of qc.checks.filter((c) => c.status !== 'pass'))
+    logger.warn(`Draft QC ${check.status}: ${check.message}`);
+  return {
+    ...d.result,
+    video: output,
+    poster: rendered.poster,
+    contactSheet: rendered.contactSheet,
+    duration: qc.measured.duration,
+    qc,
+    renderMs: rendered.renderMs,
+    draft: { width: spec.width, height: spec.height, fps: spec.fps },
   };
 }
 

@@ -54,6 +54,7 @@ export {
   type ShotElement,
 } from './direction/schema.ts';
 export { type DirectionSources, directionSources } from './direction/sources.ts';
+export { DRAFT_DIR, DRAFT_FPS, DRAFT_PATHS, DRAFT_SCALE, draftSpec } from './draft.ts';
 export {
   localeLanguage,
   normalizeSpeech,

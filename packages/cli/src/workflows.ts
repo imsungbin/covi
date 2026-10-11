@@ -67,6 +67,7 @@ import {
 } from '@covi/core';
 import type { PlatformContext } from '@covi/platforms';
 import {
+  DRAFT_PATHS,
   decideVideo,
   Media,
   type ProduceVideoResult,
@@ -138,6 +139,15 @@ export interface WorkflowResult {
     music?: { use: string; source: string; hint?: string };
     /** Only the sound changed, so the rendered frames were kept. */
     framesReused?: boolean;
+    /** `covi render --draft`: a preview in `video/draft/`; the video itself was not rendered. */
+    draft?: {
+      path: string;
+      seconds?: number;
+      qc?: string;
+      width: number;
+      height: number;
+      fps: number;
+    };
   };
   warnings: string[];
   message?: string;
@@ -973,6 +983,32 @@ export async function applyVideoResult(
     };
     return;
   }
+  if (produced.draft && produced.video) {
+    const { width, height, fps } = produced.draft;
+    result.video = {
+      rendered: false,
+      reason: `Draft rendered at ${width}×${height}, ${fps} fps: open video/draft/contact-sheet.jpg and poster.png, read video/draft/qc.json, revise video/direction.json, then run \`covi render --run ${session.run.id}\` for the video.`,
+      draft: {
+        path: produced.video,
+        seconds: produced.duration,
+        qc: produced.qc?.status,
+        width,
+        height,
+        fps,
+      },
+    };
+    for (const [name, rel] of Object.entries({
+      draftPreview: DRAFT_PATHS.preview,
+      draftPoster: DRAFT_PATHS.poster,
+      draftContactSheet: DRAFT_PATHS.contactSheet,
+      draftQc: DRAFT_PATHS.qc,
+      draftTimeline: DRAFT_PATHS.timeline,
+    }))
+      if (await session.run.has(rel)) artifact(session, result, name, rel);
+    if (produced.qc?.status === 'fail')
+      result.warnings.push('Draft QC failed; see video/draft/qc.json.');
+    return;
+  }
   result.video = {
     rendered: Boolean(produced.video),
     reason: produced.narration.enabled
@@ -1021,6 +1057,8 @@ export async function renderWorkflow(
     workers?: number;
     /** Nobody chose the music, at draft time or now: the result says how to change it. */
     musicDefault?: boolean;
+    /** `--draft`: a fast preview into `video/draft/` instead of the video. */
+    draft?: boolean;
   },
 ): Promise<WorkflowResult> {
   const result = baseResult('render', session);
@@ -1078,6 +1116,7 @@ export async function renderWorkflow(
       evidence,
       subject: () => loadSubjectSnapshot(run),
       direction: session.config.video.direction,
+      draftRender: options.draft,
     }),
   );
   await applyVideoResult(session, result, produced, { musicDefault: options.musicDefault });

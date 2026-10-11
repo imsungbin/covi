@@ -445,6 +445,55 @@ describe('covi CLI', () => {
     }
   });
 
+  it('refuses a draft render the way it refuses a render, and writes no draft', async () => {
+    const dir = await example('bugfix-cli-slugify');
+    const json = covi(['video', '--repo', dir, '--draft', '--force', '--json']).json() as {
+      runId: string;
+      runDir: string;
+      artifacts: Record<string, string>;
+    };
+    expect(covi(['render', '--help']).stdout).toMatch(/--draft\s+render a fast draft/);
+    writeFileSync(
+      json.artifacts.direction!,
+      JSON.stringify({ shots: [{ scene: 'nope', elements: [{ id: 'v', kind: 'visual' }] }] }),
+    );
+    const draft = covi(['render', '--repo', dir, '--run', json.runId, '--draft', '--json']);
+    expect(draft.code).toBe(2);
+    expect((draft.json() as { error: string }).error).toMatch(
+      /video\/direction\.json does not fit this run/,
+    );
+    expect(existsSync(join(json.runDir, 'video', 'draft'))).toBe(false);
+  });
+
+  it('reports a draft render as a preview, never as the video', async () => {
+    const session = {
+      run: { id: 'run-1', has: async () => true, path: (rel: string) => `/run/${rel}` },
+      language: { language: 'en' },
+    } as unknown as Parameters<typeof applyVideoResult>[0];
+    const result = baseResult('render');
+    const produced = {
+      video: '/run/video/draft/preview.mp4',
+      duration: 36,
+      qc: { status: 'warn', checks: [], measured: {} },
+      narration: { enabled: true, provider: 'say', voice: 'Samantha', reason: '' },
+      draft: { width: 960, height: 540, fps: 15 },
+    } as unknown as Parameters<typeof applyVideoResult>[2];
+    await applyVideoResult(session, result, produced);
+    expect(result.video).toMatchObject({
+      rendered: false,
+      draft: { path: '/run/video/draft/preview.mp4', qc: 'warn', width: 960, fps: 15 },
+    });
+    expect(result.video!.reason).toContain('open video/draft/contact-sheet.jpg');
+    expect(result.artifacts).toMatchObject({
+      draftPreview: '/run/video/draft/preview.mp4',
+      draftPoster: '/run/video/draft/poster.png',
+      draftContactSheet: '/run/video/draft/contact-sheet.jpg',
+      draftQc: '/run/video/draft/qc.json',
+      draftTimeline: '/run/video/draft/timeline.json',
+    });
+    expect(result.artifacts.video).toBeUndefined();
+  });
+
   it('declines a video for an internal change and still produces the review', async () => {
     const dir = await example('refactor-retry-helper');
     const result = covi(['video', '--repo', dir, '--json']);

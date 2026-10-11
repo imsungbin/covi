@@ -39,6 +39,8 @@ export type ArtifactKind =
   | 'poster'
   | 'contact-sheet'
   | 'qc'
+  /** A draft render's files (`video/draft/`): a preview, never the video. */
+  | 'draft'
   | 'report'
   | 'log';
 

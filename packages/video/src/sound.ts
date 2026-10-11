@@ -301,6 +301,31 @@ async function renderCached(
   return music;
 }
 
+/**
+ * The voice alone, mastered as a mix is (no music, no effects), for a draft's preview: written to
+ * `path` and returned, or nothing when no one speaks.
+ */
+export function masterVoice(
+  input: Pick<SoundInput, 'voice' | 'speech'> & {
+    duration: number;
+    placement: VideoSpec['music']['placement'];
+  },
+  path: string,
+): string | undefined {
+  if (!input.voice) return undefined;
+  const mixed = mixSound({
+    sampleRate: SAMPLE_RATE,
+    duration: input.duration,
+    voice: input.voice,
+    speech: input.speech,
+    placement: input.placement,
+    effects: [],
+  });
+  if (!mixed.master) return undefined;
+  writeWav(path, mixed.master, SAMPLE_RATE, 'pcm16');
+  return path;
+}
+
 /** Fits, renders, places, and mixes; writes `video/music.wav`, `video/audio.json`, and the master. */
 export async function produceSound(
   input: SoundInput,

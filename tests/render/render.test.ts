@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   cpSync,
   existsSync,
@@ -37,7 +38,11 @@ import { type Browser, chromium } from 'playwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../../packages/cli/src/examples.ts';
 import { DirectionSchema } from '../../packages/video/src/direction/schema.ts';
-import { contactSheetFrames, sheetColumns } from '../../packages/video/src/render/renderer.ts';
+import {
+  contactSheetFrames,
+  posterFrame,
+  sheetColumns,
+} from '../../packages/video/src/render/renderer.ts';
 import { tileLayout } from '../../packages/video/src/render/sheet.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import { TEXT_FLOOR } from '../../packages/video/src/runtime/sizing.ts';
@@ -1671,6 +1676,131 @@ const covi = (args: string[]) =>
     }),
   ) as { runId: string; runDir: string; video: { rendered: boolean; qc: string } };
 const read = <T>(run: string, rel: string) => JSON.parse(readFileSync(join(run, rel), 'utf8')) as T;
+
+describe.skipIf(!available || !fullRenders)('covi render --draft (full pipeline)', () => {
+  /** Every file of a run but run.json and the draft, with its hash. */
+  const files = (run: string) =>
+    readdirSync(run, { recursive: true, withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => join(e.parentPath, e.name).slice(run.length + 1))
+      .filter((rel) => rel !== 'run.json' && !rel.startsWith(join('video', 'draft')))
+      .sort()
+      .map(
+        (rel) =>
+          `${rel} ${createHash('sha256')
+            .update(readFileSync(join(run, rel)))
+            .digest('hex')}`,
+      );
+
+  it('drafts the benchmark beside its video: half size, 15 fps, the same moments', async () => {
+    const dir = await materializeExample(
+      (await listExamples()).find((e) => e.name === 'backend-slim-request')!,
+    );
+    dirs.push(dir);
+    const video = covi(['video', '--repo', dir, '--standard']) as ReturnType<typeof covi> & {
+      video: { reason: string };
+    };
+    expect(video.video.rendered).toBe(true);
+    const run = video.runDir;
+    const before = files(run);
+    const outcome = () => read<{ outcome: { video: unknown } }>(run, 'run.json').outcome.video;
+    const rendered = outcome();
+
+    const draft = covi(['render', '--repo', dir, '--run', video.runId, '--draft']) as ReturnType<
+      typeof covi
+    > & {
+      video: { draft: { qc: string; width: number; height: number; fps: number } };
+    };
+    expect(draft.video).toMatchObject({
+      rendered: false,
+      draft: { width: 960, height: 540, fps: 15 },
+    });
+    expect(draft.video.draft.qc).not.toBe('fail');
+    // Nothing of the video was touched, and the run still describes the video.
+    expect(files(run)).toEqual(before);
+    expect(outcome()).toEqual(rendered);
+    expect(readdirSync(join(run, 'video', 'draft')).sort()).toEqual([
+      'composition',
+      'contact-sheet.jpg',
+      'poster.png',
+      'preview.mp4',
+      'qc.json',
+      'timeline.json',
+    ]);
+
+    const media = await Media.locate();
+    const probe = await media.probe(join(run, 'video', 'draft', 'preview.mp4'));
+    expect(probe).toMatchObject({ width: 960, height: 540 });
+    expect(probe.fps).toBeCloseTo(15, 2);
+    if (video.video.reason.startsWith('narrated')) expect(probe.audioCodec).toBeTruthy();
+
+    // A scaled view of the same video: the same moments and shots, every position at half.
+    const full = read<Timeline>(run, 'video/timeline.json');
+    const half = read<Timeline>(run, 'video/draft/timeline.json');
+    const moments = (t: Timeline) => ({
+      duration: t.duration,
+      captions: t.captions,
+      cues: t.cues,
+      scenes: t.scenes.map((s) => ({
+        id: s.id,
+        start: s.start,
+        end: s.end,
+        transition: s.transition,
+        beats: s.direction?.beats,
+        // Left-out beats are decided by the room a slot has; their reasons hold no pixels.
+        dropped: s.direction?.dropped,
+        kinds: s.direction?.elements.map((e) => e.kind),
+      })),
+    });
+    expect(moments(half)).toEqual(moments(full));
+    const positions = (t: Timeline, k: number) =>
+      t.scenes
+        .flatMap((s) => [
+          ...(s.stop ? [s.stop.x, s.stop.y] : []),
+          ...(s.direction?.elements ?? []).flatMap((e) => [
+            e.rect.x,
+            e.rect.y,
+            e.rect.width,
+            e.rect.height,
+          ]),
+        ])
+        .map((v) => v * k);
+    const [big, small] = [positions(full, 1), positions(half, 2)];
+    expect(small).toHaveLength(big.length);
+    for (const [i, v] of small.entries()) expect(v).toBeCloseTo(big[i]!, 1);
+    expect(half.mouth).toHaveLength(half.frames);
+    // Its poster shows the video's moment.
+    expect(
+      Math.abs(posterFrame(half) / half.fps - posterFrame(full) / full.fps),
+    ).toBeLessThanOrEqual(1 / 15 + 1e-9);
+
+    // The draft is checked like the video, motion and all, and says what the video's checks say:
+    // a draft that passed where the video warns, or the reverse, would mislead whoever revises it.
+    const statuses = (rel: string) =>
+      new Map(
+        read<{ checks: Array<{ id: string; status: string }> }>(run, rel).checks.map((c) => [
+          c.id,
+          c.status,
+        ]),
+      );
+    const [shown, drafted] = [statuses('video/qc.json'), statuses('video/draft/qc.json')];
+    for (const id of [
+      'still',
+      'motion-gap',
+      'motion-busy',
+      'reading-time',
+      'empty-opening',
+      'overlap',
+      'out-of-frame',
+      'dropped-beats',
+    ]) {
+      expect(drafted.get(id), id).toBeDefined();
+      expect(drafted.get(id), id).toBe(shown.get(id));
+    }
+    // Only the sound is left out of a draft, and with it the checks of the music and effects.
+    for (const [id, status] of drafted) expect(status, id).toBe(shown.get(id));
+  }, 900_000);
+});
 
 describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)', () => {
   it('renders a storyboard that uses every timing field', async () => {

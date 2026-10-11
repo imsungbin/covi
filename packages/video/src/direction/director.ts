@@ -33,14 +33,15 @@ const sceneId = (scene: Pick<Scene, 'id'>, i: number) => scene.id ?? `s${i + 1}`
  * following the changed lines; a terminal scene whose command measured a change shows the biggest
  * one as a number beside its output, or beside the other counts it measured, staged in the
  * output's place (a request that splits into its chunks and merges into one, reads that pile up);
- * a diagram scene becomes its nodes, with something travelling each edge in order and the nodes'
- * details left out, unless a name is not a label, it singles out some nodes as changed, or an edge
- * has words of its own (Covi never discards an emphasis or words the storyboard wrote); every
- * other scene keeps its storyboard visual, and a code scene that highlights lines zooms toward
- * them as they light. Each scene after the first gets its entrance from the rotation unless the
- * storyboard set its `transition`. Pure and deterministic. It never invents content: morphs,
- * metrics, and counts come from evidence, and a diagram's nodes and flows from the storyboard's
- * own diagram.
+ * a diagram scene becomes its nodes, by name, with a dot travelling each edge in order, when every
+ * name is a label, its nodes are all changed or none are, and no edge has words: staged, it keeps
+ * the names and the edges and leaves out the nodes' details (a drafted area's line counts) and a
+ * highlight every node shares, and a diagram that singles some nodes out or words an edge keeps
+ * its visual instead; every other scene keeps its storyboard visual, and a code scene that
+ * highlights lines zooms toward them as they light. Each scene after the first gets its entrance
+ * from the rotation unless the storyboard set its `transition`. Pure and deterministic. It never
+ * invents content: morphs, metrics, and counts come from evidence, and a diagram's nodes and flows
+ * from the storyboard's own diagram.
  * What it returns reads back unchanged through `DirectionSchema`: Covi never writes a direction
  * file it would then refuse.
  */

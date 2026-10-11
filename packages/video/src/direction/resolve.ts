@@ -165,19 +165,20 @@ export function shownShot(
 
 /**
  * What the render says of each beat a direction asked for that cannot play: the shot (its number
- * in the file, and its scene), the beat's verb, and why, which names what it acts on. The run
- * warns with each, and notes it.
+ * in the file the agent wrote, `authored`, and its scene; or Covi's own shot for the scene), the
+ * beat's verb, and why, which names what it acts on. The run warns with each, and notes it.
  */
 export function droppedBeatNotes(
-  plan: Pick<Direction, 'shots'>,
+  authored: Pick<Direction, 'shots'> | undefined,
   scenes: readonly Pick<Scene, 'id'>[],
   staging: readonly SceneStaging[],
 ): string[] {
   return staging.flatMap((s, i) => {
     const id = scenes[i]?.id ?? `s${i + 1}`;
-    const shot = plan.shots.findIndex((x) => x.scene === id) + 1;
+    const shot = authored?.shots.findIndex((x) => x.scene === id) ?? -1;
+    const named = shot === -1 ? `Covi's shot for scene ${id}` : `shot ${shot + 1} (scene ${id})`;
     return (s.direction.dropped ?? []).map(
-      (d) => `Direction: shot ${shot} (scene ${id}) leaves out a ${d.verb}: ${d.reason}.`,
+      (d) => `Direction: ${named} leaves out a ${d.verb}: ${d.reason}.`,
     );
   });
 }

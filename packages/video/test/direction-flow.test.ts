@@ -608,6 +608,17 @@ describe('flow verbs in the direction file', () => {
         /^Direction: shot 1 \(scene s2\) leaves out a merge: the merge of "p" at \d+\.\d s comes before its split\.$/,
       ),
     ]);
+    // A shot the agent did not write is Covi's: its number in the merged plan names nothing the
+    // agent can find, so the scene names it.
+    for (const authored of [
+      undefined,
+      DirectionSchema.parse({
+        shots: [{ scene: 's1', elements: [{ id: 'visual', kind: 'visual' }], beats: [] }],
+      }),
+    ])
+      expect(droppedBeatNotes(authored, scenes, staging)).toEqual([
+        expect.stringMatching(/^Direction: Covi's shot for scene s2 leaves out a merge: /),
+      ]);
     expect(
       droppedBeatNotes(
         DirectionSchema.parse(shot(STAGE, STORY)),

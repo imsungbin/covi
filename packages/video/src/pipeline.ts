@@ -478,8 +478,10 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
         redact,
       })
     : undefined;
-  // A beat that cannot play where the direction put it is left out, never silently.
-  for (const note of plan && staging ? droppedBeatNotes(plan, fit.scenes, staging) : []) {
+  // A beat that cannot play where the direction put it is left out, never silently. A shot of the
+  // agent's is named by its number in their file; Covi's own by its scene.
+  const authoredDirection = directionFile && !directionFile.draft ? directionFile : undefined;
+  for (const note of staging ? droppedBeatNotes(authoredDirection, fit.scenes, staging) : []) {
     run.warn(note);
     notes.push(note);
   }

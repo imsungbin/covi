@@ -703,7 +703,7 @@ After rendering, Covi checks the video and writes `video/qc.json`. It contains t
 | `still` | ffmpeg `freezedetect` on the media region (noise 0.001, at least 1.5 s) finds no freeze that covers 1.5 s or more of narration. Names the scene | warn |
 | `captions-clear-of-content` | The caption band never intersects demonstrated content | fail |
 | `captions-in-frame` | The caption band stays inside the frame, and no caption line is wider than its box | fail |
-| `text-fits` | No text element overflows its box, and every pile draws its items at least 24 px at 1080p | warn |
+| `text-fits` | No text element overflows its box, and every pile draws its items at least 24 px at 1080p | warn, naming the scenes with clipped text and, apart, those with a cramped pile |
 | `narrator-clear-of-content` | The narrator, measured as drawn with its tail, never covers demonstrated content, the media region, captions, or header text | warn |
 | `text-size` | Code, terminal, and API text is at least 24 px and body text (headings, titles, notes, code captions, callout and summary text, node labels, area names) at least 28 px at 1080p wherever a story scene has settled, measured as drawn and relative to the frame's short side. Chips, mark glosses, step labels, file paths, counts, and edge labels are exempt | warn, naming the scene, the kind of text, and its size |
 | `empty-frame` | Where each card scene (code, terminal, API, findings, change map, callout, diagram, or a directed shot that leads with one or with a measured number) has settled, its content covers at least 40% of the media region. Captures keep their own aspect ratio, and title and summary cards and shots that lead with a flow (see `monotony`) are not checked | warn, naming the scene and its share |

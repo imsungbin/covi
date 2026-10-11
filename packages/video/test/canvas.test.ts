@@ -246,6 +246,30 @@ describe('the canvas camera', () => {
     );
   });
 
+  it('eases from the card held whole to a close-up of the lines as the zoom asked grows', () => {
+    const card = { x: media.x, y: media.y + 20, width: media.width, height: media.height - 40 };
+    const lines = { x: media.x + 60, y: media.y + 0.45 * media.height, width: 1000, height: 40 };
+    const keep = { rect: card, width: 1920, push: 0.02 };
+    const whole = 1920 / media.width / 1.02;
+    const zooms = Array.from({ length: 151 }, (_, i) => 1 + i / 100);
+    const views = zooms.map((zoom) => follower(lines, zoom, media, pivot, keep)(lines));
+    // At the zoom asked while the card fits, held whole up to a quarter more than it allows, and
+    // a close-up from 1.6 times that on.
+    for (const [i, zoom] of zooms.entries()) {
+      if (zoom <= 1.25 * whole) expect(views[i]!.scale).toBeCloseTo(Math.min(zoom, whole), 9);
+      if (zoom >= 1.6 * whole) expect(views[i]).toEqual(follower(lines, zoom, media, pivot)(lines));
+    }
+    // In between it eases from one framing to the other, about 300 px apart here: a step of 0.01
+    // in the zoom asked moves the view at most 21 px and 0.04, where flipping from one framing to
+    // the other between 1.36 and 1.37 moved it 214 px and 0.28 at once.
+    for (const [i, v] of views.entries()) {
+      if (i === 0) continue;
+      const was = views[i - 1]!;
+      expect(Math.abs(v.scale - was.scale), `zoom ${zooms[i]}`).toBeLessThan(0.05);
+      expect(Math.hypot(v.x - was.x, v.y - was.y), `zoom ${zooms[i]}`).toBeLessThan(25);
+    }
+  });
+
   it('eases into its clamps: the camera slows down rather than stopping dead, inside the region', () => {
     const frame = follower(media, 2, media, pivot);
     /** How much the speed changes from one step to the next, at most. */

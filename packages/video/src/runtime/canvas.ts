@@ -1,5 +1,5 @@
 import type { CameraKind, CameraMove, Point, Rect, Stop } from '../timeline/types.ts';
-import { clamp, easeInOutCubic, lerp } from './anim.ts';
+import { clamp, easeInOutCubic, lerp, seg } from './anim.ts';
 
 /*
  * The canvas: every story scene sits at its stop, a frame-sized region of one large world, and
@@ -113,11 +113,16 @@ function softMin(a: number, b: number, k: number): number {
 }
 
 /**
- * A follow framing a card (a morph's code) keeps the card whole when its zoom asks for at most
- * this many times the scale that would: closer, it would cut only a sliver off the card's sides
- * or its header row, which reads as a mistake. A zoom past that is a close-up of the lines.
+ * A follow framing a card (a morph's code) holds back to keep the card whole while its zoom asks
+ * for at most this many times the scale that would: closer, it would cut only a sliver off the
+ * card's sides or its header row, which reads as a mistake…
  */
 const HOLD_BACK = 1.25;
+/**
+ * …and from there it eases toward the zoom asked, so a little more zoom never flips the framing,
+ * until, at this many times that scale, it is a close-up of the lines alone.
+ */
+const CLOSE_UP = 1.6;
 
 /**
  * The card a follow frames its target in, kept whole: its box (stop-local), the frame's width,
@@ -147,7 +152,7 @@ function wholeScale(card: FollowedCard, bounds: Rect, region: Rect): number {
  * rather than stopping dead as the target grows past the view or nears the region's edge. With a
  * `card`, a modest zoom holds back to where the card stays whole (see `HOLD_BACK`), and the view
  * then also keeps the card across the frame and its top row below the region's top, so its header
- * never slides under the header band.
+ * never slides under the header band; a closer zoom eases from that framing to the close-up.
  */
 export function follower(
   bounds: Rect,
@@ -157,12 +162,26 @@ export function follower(
   card?: FollowedCard,
 ): (target: Rect) => View {
   const asked = clamp(zoom ?? fitted(bounds, region), 1, MAX_ZOOM);
-  const whole = card ? wholeScale(card, bounds, region) : Number.POSITIVE_INFINITY;
-  // A modest zoom holds back to the card; a close-up frames the lines alone.
-  const held = card && asked <= whole * HOLD_BACK ? card : undefined;
-  const scale = held ? clamp(whole, 1, asked) : asked;
+  const free = framing(asked, region, pivot);
+  if (!card) return free;
+  const whole = wholeScale(card, bounds, region);
+  const loose = easeInOutCubic(seg(asked / whole, HOLD_BACK, CLOSE_UP));
+  if (loose >= 1) return free;
+  const held = framing(clamp(whole, 1, asked), region, pivot, card);
+  // Both views stay inside the region, and so does any blend of them: the view's room there only
+  // widens as its scale grows.
+  return loose <= 0 ? held : (target) => lerpView(held(target), free(target), loose);
+}
+
+/** A follow's framing at one `scale`, kept inside the region and, given a `card`, the card whole. */
+function framing(
+  scale: number,
+  region: Rect,
+  pivot: Point,
+  card?: FollowedCard,
+): (target: Rect) => View {
   // The scale the push-in may reach, at which the card's bounds must still hold.
-  const most = scale * (1 + (held?.push ?? 0));
+  const most = scale * (1 + (card?.push ?? 0));
   /** Where the view's center may go on one axis: inside the region, as `clampView` keeps it. */
   const range = (regionStart: number, regionSize: number, p: number): [number, number] => [
     regionStart + (p - regionStart) / scale,
@@ -175,9 +194,9 @@ export function follower(
   };
   let xs = range(region.x, region.width, pivot.x);
   let ys = range(region.y, region.height, pivot.y);
-  if (held) {
-    const c = held.rect;
-    xs = within(xs, c.x + c.width - (held.width - pivot.x) / most, c.x + pivot.x / most);
+  if (card) {
+    const c = card.rect;
+    xs = within(xs, c.x + c.width - (card.width - pivot.x) / most, c.x + pivot.x / most);
     ys = within(ys, Number.NEGATIVE_INFINITY, c.y + (pivot.y - region.y) / most);
   }
   const axis = (

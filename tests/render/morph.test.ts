@@ -78,6 +78,18 @@ const grow: DiffLine[] = [
 ];
 
 /**
+ * A card a little narrower than the media region and laid out 30 px down it: a modest zoom holds
+ * back to keep it whole, and its header row leaves the camera room to move before it reaches the
+ * region's top.
+ */
+const held: Rect = {
+  x: media.x + 0.05 * media.width,
+  y: media.y + 30,
+  width: 0.9 * media.width,
+  height: media.height - 30,
+};
+
+/**
  * A two-scene composition (640×360 unless `size` says otherwise) whose second scene morphs `lines`
  * on `beats` (seconds since that scene started) in a card laid out in `rect`, opened in Chromium;
  * a `static` view holds that scene's camera still (no push-in).
@@ -479,7 +491,9 @@ describe.skipIf(!available)('the token morph', () => {
   it('holds one scale while it follows changed lines that grow, when no zoom is given', async () => {
     const follow: DirectionBeat = { verb: 'camera', move: 'follow', to: 'm', t: 1, seconds: 0.8 };
     // Held still, so the scale measured is the follow's own: the push-in grows it under the beats.
-    const v = await morphed(grow, [follow, MORPH], media, 'static');
+    // On a card as large as the region, the fitted zoom would hold back to where the card's
+    // header leaves the camera next to no room.
+    const v = await morphed(grow, [follow, MORPH], held, 'static');
     // From the end of its ease until the scene settles and the camera starts to linger.
     const cameras: Array<{ tx: number; ty: number; scale: number }> = [];
     const [from, to] = [
@@ -529,21 +543,34 @@ describe.skipIf(!available)('the token morph', () => {
       t: 1,
       seconds: 0.5,
     };
-    // A close-up, which travels with the lines: a modest zoom would hold back to keep the card
-    // whole, and a card as tall as the region leaves it almost no room to move.
-    const follow: DirectionBeat = {
+    const follow = (zoom: number): DirectionBeat => ({
       verb: 'camera',
       move: 'follow',
       to: 'm',
-      zoom: 2,
+      zoom,
       t: 1.5,
       seconds: 0.4,
-    };
-    const v = await morphed(refs, [reveal, follow, MORPH]);
-    const ty = async (share: number) => (await v.camera(v.at(MORPH.t + MORPH.seconds * share))).ty;
-    // Still moving with the lines while they travel: on the scene's clock it would be a second
-    // ahead, and done before they are.
-    expect(Math.abs((await ty(0.3)) - (await ty(0.9)))).toBeGreaterThan(1);
-    expect(v.errors).toEqual([]);
+    });
+    // A close-up of the lines on a card as large as the region, and a modest zoom held back.
+    for (const [zoom, rect] of [
+      [2, media],
+      [1.25, held],
+    ] as const) {
+      const v = await morphed(refs, [reveal, follow(zoom), MORPH], rect);
+      const at = (share: number) => v.at(MORPH.t + MORPH.seconds * share);
+      const [early, late] = [await v.camera(at(0.3)), await v.camera(at(0.9))];
+      // Still moving with the lines while they travel: on the scene's clock it would be a second
+      // ahead, and done before they are.
+      expect(Math.abs(early.ty - late.ty), `zoom ${zoom}`).toBeGreaterThan(1);
+      if (zoom < 2) {
+        expect(late.scale).toBeLessThan(1.25);
+        const head = (await v.seek(
+          at(0.9),
+          `return document.querySelector('[data-element="m"] .code-head').getBoundingClientRect().top;`,
+        )) as number;
+        expect(head).toBeGreaterThanOrEqual(media.y - 1);
+      }
+      expect(v.errors).toEqual([]);
+    }
   });
 });

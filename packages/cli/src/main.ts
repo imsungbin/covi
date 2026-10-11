@@ -441,7 +441,9 @@ async function finish(
 ): Promise<void> {
   const u = ui(cmd);
   if (s) {
-    result.warnings.push(...s.run.manifest.warnings.filter((w) => !result.warnings.includes(w)));
+    // A draft's result already holds its own warnings; the run's are the video's.
+    if (!result.video?.draft)
+      result.warnings.push(...s.run.manifest.warnings.filter((w) => !result.warnings.includes(w)));
     const status: RunOutcome['status'] =
       result.exitCode === ExitCode.gate
         ? 'gated'

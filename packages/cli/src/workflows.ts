@@ -67,6 +67,7 @@ import {
 } from '@covi/core';
 import type { PlatformContext } from '@covi/platforms';
 import {
+  DIRECTION_PATH,
   DRAFT_PATHS,
   decideVideo,
   Media,
@@ -987,7 +988,7 @@ export async function applyVideoResult(
     const { width, height, fps } = produced.draft;
     result.video = {
       rendered: false,
-      reason: `Draft rendered at ${width}×${height}, ${fps} fps: open video/draft/contact-sheet.jpg and poster.png, read video/draft/qc.json, revise video/direction.json, then run \`covi render --run ${session.run.id}\` for the video.`,
+      reason: `Draft rendered at ${width}×${height}, ${fps} fps: open ${DRAFT_PATHS.contactSheet} and ${DRAFT_PATHS.poster}, read ${DRAFT_PATHS.qc}, revise ${DIRECTION_PATH}, then run \`covi render --run ${session.run.id}\` for the video.`,
       draft: {
         path: produced.video,
         seconds: produced.duration,
@@ -1005,8 +1006,12 @@ export async function applyVideoResult(
       draftTimeline: DRAFT_PATHS.timeline,
     }))
       if (await session.run.has(rel)) artifact(session, result, name, rel);
-    if (produced.qc?.status === 'fail')
-      result.warnings.push('Draft QC failed; see video/draft/qc.json.');
+    // Ids only: the messages quote what the agent wrote, which reaches only qc.json and the log.
+    const flagged = (produced.qc?.checks ?? []).filter((c) => c.status !== 'pass');
+    if (produced.qc && flagged.length)
+      result.warnings.push(
+        `Draft QC ${produced.qc.status}: ${flagged.map((c) => c.id).join(', ')}; see ${DRAFT_PATHS.qc}.`,
+      );
     return;
   }
   result.video = {
@@ -1086,7 +1091,9 @@ export async function renderWorkflow(
   const demo = (await run.has(DEMO_PATHS.captures))
     ? await run.readJson<Demonstration>(DEMO_PATHS.captures)
     : undefined;
-  const produced = await run.stage('video', () =>
+  const known = run.manifest.warnings.length;
+  // A draft is not the video: its stage, and a failure in it, are recorded as a draft.
+  const produced = await run.stage(options.draft ? 'draft' : 'video', () =>
     produceVideo({
       run,
       change,
@@ -1119,6 +1126,9 @@ export async function renderWorkflow(
       draftRender: options.draft,
     }),
   );
+  // A draft's result says what this command raised, never what the renders before it warned about:
+  // the run keeps those for the video (`finish` leaves them out of a draft's result).
+  if (produced.draft) result.warnings.push(...run.manifest.warnings.slice(known));
   await applyVideoResult(session, result, produced, { musicDefault: options.musicDefault });
   return result;
 }

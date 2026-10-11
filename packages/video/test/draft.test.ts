@@ -186,6 +186,17 @@ describe('a draft’s sound', () => {
       expect(wav.sampleRate).toBe(SAMPLE_RATE);
       expect(wav.channels).toHaveLength(2);
       expect(wav.channels[0]!.length).toBe(2 * SAMPLE_RATE);
+      // The voice is heard where it speaks, on both sides, and nothing plays where it is silent.
+      const rms = (c: Float32Array, from: number, to: number) => {
+        const [a, b] = [Math.round(from * SAMPLE_RATE), Math.round(to * SAMPLE_RATE)];
+        let sum = 0;
+        for (let i = a; i < b; i++) sum += c[i]! ** 2;
+        return Math.sqrt(sum / (b - a));
+      };
+      for (const channel of wav.channels) {
+        expect(rms(channel, 0.1, 0.9)).toBeGreaterThan(0.05);
+        expect(rms(channel, 1.1, 2)).toBeLessThan(1e-4);
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

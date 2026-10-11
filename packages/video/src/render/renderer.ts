@@ -40,6 +40,10 @@ export interface RenderOptions {
   sheetFrames?: number[];
   /** The poster's frame (defaults to `posterFrame`). */
   posterFrame?: number;
+  /** Where the poster goes (default: `poster.png` beside the video). */
+  posterOutput?: string;
+  /** Where the contact sheet goes (default: `contact-sheet.jpg` beside the video). */
+  sheetOutput?: string;
   onProgress?: (done: number, total: number) => void;
 }
 
@@ -427,14 +431,14 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
       pageErrors,
     };
     if (poster) {
-      result.poster = join(dirname(options.output), 'poster.png');
+      result.poster = options.posterOutput ?? join(dirname(options.output), 'poster.png');
       await writeFile(result.poster, poster);
     }
     if (sheet.size)
       result.contactSheet = await contactSheet(
         media,
         [...sheet.entries()].sort((a, b) => a[0] - b[0]).map(([, b]) => b),
-        join(dirname(options.output), 'contact-sheet.jpg'),
+        options.sheetOutput ?? join(dirname(options.output), 'contact-sheet.jpg'),
         workDir,
         timeline.width,
         timeline.height,

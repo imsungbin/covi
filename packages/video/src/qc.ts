@@ -554,7 +554,7 @@ function musicAudibleCheck(record: AudioRecord): QcCheck {
   };
 }
 
-function intersects(a: Rect, b: Rect, tolerance = 2): boolean {
+function intersects(a: Rect, b: Rect, tolerance: number): boolean {
   return (
     a.x + tolerance < b.x + b.width &&
     b.x + tolerance < a.x + a.width &&
@@ -563,7 +563,7 @@ function intersects(a: Rect, b: Rect, tolerance = 2): boolean {
   );
 }
 
-function within(inner: Rect, outer: Rect, tolerance = 4): boolean {
+function within(inner: Rect, outer: Rect, tolerance: number): boolean {
   return (
     inner.x >= outer.x - tolerance &&
     inner.y >= outer.y - tolerance &&
@@ -577,6 +577,10 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
   const checks: QcCheck[] = [];
   const frame = { x: 0, y: 0, width: timeline.width, height: timeline.height };
   const regions = computeRegions(timeline);
+  // A couple of pixels at 1080p are forgiven, in design units: a frame drawn smaller (a draft, at
+  // half size) gets the video's verdict.
+  const overlaps = (a: Rect, b: Rect) => intersects(a, b, 2 * regions.unit);
+  const fits = (inner: Rect, outer: Rect) => within(inner, outer, 4 * regions.unit);
   const covered: string[] = [];
   const outside: number[] = [];
   const spilled: number[] = [];
@@ -590,10 +594,10 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
     imagesLoaded &&= report.imagesLoaded;
     for (const family of report.fontsFailed ?? []) fontsFailed.add(family);
     if (report.captions) {
-      if (!within(report.captions, frame)) outside.push(report.frame);
+      if (!fits(report.captions, frame)) outside.push(report.frame);
       if (report.captionOverflow) spilled.push(report.frame);
       for (const item of report.items) {
-        if (item.role !== 'text' && intersects(report.captions, item.rect))
+        if (item.role !== 'text' && overlaps(report.captions, item.rect))
           covered.push(`${report.scene ?? '?'}@${report.frame}`);
       }
     }
@@ -602,7 +606,7 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
     // The fox's real shapes: its tail can reach past its box, but only into empty space.
     const fox = report.narratorParts ?? (report.narrator ? [report.narrator] : []);
     const covers = (rects: readonly Rect[], what: string) => {
-      if (fox.some((part) => rects.some((rect) => intersects(part, rect)))) {
+      if (fox.some((part) => rects.some((rect) => overlaps(part, rect)))) {
         const scenes = narratorOverlap.get(what) ?? new Set<string>();
         scenes.add(report.scene ?? '?');
         narratorOverlap.set(what, scenes);

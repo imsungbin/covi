@@ -1705,17 +1705,46 @@ describe.skipIf(!available || !fullRenders)('covi render --draft (full pipeline)
     const before = files(run);
     const outcome = () => read<{ outcome: { video: unknown } }>(run, 'run.json').outcome.video;
     const rendered = outcome();
+    // The run keeps what the renders before the draft warned about, some since fixed: the draft's
+    // result must say only what the draft found.
+    const manifest = read<{ warnings: string[] }>(run, 'run.json');
+    manifest.warnings.push(
+      'Video QC warn: a check an earlier render warned about, fixed since.',
+      'Direction: shot 1 (scene s1) leaves out a merge: the merge of "packet" starts before its split.',
+    );
+    writeFileSync(join(run, 'run.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    // An earlier round's file is gone once the next draft is written.
+    mkdirSync(join(run, 'video', 'draft'), { recursive: true });
+    writeFileSync(join(run, 'video', 'draft', 'an-earlier-round.png'), '');
 
     const draft = covi(['render', '--repo', dir, '--run', video.runId, '--draft']) as ReturnType<
       typeof covi
     > & {
       video: { draft: { qc: string; width: number; height: number; fps: number } };
+      warnings: string[];
     };
     expect(draft.video).toMatchObject({
       rendered: false,
       draft: { width: 960, height: 540, fps: 15 },
     });
     expect(draft.video.draft.qc).not.toBe('fail');
+    const checked = read<{ status: string; checks: Array<{ id: string; status: string }> }>(
+      run,
+      'video/draft/qc.json',
+    );
+    const flagged = checked.checks.filter((c) => c.status !== 'pass').map((c) => c.id);
+    expect(draft.warnings).toEqual(
+      flagged.length
+        ? [`Draft QC ${checked.status}: ${flagged.join(', ')}; see video/draft/qc.json.`]
+        : [],
+    );
+    // …and leaves the run's warnings as they were: they describe the video. It ran as a draft.
+    const after = read<{ warnings: string[]; stages: Array<{ name: string; status: string }> }>(
+      run,
+      'run.json',
+    );
+    expect(after.warnings).toEqual(manifest.warnings);
+    expect(after.stages.at(-1)).toMatchObject({ name: 'draft', status: 'ok' });
     // Nothing of the video was touched, and the run still describes the video.
     expect(files(run)).toEqual(before);
     expect(outcome()).toEqual(rendered);

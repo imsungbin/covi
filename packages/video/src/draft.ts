@@ -10,14 +10,14 @@ import type { VideoSpec } from './spec.ts';
 /** Where a draft render writes, apart from the video's own files. */
 export const DRAFT_DIR = 'video/draft';
 export const DRAFT_PATHS = {
-  preview: 'video/draft/preview.mp4',
-  poster: 'video/draft/poster.png',
-  contactSheet: 'video/draft/contact-sheet.jpg',
-  qc: 'video/draft/qc.json',
-  timeline: 'video/draft/timeline.json',
-  composition: 'video/draft/composition',
+  preview: `${DRAFT_DIR}/preview.mp4`,
+  poster: `${DRAFT_DIR}/poster.png`,
+  contactSheet: `${DRAFT_DIR}/contact-sheet.jpg`,
+  qc: `${DRAFT_DIR}/qc.json`,
+  timeline: `${DRAFT_DIR}/timeline.json`,
+  composition: `${DRAFT_DIR}/composition`,
   /** The voice, mastered, kept only until it is muxed into the preview. */
-  master: 'video/draft/.master.wav',
+  master: `${DRAFT_DIR}/.master.wav`,
 } as const;
 
 /** A draft draws at this frame rate (or the video's, when that is lower)… */

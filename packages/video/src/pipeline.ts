@@ -32,7 +32,7 @@ import {
 } from './direction/resolve.ts';
 import { DIRECTION_PATH, readDirectionFile } from './direction/schema.ts';
 import { diffFiles, directionSources } from './direction/sources.ts';
-import { DRAFT_PATHS, draftSpec } from './draft.ts';
+import { DRAFT_DIR, DRAFT_PATHS, draftSpec } from './draft.ts';
 import { groundingCheck, sceneEvidence, unknownSceneEvidence } from './grounding.ts';
 import {
   type Pronunciations,
@@ -208,6 +208,13 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   const draft = Boolean(input.draftRender);
   const spec = draft ? draftSpec(input.spec) : input.spec;
   const notes: string[] = [];
+  // What went wrong is in the result's notes and, for the video, in the run's warnings. Those
+  // describe the video, so a draft's go to the log instead.
+  const warn = (message: string) => {
+    if (draft) logger.warn(message);
+    else run.warn(message);
+    notes.push(message);
+  };
   await mkdir(run.path('video'), { recursive: true });
 
   // 1. Storyboard: authored, or drafted from evidence (optionally polished by a model).
@@ -258,7 +265,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
         );
         notes.push(`Narration refined by ${input.provider.id}.`);
       } catch (error) {
-        run.warn(
+        warn(
           `Narration refinement failed; using the drafted narration (${(error as Error).message}).`,
         );
       }
@@ -380,7 +387,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
     languageSource: speechLanguage.source,
   };
   if (spec.narration.enabled && !tts.provider)
-    run.warn(`Narration requested but unavailable: ${tts.reason}. Rendering with captions only.`);
+    warn(`Narration requested but unavailable: ${tts.reason}. Rendering with captions only.`);
   const takes = new Map<string, Take>();
   const synthesizeAll = async (tempo: number) => {
     takes.clear();
@@ -403,9 +410,7 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
         );
       }
     } catch (error) {
-      run.warn(
-        `Speech synthesis failed (${(error as Error).message}); rendering with captions only.`,
-      );
+      warn(`Speech synthesis failed (${(error as Error).message}); rendering with captions only.`);
       narration.enabled = false;
       narration.reason = 'speech synthesis failed';
       takes.clear();
@@ -495,12 +500,8 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
   // A beat that cannot play where the direction put it is left out, never silently. A shot of the
   // agent's is named by its number in their file; Covi's own by its scene.
   const authoredDirection = directionFile && !directionFile.draft ? directionFile : undefined;
-  // A draft's notes are for whoever revises it, like its checks: the log, never the run's warnings.
-  for (const note of staging ? droppedBeatNotes(authoredDirection, fit.scenes, staging) : []) {
-    if (draft) logger.warn(note);
-    else run.warn(note);
-    notes.push(note);
-  }
+  for (const note of staging ? droppedBeatNotes(authoredDirection, fit.scenes, staging) : [])
+    warn(note);
   const timeline: Timeline = buildTimeline({
     title: storyboard.title,
     // Each scene records the evidence it rests on: what it cites and what it shows (its visual,
@@ -714,10 +715,12 @@ interface DraftInput {
 async function renderDraft(input: ProduceVideoInput, d: DraftInput): Promise<ProduceVideoResult> {
   const { run, logger } = input;
   const { spec, timeline, media } = d;
+  // A draft is one round: nothing of an earlier one stays beside it, on disk or in run.json, even
+  // when this one stops partway.
+  await rm(run.path(DRAFT_DIR), { recursive: true, force: true });
+  for (const rel of Object.values(DRAFT_PATHS)) await run.discard(rel);
   await run.writeJson(DRAFT_PATHS.timeline, timeline, 'draft');
   const compositionDir = run.path(DRAFT_PATHS.composition);
-  // An earlier draft's images may no longer be shown.
-  await rm(compositionDir, { recursive: true, force: true });
   await writeComposition(compositionDir, timeline, d.images);
   const output = run.path(DRAFT_PATHS.preview);
   let rendered: Awaited<ReturnType<typeof renderComposition>>;
@@ -741,6 +744,8 @@ async function renderDraft(input: ProduceVideoInput, d: DraftInput): Promise<Pro
       media,
       audio,
       workers: input.workers,
+      posterOutput: run.path(DRAFT_PATHS.poster),
+      sheetOutput: run.path(DRAFT_PATHS.contactSheet),
     });
   } finally {
     await rm(run.path(DRAFT_PATHS.master), { force: true });

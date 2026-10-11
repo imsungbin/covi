@@ -463,6 +463,13 @@ describe('covi CLI', () => {
       /video\/direction\.json does not fit this run/,
     );
     expect(existsSync(join(json.runDir, 'video', 'draft'))).toBe(false);
+    // The refusal is the draft's, not the video's.
+    const manifest = JSON.parse(readFileSync(join(json.runDir, 'run.json'), 'utf8')) as {
+      stages: Array<{ name: string; status: string }>;
+      errors: Array<{ stage: string }>;
+    };
+    expect(manifest.stages.at(-1)).toMatchObject({ name: 'draft', status: 'failed' });
+    expect(manifest.errors.at(-1)).toMatchObject({ stage: 'draft' });
   });
 
   it('reports a draft render as a preview, never as the video', async () => {
@@ -474,7 +481,15 @@ describe('covi CLI', () => {
     const produced = {
       video: '/run/video/draft/preview.mp4',
       duration: 36,
-      qc: { status: 'warn', checks: [], measured: {} },
+      qc: {
+        status: 'warn',
+        checks: [
+          { id: 'still', status: 'pass', message: 'Something moves.' },
+          { id: 'motion-gap', status: 'warn', message: 'Nothing moves in s1 ("Timed out").' },
+          { id: 'reading-time', status: 'warn', message: 'Words leave the screen.' },
+        ],
+        measured: {},
+      },
       narration: { enabled: true, provider: 'say', voice: 'Samantha', reason: '' },
       draft: { width: 960, height: 540, fps: 15 },
     } as unknown as Parameters<typeof applyVideoResult>[2];
@@ -492,6 +507,11 @@ describe('covi CLI', () => {
       draftTimeline: '/run/video/draft/timeline.json',
     });
     expect(result.artifacts.video).toBeUndefined();
+    // What the draft's checks flagged, by id: their messages quote the agent's words, which reach
+    // only video/draft/qc.json and the log.
+    expect(result.warnings).toEqual([
+      'Draft QC warn: motion-gap, reading-time; see video/draft/qc.json.',
+    ]);
   });
 
   it('declines a video for an internal change and still produces the review', async () => {

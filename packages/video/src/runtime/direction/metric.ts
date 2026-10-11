@@ -213,19 +213,28 @@ function counter(
   const print = printer(e, false);
   const printed = [...(e.from === undefined ? [] : [e.from]), e.to].map(print);
   const nameLine = Number.parseFloat(getComputedStyle(name).lineHeight);
-  const holds = each(
+  // The name and the value hide what runs past them, so a short card squeezes them instead of
+  // overflowing, and a squeezed line loses its foot (the comma's tail, the descenders) well
+  // before QC calls it clipped: each keeps its whole line. A name wrapped onto two lines may be
+  // clipped whatever the size, so it is not held to this.
+  const nameWhole = each(
     [value],
     printed,
-    // The name and the value hide what runs past them, so a short card squeezes them instead
-    // of overflowing, and a squeezed line loses its foot (the comma's tail, the descenders)
-    // well before QC calls it clipped: each keeps its whole line. A name wrapped onto two
-    // lines may be clipped whatever the size, so it is not held to this.
+    () =>
+      name.classList.contains('wrap') || (!overflows(name) && name.clientHeight >= nameLine - 1),
+  );
+  const valueWhole = each(
+    [value],
+    printed,
     () =>
       row.scrollWidth <= row.clientWidth + 1 &&
       row.scrollHeight <= 0.55 * e.rect.height + 1 &&
-      box.scrollHeight <= box.clientHeight + 1 &&
-      row.clientHeight >= value.offsetHeight - 1 &&
-      (name.classList.contains('wrap') || (!overflows(name) && name.clientHeight >= nameLine - 1)),
+      row.clientHeight >= value.offsetHeight - 1,
+  );
+  const holds = each(
+    [value],
+    printed,
+    () => box.scrollHeight <= box.clientHeight + 1 && valueWhole() && nameWhole(),
   );
   fitSize(
     (size) => {
@@ -237,12 +246,13 @@ function counter(
     holds,
     scaled(COUNTER_FONT, u),
   );
-  // A card too short to hold the counter whole at any size cuts it off: its name and value are
-  // reported cut, at their text's own boxes, since the card can squeeze a part down to nothing,
-  // which the layout report would not see.
+  // A card too short to hold the counter whole at any size cuts it off: the part it cuts is
+  // reported cut, at its text's own box, since the card can squeeze a part down to nothing, which
+  // the layout report would not see. Both are, when each holds alone but the card does not.
   const whole = holds();
-  const cut = (item: LayoutItem, text: HTMLElement): LayoutItem =>
-    whole ? item : { ...item, rect: textRect(text), overflow: true };
+  const parts = { name: nameWhole(), value: valueWhole() };
+  const cut = (item: LayoutItem, text: HTMLElement, own: boolean, other: boolean): LayoutItem =>
+    whole || (own && !other) ? item : { ...item, rect: textRect(text), overflow: true };
   // Held at the widest value while it counts, then eased to the landed value's own width: its
   // digits are set to the right of the box, and the row is centered.
   const widths = widthsOf([value], printed);
@@ -264,9 +274,9 @@ function counter(
     },
     report: () => [
       { role: 'media', rect: rectOf(box) },
-      cut(textItem(name), name),
+      cut(textItem(name), name, parts.name, parts.value),
       // The value's row at the value's size: what the largest-text checks read.
-      cut({ ...textItem(row), font: drawnFont(value) }, value),
+      cut({ ...textItem(row), font: drawnFont(value) }, value, parts.value, parts.name),
       ...(unit ? [textItem(unit)] : []),
       ...shownDelta(delta),
     ],

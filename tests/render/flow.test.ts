@@ -198,7 +198,9 @@ type Staged = Awaited<ReturnType<typeof staged>>;
 interface Drawn {
   /** Drawn boxes by selector, in screen pixels; the visible ones only for pieces and items. */
   nodes: Record<string, Rect>;
-  packet: (Rect & { opacity: number; label: string | null; children: number }) | null;
+  packet:
+    | (Rect & { opacity: number; label: string | null; labelOpacity: number; children: number })
+    | null;
   pieces: Rect[];
   badges: Array<{ opacity: number; side: string; name: string; num: string; children: number }>;
   /** The count captions on screen. */
@@ -247,7 +249,7 @@ const read = (v: Staged, frame: number) =>
      const dot = scene.querySelector('.fdot');
      return {
        nodes,
-       packet: pill ? { ...box(pill), opacity: op(pill), label: pill.querySelector('.nlabel')?.textContent ?? null, children: pill.querySelector('.nlabel')?.children.length ?? 0 } : null,
+       packet: pill ? { ...box(pill), opacity: op(pill), label: pill.querySelector('.nlabel')?.textContent ?? null, labelOpacity: pill.querySelector('.nlabel') ? op(pill.querySelector('.nlabel')) : 0, children: pill.querySelector('.nlabel')?.children.length ?? 0 } : null,
        pieces: [...scene.querySelectorAll('.fpiece')].filter((n) => op(n) > 0).map(box),
        badges: [...scene.querySelectorAll('.fbadge')].map((badge) => ({ opacity: op(badge), side: badge.querySelector('.fside').textContent,
          name: badge.querySelector('.fname').textContent, num: badge.querySelector('.fnum').textContent, children: badge.querySelector('.fname').children.length })),
@@ -366,6 +368,23 @@ describe.skipIf(!available)('packets on edges', () => {
   });
 });
 
+describe.skipIf(!available)('a packet’s layout report', () => {
+  it('keeps a label squeezed to no width, so the words it cannot hold still count as cut', async () => {
+    const v = await staged(
+      (r) => [{ id: 'q', kind: 'packet', rect: { ...r.media, width: 0 }, label: 'chunks' }],
+      [],
+    );
+    const report = await v.report(v.frameAt(2));
+    // Nothing drawn can overlap a box with no area, which would leave it out at every frame.
+    const label = report.items.find((i) => i.role === 'text');
+    expect(label?.rect.width).toBe(0);
+    expect(label?.overflow).toBe(true);
+    expect(layoutChecks(v.timeline, [report]).find((c) => c.id === 'text-fits')!.status).toBe(
+      'warn',
+    );
+  });
+});
+
 describe.skipIf(!available)('splits and merges', () => {
   it('breaks a packet into as many pieces as its count, with the true count under them', async () => {
     const v = await staged(alone, [chunks(4)]);
@@ -414,6 +433,34 @@ describe.skipIf(!available)('splits and merges', () => {
       [0, 'Before', 'chunks', '4'],
       [1, 'After', 'chunks', '1'],
     ]);
+  });
+
+  it('brings a packet back from its merge without the label its caption now says', async () => {
+    const MERGE = {
+      verb: 'merge',
+      element: 'q',
+      into: { count: 1, name: 'chunks', side: 'head' },
+      t: 3,
+      seconds: 0.8,
+    } as const;
+    const labeled = (label: string) => (r: ReturnType<typeof regionsOf>) =>
+      [{ id: 'q', kind: 'packet', rect: r.media, label }] as DirectionElement[];
+    const v = await staged(labeled('chunks'), [chunks(4), MERGE]);
+    const label = (d: Drawn) => d.packet!.labelOpacity * d.packet!.opacity;
+    const texts = async (frame: number) =>
+      (await v.report(frame)).items.filter((i) => i.role === 'text').length;
+    expect(label(await read(v, v.frameAt(0.5)))).toBe(1);
+    // It fades with the pill as it splits, never on its own.
+    const breaking = await read(v, v.frameAt(1.1));
+    expect(breaking.packet!.labelOpacity).toBe(1);
+    const merged = await read(v, v.frameAt(4.1));
+    expect(merged.packet!.opacity).toBe(1);
+    expect(label(merged)).toBe(0);
+    // The caption's three parts are all the text on screen.
+    expect(await texts(v.frameAt(4.1))).toBe(3);
+    // A label that says something else stays.
+    const other = await staged(labeled('documents'), [chunks(4), MERGE]);
+    expect(label(await read(other, other.frameAt(4.1)))).toBe(1);
   });
 
   it('fans a node’s pieces out below it, the node staying where it is', async () => {

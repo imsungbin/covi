@@ -108,8 +108,10 @@ const DRAWN = new Set([
 /**
  * The boxes `root` visibly draws, in stage pixels: text, images, and boxes with a fill, a border,
  * or a shadow, at an opacity (its own times every ancestor's up to `root`) above a tenth.
- * Containers that draw nothing and parts not shown yet (an entrance still to come) are left out,
- * so these are what a viewer sees of the scene, not where its parts are laid out.
+ * Containers that draw nothing are left out, and so are parts hidden by their opacity, `display`,
+ * or `visibility` (an entrance still to come). A part revealed by a dash or a clip path (an edge
+ * drawing itself, a wipe) counts as drawn whole from the start, so these are close to what a
+ * viewer sees of the scene, not where its parts are laid out.
  */
 export function drawnRects(root: HTMLElement): Rect[] {
   const rects: Rect[] = [];

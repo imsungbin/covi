@@ -427,6 +427,24 @@ describe.skipIf(!available)('a metric on screen', () => {
     for (const height of [200, 150, 120, 90]) expect(await fits(height), `${height}`).toBe('warn');
   });
 
+  it('reports only the part its card cuts: a value too long for a narrow card, not its name', async () => {
+    const { media, unit } = computeRegions({ ...LANDSCAPE, orientation: 'landscape' });
+    const parts = async (width: number, height: number, to: number) => {
+      const v = await staged(
+        () => bytes({ ...media, width: width * unit, height: height * unit }, { to }),
+        [COUNT],
+        LANDSCAPE,
+        'static',
+      );
+      const report = await v.report(v.frameAt(COUNT.t + COUNT.seconds + 0.4));
+      // The name, then the value's row.
+      return report.items.filter((i) => i.role === 'text').map((i) => i.overflow);
+    };
+    expect((await parts(240, 286, 990712345)).slice(0, 2)).toEqual([false, true]);
+    // A card too short for either cuts both.
+    expect((await parts(1728, 120, 9907)).slice(0, 2)).toEqual([true, true]);
+  });
+
   it('shows one value alone without a change, and its name as text, whatever it holds', async () => {
     const hostile = '<img src=x onerror="window.__pwned=1">';
     const v = await staged(

@@ -760,8 +760,10 @@ export class Stage {
           ? { ...item, rect: this.onCanvas(active, item.rect, time) }
           : item;
       // A part laid out but not shown yet (an entrance still to come) is not on screen for the
-      // captions or the narrator to cover; a focus marks a place, it draws nothing of its own.
-      if (at.role !== 'focus' && !visible.some((r) => clipRect(r, at.rect))) return [];
+      // captions or the narrator to cover; a focus marks a place, it draws nothing of its own. A
+      // box with no area overlaps nothing drawn, yet its text can still run out of it: kept.
+      const empty = at.rect.width <= 0 || at.rect.height <= 0;
+      if (at.role !== 'focus' && !empty && !visible.some((r) => clipRect(r, at.rect))) return [];
       if (!clip) return [at];
       const rect = clipRect(at.rect, clip);
       return rect ? [{ ...at, rect }] : [];

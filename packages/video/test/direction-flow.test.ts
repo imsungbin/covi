@@ -785,7 +785,7 @@ describe('flow verbs in the direction file', () => {
     expect(words).not.toHaveProperty('dropped');
   });
 
-  it('leave out a split, a merge, or a stack with no room to end before the scene moves on', () => {
+  it('leave out a merge or a stack with no room to end before the scene moves on', () => {
     const d = resolve(
       shot(STAGE, [
         { verb: 'reveal', element: 'p', at: 'request bytes' },

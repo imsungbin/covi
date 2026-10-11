@@ -8,6 +8,7 @@ import {
 } from '@covi/core';
 import { describe, expect, it } from 'vitest';
 import { captionOptionsFor } from '../src/captions.ts';
+import { morphReading, readingTimeCheck } from '../src/choreography.ts';
 import { elementSlots, shotRegion } from '../src/direction/layout.ts';
 import {
   BEAT_SECONDS,
@@ -23,7 +24,8 @@ import { sceneEvidence } from '../src/grounding.ts';
 import { computeRegions, gridSpacing } from '../src/runtime/layout.ts';
 import { orientationOf, resolveVideoSpec } from '../src/spec.ts';
 import { type Scene, SceneSchema } from '../src/storyboard/schema.ts';
-import { layoutScenes, pacingFor, phraseMoment } from '../src/timeline/build.ts';
+import { buildTimeline, layoutScenes, pacingFor, phraseMoment } from '../src/timeline/build.ts';
+import { MORPH_SETTLE } from '../src/timeline/cues.ts';
 
 const W = 1920;
 const H = 1080;
@@ -847,6 +849,77 @@ describe('resolving a direction', () => {
       'screenshot:home',
     ]);
     expect(shownShot(undefined, drawn.direction)).toBeUndefined();
+  });
+
+  it('lands a morph early enough for the code it adds to be read before the scene moves on', () => {
+    const timing = layout.scenes[1]!;
+    const settle = layout.scenes[2]!.start - timing.start;
+    const options = { ...captionOptionsFor('landscape'), language: 'en' as const };
+    const said = (phrase: string) =>
+      phraseMoment(
+        'Now it sends only the ids, and the reader fetches each one.',
+        phrase,
+        timing,
+        options,
+      )!;
+    const morphed = (beats: NonNullable<DirectionInput['shots'][number]['beats']>) => {
+      const plan: DirectionInput = {
+        shots: [
+          {
+            scene: 's2',
+            elements: [{ id: 'm', kind: 'morph', evidence: 'diff-hunk:src/request.js:10' }],
+            beats,
+          },
+        ],
+      };
+      const staging = resolve(plan);
+      const d = staging[1]!.direction;
+      const e = d.elements[0]!;
+      if (e.kind !== 'morph') throw new Error('no morph');
+      const timeline = buildTimeline({
+        title: 'T',
+        scenes,
+        layout,
+        spec,
+        image: () => ({ src: '', width: 1, height: 1 }),
+        staging,
+      });
+      return {
+        morph: d.beats.find((b) => b.verb === 'morph')!,
+        // When it must have ended by: its added code read, settled, before the next scene enters.
+        by: settle - morphReading(e.morph) - MORPH_SETTLE,
+        qc: readingTimeCheck(timeline).status,
+      };
+    };
+    // Where it lands on its own, it has time: it stays on its phrase.
+    const early = morphed([{ verb: 'morph', element: 'm', at: 'only the ids' }]);
+    expect(early.morph).toMatchObject({ t: said('only the ids'), seconds: BEAT_SECONDS.morph });
+    expect(early.qc).toBe('pass');
+    // On the line's last words it would end too late: it starts just early enough, at its length.
+    const late = morphed([{ verb: 'morph', element: 'm', at: 'fetches each one' }]);
+    const shortfall = said('fetches each one') + BEAT_SECONDS.morph - late.by;
+    expect(shortfall).toBeGreaterThan(0.5);
+    expect(late.morph.seconds).toBe(BEAT_SECONDS.morph);
+    expect(late.morph.t).toBeCloseTo(said('fetches each one') - shortfall, 2);
+    expect(late.morph.t + late.morph.seconds).toBeLessThanOrEqual(late.by + 1e-6);
+    expect(late.qc).toBe('pass');
+    // Revealed late, it never starts before it is in place: it is shortened instead.
+    const revealed = morphed([
+      { verb: 'reveal', element: 'm', at: 'the reader' },
+      { verb: 'morph', element: 'm', at: 'each one' },
+    ]);
+    const shown = said('the reader') + BEAT_SECONDS.reveal;
+    expect(revealed.morph.t).toBeCloseTo(shown, 2);
+    expect(revealed.morph.seconds).toBeLessThan(BEAT_SECONDS.morph);
+    expect(revealed.morph.t + revealed.morph.seconds).toBeLessThanOrEqual(revealed.by + 1e-6);
+    expect(revealed.qc).toBe('pass');
+    // With no room even for its least length, it stays where it was, and reading-time says so.
+    const cramped = morphed([
+      { verb: 'reveal', element: 'm', at: 'fetches each one' },
+      { verb: 'morph', element: 'm', at: 'each one' },
+    ]);
+    expect(cramped.morph.t).toBe(said('each one'));
+    expect(cramped.qc).toBe('warn');
   });
 
   it('matches each scene to its timing by id, and refuses a scene the layout lacks', () => {

@@ -1,5 +1,6 @@
 import { type DiffLine, type Language, t } from '@covi/core';
 import { type CaptionOptions, captionOptionsFor } from '../captions.ts';
+import { morphReading } from '../choreography.ts';
 import { computeRegions, gridSpacing, type Regions } from '../runtime/layout.ts';
 import { arrangedSplit, nodeFans, restingAt } from '../runtime/routes.ts';
 import { orientationOf, type VideoSpec } from '../spec.ts';
@@ -13,7 +14,7 @@ import {
   scenePhases,
   timelineLabels,
 } from '../timeline/build.ts';
-import { settledAt } from '../timeline/cues.ts';
+import { MORPH_SETTLE, settledAt } from '../timeline/cues.ts';
 import { ENTERED } from '../timeline/motion.ts';
 import {
   type CodeLine,
@@ -59,6 +60,8 @@ export const BEAT_SECONDS = {
  * scene's start or after a late reveal.
  */
 const COUNT_MIN = 0.6;
+/** A morph that has to land sooner for the code it adds to be read plays at least this long. */
+const MORPH_MIN = 0.6;
 /** Code elements show at most this many lines (wide, tall frames), as morphs do a side. */
 export const CODE_LINES = { landscape: 14, vertical: 18 } as const;
 /** Beats without a phrase start this far into the line, then spread evenly through the rest. */
@@ -240,7 +243,7 @@ function resolveShot(
     shown.flatMap((e) => (e.kind === 'metric' && e.from !== undefined ? [e.id] : [])),
   );
   const limit = settle - SETTLE_LEAD;
-  const timed = timeBeats(shot, scene, timing, ctx.options, shown, ctx, { limit, entered });
+  const timed = timeBeats(shot, scene, timing, ctx.options, shown, ctx, { settle, entered });
   const counted = timed.beats.filter((b) => b.verb !== 'count' || countable.has(b.element));
   /** The shown elements in the slots `beats` leave them (`fans`: see `flowSlots`). */
   const placed = (beats: readonly DirectionBeat[], fans?: ReadonlyMap<string, number>) => {
@@ -415,8 +418,10 @@ function codeWindow(view: readonly DiffLine[], max: number): DiffLine[] {
  * place yet: a beat that moves the camera toward, acts on, or (a flow) travels between or carries
  * a revealed element starts once its (first) reveal is done (the latest of them, for a flow); a
  * count or a count-up that waited is shortened (to `COUNT_MIN` at the least) to land on its phrase
- * still. Flow verbs without a phrase make way for counts (`makeWay`), then keep each element's
- * written order and end by `limit` (`sequenced`); the ones that cannot are left out, and said why.
+ * still. A morph lands early enough for the code it adds to be read before the scene moves on
+ * (`legible`). Flow verbs without a phrase make way for counts (`makeWay`), then keep each
+ * element's written order and end by `limit` (`sequenced`); the ones that cannot are left out,
+ * and said why.
  */
 function timeBeats(
   shot: Shot,
@@ -425,8 +430,9 @@ function timeBeats(
   options: CaptionOptions,
   shown: readonly DirectionElement[],
   ctx: Pick<Context, 'sources' | 'labels'>,
-  { limit, entered }: { limit: number; entered: number },
+  { settle, entered }: ShotSpan,
 ): Pass {
+  const limit = settle - SETTLE_LEAD;
   const duration = timing.end - timing.start;
   const text = parseEmphasis(scene.narration).text;
   const kept = new Set(shown.map((e) => e.id));
@@ -531,6 +537,25 @@ function timeBeats(
     const reveal = firstReveal.get(id);
     return reveal ? reveal.t + reveal.seconds : 0;
   };
+  /**
+   * A morph that would leave the code it adds on screen too briefly to read (`morphReading`, once
+   * settled) before the scene starts to leave lands earlier: it starts just early enough, at its
+   * own length, never before `floor` (what it morphs is in place, and the shot has landed); where
+   * that is not enough, it is shortened as well, to `MORPH_MIN` at the least. Moved no further
+   * than it falls short, a morph on a phrase stays as near it as it can. One with no room even so
+   * stays where it was, and reading-time warns.
+   */
+  const legible = (b: Extract<DirectionBeat, { verb: 'morph' }>, floor: number) => {
+    const e = shown.find((x) => x.id === b.element);
+    if (e?.kind !== 'morph') return b;
+    // To the millisecond, the deadline rounded down and the start up, so it is never a hair late.
+    const by = Math.floor((settle - morphReading(e.morph) - MORPH_SETTLE) * 1000) / 1000;
+    if (b.t + b.seconds <= by + 1e-9) return b;
+    const earliest = Math.ceil(Math.max(floor, by - BEAT_SECONDS.morph) * 1000 - 1e-6) / 1000;
+    const t = Math.min(b.t, earliest);
+    const seconds = round(Math.min(BEAT_SECONDS.morph, by - t));
+    return seconds < MORPH_MIN - 1e-9 ? b : { ...b, t, seconds };
+  };
   const aimed = beats.map((b): Written => {
     const was = { phrased: phrased.has(b), ready: Math.max(...beatTargets(b).map(ready)) };
     if (b.verb === 'reveal') return { beat: b, ...was };
@@ -544,7 +569,9 @@ function timeBeats(
     // By its own length: a slot near the scene's end cut it short, and it is timed again at full.
     const latest = b.verb === 'count' || b.verb === 'count-up' ? limit - BEAT_SECONDS[b.verb] : b.t;
     const t = Math.max(begin, Math.min(b.t, latest));
-    return { beat: t === b.t ? b : { ...b, ...moment(b.verb, t) }, ...was };
+    const beat = t === b.t ? b : { ...b, ...moment(b.verb, t) };
+    if (beat.verb === 'morph') return { beat: legible(beat, Math.max(was.ready, entered)), ...was };
+    return { beat, ...was };
   });
   const out = sequenced(makeWay(aimed, flowFirst), limit);
   // Stable: beats at the same moment keep the order the agent wrote.

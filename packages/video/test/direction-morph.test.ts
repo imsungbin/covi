@@ -1,6 +1,7 @@
 import { buildEvidence, DEFAULT_CONFIG, type Hunk, indexEvidence, Redactor } from '@covi/core';
 import { describe, expect, it } from 'vitest';
 import { captionOptionsFor } from '../src/captions.ts';
+import { morphReading } from '../src/choreography.ts';
 import { directionProblems } from '../src/direction/refs.ts';
 import { BEAT_SECONDS, resolveDirection } from '../src/direction/resolve.ts';
 import { type DirectionInput, DirectionSchema } from '../src/direction/schema.ts';
@@ -8,6 +9,7 @@ import { directionSources } from '../src/direction/sources.ts';
 import { resolveVideoSpec } from '../src/spec.ts';
 import { type Scene, SceneSchema } from '../src/storyboard/schema.ts';
 import { layoutScenes, pacingFor, phraseMoment } from '../src/timeline/build.ts';
+import { MORPH_SETTLE } from '../src/timeline/cues.ts';
 import type { SceneStaging } from '../src/timeline/types.ts';
 
 // A run with three hunks: a replaced line holding a secret (outside any string, so its tokens
@@ -280,16 +282,20 @@ describe('resolving a morph', () => {
     expect(beat).toMatchObject({ element: 'req', seconds: BEAT_SECONDS.morph });
     expect(beat.t).toBe(phraseMoment(text, 'only the ids', timing, options));
     expect(pinned[0]!.t).toBeCloseTo(lead + speech * 0.15, 3);
-    // A morph no beat names takes the slot a last beat without a phrase would.
-    const implicit = resolve({
+    // A morph no beat names takes the slot a last beat without a phrase would, or lands earlier,
+    // just early enough for the code it adds to be read before the outro comes in.
+    const spread = resolve({
       scene: 's2',
       elements: [morph()],
       beats: [{ verb: 'camera', move: 'follow', to: 'req' }],
-    })[1]!.direction.beats;
+    });
+    const implicit = spread[1]!.direction.beats;
     expect(implicit.map((b) => b.verb)).toEqual(['camera', 'morph']);
     expect(implicit[1]).toMatchObject({ element: 'req', seconds: BEAT_SECONDS.morph });
     expect(implicit[0]!.t).toBeCloseTo(lead + speech * 0.15, 3);
-    expect(implicit[1]!.t).toBeCloseTo(lead + speech * (0.15 + 0.85 / 2), 3);
+    const read = morphReading(element(spread).morph) + MORPH_SETTLE;
+    const by = layout.outro!.start - timing.start - read - BEAT_SECONDS.morph;
+    expect(implicit[1]!.t).toBeCloseTo(Math.min(lead + speech * (0.15 + 0.85 / 2), by), 2);
     const alone = resolve({ scene: 's2', elements: [morph()], beats: [] })[1]!.direction.beats;
     expect(alone).toEqual([
       expect.objectContaining({ verb: 'morph', element: 'req', seconds: BEAT_SECONDS.morph }),

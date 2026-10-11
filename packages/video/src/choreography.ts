@@ -278,6 +278,15 @@ function addedCode(morph: MorphVisual): string {
 }
 
 /**
+ * How long the code a morph adds must stay on screen once it has settled: its reading time, at
+ * most 2 s; nothing when it adds no code.
+ */
+export function morphReading(morph: MorphVisual): number {
+  const added = addedCode(morph);
+  return added.trim() ? Math.min(MORPH_READING, readingSeconds(added)) : 0;
+}
+
+/**
  * Every word a shot puts on screen stays long enough to read: from when it has entered (its
  * reveal, else the scene's entrance) until the next scene starts to enter, at least 0.4 s plus
  * its characters at 15 a second (8 for CJK). The code a morph adds is held the same way from when
@@ -302,12 +311,12 @@ export function readingTimeCheck(timeline: Pick<Timeline, 'scenes' | 'transition
       if (e.kind === 'morph') {
         // The runtime plays an element's first morph; its added tokens then take their colors.
         const morph = d.beats.find((b) => b.verb === 'morph' && b.element === e.id);
-        const added = addedCode(e.morph);
-        if (morph && added.trim())
+        const wanted = morphReading(e.morph);
+        if (morph && wanted > 0)
           hold(
             `the code that morph "${e.id}" adds`,
             morph.t + morph.seconds + MORPH_SETTLE,
-            Math.min(MORPH_READING, readingSeconds(added)),
+            wanted,
           );
         continue;
       }

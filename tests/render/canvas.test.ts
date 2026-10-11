@@ -388,8 +388,10 @@ describe.skipIf(!available)('the canvas', () => {
         expect(b.tx - a!.tx).toBeCloseTo((stops[b.k]!.x - stops[a!.k]!.x) * a!.scale, 0);
         expect(b.ty - a!.ty).toBeCloseTo((stops[b.k]!.y - stops[a!.k]!.y) * a!.scale, 0);
       }
-      // And that camera never jumps from one frame to the next, also where the pan hands over.
-      if (before !== undefined) expect(Math.abs(a!.scale - before)).toBeLessThan(0.1);
+      // And that camera never jumps from one frame to the next, also where the pan hands over. A
+      // zoom's dip follows its travel, so its fastest frame changes the scale by about 0.14; a jump
+      // from one camera to another changes it by far more.
+      if (before !== undefined) expect(Math.abs(a!.scale - before)).toBeLessThan(0.16);
       before = a!.scale;
     }
     expect(v.errors).toEqual([]);

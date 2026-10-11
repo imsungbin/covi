@@ -104,7 +104,7 @@ describe('the canvas camera', () => {
     });
   });
 
-  it('chains beats: each eases from where the one before left the camera', () => {
+  it('chains beats: each eases from where the one before has the camera', () => {
     const rest = restView(pivot);
     const a = { x: 900, y: 500, scale: 2 };
     const b = { x: 700, y: 520, scale: 1.25 };
@@ -115,10 +115,38 @@ describe('the canvas camera', () => {
     expect(viewAt(steps, 0.5, rest)).toEqual(rest);
     const halfway = viewAt(steps, 1.5, rest);
     expect(halfway.scale).toBeCloseTo(1 + easeInOutCubic(0.5) * 1, 9);
-    // The second beat starts from the first one's view at 1.5 s, not from its target.
+    // The second beat starts from the first one's view at 1.5 s, not from its target, and eases
+    // away from it while the first finishes underneath: by 2 s the first has arrived.
     const later = viewAt(steps, 2, rest);
-    expect(later.scale).toBeCloseTo(halfway.scale + (b.scale - halfway.scale) * 0.5, 9);
+    expect(later.scale).toBeCloseTo(a.scale + (b.scale - a.scale) * easeInOutCubic(0.5), 9);
     expect(viewAt(steps, 2.6, rest)).toEqual(b);
+  });
+
+  it('hands over between overlapping beats without a jump or a dead stop', () => {
+    const rest = restView(pivot);
+    // The first beat is at full speed when the second starts; at 1× a view's pixel is a frame's.
+    const steps: CameraStep[] = [
+      { t: 1, seconds: 1, to: { x: pivot.x + 40, y: pivot.y, scale: 1 } },
+      { t: 1.5, seconds: 1, to: { x: pivot.x + 40, y: pivot.y + 40, scale: 1 } },
+    ];
+    const frames = Array.from({ length: 2.4 * 30 }, (_, i) => viewAt(steps, 0.6 + i / 30, rest));
+    // How far each frame lands from where the camera would be had it kept its speed.
+    const jumps = frames
+      .slice(2)
+      .map((v, i) =>
+        Math.hypot(
+          v.x - 2 * frames[i + 1]!.x + frames[i]!.x,
+          v.y - 2 * frames[i + 1]!.y + frames[i]!.y,
+        ),
+      );
+    expect(Math.max(...jumps)).toBeLessThan(1);
+    // At the hand-over the camera keeps the first beat's speed (its top speed, three times the
+    // average at the middle of its ease), rather than starting again from rest.
+    const at = (t: number) => viewAt(steps, t, rest).x;
+    const before = (at(1.5) - at(1.5 - 1e-4)) / 1e-4;
+    const after = (at(1.5 + 1e-4) - at(1.5)) / 1e-4;
+    expect(before).toBeCloseTo(40 * 3, 1);
+    expect(after).toBeCloseTo(before, 1);
   });
 
   it('keeps up with a moving target once a follow beat has eased in, until the next beat', () => {
@@ -136,9 +164,12 @@ describe('the canvas camera', () => {
     expect(easing.y).toBeCloseTo(rest.y + easeInOutCubic(0.5) * (moving(1.5).y - rest.y), 9);
     // Eased in, it sits on the target at every moment.
     for (const t of [2, 2.7, 3.9]) expect(viewAt(steps, t, rest)).toEqual(moving(t));
-    // The next beat starts from where the target had got to.
+    // The next beat starts from where the target has got to, which the follow keeps up with
+    // while the next beat eases in, so the camera hands over at the target's speed.
     const next = viewAt(steps, 4.5, rest);
-    expect(next.y).toBeCloseTo(moving(4).y + easeInOutCubic(0.5) * (later.y - moving(4).y), 9);
+    expect(next.y).toBeCloseTo(moving(4.5).y + easeInOutCubic(0.5) * (later.y - moving(4.5).y), 9);
+    const speed = (viewAt(steps, 4 + 1e-4, rest).y - viewAt(steps, 4 - 1e-4, rest).y) / 2e-4;
+    expect(speed).toBeCloseTo(100, 1);
   });
 
   it('follows a moving target at one scale: the zoom given, else what fits every box it takes', () => {
@@ -195,6 +226,15 @@ describe('the canvas camera', () => {
     }
     expect(between('pan', a, b, 0.5, 0.4).scale).toBe(1);
     expect(between('zoom', a, b, 0.5, 0.4).scale).toBeCloseTo(0.4, 9);
+    // A zoom pulls back as far as it has travelled: the dip's depth follows the travel's ease, so
+    // the camera does not pull back before it moves, and both peak at the middle.
+    for (const k of [0.25, 0.5, 0.75]) {
+      const view = between('zoom', a, b, k, 0.4);
+      const travel = (view.x - a.x) / (b.x - a.x);
+      expect(travel).toBeCloseTo(easeInOutCubic(k), 9);
+      expect((1 - view.scale) / (1 - 0.4)).toBeCloseTo(Math.sin(Math.PI * travel) ** 2, 9);
+    }
+    expect(1 - between('zoom', a, b, 0.25, 0.4).scale).toBeLessThan(0.05 * (1 - 0.4));
     // Pulled back far enough for both stops' regions to fit at once.
     const back = pullBack({ x: 0, y: 0 }, { x: 2400, y: 0 }, media);
     expect(back).toBeCloseTo(media.width / (2400 + media.width), 9);
@@ -273,10 +313,35 @@ describe('camera edge cases', () => {
     expect(viewAt(steps, 5, rest)).toEqual(to);
   });
 
+  it('lands a beat of the shortest length the resolver writes within its frames, never past', () => {
+    // The resolver keeps every beat at least 0.1 s long: three frames at 30 fps.
+    const rest = restView(pivot);
+    const to = { x: 900, y: 500, scale: 2 };
+    const steps: CameraStep[] = [{ t: 1, seconds: 0.1, to }];
+    const frames = [0, 1, 2, 3, 4].map((i) => viewAt(steps, 1 + i / 30, rest));
+    expect(frames[0]).toEqual(rest);
+    for (const [i, v] of frames.entries()) {
+      for (const key of ['x', 'y', 'scale'] as const) {
+        expect(Number.isFinite(v[key])).toBe(true);
+        // Every frame lies between where the camera was and where the beat takes it.
+        const [lo, hi] = [Math.min(rest[key], to[key]), Math.max(rest[key], to[key])];
+        expect(v[key]).toBeGreaterThanOrEqual(lo - 1e-9);
+        expect(v[key]).toBeLessThanOrEqual(hi + 1e-9);
+      }
+      if (i > 0 && i < 4) expect(v.scale).toBeGreaterThan(frames[i - 1]!.scale);
+    }
+    expect(viewAt(steps, 1 + 3 / 30 + 1e-9, rest)).toEqual(to);
+  });
+
   it('leaves a view that pulls back alone: between stops it shows past the region', () => {
     const back = { x: pivot.x + 900, y: pivot.y - 300, scale: 0.4 };
     expect(clampView(back, media, pivot)).toEqual(back);
+    expect(clampView({ ...back, scale: 0.999 }, media, pivot)).toEqual({ ...back, scale: 0.999 });
     // At 1× and above it is held inside the region.
     expect(clampView({ ...back, scale: 1 }, media, pivot)).toEqual(restView(pivot));
+    // A beat never frames below 1×, so a stop's own camera never pulls back past its region.
+    const target = { x: media.x, y: media.y, width: 100, height: 50 };
+    expect(beatView('zoom', target, 0.5, restView(pivot), media, pivot)).toEqual(restView(pivot));
+    expect(follower(target, 0.5, media, pivot)(target).scale).toBe(1);
   });
 });

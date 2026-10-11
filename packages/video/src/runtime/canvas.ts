@@ -153,23 +153,19 @@ export function follower(
 }
 
 /**
- * The view at `t` (seconds since the scene started): each beat eases from where the camera was
- * when it started, which is where the beat before it had got to by then. `steps` must be in time
- * order: the walk stops at the first step that has not started. A beat that follows a moving
- * target keeps up with it once it has eased in, until the next beat starts.
+ * The view at `t` (seconds since the scene started): each beat eases from the view the beats
+ * before it give at that same moment. So a beat that starts while another is still moving takes
+ * over from wherever that one has the camera, and the one before keeps moving underneath while
+ * this one eases in: the camera's speed carries over rather than dropping to rest. `steps` must
+ * be in time order: the walk stops at the first step that has not started. A beat that follows a
+ * moving target keeps up with it once it has eased in, until the next beat has eased in too.
  */
 export function viewAt(steps: readonly CameraStep[], t: number, rest: View): View {
   let view = rest;
-  for (const [i, step] of steps.entries()) {
+  for (const step of steps) {
     if (t < step.t) break;
-    const next = steps[i + 1];
-    const until = next && next.t < t ? next.t : t;
-    const to = typeof step.to === 'function' ? step.to(until) : step.to;
-    view = lerpView(
-      view,
-      to,
-      easeInOutCubic(clamp((until - step.t) / Math.max(step.seconds, 1e-6))),
-    );
+    const to = typeof step.to === 'function' ? step.to(t) : step.to;
+    view = lerpView(view, to, easeInOutCubic(clamp((t - step.t) / Math.max(step.seconds, 1e-6))));
   }
   return view;
 }
@@ -185,12 +181,15 @@ export function pullBack(a: Stop, b: Stop, region: Rect): number {
 
 /**
  * The camera `k` (0–1) of the way from one stop's view to the next's (world coordinates). A pan
- * glides; a zoom glides too while it pulls back to `back` at the middle and pushes in again.
+ * glides; a zoom glides too while it pulls back to `back` halfway there and pushes in again.
  */
 export function between(kind: CameraKind, from: View, to: View, k: number, back: number): View {
-  const view = lerpView(from, to, easeInOutCubic(clamp(k)));
+  const travel = easeInOutCubic(clamp(k));
+  const view = lerpView(from, to, travel);
   if (kind === 'pan') return view;
-  const dip = Math.sin(Math.PI * clamp(k)) ** 2;
+  // The dip follows the travel, not the clock: on the clock it would pull back while the camera
+  // has barely moved, sweeping the frame behind the stop it leaves.
+  const dip = Math.sin(Math.PI * travel) ** 2;
   return { ...view, scale: lerp(view.scale, back, dip) };
 }
 

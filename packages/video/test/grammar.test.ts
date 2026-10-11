@@ -8,6 +8,7 @@ import {
   stripEmphasis,
 } from '../src/storyboard/grammar.ts';
 import {
+  CODE_LINE_CHARS,
   type StoryboardInput,
   StoryboardSchema,
   TRANSITION_KINDS,
@@ -193,6 +194,24 @@ describe('the storyboard schema', () => {
     expect(issues(many(24))).toEqual([]);
     expect(issues(many(25))).toHaveLength(1);
     expect(issues(many(25))[0]).toMatch(/^scenes: /);
+  });
+
+  it('bounds a code line, so highlighting a line with an open string or comment stays fast', () => {
+    const coded = (text: string) => {
+      const sb = storyboard();
+      sb.scenes[1]!.visual = {
+        kind: 'code',
+        path: 'src/cart.js',
+        lines: [{ type: 'add', text }],
+        highlight: [0],
+      };
+      return sb;
+    };
+    // Each quote that never closes rescans the rest of its line: a long one is quadratic.
+    expect(issues(coded('"\\'.repeat(CODE_LINE_CHARS / 2)))).toEqual([]);
+    expect(issues(coded(`/* ${'x'.repeat(CODE_LINE_CHARS - 2)}`))).toEqual([
+      `scenes.1.visual.lines.0.text: a code line is at most ${CODE_LINE_CHARS} characters; cut a longer one (a minified line, a long string) to the part the scene is about`,
+    ]);
   });
 
   it('rejects a second hero, naming the scene', () => {

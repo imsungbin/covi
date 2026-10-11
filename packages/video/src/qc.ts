@@ -494,6 +494,11 @@ export function soundChecks(
     const crowded = spaced.some((t, i) => i > 0 && t - spaced[i - 1]! < limits.minSpacing - 1e-6);
     const max = limits.maxPerSecond;
     const dense = times.some((t, i) => i >= max && t - times[i - max]! < 1 - 1e-6);
+    // A counter's ticks are one effect as long as its count: two counts must not overlap.
+    const counts = effects.placed.filter((p) => p.kind === 'count').sort((a, b) => a.t - b.t);
+    const ticking = counts.some(
+      (p, i) => i > 0 && p.t < counts[i - 1]!.t + (counts[i - 1]!.seconds ?? 0) - 1e-6,
+    );
     const level = hundredth(record.levels.effectsBelowVoiceDb);
     const quiet: QcStatus =
       level === undefined
@@ -503,7 +508,7 @@ export function soundChecks(
           : level >= 3
             ? 'warn'
             : 'fail';
-    const status = crowded || dense ? 'fail' : quiet;
+    const status = crowded || dense || ticking ? 'fail' : quiet;
     // With music, the outro's sign-off gives way to the music's own logo: not a crowding drop.
     const logo = effects.dropped.filter((d) => d.kind === 'outro').length;
     checks.push({
@@ -513,7 +518,9 @@ export function soundChecks(
         ? `Two effects are closer than ${limits.minSpacing} s.`
         : dense
           ? `More than ${max} effects play within one second.`
-          : `${effects.placed.length} effect(s) placed, ${effects.dropped.length - logo} dropped to keep them apart${logo ? "; the music's sonic logo marks the outro" : ''}${level === undefined ? '' : `; their peaks sit ${level.toFixed(2)} dB under the voice's (at least ${EFFECTS_UNDER_VOICE_DB} wanted)`}.`,
+          : ticking
+            ? 'Two counters tick at once.'
+            : `${effects.placed.length} effect(s) placed, ${effects.dropped.length - logo} dropped to keep them apart${logo ? "; the music's sonic logo marks the outro" : ''}${level === undefined ? '' : `; their peaks sit ${level.toFixed(2)} dB under the voice's (at least ${EFFECTS_UNDER_VOICE_DB} wanted)`}.`,
     });
   }
   return checks;

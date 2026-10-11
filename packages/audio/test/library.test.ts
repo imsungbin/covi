@@ -140,8 +140,8 @@ describe('the music library (templates/music)', () => {
     }
   });
 
-  it('is a new engine: the mix changed (bus, carve, placement, effect levels)', () => {
-    expect(AUDIO_ENGINE_VERSION).toBe('covi-audio-4');
+  it('is a new engine: effects follow the motion of directed shots', () => {
+    expect(AUDIO_ENGINE_VERSION).toBe('covi-audio-5');
   });
 
   it('describes the theme the spec asks for', () => {

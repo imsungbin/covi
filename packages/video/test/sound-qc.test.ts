@@ -437,6 +437,41 @@ describe('sound checks', () => {
     expect(none['music-fit']!.status).toBe('pass');
   });
 
+  it('fail two counters ticking at once, and pass one that counts after another', () => {
+    const counts = (spans: Array<[number, number]>) =>
+      byId(
+        soundChecks(
+          record({
+            effects: {
+              enabled: true,
+              placed: spans.map(([t, seconds]) => ({
+                t,
+                kind: 'count' as const,
+                recipe: 'tick',
+                gainDb: -18,
+                seconds,
+                ticks: 10,
+              })),
+              dropped: [],
+            },
+          }),
+          LIMITS,
+        ),
+      )['sound-effects']!;
+    expect(
+      counts([
+        [2, 1.6],
+        [3, 1.6],
+      ]),
+    ).toMatchObject({ status: 'fail', message: 'Two counters tick at once.' });
+    expect(
+      counts([
+        [0.5, 1.6],
+        [2.6, 1.6],
+      ]).status,
+    ).toBe('pass');
+  });
+
   it('fail effects that crowd each other, and grade their level under the voice', () => {
     const effects = (placed: number[], below?: number) =>
       byId(

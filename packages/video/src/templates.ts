@@ -42,7 +42,11 @@ export const BeatSchema = z.strictObject({
     .array(z.enum(SHOT_VERBS))
     .min(1)
     .max(BEAT_VERBS_MAX)
-    .refine((verbs) => new Set(verbs).size === verbs.length, 'name each verb once')
+    .superRefine((verbs, ctx) => {
+      const twice = verbs.find((verb, i) => verbs.indexOf(verb) !== i);
+      if (twice !== undefined)
+        ctx.addIssue({ code: 'custom', message: `name each verb once: "${twice}" is named twice` });
+    })
     .optional(),
   expression: z.enum(EXPRESSION_VALUES).default('explaining'),
   optional: z.boolean().default(false),

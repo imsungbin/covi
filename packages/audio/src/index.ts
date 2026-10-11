@@ -93,6 +93,13 @@ export {
 } from './schema/score.ts';
 export type { SfxRecipe } from './schema/sfx.ts';
 export { renderSfx } from './sfx/recipes.ts';
-export { TICK_GAP, TICK_STEPS, tickTimes, tickTrain } from './sfx/train.ts';
+export {
+  countTicks,
+  TICK_GAP,
+  TICK_STEPS,
+  type TickCount,
+  tickTimes,
+  tickTrain,
+} from './sfx/train.ts';
 export type { Kit, Patch } from './synth/patches.ts';
 export { decodeWav, encodeWav, readWav, type WavData, writeWav } from './wav.ts';

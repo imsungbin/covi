@@ -1,4 +1,4 @@
-import { COMPARE_RISE, metricSettled } from '../runtime/numbers.ts';
+import { COMPARE_RISE, metricSettled, printedSteps } from '../runtime/numbers.ts';
 import {
   type CodeLine,
   type DirectionBeat,
@@ -930,16 +930,38 @@ export const MERGE_MET = 0.9;
 export const MERGE_LEAD = 0.2;
 
 /**
+ * The most steps a count's cue records: far more changes than a count's frames can draw, so a
+ * count with more ticks as often as one with this many.
+ */
+export const COUNT_STEPS = 1000;
+
+type CountBeat = Extract<DirectionBeat, { verb: 'count' | 'count-up' }>;
+
+/**
+ * How many times a count's printed number changes, as the stage draws it (at most `COUNT_STEPS`):
+ * a count from its metric's value before to its value after, a count-up from zero to its value,
+ * both with the metric's decimals. Undefined without such a metric in the shot.
+ */
+function countSteps(beat: CountBeat, elements: readonly DirectionElement[]): number | undefined {
+  const e = elements.find((x) => x.id === beat.element);
+  if (e?.kind !== 'metric') return undefined;
+  const from = beat.verb === 'count-up' ? 0 : e.from;
+  const to = beat.verb === 'count-up' ? beat.value : e.to;
+  return from === undefined ? undefined : Math.min(COUNT_STEPS, printedSteps(from, to, e.decimals));
+}
+
+/**
  * The moments a directed scene's beats sound, in seconds from the start of the video: a soft
  * whoosh mid-way through each camera move inside the scene's stop, a counter's ticks (one cue that
- * lasts the count, from `count` and `count-up` alike), a thump as merging pieces meet (at least
- * `MERGE_LEAD` before the merge ends, never before half way), and a soft accent as an element
- * first appears (the stage draws only its first reveal). The camera moves as the stage moves it:
- * only on the canvas, toward an element the shot has, and only when the beat changes what it
- * frames. A pan or a zoom of 1 before anything zooms in leaves it at rest; a beat that frames the
- * same element at the same scale as the camera does, or pans to the element it already frames,
- * leaves it where it is; neither makes a sound. Morphs, flows, splits, and stacks make none of
- * their own.
+ * lasts the count, from `count` and `count-up` alike, with the steps its printed number takes), a
+ * thump as merging pieces meet (at least `MERGE_LEAD` before the merge ends, never before half
+ * way), and a soft accent as an element first appears (the stage draws only its first reveal). The
+ * camera moves as the stage moves it: only on the canvas, toward an element the shot has, and only
+ * when the beat changes what it frames. A pan or a zoom of 1 before anything zooms in leaves it at
+ * rest; a beat that frames the same element at the same scale as the camera does, or pans to the
+ * element it already frames, leaves it where it is; neither makes a sound. A zoom fitted to an
+ * element that already fills the region does not move it either, but only the stage can measure
+ * that, so it sounds. Morphs, flows, splits, and stacks make none of their own.
  */
 export function beatCues(
   scene: Pick<TimelineScene, 'id' | 'start' | 'stop' | 'direction'>,
@@ -962,9 +984,17 @@ export function beatCues(
         break;
       }
       case 'count':
-      case 'count-up':
-        cues.push({ t, kind: 'count', scene: scene.id, seconds: beat.seconds });
+      case 'count-up': {
+        const steps = countSteps(beat, d.elements);
+        cues.push({
+          t,
+          kind: 'count',
+          scene: scene.id,
+          seconds: beat.seconds,
+          ...(steps === undefined ? {} : { steps }),
+        });
         break;
+      }
       case 'merge': {
         const lead = Math.max((1 - MERGE_MET) * beat.seconds, MERGE_LEAD);
         const met = Math.max(beat.seconds / 2, beat.seconds - lead);

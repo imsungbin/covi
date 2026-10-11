@@ -438,8 +438,8 @@ export async function produceSound(
         });
         renders.set(p.recipe, audio);
       }
-      // A counter's recipe plays as a train of ticks spaced like its numbers, as long as it counts.
-      if (p.kind === 'count') audio = tickTrain(audio, p.seconds ?? 0, SAMPLE_RATE);
+      // A counter's recipe plays as a train of ticks on its number's steps, as long as it counts.
+      if (p.kind === 'count') audio = tickTrain(audio, p, SAMPLE_RATE);
       // A sting starts early enough that its landing meets the cue.
       sounds.push({ t: Math.max(0, p.t - recipe.anchor), audio, gainDb: p.gainDb });
     }

@@ -494,11 +494,11 @@ export function soundChecks(
     const crowded = spaced.some((t, i) => i > 0 && t - spaced[i - 1]! < limits.minSpacing - 1e-6);
     const max = limits.maxPerSecond;
     const dense = times.some((t, i) => i >= max && t - times[i - max]! < 1 - 1e-6);
-    // A counter's ticks are one effect as long as its count: two counts must not overlap.
+    // A counter's ticks are one effect as long as its count: two counts must not overlap. A start
+    // is recorded to 0.1 ms, so where the count before ends is compared at that precision too.
     const counts = effects.placed.filter((p) => p.kind === 'count').sort((a, b) => a.t - b.t);
-    const ticking = counts.some(
-      (p, i) => i > 0 && p.t < counts[i - 1]!.t + (counts[i - 1]!.seconds ?? 0) - 1e-6,
-    );
+    const ends = (p: (typeof counts)[number]) => round(p.t + (p.seconds ?? 0), 4);
+    const ticking = counts.some((p, i) => i > 0 && p.t < ends(counts[i - 1]!) - 1e-6);
     const level = hundredth(record.levels.effectsBelowVoiceDb);
     const quiet: QcStatus =
       level === undefined

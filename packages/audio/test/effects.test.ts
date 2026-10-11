@@ -44,12 +44,13 @@ const cue = (t: number, kind: EffectCue['kind'], detail?: string): EffectCue => 
   ...(detail ? { detail } : {}),
 });
 
-/** A counter counting from `t` for `seconds`. */
-const count = (t: number, seconds: number): EffectCue => ({
+/** A counter counting from `t` for `seconds`, its printed number taking `steps`. */
+const count = (t: number, seconds: number, steps?: number): EffectCue => ({
   t,
   kind: 'count',
   scene: 's',
   seconds,
+  ...(steps === undefined ? {} : { steps }),
 });
 
 describe('effect recipes', () => {
@@ -292,6 +293,70 @@ describe('the sounds of a directed shot', () => {
       [0.5, 10],
       [2.6, 10],
     ]);
+  });
+
+  it('tick only as often as the number on screen changes', () => {
+    // A count-up from 0 to 1 ticks as it starts and as it lands; 70,406 to 9,907 keeps all ten.
+    const { placed } = placeEffects([count(1, 1.6, 1), count(4, 1.6, 1000)], config);
+    expect(placed).toEqual([
+      { t: 1, kind: 'count', recipe: 'tick', gainDb: BED_DB - 3, seconds: 1.6, steps: 1, ticks: 2 },
+      {
+        t: 4,
+        kind: 'count',
+        recipe: 'tick',
+        gainDb: BED_DB - 3,
+        seconds: 1.6,
+        steps: 1000,
+        ticks: 10,
+      },
+    ]);
+  });
+
+  it('tie a count to the count-up it starts as, so their ticks never stack', () => {
+    // The count-up lands at 2.1 s: a count starting then, or within the gap, plays its first tick
+    // there already, so it leaves out its own; one starting later keeps it.
+    for (const start of [2.1, 2.13]) {
+      const { placed, dropped } = placeEffects([count(0.5, 1.6), count(start, 1.6)], config);
+      expect(dropped).toEqual([]);
+      expect(placed.map((p) => [p.t, p.ticks, p.tied])).toEqual([
+        [0.5, 10, undefined],
+        [start, 9, true],
+      ]);
+    }
+    const apart = placeEffects([count(0.5, 1.6), count(2.2, 1.6)], config).placed;
+    expect(apart.map((p) => [p.ticks, p.tied])).toEqual([
+      [10, undefined],
+      [10, undefined],
+    ]);
+    // Placed in rank order, tied in time order: a count before a finding still ties the next.
+    const ranked = placeEffects(
+      [count(4, 1.6, 3), cue(4.8, 'finding', 'high'), count(2.4, 1.6, 1)],
+      config,
+    ).placed;
+    expect(ranked.map((p) => [p.kind, p.ticks, p.tied])).toEqual([
+      ['count', 2, undefined],
+      ['count', 3, true],
+      ['finding', undefined, undefined],
+    ]);
+  });
+
+  it("never let a count's length that is not a number reach the record", () => {
+    const { placed } = placeEffects(
+      [
+        count(1, Number.NaN),
+        count(3, Number.POSITIVE_INFINITY),
+        count(5, 1.6, Number.NaN),
+        count(7, 1.6, Number.POSITIVE_INFINITY),
+      ],
+      config,
+    );
+    expect(placed.map((p) => [p.seconds, p.steps, p.ticks])).toEqual([
+      [0, undefined, 1],
+      [0, undefined, 1],
+      [1.6, undefined, 10],
+      [1.6, undefined, 10],
+    ]);
+    expect(JSON.stringify(placed)).not.toMatch(/null/);
   });
 
   it('let an accent give way to a landing, and a camera whoosh to an accent', () => {

@@ -10,6 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  countTicks,
   fitMusic,
   integratedLoudness,
   loadMusicLibrary,
@@ -280,7 +281,7 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
     const { result } = covi(['video', '--repo', repo, '--standard']);
     expect(result.video.rendered).toBe(true);
     const run = result.runDir;
-    type Cue = { t: number; kind: string; seconds?: number };
+    type Cue = { t: number; kind: string; seconds?: number; steps?: number };
     type Beat = { verb: string; t: number; seconds: number };
     const timeline = read<{
       scenes: Array<{ start: number; direction?: { beats: Beat[] } }>;
@@ -298,7 +299,14 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
         expect.objectContaining({ kind: 'count', t: expect.closeTo(c.t, 6), seconds: c.seconds }),
       );
     // The mix accounts for every motion cue; the counter ticks and the merge thumps.
-    type Effect = { t: number; kind: string; recipe: string; seconds?: number; ticks?: number };
+    type Effect = {
+      t: number;
+      kind: string;
+      recipe: string;
+      seconds?: number;
+      ticks?: number;
+      tied?: boolean;
+    };
     const audio = read<{
       effects: { placed: Effect[]; dropped: Effect[] };
       levels: { effectsBelowVoiceDb?: number };
@@ -335,15 +343,18 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
       ).toBe(true);
     expect(audio.effects.placed.find((p) => p.kind === 'merge')).toMatchObject({ recipe: 'thump' });
     const ticks = audio.effects.placed.filter((p) => p.kind === 'count');
-    expect(ticks.length).toBeGreaterThan(0);
+    expect(ticks.length).toBe(counts.length);
     for (const tick of ticks) {
-      const count = counts.find((c) => Math.abs(c.t - tick.t) < 1e-3);
-      expect(count, `count at ${tick.t}`).toBeDefined();
+      const cue = timeline.cues.find((c) => c.kind === 'count' && Math.abs(c.t - tick.t) < 1e-3);
+      expect(cue, `count at ${tick.t}`).toBeDefined();
+      // Its ticks never outnumber its number's steps; the benchmark's numbers change on every
+      // frame, so each keeps every tick its length allows.
       expect(tick).toMatchObject({
         recipe: 'tick',
-        seconds: expect.closeTo(count!.seconds, 3),
-        ticks: tickTimes(count!.seconds).length,
+        seconds: expect.closeTo(cue!.seconds!, 3),
+        ticks: countTicks({ seconds: cue!.seconds, steps: cue!.steps, tied: tick.tied }).length,
       });
+      expect(tick.ticks, `count at ${tick.t}`).toBe(tickTimes(cue!.seconds!).length);
     }
     expect(audio.levels.effectsBelowVoiceDb).toBeGreaterThanOrEqual(8);
     const qc = read<Qc>(run, 'video/qc.json');
@@ -364,10 +375,12 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
       expect(again.video.framesReused, flags.join(' ')).toBe(true);
       expect(bytes('video/timeline.json').equals(first.timeline), flags.join(' ')).toBe(true);
       expect(framesKey()).toBe(first.key);
-      // The remuxed video's sound is there, at its loudness, with headroom (the fixture score,
-      // written for another video, may jump on this one, so only the mix itself is graded).
-      const audioQc = read<Qc>(run, 'video/qc.json').checks.find((c) => c.id === 'audio');
-      expect(audioQc?.status, flags.join(' ')).toBe('pass');
+      // The remuxed video's sound is there, at its loudness, with headroom, and its effects are
+      // placed apart (the fixture score, written for another video, may jump on this one, so only
+      // the mix and the effects are graded).
+      const checks = read<Qc>(run, 'video/qc.json').checks;
+      for (const id of ['audio', 'sound-effects'])
+        expect(checks.find((c) => c.id === id)?.status, `${id} ${flags.join(' ')}`).toBe('pass');
       return read<{ effects: { enabled: boolean; placed: Effect[] }; music: { source: string } }>(
         run,
         'video/audio.json',

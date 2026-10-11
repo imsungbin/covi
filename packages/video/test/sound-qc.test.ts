@@ -470,6 +470,20 @@ describe('sound checks', () => {
         [2.6, 1.6],
       ]).status,
     ).toBe('pass');
+    // A count that starts as the one before it lands touches it, at the record's precision: its
+    // start is rounded to 0.1 ms, and so is where the one before it ends.
+    expect(
+      counts([
+        [0.5, 1.6],
+        [2.1, 1.6],
+      ]).status,
+    ).toBe('pass');
+    expect(
+      counts([
+        [1, 1.60004],
+        [2.6, 1.6],
+      ]).status,
+    ).toBe('pass');
   });
 
   it('fail effects that crowd each other, and grade their level under the voice', () => {

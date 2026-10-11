@@ -128,7 +128,7 @@ describe('the music library (templates/music)', () => {
     ] as const) {
       const p = placeEffects([cue], library.soundEffects).placed[0]!;
       const one = renderSfx(library.recipes.get(p.recipe)!, library.patches, { sampleRate: sr });
-      const sound = p.kind === 'count' ? tickTrain(one, p.seconds!, sr) : one;
+      const sound = p.kind === 'count' ? tickTrain(one, p, sr) : one;
       // Half a second of silence either side, so every 400 ms window that holds it is measured.
       const placed = sound.map((c) => {
         const out = new Float32Array(c.length + sr);

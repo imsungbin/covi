@@ -100,6 +100,46 @@ describe('the sounds of motion', () => {
     expect(result.record.engine).toBe('covi-audio-5');
   });
 
+  it('tick a count-up from 0 to 1 twice: as it starts and as it lands', async () => {
+    const { result } = await effectsOnly([cue(2, 'count', { seconds: 1.6, steps: 1 })]);
+    expect(result.record.effects.placed).toEqual([
+      expect.objectContaining({ kind: 'count', seconds: 1.6, steps: 1, ticks: 2 }),
+    ]);
+    const master = readWav(result.master!).channels[0]!;
+    const loudest = peak(master, 0, 8);
+    for (const t of [2, 3.6])
+      expect(peak(master, t, t + 0.02), `${t}`).toBeGreaterThan(loudest / 4);
+    // The number changes once, so nothing ticks over the digit that sits still.
+    expect(peak(master, 2.1, 3.59)).toBeLessThan(loudest / 1000);
+  });
+
+  it('share the tick where a count starts as the count-up before it lands', async () => {
+    const { result } = await effectsOnly([
+      cue(1, 'count', { seconds: 1.6, steps: 28 }),
+      cue(2.6, 'count', { seconds: 1.6, steps: 3 }),
+    ]);
+    expect(result.record.effects.placed.map((p) => [p.t, p.ticks, p.tied])).toEqual([
+      [1, 10, undefined],
+      [2.6, 3, true],
+    ]);
+    const master = readWav(result.master!).channels[0]!;
+    // One tick where they meet, as loud as any other, never two stacked 6 dB louder.
+    const meet = peak(master, 2.6, 2.62);
+    expect(meet / peak(master, 1, 1.02)).toBeCloseTo(1, 1);
+  });
+
+  it("keep a count's length that is not a number out of the record, and still mix", async () => {
+    const { run, result } = await effectsOnly([
+      cue(2, 'count', { seconds: Number.POSITIVE_INFINITY }),
+      cue(4, 'merge'),
+    ]);
+    expect(result.record.effects.placed.map((p) => [p.kind, p.seconds, p.ticks])).toEqual([
+      ['count', 0, 1],
+      ['merge', undefined, undefined],
+    ]);
+    expect(readFileSync(run.path(AUDIO_PATHS.record), 'utf8')).not.toMatch(/null/);
+  });
+
   it('record a second counter that would tick over the first as dropped, with the reason', async () => {
     const { result } = await effectsOnly([
       cue(2, 'count', { seconds: 1.6 }),

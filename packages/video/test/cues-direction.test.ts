@@ -8,6 +8,7 @@ import { buildTimeline, layoutScenes, pacingFor } from '../src/timeline/build.ts
 import {
   beatCues,
   buildCues,
+  COUNT_STEPS,
   MERGE_LEAD,
   MERGE_MET,
   visualShownFrom,
@@ -31,6 +32,22 @@ const label = (id: string): DirectionElement => ({
   rect: R,
   text: id,
   tone: 'neutral',
+});
+/** A metric drawn as a counter, from `from` (when it has a value before) to `to`. */
+const metric = (
+  id: string,
+  from: number | undefined,
+  to: number,
+  decimals = 0,
+): DirectionElement => ({
+  id,
+  kind: 'metric',
+  rect: R,
+  show: 'counter',
+  name: id,
+  ...(from === undefined ? {} : { from }),
+  to,
+  decimals,
 });
 const callout: TimelineVisual = { kind: 'callout', tone: 'info', title: 'x' };
 
@@ -77,34 +94,81 @@ const camera = (t: number, move: CameraMove, to: string, zoom?: number): Directi
 });
 
 const sounds = (cues: TimelineCue[]) =>
-  cues.map((c) => [c.kind, +c.t.toFixed(6), ...(c.seconds === undefined ? [] : [c.seconds])]);
+  cues.map((c) => [
+    c.kind,
+    +c.t.toFixed(6),
+    ...(c.seconds === undefined ? [] : [c.seconds]),
+    ...(c.steps === undefined ? [] : [c.steps]),
+  ]);
 
 describe('the sounds of a directed scene', () => {
   it('whoosh mid-move for the camera, tick through a count, thump on a merge, accent a reveal', () => {
+    // The count-up lands before the count starts, as the resolver requires.
     const cues = beatCues(
       directed(
         10,
-        [visual, label('bytes'), label('req')],
+        [visual, metric('bytes', 70406, 9907), label('req')],
         [
           { verb: 'reveal', element: 'bytes', style: 'pop', t: 1, seconds: 0.5 },
-          { verb: 'camera', move: 'zoom', to: 'bytes', t: 2, seconds: 0.8 },
-          { verb: 'count', element: 'bytes', t: 3, seconds: 1.6 },
-          { verb: 'merge', element: 'req', t: 5, seconds: 2.4 },
-          { verb: 'count-up', element: 'bytes', value: 28, t: 8, seconds: 1.6 },
+          { verb: 'count-up', element: 'bytes', value: 70406, t: 1.5, seconds: 1.6 },
+          { verb: 'camera', move: 'zoom', to: 'bytes', t: 3.2, seconds: 0.8 },
+          { verb: 'count', element: 'bytes', t: 4.2, seconds: 1.6 },
+          { verb: 'merge', element: 'req', t: 6, seconds: 2.4 },
         ],
       ),
     );
     expect(sounds(cues)).toEqual([
       ['appear', 11],
-      ['camera', 12.4],
-      ['count', 13, 1.6],
+      ['count', 11.5, 1.6, COUNT_STEPS],
+      ['camera', 13.6],
+      ['count', 14.2, 1.6, COUNT_STEPS],
       // A merge stretched toward the next beat thumps as its pieces meet, 90% of the way in.
-      ['merge', 17.16],
-      ['count', 18, 1.6],
+      ['merge', 18.16],
     ]);
     expect(cues.find((c) => c.kind === 'camera')).toMatchObject({ scene: 'd', detail: 'zoom' });
     expect(MERGE_MET).toBe(0.9);
     expect(MERGE_LEAD).toBe(0.2);
+  });
+
+  it("record how many times a count's printed number changes, so it ticks no more often", () => {
+    const cues = beatCues(
+      directed(
+        0,
+        [
+          metric('timeouts', 1, 0),
+          metric('ratio', 1.2, 1.5, 1),
+          metric('bytes', 70406, 9907),
+          metric('steps', undefined, 28),
+          label('note'),
+        ],
+        [
+          { verb: 'count-up', element: 'timeouts', value: 1, t: 0, seconds: 1.6 },
+          { verb: 'count', element: 'timeouts', t: 1.6, seconds: 1.6 },
+          { verb: 'count', element: 'ratio', t: 4, seconds: 1.6 },
+          { verb: 'count', element: 'bytes', t: 6, seconds: 1.6 },
+          { verb: 'count-up', element: 'steps', value: 28, t: 8, seconds: 1.6 },
+          { verb: 'count', element: 'note', t: 10, seconds: 1.6 },
+        ],
+      ),
+    );
+    // 0 → 1 and 1 → 0 change once; 1.2 → 1.5 three times at one decimal; 70,406 → 9,907 more
+    // often than any count draws, so it records the most.
+    expect(sounds(cues)).toEqual([
+      ['count', 0, 1.6, 1],
+      ['count', 1.6, 1.6, 1],
+      ['count', 4, 1.6, 3],
+      ['count', 6, 1.6, COUNT_STEPS],
+      ['count', 8, 1.6, 28],
+      ['count', 10, 1.6],
+    ]);
+    expect(COUNT_STEPS).toBe(1000);
+    // Placed, a count-up from 0 to 1 ticks twice, and the count that starts as it lands once more.
+    const { placed } = placeEffects(cues.slice(0, 2), musicLibrary().soundEffects);
+    expect(placed.map((p) => [p.ticks, p.tied])).toEqual([
+      [2, undefined],
+      [1, true],
+    ]);
+    expect(placeEffects([cues[3]!], musicLibrary().soundEffects).placed[0]?.ticks).toBe(10);
   });
 
   it('make no sound of their own for a morph, a flow, a split, or a stack', () => {
@@ -358,7 +422,7 @@ describe('a directed timeline', () => {
         stop: { x: 0, y: 0 },
         direction: {
           whole: false,
-          elements: [visual, label('bytes')],
+          elements: [visual, metric('bytes', 4, 1)],
           beats: [
             { verb: 'reveal', element: 'bytes', style: 'pop', t: 0.4, seconds: 0.5 },
             { verb: 'count', element: 'bytes', t: 1, seconds: 1.6 },
@@ -399,5 +463,6 @@ describe('a directed timeline', () => {
     expect(loud.cues.map((c) => c.kind)).toEqual(
       expect.arrayContaining(['appear', 'count', 'transition', 'camera', 'merge']),
     );
+    expect(loud.cues.find((c) => c.kind === 'count')).toMatchObject({ seconds: 1.6, steps: 3 });
   });
 });

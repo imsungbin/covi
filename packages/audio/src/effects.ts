@@ -1,19 +1,20 @@
 import { z } from 'zod';
 import { BED_DB } from './placement.ts';
-import { tickTimes } from './sfx/train.ts';
+import { countTicks, TICK_GAP } from './sfx/train.ts';
 
 /*
  * Sound effects follow only what happens on screen: a pointer click, the before/after reveal, a
  * finding card landing (heavier for high severity), the verdict appearing, the outro card
- * settling, a scene pushing, wiping, or zooming through (a whoosh), the hero (a riser into its
- * moment and a hit on it), and a directed shot's motion: the camera moving inside a scene (a softer
- * whoosh), a counter counting (a train of ticks), pieces merging into one (a thump), and an element
- * appearing (a soft accent). If an effect is noticeable, it is too loud: their levels are written
- * against the music bed (the same with any placement, or with no music), ticks, accents, and swells
- * lower still, and density limits keep a busy stretch from turning into a rattle; when effects
- * crowd, the swells give way first, then the accents. A counter's ticks are one effect, placed or
- * dropped whole, and two counters never tick at once. The outro's sign-off plays only when no music
- * does: with music, the music's own sonic logo lands on that moment.
+ * settling, a scene pushing, wiping, or zooming through, or the camera panning or zooming to it (a
+ * whoosh), the hero (a riser into its moment and a hit on it), and a directed shot's motion: the
+ * camera moving inside a scene (a softer whoosh), a counter counting (a train of ticks), pieces
+ * merging into one (a thump), and an element appearing (a soft accent). If an effect is
+ * noticeable, it is too loud: their levels are written against the music bed (the same with any
+ * placement, or with no music), ticks, accents, and swells lower still, and density limits keep a
+ * busy stretch from turning into a rattle; when effects crowd, the swells give way first, then
+ * the accents. A counter's ticks are one effect, placed or dropped whole; two counters never tick
+ * at once, and two that touch share the tick where they meet. The outro's sign-off plays only when
+ * no music does: with music, the music's own sonic logo lands on that moment.
  */
 
 const Recipe = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
@@ -87,6 +88,8 @@ export interface EffectCue {
   detail?: string;
   /** How long a counter counts (s): its ticks are one effect that long. */
   seconds?: number;
+  /** How many times a counter's printed number changes: it ticks no more often. */
+  steps?: number;
 }
 
 export interface PlacedEffect {
@@ -95,9 +98,15 @@ export interface PlacedEffect {
   recipe: string;
   /** Level relative to the voice-normalized stems (dB): the bed's, plus the configured offsets. */
   gainDb: number;
-  /** A counter: how long it counts (s), and how many ticks its train plays. */
+  /**
+   * A counter: how long it counts (s), how many times its printed number changes, how many ticks
+   * its train plays, and whether it is tied to the counter before it, which lands as it starts
+   * (that one's last tick stands for its first).
+   */
   seconds?: number;
+  steps?: number;
   ticks?: number;
+  tied?: boolean;
 }
 
 export interface DroppedEffect {
@@ -169,7 +178,9 @@ const overlaps = (a: { t: number; seconds?: number }, b: { t: number; seconds?: 
  * cue is dropped when it would come within `minSpacing` of a placed one or make any second hold
  * more than `maxPerSecond`. A riser is exempt from the spacing (its onset is quiet), not from the
  * density. A counter's ticks count as one effect at its start, and a count that would tick while a
- * placed one still does is dropped.
+ * placed one still does is dropped; one that starts as the one before it lands, or within
+ * `TICK_GAP` after, is tied to it and leaves out its opening tick, so no tick stacks on another or
+ * blurs into it.
  */
 export function placeEffects(
   cues: readonly EffectCue[],
@@ -182,13 +193,18 @@ export function placeEffects(
   const placed: PlacedEffect[] = [];
   const dropped: DroppedEffect[] = [];
   for (const { cue, recipe } of ranked) {
+    // A count as placed: without a finite length it is a single tick, and without a finite
+    // number of steps it ticks as often as the gap allows.
+    const seconds = Number.isFinite(cue.seconds) ? Math.max(0, cue.seconds!) : 0;
+    const steps = Number.isFinite(cue.steps) ? Math.max(0, Math.floor(cue.steps!)) : undefined;
     // A riser's onset is quiet (it swells over most of a second), so it neither crowds nor is
     // crowded by a transient; it still counts toward a full second.
     const crowded =
       cue.kind !== 'riser' &&
       placed.some((p) => p.kind !== 'riser' && Math.abs(p.t - cue.t) < config.minSpacing - 1e-9);
     const ticking =
-      cue.kind === 'count' && placed.some((p) => p.kind === 'count' && overlaps(p, cue));
+      cue.kind === 'count' &&
+      placed.some((p) => p.kind === 'count' && overlaps(p, { t: cue.t, seconds }));
     const times = [...kept, cue.t].sort((a, b) => a - b);
     const max = config.maxPerSecond;
     const dense = times.some((t, i) => i >= max && t - times[i - max]! < 1 - 1e-9);
@@ -206,17 +222,29 @@ export function placeEffects(
       continue;
     }
     kept.push(cue.t);
-    const seconds = cue.kind === 'count' ? Math.max(0, cue.seconds ?? 0) : undefined;
     placed.push({
       t: cue.t,
       kind: cue.kind,
       recipe,
       gainDb: BED_DB + config.gainDb + offsetDb(cue.kind, config),
-      ...(seconds === undefined ? {} : { seconds, ticks: tickTimes(seconds).length }),
+      // A counter's ticks are counted once the counts it touches are known.
+      ...(cue.kind === 'count'
+        ? { seconds, ...(steps === undefined ? {} : { steps }), ticks: 0 }
+        : {}),
     });
   }
   const byTime = (a: { t: number }, b: { t: number }) => a.t - b.t;
-  return { placed: placed.sort(byTime), dropped: dropped.sort(byTime) };
+  placed.sort(byTime);
+  // Counts never overlap, so in time order the last tick heard is the previous count's.
+  let landed = Number.NEGATIVE_INFINITY;
+  for (const p of placed) {
+    if (p.kind !== 'count') continue;
+    if (p.t - landed < TICK_GAP - 1e-9) p.tied = true;
+    const ticks = countTicks(p);
+    p.ticks = ticks.length;
+    if (ticks.length) landed = p.t + ticks.at(-1)!;
+  }
+  return { placed, dropped: dropped.sort(byTime) };
 }
 
 /** How far each mode's tonic sits above the tonic of the major scale with the same notes. */

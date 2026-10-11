@@ -8,7 +8,7 @@ import {
   metricSource,
 } from '@covi/core';
 import { sceneEvidence } from '../grounding.ts';
-import { formatNumber, metricChange, percentChange } from '../runtime/numbers.ts';
+import { formatNumber, metricChange, percentChange, printedSteps } from '../runtime/numbers.ts';
 import type { Orientation } from '../spec.ts';
 import { findPhrase, parseEmphasis } from '../storyboard/grammar.ts';
 import type { Scene } from '../storyboard/schema.ts';
@@ -214,10 +214,7 @@ export function metricShot(
     METRIC_LIMITS.decimals,
     Math.max(decimalsOf(m.base), decimalsOf(m.head)),
   );
-  // Printed values are whole steps apart; rounding keeps floating point (2.3 − 1.3 is
-  // 0.9999999999999998) from losing one.
-  const steps = Math.round(Math.abs(m.head - m.base) * 10 ** decimals);
-  const show = steps >= COUNTER_STEPS ? 'counter' : 'compare';
+  const show = printedSteps(m.base, m.head, decimals) >= COUNTER_STEPS ? 'counter' : 'compare';
   // Where the narration says it: its printed name, else its value as drawn or as printed.
   const text = parseEmphasis(scene.narration).text;
   const at =

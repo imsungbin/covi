@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { peakAbs, stereo } from '../src/dsp/fx.ts';
-import { TICK_GAP, TICK_STEPS, tickTimes, tickTrain } from '../src/sfx/train.ts';
+import { countTicks, TICK_GAP, TICK_STEPS, tickTimes, tickTrain } from '../src/sfx/train.ts';
 
 const SR = 48_000;
 /** Progress of an ease-out cubic count at `t` of `seconds`, as the video draws a counter. */
@@ -41,6 +41,30 @@ describe('tickTimes', () => {
     expect(tickTimes(0.05)).toEqual([0]);
     expect(tickTimes(0)).toEqual([0]);
     expect(tickTimes(Number.NaN)).toEqual([0]);
+    expect(tickTimes(Number.POSITIVE_INFINITY)).toEqual([0]);
+    expect(tickTimes(Number.NEGATIVE_INFINITY)).toEqual([0]);
+  });
+
+  it('ticks no more often than the number on screen changes', () => {
+    // A count-up from 0 to 1 ticks as it starts and as it lands.
+    expect(tickTimes(1.6, 1)).toEqual([0, 1.6]);
+    const three = tickTimes(1.6, 3);
+    expect(three).toHaveLength(4);
+    for (const [k, t] of three.entries()) expect(progress(t, 1.6)).toBeCloseTo(k / 3, 9);
+    // A number that never changes ticks once; one with many steps keeps the gap's ticks.
+    expect(tickTimes(1.6, 0)).toEqual([0]);
+    expect(tickTimes(1.6, 1000)).toEqual(tickTimes(1.6));
+    expect(tickTimes(1.6, 1000)).toHaveLength(10);
+    expect(tickTimes(0.6, 2)).toHaveLength(3);
+    expect(tickTimes(1.6, Number.NaN)).toEqual(tickTimes(1.6));
+  });
+});
+
+describe('countTicks', () => {
+  it("leaves out a tied count's opening tick, which the counter before it has just played", () => {
+    expect(countTicks({ seconds: 1.6, steps: 1 })).toEqual([0, 1.6]);
+    expect(countTicks({ seconds: 1.6, steps: 1, tied: true })).toEqual([1.6]);
+    expect(countTicks({ seconds: 1.6, tied: true })).toEqual(tickTimes(1.6).slice(1));
   });
 });
 
@@ -52,7 +76,7 @@ describe('tickTrain', () => {
   };
 
   it('lays one tick at each tick time, as long as the count plus a tick', () => {
-    const train = tickTrain(tick(), 1.6, SR);
+    const train = tickTrain(tick(), { seconds: 1.6 }, SR);
     expect(train).toHaveLength(2);
     expect(train[0]!.length).toBe(Math.round(1.6 * SR) + Math.round(0.05 * SR));
     for (const t of tickTimes(1.6)) expect(train[0]![Math.round(t * SR)]).toBeCloseTo(0.7, 5);
@@ -62,13 +86,27 @@ describe('tickTrain', () => {
 
   it('never peaks above the tick, even when ticks overlap', () => {
     const long = stereo(Math.round(0.3 * SR)).map((c) => c.fill(0.5));
-    const train = tickTrain(long, 1.6, SR);
+    const train = tickTrain(long, { seconds: 1.6 }, SR);
     expect(peakAbs(train)).toBeCloseTo(0.5, 6);
   });
 
+  it('plays only the ticks the number takes, silent where a tied count would open', () => {
+    const one = tickTrain(tick(), { seconds: 1.6, steps: 1 }, SR);
+    expect(one[0]![0]).toBeCloseTo(0.7, 5);
+    expect(one[0]![Math.round(1.6 * SR)]).toBeCloseTo(0.7, 5);
+    expect(peakAbs([one[0]!.subarray(Math.round(0.1 * SR), Math.round(1.55 * SR))])).toBe(0);
+    const tied = tickTrain(tick(), { seconds: 1.6, steps: 1, tied: true }, SR);
+    expect(tied[0]!.length).toBe(one[0]!.length);
+    expect(peakAbs([tied[0]!.subarray(0, Math.round(1.55 * SR))])).toBe(0);
+    expect(tied[1]![Math.round(1.6 * SR)]).toBeCloseTo(0.7, 5);
+  });
+
   it('is the same every time', () => {
-    const a = tickTrain(tick(), 2.4, SR);
-    const b = tickTrain(tick(), 2.4, SR);
-    expect(Buffer.from(a[1]!.buffer).equals(Buffer.from(b[1]!.buffer))).toBe(true);
+    const a = tickTrain(tick(), { seconds: 2.4 }, SR);
+    const b = tickTrain(tick(), { seconds: 2.4 }, SR);
+    for (const c of [0, 1])
+      expect(Buffer.from(a[c]!.buffer).equals(Buffer.from(b[c]!.buffer)), `channel ${c}`).toBe(
+        true,
+      );
   });
 });

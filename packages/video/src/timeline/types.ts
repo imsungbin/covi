@@ -426,6 +426,11 @@ export interface TimelineCue {
   detail?: string;
   /** How long a counter counts (s): its ticks follow the count's ease over this time. */
   seconds?: number;
+  /**
+   * How many times a counter's printed number changes as it counts (at most `COUNT_STEPS`, more
+   * than any count draws): its ticks are never more. Absent when the shot has no such number.
+   */
+  steps?: number;
 }
 
 /** The key phrase in a caption line: where it is in the line and when it is spoken. */

@@ -55,6 +55,8 @@ export interface StageRecord {
   durationMs: number;
   reason?: string;
   error?: string;
+  /** The warnings it added to the run, which running the stage again takes back. */
+  warnings?: string[];
 }
 
 export interface CommandRecord {
@@ -167,6 +169,8 @@ export class Run {
   readonly dir: string;
   readonly manifest: RunManifest;
   readonly redactor: Redactor;
+  /** The stage running now, which a warning is recorded with. */
+  private running?: StageRecord;
 
   private constructor(id: string, dir: string, manifest: RunManifest, redactor: Redactor) {
     this.id = id;
@@ -329,7 +333,15 @@ export class Run {
     return this.manifest.artifacts.find((a) => a.kind === kind);
   }
 
+  /**
+   * Runs a stage and records it. A stage that ran before replaces what it warned about then (a
+   * re-render's checks describe the new video, not the last one); other warnings stay.
+   */
   async stage<T>(name: string, fn: () => Promise<T>): Promise<T> {
+    const stale = new Set(
+      this.manifest.stages.flatMap((s) => (s.name === name ? (s.warnings ?? []) : [])),
+    );
+    this.manifest.warnings = this.manifest.warnings.filter((w) => !stale.has(w));
     const started = Date.now();
     const record: StageRecord = {
       name,
@@ -338,6 +350,8 @@ export class Run {
       durationMs: 0,
     };
     this.manifest.stages.push(record);
+    const outer = this.running;
+    this.running = record;
     try {
       const result = await fn();
       record.durationMs = Date.now() - started;
@@ -349,6 +363,7 @@ export class Run {
       this.manifest.errors.push({ stage: name, message: record.error });
       throw error;
     } finally {
+      this.running = outer;
       await this.save();
     }
   }
@@ -370,7 +385,9 @@ export class Run {
 
   warn(message: string): void {
     const m = this.redactor.redact(message);
-    if (!this.manifest.warnings.includes(m)) this.manifest.warnings.push(m);
+    if (this.manifest.warnings.includes(m)) return;
+    this.manifest.warnings.push(m);
+    if (this.running) this.running.warnings = [...(this.running.warnings ?? []), m];
   }
 
   setChange(change: CodeChange): void {

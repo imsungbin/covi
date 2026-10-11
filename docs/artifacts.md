@@ -55,10 +55,10 @@ The manifest records what was asked, what ran, what was produced, and how it end
 | `config` | `values`: the resolved configuration. `provenance`: for each dotted key, the layer that set it, such as `global` or `repository (.covi/config.yml)` |
 | `language` | The language Covi resolved for the run: `value` (`en`, `ko`, `ja`, `zh`), the `setting` it came from (`auto` or a language), and `source`, why (for `auto`, the script found in the change's title, description, and commit messages) |
 | `options` | The command, range, and flags it was given |
-| `stages` | One entry per stage: `name`, `status` (`ok`, `skipped`, `failed`), `startedAt`, `durationMs`, and a `reason` (skipped) or `error` (failed) |
+| `stages` | One entry per stage: `name`, `status` (`ok`, `skipped`, `failed`), `startedAt`, `durationMs`, a `reason` (skipped) or `error` (failed), and the `warnings` it added |
 | `commands` | Every project command Covi ran: `command`, `cwd` (`.`, or `base` and `head` for the temporary checkouts), `exitCode`, `durationMs`, `timedOut`, and `purpose` (`install`, `start`, `tests`, or `demo: <name>`) |
 | `artifacts` | Every recorded file: `path` (relative to the run), `kind`, `bytes`, `sha256` |
-| `warnings`, `errors` | Things that degraded the run, and stage failures with their messages |
+| `warnings`, `errors` | Things that degraded the run, and stage failures with their messages. A stage that runs again (a re-render's `video` stage) replaces the warnings it added before |
 | `outcome` | `status` (`success`, `partial`, `failed`, `gated`), `exitCode`, `verdict`, finding counts by certainty, `gateFailures`, `video` (`rendered`, `reason`, `path` relative to the run, `seconds`), and a `message` |
 | `publish` | Where `covi publish` posted the comment: `platform`, `repository`, `number`, `comment.id` and `url`, `at`. |
 

@@ -145,6 +145,56 @@ describe('Run', () => {
     expect(manifest.outcome).toMatchObject({ status: 'partial' });
   });
 
+  it('replaces what a stage warned about when it runs again, keeping every other warning', async () => {
+    root = mkdtempSync(join(tmpdir(), 'covi-run-'));
+    const run = await Run.create(options());
+    run.warn('Raised outside any stage');
+    await run.stage('understand', async () => run.warn('Model analysis failed'));
+    await run.stage('video', async () => {
+      run.warn('Video QC warn: X');
+      // Already the run's, from another stage: not the video's to take back.
+      run.warn('Model analysis failed');
+      run.warn('Video QC fail: tok-secret-123 leaked');
+    });
+    expect(run.manifest.warnings).toEqual([
+      'Raised outside any stage',
+      'Model analysis failed',
+      'Video QC warn: X',
+      'Video QC fail: [REDACTED] leaked',
+    ]);
+    // Rendered again, from a run opened anew: X is gone, and so is the failure.
+    const reopened = await Run.open(run.dir, { root });
+    await reopened.stage('draft', async () => reopened.warn('Draft only'));
+    await reopened.stage('video', async () => reopened.warn('Video QC warn: Y'));
+    expect(reopened.manifest.warnings).toEqual([
+      'Raised outside any stage',
+      'Model analysis failed',
+      'Draft only',
+      'Video QC warn: Y',
+    ]);
+    // A stage that warns nothing again takes back what it warned before.
+    await reopened.stage('video', async () => {});
+    await reopened.stage('draft', async () => reopened.warn('Draft only'));
+    expect(reopened.manifest.warnings).toEqual([
+      'Raised outside any stage',
+      'Model analysis failed',
+      'Draft only',
+    ]);
+    const manifest = JSON.parse(readFileSync(join(run.dir, 'run.json'), 'utf8'));
+    expect(manifest.warnings).toEqual(reopened.manifest.warnings);
+    // Each stage records what it added to the run.
+    expect(
+      manifest.stages.map((s: { name: string; warnings?: string[] }) => [s.name, s.warnings]),
+    ).toEqual([
+      ['understand', ['Model analysis failed']],
+      ['video', ['Video QC warn: X', 'Video QC fail: [REDACTED] leaked']],
+      ['draft', ['Draft only']],
+      ['video', ['Video QC warn: Y']],
+      ['video', undefined],
+      ['draft', ['Draft only']],
+    ]);
+  });
+
   it('refuses artifact paths that escape the run directory', async () => {
     root = mkdtempSync(join(tmpdir(), 'covi-run-'));
     const run = await Run.create(options());

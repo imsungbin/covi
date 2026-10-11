@@ -1092,7 +1092,7 @@ export async function renderWorkflow(
     ? await run.readJson<Demonstration>(DEMO_PATHS.captures)
     : undefined;
   // What the run held before this command opened it: the warnings of the renders before.
-  const known = session.warningsAtOpen ?? run.manifest.warnings.length;
+  const known = new Set(session.warningsAtOpen ?? run.manifest.warnings);
   // A draft is not the video: its stage, and a failure in it, are recorded as a draft.
   const produced = await run.stage(options.draft ? 'draft' : 'video', () =>
     produceVideo({
@@ -1128,8 +1128,12 @@ export async function renderWorkflow(
     }),
   );
   // A draft's result says what this command raised, never what the renders before it warned about:
-  // the run keeps those for the video (`finish` leaves them out of a draft's result).
-  if (produced.draft) result.warnings.push(...run.manifest.warnings.slice(known));
+  // the run keeps those for the video (`finish` leaves them out of a draft's result). A draft
+  // replaces the one before it (`Run.stage`), so what it warns about again is this command's too.
+  if (produced.draft) {
+    const again = new Set(run.manifest.stages.findLast((s) => s.name === 'draft')?.warnings);
+    result.warnings.push(...run.manifest.warnings.filter((w) => !known.has(w) || again.has(w)));
+  }
   await applyVideoResult(session, result, produced, { musicDefault: options.musicDefault });
   return result;
 }

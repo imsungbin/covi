@@ -150,7 +150,7 @@ describe('the canvas camera', () => {
     expect(after).toBeCloseTo(before, 1);
   });
 
-  it('keeps up with a moving target once a follow beat has eased in, until the next beat', () => {
+  it('keeps up with a moving target once a follow beat has eased in, until the next has too', () => {
     const rest = restView(pivot);
     // A target drifting down 100 px a second, framed at 2×.
     const moving = (t: number) => ({ x: 900, y: 500 + 100 * t, scale: 2 });

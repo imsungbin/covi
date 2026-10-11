@@ -567,6 +567,11 @@ describe('covi CLI', () => {
     expect(direction.additionalProperties).toBe(false);
     expect(covi(['schema', 'nope']).code).toBe(2);
     expect(covi(['templates', '--json']).json()).toHaveLength(7);
+    // Each beat suggests how to direct it.
+    const bugFix = covi(['templates', 'show', 'bug-fix']).json() as unknown as {
+      beats: Array<{ id: string; verbs?: string[] }>;
+    };
+    expect(bugFix.beats.find((b) => b.id === 'fix')!.verbs).toEqual(['morph', 'camera']);
     expect(
       (covi(['skills', '--json']).json() as unknown as Array<{ name: string }>).map((s) => s.name),
     ).toContain('covi-review');

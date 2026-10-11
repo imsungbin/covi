@@ -3,14 +3,25 @@ import { join } from 'node:path';
 import { parseOrThrow, type ReviewContext, resourcePath } from '@covi/core';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { type ShotBeat, ShotBeatSchema } from './direction/schema.ts';
 import { EXPRESSION_VALUES } from './storyboard/schema.ts';
 
 /**
  * Storytelling templates are data (templates/stories/*.yml): ordered beats with a goal, preferred
- * visuals, and a narrator expression. They describe story patterns; rendering stays in the engine.
+ * visuals, a narrator expression, and the direction verbs that suit them. They describe story
+ * patterns; rendering stays in the engine.
  */
 const VISUAL_TOKEN =
   /^(title|change-map|code|screenshot|before-after|interaction|terminal|api|findings|callout|diagram|summary)(:(before|after))?$/;
+
+/** The verbs a direction beat may use, read from its schema so the two lists never drift apart. */
+const SHOT_VERBS = ShotBeatSchema.options.map((o) => o.shape.verb.value) as [
+  ShotBeat['verb'],
+  ...ShotBeat['verb'][],
+];
+
+/** A beat suggests a few verbs, not a shot list. */
+export const BEAT_VERBS_MAX = 4;
 
 export const BeatSchema = z.strictObject({
   id: z.string().regex(/^[a-z0-9-]+$/),
@@ -23,6 +34,16 @@ export const BeatSchema = z.strictObject({
   }),
   goal: z.string().min(1),
   visuals: z.array(z.string().regex(VISUAL_TOKEN)).min(1),
+  /**
+   * The direction verbs that suit the beat, most fitting first: a suggestion for whoever directs
+   * the scene (`references/direction.md`). Covi's default director reads evidence, not these.
+   */
+  verbs: z
+    .array(z.enum(SHOT_VERBS))
+    .min(1)
+    .max(BEAT_VERBS_MAX)
+    .refine((verbs) => new Set(verbs).size === verbs.length, 'name each verb once')
+    .optional(),
   expression: z.enum(EXPRESSION_VALUES).default('explaining'),
   optional: z.boolean().default(false),
 });

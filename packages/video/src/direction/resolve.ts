@@ -178,9 +178,9 @@ export function droppedBeatNotes(
   return staging.flatMap((s, i) => {
     const id = scenes[i]?.id ?? `s${i + 1}`;
     const shot = authored?.shots.findIndex((x) => x.scene === id) ?? -1;
-    const named = shot === -1 ? `Covi's shot for scene ${id}` : `shot ${shot + 1} (scene ${id})`;
+    const which = shot === -1 ? `Covi's shot for scene ${id}` : `shot ${shot + 1} (scene ${id})`;
     return (s.direction.dropped ?? []).map(
-      (d) => `Direction: ${named} leaves out a ${d.verb}: ${d.reason}.`,
+      (d) => `Direction: ${which} leaves out a ${d.verb}: ${d.reason}.`,
     );
   });
 }
@@ -237,7 +237,8 @@ function resolveShot(
   // Which packets travel decides the layout, and the layout which splits have room. A trip that
   // leaves while its packet is split is left out, so a packet left with no trip takes a slot of
   // its own; on that layout, splits find their room, and a trip left out only for a split that
-  // then has no room travels after all.
+  // then has no room travels after all. The second pass cannot change which packets ride or what
+  // the layout reserved: a packet that splits at or before its first trip keeps its split here.
   const travelling = travelsWhole(counted).beats;
   let elements = placed(travelling);
   const roomy = fanRoom(travelling, elements, ctx);

@@ -58,6 +58,14 @@ import {
   settledFrame,
 } from '../../packages/video/src/timeline/cues.ts';
 import type { DirectionElement, TimelineVisual } from '../../packages/video/src/timeline/types.ts';
+import {
+  choreography,
+  directedTimeline,
+  directionExample,
+  readVideoRun,
+  rewriteScenes,
+  TIMELINE_CHECKS,
+} from '../helpers/direction.ts';
 import { canRenderVideo, fullRenders } from '../helpers/env.ts';
 
 const available = await canRenderVideo();
@@ -1718,6 +1726,31 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         expect(opening).toBeDefined();
         expect(posterFrame(timeline) / timeline.fps).toBeGreaterThanOrEqual(opening![1]);
         expect(existsSync(join(result.runDir, 'video', 'poster.png'))).toBe(true);
+        // The render's own checks pass for the default direction: text large enough and frames
+        // filled (square's code under its floor aside, as above).
+        for (const id of ['text-size', 'empty-frame']) {
+          const check = qc.checks.find((c) => c.id === id)!;
+          expect(check.status === 'pass' || known(check), `${id}: ${check.message}`).toBe(true);
+        }
+        // The shots the non-render tests plan are the ones Covi drew, scene by scene: the same
+        // elements and the same beats asked for. The voice times lines the estimate only guesses,
+        // so a beat may play in one and be left out in the other, and in whichever order the
+        // voice's timing puts them (a shorter take pulls a morph in front of a camera move): both
+        // count, and each scene's verbs are compared sorted.
+        const planned = (await directedTimeline(await readVideoRun(result.runDir, dir))).timeline;
+        // Equal because both stage the change, not because neither stages anything.
+        expect(planned.scenes.some((s) => s.direction?.beats.some((b) => b.verb === 'morph'))).toBe(
+          true,
+        );
+        const shots = (t: Timeline) =>
+          t.scenes.map((s) => [
+            s.id,
+            s.direction?.elements.map((e) => e.kind),
+            [...(s.direction?.beats ?? []), ...(s.direction?.dropped ?? [])]
+              .map((b) => b.verb)
+              .sort(),
+          ]);
+        expect(shots(timeline)).toEqual(shots(planned));
       }
     }, 600_000);
   }
@@ -2554,5 +2587,68 @@ describe.skipIf(!available || !fullRenders)('an agent’s direction (full pipeli
     expect(
       frames.layouts.some((l) => l.scene === drawn.id && body(l) === 2 + (drawn.heading ? 1 : 0)),
     ).toBe(true);
+  }, 600_000);
+});
+
+describe.skipIf(!available || !fullRenders)('the direction example (full pipeline)', () => {
+  it('renders the worked example of references/direction.md cleanly, as the tests plan it', async () => {
+    const repo = await materializeExample(
+      (await listExamples()).find((e) => e.name === 'backend-slim-request')!,
+    );
+    dirs.push(repo);
+    const { runDir } = covi(['video', '--repo', repo, '--standard', '--draft', '--force']);
+    const run = await readVideoRun(runDir, repo);
+    const example = directionExample();
+    const storyboard = rewriteScenes(run.storyboard, example.scenes);
+    writeFileSync(
+      join(runDir, 'video', 'storyboard.json'),
+      `${JSON.stringify(storyboard, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(runDir, 'video', 'direction.json'),
+      `${JSON.stringify(example.direction, null, 2)}\n`,
+    );
+    // Captions only: the timing is Covi's estimate, so the test can plan the very same timeline.
+    const result = covi([
+      'render',
+      '--repo',
+      repo,
+      '--run',
+      runDir,
+      '--no-narration',
+      '--music',
+      'none',
+    ]);
+    expect(result.video.rendered).toBe(true);
+    const qc = read<{ checks: Array<{ id: string; status: string; message: string }> }>(
+      runDir,
+      'video/qc.json',
+    );
+    // Every check passes. The run is removed afterwards, so a failure names the checks that did
+    // not, and the ones the example is about are asked for by name, so none goes unchecked.
+    expect(
+      result.video.qc,
+      qc.checks
+        .filter((c) => c.status !== 'pass')
+        .map((c) => `${c.id} (${c.status}): ${c.message}`)
+        .join('\n'),
+    ).toBe('pass');
+    for (const id of [
+      'text-size',
+      'empty-frame',
+      'empty-opening',
+      'overlap',
+      'out-of-frame',
+      'still',
+      ...TIMELINE_CHECKS,
+    ])
+      expect(
+        qc.checks.find((c) => c.id === id),
+        id,
+      ).toMatchObject({ status: 'pass' });
+    const drawn = read<Timeline>(runDir, 'video/timeline.json');
+    const spec = { ...run.spec, narration: { ...run.spec.narration, enabled: false } };
+    const { timeline } = await directedTimeline({ ...run, storyboard, spec }, example.direction);
+    expect(choreography(drawn)).toEqual(choreography(timeline));
   }, 600_000);
 });

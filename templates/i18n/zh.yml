@@ -724,6 +724,8 @@ narration:
     imperative: '现在{clause}'
     titled: '{kind}，标题为“{summary}”。'
     kind: '{kind}：{summary}'
+    kindScoped: '这是对{scope}的{kind}。'
+    kindAlone: '这是{kind}。'
   page:
     home: 首页
     homeHeading: 首页

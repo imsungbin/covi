@@ -7,7 +7,7 @@ A review video is a walkthrough that starts in the middle: open on the thing its
 - **A cold open.** The first frame shows the subject: the captured screen, the terminal, or the key lines, with a short form of the title as the eyebrow, or the title set over the captured page (`background` on a `title` visual). The first line starts by 0.5 s, and it is a hook: a question ("What happens to your comment when the request fails?"), a surprising fact from the evidence ("Remove one too many, and the cart says minus one."), or the payoff ("Your comment now appears before the server answers."). Never "This change shows…", and never a table of contents.
 - **One hero.** The moment the change clicks: the bug reproducing, the key lines side by side with the thing they fix, the after state landing. Mark it `"hero": true`, give it the strongest capture and the line that pays off the hook, and let it enter with its default camera zoom. The patterns below name each template's hero beat, which Covi falls back to when no scene is marked.
 - **Short scenes.** Two to five seconds each. A beat that needs longer becomes two scenes: an interaction's setup, then the click; the fix in one file, then the other; before, then after.
-- **Motion follows the words.** Pin each visual's moment to its phrase with `sync` (the click on "press Post", the after state on "now"), and choose transitions for what they say: `cut` when the same subject continues, `push` for the next step, `wipe` from before to after, and leave the hero's entrance to Covi.
+- **Motion follows the words.** Pin each visual's moment to its phrase with `sync` (the click on "press Post", the after state on "now"), and let the camera carry each scene change: a cut when the same subject continues, a pan or a push to the next step, a wipe from before to after, a zoom into the hero (`references/direction.md`).
 - **A short wrap.** The summary card with `minSeconds: 1.5` and one line of eight words or fewer, or none: Covi's outro carries the verdict.
 
 ## The list is the map
@@ -26,6 +26,8 @@ Use it only when the change hands you the list. A video with one thing to check 
 3. **After**, the hero (beat `proof`): the same steps on head, now correct. Without an after capture, the fix lines are the hero: mark that scene `"hero": true`.
 4. **Worth a look**: the regression risk ("clamping at zero changes what undo restores").
 5. **Wrap**: the verdict in a few words.
+
+When the bug has nothing to see (a backend fix), stage the before and the after from what a command measured instead of capturing them (`references/direction.md`, "Staging a change with no UI").
 
 ## New feature
 1. **Cold open**: the new behavior on head, mid-interaction, a step short of the payoff: save that screen for the hero. Hook: the question the payoff answers.

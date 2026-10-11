@@ -18,16 +18,21 @@ import { type CountSpan, formatNumber } from '../numbers.ts';
 import {
   ARROW_HEAD,
   arrowHead,
+  center,
+  EDGE_STROKE,
   edgeRoute,
   type Fan,
-  fanOut,
+  fanBoxes,
   type Leg,
   legPoint,
   legProgress,
-  nodeFans,
+  nodeSplits,
   PILE_ITEM_MIN,
+  packetSplit,
   pileGrid,
   pileGridWidth,
+  pillHeight,
+  pillWidths,
   pointAlong,
   routeLength,
   type SplitLayout,
@@ -40,8 +45,8 @@ import { TEXT_FLOOR } from '../sizing.ts';
 import { fitName, largest, textItem, visible } from './metric.ts';
 
 /*
- * Flow verbs, drawn: edges between nodes with packets travelling them, splits that fan a packet
- * or a node into pieces and merges that pull them back together, and piles that stack up to a
+ * Flow verbs, drawn: edges between nodes with packets travelling them, splits that fan pieces out
+ * of a packet or a node and merges that pull them back together, and piles that stack up to a
  * measured count. Every position is a pure function of the clock (geometry from `routes.ts`),
  * and all text is set as text.
  */
@@ -96,7 +101,8 @@ export interface NodeFan {
 
 /**
  * Every node a split fans out of, laid out in its slot so the pieces and their count keep off its
- * label: a node that splits, and a node a packet rests against when it splits (`nodeFans`).
+ * label: a node that splits, and a node a packet rests against when it splits, whose pieces also
+ * keep off the pill where it rests and the edge it rests at (`nodeSplits`).
  */
 export function nodeFanLayouts(
   direction: SceneDirection,
@@ -105,11 +111,11 @@ export function nodeFanLayouts(
   const tall = ctx.timeline.orientation === 'vertical';
   const slots = new Map(direction.elements.map((e) => [e.id, e.rect]));
   const fans = new Map<string, NodeFan>();
-  for (const [node, fan] of nodeFans(direction)) {
+  for (const [node, fan] of nodeSplits(direction, ctx.regions.unit, tall)) {
     const slot = slots.get(node);
     if (slot)
       fans.set(node, {
-        layout: splitLayout(slot, ctx.regions.unit, tall, fan.count),
+        layout: splitLayout(slot, ctx.regions.unit, tall, fan.count, fan.rests),
         element: fan.element,
       });
   }
@@ -210,7 +216,7 @@ export function mountFlows(
           d: points(route),
           fill: 'none',
           stroke: color,
-          'stroke-width': ctx.u(4).toFixed(2),
+          'stroke-width': ctx.u(EDGE_STROKE).toFixed(2),
           'stroke-linecap': 'round',
           'stroke-linejoin': 'round',
           'stroke-dasharray': length.toFixed(2),
@@ -346,27 +352,28 @@ const captionIn = (layout: SplitLayout, b: Badge): Point =>
     ? { x: layout.caption.x, y: layout.caption.y + (layout.caption.height - b.height) / 2 }
     : { x: layout.caption.x + (layout.caption.width - b.width) / 2, y: layout.caption.y };
 
-/** A split's pieces and the count under them, around a source that may move. */
+/** A split's pieces and the count beside them, around a source that may move. */
 interface Pieces {
   /** How far the pieces have spread (0 at the source, 1 fanned out). */
   spread(t: number): number;
-  /** How much of the source shows: a packet breaks apart into its pieces, a node stays. */
-  source(t: number): number;
   update(t: number, origin: Point): void;
   boxes(t: number, origin: Point): Rect[];
   report(): LayoutItem[];
 }
 
+/** The share of a split's time its pieces take to fade in, and of a merge's to fade out. */
+const PIECE_FADE = 0.15;
+
 /**
- * The pieces a split fans out of a source (`stays`: a node, which emits them from its side and
- * stays; else a packet, which breaks apart in place), and the count they stand for, captioned
- * with the side it was measured on. A merge pulls them back into the source.
+ * The pieces a split fans out of a source, which stays whole (a node's box, or a packet's pill and
+ * its label), and the count they stand for, captioned with the side it was measured on. A merge
+ * pulls them back into the source. They fade in as they come out and out as they go back, so
+ * they never pop in or out stacked where they come out.
  */
 function pieces(
   split: SplitSpan,
   merge: MergeSpan | undefined,
   fan: Fan,
-  stays: boolean,
   badges: Badges,
   captionAt: CaptionAt,
   ctx: ComponentContext,
@@ -381,23 +388,17 @@ function pieces(
     easeOutCubic(seg(t, split.t, split.t + split.seconds)) *
     (1 - (merge ? easeInOutCubic(seg(t, merge.t, merge.t + merge.seconds)) : 0));
   const live = (t: number) => t >= split.t && !(merge && t >= merge.t + merge.seconds);
+  const shown = (t: number) =>
+    seg(t, split.t, split.t + PIECE_FADE * split.seconds) *
+    (merge ? 1 - seg(t, merge.t + (1 - PIECE_FADE) * merge.seconds, merge.t + merge.seconds) : 1);
   return {
     spread,
-    source(t) {
-      if (stays) return 1;
-      const gone = seg(t, split.t, split.t + 0.3 * split.seconds);
-      const back = merge ? seg(t, merge.t + 0.6 * merge.seconds, merge.t + merge.seconds) : 0;
-      return Math.max(1 - gone, back);
-    },
     update(t, origin) {
-      const k = spread(t);
-      const on = live(t);
-      nodes.forEach((piece, i) => {
-        const o = fan.offsets[i]!;
-        const x = origin.x + o.x * k - fan.width / 2;
-        const y = origin.y + o.y * k - fan.height / 2;
-        piece.style.transform = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px)`;
-        piece.style.opacity = on ? '1' : '0';
+      const opacity = live(t) ? shown(t).toFixed(3) : '0';
+      fanBoxes(fan, origin, spread(t)).forEach((box, i) => {
+        const piece = nodes[i]!;
+        piece.style.transform = `translate(${box.x.toFixed(2)}px, ${box.y.toFixed(2)}px)`;
+        piece.style.opacity = opacity;
       });
       const fadeOut = merge ? 1 - seg(t, merge.t, merge.t + 0.4 * merge.seconds) : 1;
       for (const [b, opacity] of [
@@ -411,13 +412,7 @@ function pieces(
         b.badge.style.opacity = opacity.toFixed(3);
       }
     },
-    boxes(t, origin) {
-      if (!live(t)) return [];
-      const k = spread(t);
-      return fan.offsets.map((o) =>
-        boxAt({ x: origin.x + o.x * k, y: origin.y + o.y * k }, fan.width, fan.height),
-      );
-    },
+    boxes: (t, origin) => (live(t) ? fanBoxes(fan, origin, spread(t)) : []),
     report: () => [
       ...nodes.filter(visible).map((piece) => ({ role: 'media' as const, rect: rectOf(piece) })),
       ...[before, ...(into ? [into] : [])].flatMap((b) =>
@@ -429,37 +424,44 @@ function pieces(
 
 /**
  * A packet: a pill (with the agent's label, set as text) resting in its slot a little above the
- * middle, or travelling its edges; split, it breaks into its pieces, and merged, it is whole again.
- * It breaks apart where it is, its pieces fanning out around it, or, resting against a node, into
- * the room that node's slot keeps for them beside its label (`spans.fan`). `follow` is where it is
- * at any moment, so the camera can keep it framed.
+ * middle, or travelling its edges. Split, it stays whole, its label readable, and its pieces come
+ * out past it: in its own slot (`packetSplit`, which moves the pill to make room), or, resting
+ * against a node, into the room that node's slot keeps for them, under its box or beside it, clear
+ * of where the pill rests and of the edge it rests at (`spans.fan`). Merged, they go back into it.
+ * `follow` is where it is at any moment, so the camera can keep it framed.
  */
 export function packet(e: PacketElement, ctx: ComponentContext, spans: FlowSpans): Component {
   const u = ctx.u;
   const tall = ctx.timeline.orientation === 'vertical';
   const pill = el('div', 'fpacket', ctx.root);
   const label = e.label === undefined ? undefined : el('div', 'nlabel', pill, e.label);
-  const height = u(tall ? 72 : 64);
-  // As wide as its label, at most its slot's width and 420 units; a label too long for that at the
-  // floor is cut short, where QC reads it as overflowing. The pill's padding and border are inside
-  // its width, and a pixel to spare, since the scroll width is rounded.
+  const height = pillHeight(ctx.regions.unit, tall);
+  // As wide as its label, between its least and most widths; a label too long for its most at
+  // the floor is cut short, where QC reads it as overflowing. The pill's padding and border are
+  // inside its width, and a pixel to spare, since the scroll width is rounded.
   const frame = u(2 * 24 + 2 * 3);
-  const most = Math.min(e.rect.width, u(420));
+  const { least, most } = pillWidths(e.rect, ctx.regions.unit);
   if (label) fitText(label, { max: u(36), min: u(TEXT_FLOOR.body), maxWidth: most - frame });
-  const width = Math.min(most, Math.max(u(150), (label ? label.scrollWidth + 1 : 0) + frame));
+  const width = Math.min(most, Math.max(least, (label ? label.scrollWidth + 1 : 0) + frame));
   Object.assign(pill.style, { width: `${width}px`, height: `${height}px` });
-  const rest = { x: e.rect.x + e.rect.width / 2, y: e.rect.y + e.rect.height * 0.4 };
+  // Split in its own slot, it rests where that split leaves room for its pieces.
+  const own =
+    spans.split && !spans.fan
+      ? packetSplit(e.rect, ctx.regions.unit, tall, spans.split.count, width)
+      : undefined;
+  const rest = own
+    ? center(own.box)
+    : { x: e.rect.x + e.rect.width / 2, y: e.rect.y + e.rect.height * 0.4 };
   const at = (t: number) => legPoint(spans.legs, t, rest);
-  const room = e.rect.width - u(32);
+  const layout = spans.fan ?? own;
   const split =
-    spans.split &&
-    packetPieces(spans.split, spans, at(spans.split.t), { width, height }, room, ctx);
+    spans.split && layout
+      ? packetPieces(spans.split, spans.merge, layout, at(spans.split.t), ctx)
+      : undefined;
   return {
     update(clock) {
       const c = at(clock.t);
-      const whole = split ? split.source(clock.t) : 1;
       pill.style.transform = `translate(${(c.x - width / 2).toFixed(2)}px, ${(c.y - height / 2).toFixed(2)}px)`;
-      pill.style.opacity = whole.toFixed(3);
       split?.update(clock.t, c);
     },
     report: () => [
@@ -484,48 +486,39 @@ export function packet(e: PacketElement, ctx: ComponentContext, spans: FlowSpans
 }
 
 /**
- * A packet's split: its pieces fanned out around `from` (where it is when it splits), the count
- * under them; or, resting against a node, laid out where that node's `fan` keeps room for them
- * and their count. Both move with the packet should it travel on while split.
+ * A packet's split, laid out for it where it is when it splits (`from`): its pieces and their
+ * count where `layout` keeps room for them. Should the packet travel on while split (a timeline
+ * built by hand), they move with it.
  */
 function packetPieces(
   split: SplitSpan,
-  spans: FlowSpans,
+  merge: MergeSpan | undefined,
+  layout: SplitLayout,
   from: Point,
-  size: { width: number; height: number },
-  room: number,
   ctx: ComponentContext,
 ): Pieces {
-  const layout = spans.fan;
-  if (layout) {
-    const fan: Fan = {
-      ...layout.fan,
-      offsets: layout.fan.offsets.map((o) => ({
-        x: layout.origin.x + o.x - from.x,
-        y: layout.origin.y + o.y - from.y,
-      })),
-    };
-    const badges = countBadges(split, spans.merge, layout.caption, ctx);
-    const captionAt: CaptionAt = (b, origin) => {
-      const c = captionIn(layout, b);
-      return { x: c.x + origin.x - from.x, y: c.y + origin.y - from.y };
-    };
-    return pieces(split, spans.merge, fan, false, badges, captionAt, ctx);
-  }
-  const fan = fanOut(split.count, size, room, 0);
-  // The count sits under the pieces as they are when fanned out (the last are the lowest), so it
-  // never moves while they do.
-  const below = (fan.offsets.at(-1)?.y ?? 0) + fan.height / 2 + ctx.u(10);
-  const badges = countBadges(split, spans.merge, { width: room }, ctx);
-  return pieces(
+  const badges = countBadges(split, merge, layout.caption, ctx);
+  /** Where the layout's origin is with the packet at `c`. */
+  const moved = (c: Point): Point => ({
+    x: c.x + layout.origin.x - from.x,
+    y: c.y + layout.origin.y - from.y,
+  });
+  const inner = pieces(
     split,
-    spans.merge,
-    fan,
-    false,
+    merge,
+    layout.fan,
     badges,
-    (b, origin) => ({ x: origin.x - b.width / 2, y: origin.y + below }),
+    (b, origin) => {
+      const c = captionIn(layout, b);
+      return { x: c.x + origin.x - layout.origin.x, y: c.y + origin.y - layout.origin.y };
+    },
     ctx,
   );
+  return {
+    ...inner,
+    update: (t, c) => inner.update(t, moved(c)),
+    boxes: (t, c) => inner.boxes(t, moved(c)),
+  };
 }
 
 /**
@@ -540,7 +533,7 @@ export function nodeSplit(
 ): Component {
   const badges = countBadges(spans.split, spans.merge, layout.caption, ctx);
   const at: CaptionAt = (b) => captionIn(layout, b);
-  const split = pieces(spans.split, spans.merge, layout.fan, true, badges, at, ctx);
+  const split = pieces(spans.split, spans.merge, layout.fan, badges, at, ctx);
   return {
     update(clock) {
       node.update(clock);

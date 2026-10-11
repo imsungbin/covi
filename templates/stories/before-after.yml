@@ -8,18 +8,21 @@ beats:
     eyebrows: { ko: '화면 변경', ja: '見た目の変更', zh: '视觉变化' }
     goal: Name the visual change in one sentence.
     visuals: [title]
+    verbs: [reveal, camera]
     expression: explaining
   - id: compare
     eyebrow: Before / after
     eyebrows: { ko: '변경 전 / 후', ja: '変更前 / 変更後', zh: '变更前 / 后' }
     goal: Show both versions with the changed region emphasized.
     visuals: [before-after, screenshot:after]
+    verbs: [camera, count-up]
     expression: reviewing
   - id: detail
     eyebrow: Up close
     eyebrows: { ko: '자세히', ja: '拡大', zh: '近看' }
     goal: Zoom into the region that changed most, or another viewport.
     visuals: [screenshot:after, interaction]
+    verbs: [camera, reveal]
     expression: explaining
     optional: true
   - id: styles
@@ -27,6 +30,7 @@ beats:
     eyebrows: { ko: '스타일', ja: 'スタイル', zh: '样式' }
     goal: The rules responsible for the change.
     visuals: [code]
+    verbs: [morph, camera]
     expression: explaining
     optional: true
   - id: review
@@ -34,12 +38,14 @@ beats:
     eyebrows: { ko: '살펴볼 점', ja: '確認ポイント', zh: '值得一看' }
     goal: Accessibility, responsive, or consistency concerns.
     visuals: [findings, callout]
+    verbs: [reveal, camera]
     expression: reviewing
   - id: summary
     eyebrow: Summary
     eyebrows: { ko: '요약', ja: 'まとめ', zh: '总结' }
     goal: The verdict.
     visuals: [summary]
+    verbs: [place]
     expression: success
 short: [context, compare, review, summary]
 # Where the music lifts: the first scene playing one of these beats, in order.

@@ -276,7 +276,7 @@ export function transitionVarietyCheck(timeline: Pick<Timeline, 'scenes'>): QcCh
     ? {
         id: 'transition-variety',
         status: 'warn',
-        message: `${n} of ${kinds.length} story transitions are ${top} (${percent(share)}): at most ${percent(TRANSITION_SHARE)} of one kind. Set \`transition\` on scenes: cut when the same subject continues, push for the next step, wipe from before to after.`,
+        message: `${n} of ${kinds.length} story transitions are ${top} (${percent(share)}): at most ${percent(TRANSITION_SHARE)} of one kind. Leave scenes' \`transition\` unset so Covi's camera picks each entrance, or vary the shots' \`enter\`: cut when the same subject continues, pan or push to the next step, wipe from before to after.`,
       }
     : {
         id: 'transition-variety',

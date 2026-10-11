@@ -4,6 +4,7 @@ import {
   type Demonstration,
   type DemoRequestResult,
   type DemoShot,
+  detectLanguage,
   type EvidenceIndex,
   type Explanation,
   endSentence,
@@ -198,11 +199,15 @@ function reviewEvidence(ctx: BeatContext): string[] {
 
 function fallbackScene(beat: Beat, budget: number, ctx: BeatContext): Scene | undefined {
   if (beat.id === 'context' || beat.id === 'summary') return undefined;
-  const text = fitWords(
-    stripEmphasis(stripMarkdown(firstSentence(ctx.explanation.summary, ctx.language))),
-    budget,
-    ctx.language,
-  );
+  const first = stripEmphasis(stripMarkdown(firstSentence(ctx.explanation.summary, ctx.language)));
+  // The explanation's lead quotes the commit subject: when the opening keeps a subject in another
+  // script out of the narrator's voice, the callout that would read it goes, as it does in English
+  // (where it repeats the opening). An explanation written in the narration's language keeps it.
+  // A subject with sentences of its own reaches past the explanation's first one.
+  const lead = stripMarkdown(intentSentence(ctx.context, ctx.language)).trim();
+  const quotes = first.startsWith(lead) || (first !== '' && lead.startsWith(first));
+  if (!readsSummary(ctx.context, ctx.language) && quotes) return undefined;
+  const text = fitWords(first, budget, ctx.language);
   return {
     beat: beat.id,
     eyebrow: eyebrowOf(beat, ctx.language),
@@ -588,20 +593,39 @@ interface Narration {
 /**
  * The opening line: what the change does, said as a statement. It is the video's hook, so it never
  * starts like the explanation's "This change …" sentence (`intentSentence`), which it otherwise
- * follows.
+ * follows. A summary in another script (an English commit subject in a Korean video) would sound
+ * broken in the narrator's voice, so the line says the kind of change, and where, instead.
  */
 function openingLine(context: ReviewContext, language: Language): string {
   const { intent } = context;
   const say = (key: string, params?: Params) => t(language, `narration.opening.${key}`, params);
   let summary = intent.summary.trim().replace(/[.!。！]$/, '');
+  const kind = t(language, `explain.kindPhrase.${intent.kind}`);
+  if (!readsSummary(context, language))
+    return endSentence(
+      language,
+      intent.scope ? say('kindScoped', { kind, scope: intent.scope }) : say('kindAlone', { kind }),
+    );
   if (intent.scope && !summary.toLowerCase().includes(intent.scope.toLowerCase()))
     summary = t(language, 'explain.sentence.scopeIn', { summary, scope: intent.scope });
-  const kind = t(language, `explain.kindPhrase.${intent.kind}`);
   if (language !== 'en') return endSentence(language, say('kind', { kind, summary }));
   if (isImperativeVerb(summary.split(/\s+/)[0] ?? ''))
     return ensurePeriod(say('imperative', { clause: toThirdPersonClause(lowerFirst(summary)) }));
   if (summary.includes(': ')) return sentenceCase(say('titled', { kind, summary }));
   return ensurePeriod(sentenceCase(say('kind', { kind, summary: lowerFirst(summary) })));
+}
+
+/**
+ * Whether the opening reads the change's summary: in English always, otherwise only when it is
+ * written in the narration's language (kanji alone count as Japanese) or has no prose to judge,
+ * only identifiers, which the speech tables spell out. The judgement is `detectLanguage`'s, where a
+ * CJK character weighs three Latin letters, so a code-switched subject ("readFile 함수 수정", even
+ * "Add 문서 지원 for reader streams") reads as Korean on purpose.
+ */
+function readsSummary(context: ReviewContext, language: Language): boolean {
+  if (language === 'en') return true;
+  const written = detectLanguage(context.intent.summary)?.language;
+  return written === undefined || written === language || (language === 'ja' && written === 'zh');
 }
 
 /**
@@ -888,6 +912,9 @@ function sameCode(a: Visual, b: Visual): boolean {
  */
 function dropRepeatedLead(scenes: Scene[], ctx: BeatContext): void {
   const { language } = ctx;
+  // Nothing repeats: the opening did not read the summary, and the fallback callout that would
+  // have quoted it is left out in `fallbackScene`.
+  if (!readsSummary(ctx.context, language)) return;
   const opening = stripMarkdown(openingLine(ctx.context, language)).trim();
   if (!opening || !scenes[0]?.narration.includes(opening)) return;
   // Later scenes say it the explanation's way (a callout of the summary's first sentence).

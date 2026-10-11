@@ -55,6 +55,8 @@ export interface StageRecord {
   durationMs: number;
   reason?: string;
   error?: string;
+  /** The warnings it raised, which running the stage again takes back unless another stage did too. */
+  warnings?: string[];
 }
 
 export interface CommandRecord {
@@ -167,6 +169,8 @@ export class Run {
   readonly dir: string;
   readonly manifest: RunManifest;
   readonly redactor: Redactor;
+  /** The stage running now, which a warning is recorded with. */
+  private running?: StageRecord;
 
   private constructor(id: string, dir: string, manifest: RunManifest, redactor: Redactor) {
     this.id = id;
@@ -329,7 +333,30 @@ export class Run {
     return this.manifest.artifacts.find((a) => a.kind === kind);
   }
 
+  /**
+   * The warnings running stage `name` again takes back: what it raised before that no other stage
+   * stands behind (as its latest run raised it). A warning raised outside any stage is no stage's,
+   * so `warn` gives none of them one the run already held that way. Raised outside the stages only
+   * after a stage raised it, a warning stays that stage's to take back: nothing records the raise.
+   */
+  retracted(name: string): Set<string> {
+    const latest = new Map(this.manifest.stages.map((s) => [s.name, s]));
+    latest.delete(name);
+    const others = new Set([...latest.values()].flatMap((s) => s.warnings ?? []));
+    return new Set(
+      this.manifest.stages.flatMap((s) =>
+        s.name === name ? (s.warnings ?? []).filter((w) => !others.has(w)) : [],
+      ),
+    );
+  }
+
+  /**
+   * Runs a stage and records it. A stage that ran before replaces what it warned about then (a
+   * re-render's checks describe the new video, not the last one); other warnings stay.
+   */
   async stage<T>(name: string, fn: () => Promise<T>): Promise<T> {
+    const stale = this.retracted(name);
+    this.manifest.warnings = this.manifest.warnings.filter((w) => !stale.has(w));
     const started = Date.now();
     const record: StageRecord = {
       name,
@@ -338,6 +365,8 @@ export class Run {
       durationMs: 0,
     };
     this.manifest.stages.push(record);
+    const outer = this.running;
+    this.running = record;
     try {
       const result = await fn();
       record.durationMs = Date.now() - started;
@@ -349,6 +378,7 @@ export class Run {
       this.manifest.errors.push({ stage: name, message: record.error });
       throw error;
     } finally {
+      this.running = outer;
       await this.save();
     }
   }
@@ -370,7 +400,14 @@ export class Run {
 
   warn(message: string): void {
     const m = this.redactor.redact(message);
+    // Already the run's with no stage behind it: raised outside the stages, which still say it.
+    const unowned =
+      this.manifest.warnings.includes(m) &&
+      !this.manifest.stages.some((s) => s.warnings?.includes(m));
     if (!this.manifest.warnings.includes(m)) this.manifest.warnings.push(m);
+    // Every stage that raises it stands behind it, even one that raised it again.
+    const own = this.running?.warnings ?? [];
+    if (this.running && !unowned && !own.includes(m)) this.running.warnings = [...own, m];
   }
 
   setChange(change: CodeChange): void {

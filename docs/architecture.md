@@ -6,7 +6,7 @@ This page describes how Covi is built: the packages and their dependency rules, 
 
 - **The domain model is platform-independent.** The core speaks of a `CodeChange`, never of pull requests. GitHub and GitLab specifics live in `packages/platforms` and `integrations/` only.
 - **Methodology in skills, determinism in code.** Anything that must come out the same every time (resolution, rules, timing, rendering, QC) is code with tests. Anything that needs judgment (intent, findings, narration) is described in a skill and returned as JSON that matches a schema.
-- **Artifacts are the interface.** Every stage reads and writes files in a run directory, so stages can run separately, an agent can author the inputs Covi validates (`explanation.json`, `findings.json`, a demo plan, `video/storyboard.json`), and every result can be inspected afterwards.
+- **Artifacts are the interface.** Every stage reads and writes files in a run directory, so stages can run separately, an agent can author the inputs Covi validates (`explanation.json`, `findings.json`, a demo plan, `video/storyboard.json`, `video/direction.json`), and every result can be inspected afterwards.
 - **Interactive and non-interactive parity.** Every choice an agent may ask about has a configuration key and a default, so CI never waits for input.
 
 ## Packages
@@ -19,7 +19,7 @@ Covi is an npm workspace. Each package under `packages/` exports its TypeScript 
 | `@covi/brand` (`packages/brand`) | Design tokens and the SVG fox mascot; dependency-free and usable in Node and the browser | no other Covi package |
 | `@covi/audio` (`packages/audio`) | Sound for videos: a deterministic synthesizer (patches, kits, effect recipes), the score format and parser, the fitter that fits a score to a timed video, loudness measurement (BS.1770-4), and the narration-first mix. It never locates resources itself; callers pass directories | no other Covi package |
 | `@covi/capture` (`packages/capture`) | Demonstration: checks out base and head, runs the software, captures pages, flows, commands, and HTTP requests, compares them | `core` |
-| `@covi/video` (`packages/video`) | Video specs, storyboards, narration, captions, timeline, sound (music source, effects, mix), the browser composition runtime, renderer, QC | `core`, `brand`, `audio` |
+| `@covi/video` (`packages/video`) | Video specs, storyboards, direction (the agent's shots over Covi's default director) and the canvas, narration, captions, timeline, sound (music source, effects, mix), the browser composition runtime, renderer, QC | `core`, `brand`, `audio` |
 | `@covi/platforms` (`packages/platforms`) | GitHub and GitLab adapters: CI context, comments, annotations, SARIF, Code Quality, dotenv and step outputs | `core` |
 | `@covi/cli` (`packages/cli`) | The `covi` command and the workflows that compose the other packages | all of the above |
 
@@ -180,7 +180,7 @@ See [Security](security.md) for the execution model.
 
 ### Video
 
-`decideVideo` renders a video only when the demonstration assessment recommends one, unless `video.when` or `--force` says otherwise. `produceVideo` (`packages/video/src/pipeline.ts`) drafts or validates a storyboard and redacts it (every later stage draws from it), synthesizes and measures narration, fits scenes to the target duration, builds the timeline (with the moments that carry sound) and captions, fits the music to the finished timeline and mixes it with the voice and the sound effects (`@covi/audio`), writes an HTML composition driven by a deterministic browser runtime, captures frames with Playwright (or keeps the frames already rendered when only the sound changed), encodes with ffmpeg, and runs QC. See [Video](video.md).
+`decideVideo` renders a video only when the demonstration assessment recommends one, unless `video.when` or `--force` says otherwise. `produceVideo` (`packages/video/src/pipeline.ts`) drafts or validates a storyboard and redacts it (every later stage draws from it), plans the direction (each scene's entrance is decided before timing), synthesizes and measures narration, fits scenes to the target duration, resolves each scene's shot on the canvas from the evidence, builds the timeline (with the moments that carry sound) and captions, fits the music to the finished timeline and mixes it with the voice and the sound effects (`@covi/audio`), writes an HTML composition driven by a deterministic browser runtime, captures frames with Playwright (or keeps the frames already rendered when only the sound changed), encodes with ffmpeg, and runs QC. See [Video](video.md).
 
 ### Platforms
 

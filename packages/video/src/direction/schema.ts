@@ -321,7 +321,7 @@ export const ShotBeatSchema = z.discriminatedUnion('verb', [
   z
     .strictObject({
       verb: z.literal('split'),
-      element: ElementIdSchema.describe('The packet or node that breaks apart.'),
+      element: ElementIdSchema.describe('The packet or node whose pieces fan out of it.'),
       count: EvidenceRefSchema.describe(
         'A metric: id: how many pieces (twelve drawn at most; the true count is shown under them).',
       ),
@@ -331,7 +331,7 @@ export const ShotBeatSchema = z.discriminatedUnion('verb', [
       at: PhraseSchema.optional(),
     })
     .describe(
-      'One thing breaks into as many pieces as a measured count, once its reveal is done. A node fans them out in its slot, as does a packet resting against a node (else in place); a split whose slot has no room for them beside the label is left out, with a warning.',
+      'One thing breaks into as many pieces as a measured count, once its reveal is done. A node fans them out in its slot, as does a packet resting against a node (else in its own slot), which stays whole; a split whose slot has no room for them beside the label is left out, with a warning.',
     ),
   z
     .strictObject({

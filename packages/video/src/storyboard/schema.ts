@@ -327,13 +327,13 @@ export const SceneSchema = z.strictObject({
     .enum(TRANSITION_KINDS)
     .optional()
     .describe(
-      'How the scene enters: fade (default), cut, push (slides left), wipe (reveals left to right), or zoom-through (the default for the hero). The first scene has none.',
+      "How the scene enters: fade, cut, push (slides left), wipe (reveals left to right), or zoom-through. Unset, Covi's camera picks the entrance (a zoom into the hero, a wipe into a before/after, a cut on the same subject, else a pan or a push); with video.direction off it fades, and the hero zooms through. The first scene has none.",
     ),
   hero: z
     .boolean()
     .optional()
     .describe(
-      'The one scene where the change clicks: it holds 0.4 s after its line, enters with zoom-through, plays the hero accent, and carries the music lift.',
+      "The one scene where the change clicks: it holds 0.4 s after its line, enters with the camera's zoom (zoom-through with video.direction off) unless it sets `transition`, plays the hero accent, and carries the music lift.",
     ),
   camera: z
     .enum(['drift', 'static'])

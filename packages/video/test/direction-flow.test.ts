@@ -1098,6 +1098,115 @@ describe('flow verbs in the direction file', () => {
     ]);
   });
 
+  it('leave out a split of a packet in its own slot with no room past its pill, saying why', () => {
+    // The packet no flow carries gets a row of the crowd: too short for its pill, its pieces
+    // under or beside it, and their count.
+    const d = crowded([
+      { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+    ]).direction;
+    expect(d.beats).toEqual([]);
+    expect(d.dropped).toEqual([
+      {
+        verb: 'split',
+        element: 'p',
+        reason: 'the slot of packet "p" has no room beside its label for 4 pieces',
+      },
+    ]);
+    // With a slot of its own that has room, it splits there.
+    const roomy = resolve(
+      shot(
+        [{ id: 'p', kind: 'packet', label: 'Request' }],
+        [{ verb: 'split', element: 'p', count: id('chunks'), side: 'base' }],
+      ),
+    )[1]!.direction;
+    expect(roomy.beats.map((b) => b.verb)).toEqual(['split']);
+    expect(roomy).not.toHaveProperty('dropped');
+  });
+
+  it('keep a packet whose split has no room in its own slot there, its trip still left out', () => {
+    // Split before its trip and never merged, it takes a slot of its own, a row of the crowd too
+    // short for its pieces: its split is left out, and it does not start to ride on the trip left
+    // out for that split, so the layout it was given stays true.
+    const { direction: d } = crowded([
+      { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+      { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
+    ]);
+    expect(d.beats).toEqual([]);
+    expect(d.dropped).toEqual([
+      {
+        verb: 'split',
+        element: 'p',
+        reason: 'the slot of packet "p" has no room beside its label for 4 pieces',
+      },
+      {
+        verb: 'flow',
+        element: 'p',
+        reason: expect.stringMatching(/^the flow of "p" at \d+\.\d s leaves while "p" is split;/),
+      },
+    ]);
+    // Its rect is the slot of its own the layout gave it, beside the seven nodes.
+    const r = computeRegions({ ...SQUARE, orientation: 'square' });
+    const slots = elementSlots(
+      [...Array(7).fill('node'), 'packet'],
+      'split',
+      r.media,
+      'square',
+      28 * r.unit,
+    );
+    expect(d.elements.find((e) => e.id === 'p')!.rect).toEqual(slots[7]);
+  });
+
+  it('keep a packet’s split beside the node it rests against in the layouts it fit before', () => {
+    // A packet rides from a to b, splits there into its four chunks, and merges: in four nodes'
+    // slots, its pieces keep off where its pill rests on b's box, not off every side of it.
+    const TALL = resolveVideoSpec(DEFAULT_CONFIG, { mode: 'custom', width: 1080, height: 1920 });
+    const kept: string[] = [];
+    const lost: string[] = [];
+    for (const [name, frame] of [
+      ['16:9', spec],
+      ['9:16', TALL],
+      ['square', SQUARE],
+    ] as const)
+      for (const layout of ['auto', 'column', 'split'] as const) {
+        const plan = DirectionSchema.parse({
+          shots: [
+            {
+              scene: 's2',
+              layout,
+              elements: [
+                node('a', 'Request builder'),
+                node('b'),
+                node('c', 'Cache'),
+                node('d', 'Writer'),
+                { id: 'p', kind: 'packet', label: 'Request' },
+              ],
+              beats: [
+                { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
+                { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+                { verb: 'merge', element: 'p' },
+              ],
+            },
+          ],
+        });
+        const d = resolveDirection({
+          plan,
+          scenes,
+          layout: layoutScenes(scenes, new Map(), new Map(), 'en', pacingFor(frame)),
+          spec: frame,
+          language: 'en',
+          sources,
+          image: () => ({ src: '', width: 1, height: 1 }),
+          seed: 5,
+          redact: (value) => value,
+        })[1]!.direction;
+        const where = `${name} ${layout}`;
+        if (d.beats.some((b) => b.verb === 'split')) kept.push(where);
+        else lost.push(`${where}: ${d.dropped?.map((x) => x.reason).join('; ')}`);
+      }
+    // Eight of the nine fit before pieces kept off the pill; at least as many do now.
+    expect(kept.length, lost.join('\n')).toBeGreaterThanOrEqual(8);
+  });
+
   it('start a packet that rides from a node that splits on the box the split leaves it', () => {
     const [, s2] = resolve(
       shot(

@@ -8,30 +8,35 @@ beats:
     eyebrows: { ko: '구조 개편', ja: '構造の再編', zh: '结构重组' }
     goal: Why the structure changed.
     visuals: [title]
+    verbs: [reveal, camera]
     expression: explaining
   - id: map
     eyebrow: The shape
     eyebrows: { ko: '전체 구조', ja: '全体像', zh: '整体结构' }
     goal: Which modules moved and how they relate now.
     visuals: [diagram, change-map]
+    verbs: [flow, split, merge, camera]
     expression: explaining
   - id: core
     eyebrow: Key seam
     eyebrows: { ko: '핵심 경계', ja: '要となる境界', zh: '关键衔接点' }
     goal: The interface or boundary that matters most.
     visuals: [code]
+    verbs: [morph, camera]
     expression: explaining
   - id: review
     eyebrow: Worth a look
     eyebrows: { ko: '살펴볼 점', ja: '確認ポイント', zh: '值得一看' }
     goal: Where behavior could have changed by accident.
     visuals: [findings, callout]
+    verbs: [reveal, camera]
     expression: reviewing
   - id: summary
     eyebrow: Summary
     eyebrows: { ko: '요약', ja: 'まとめ', zh: '总结' }
     goal: The verdict and a suggested reading order.
     visuals: [summary]
+    verbs: [place]
     expression: success
 short: [context, map, review, summary]
 # Where the music lifts: the first scene playing one of these beats, in order.

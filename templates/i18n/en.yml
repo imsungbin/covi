@@ -736,6 +736,9 @@ narration:
     imperative: Now it {clause}
     titled: '{kind}, titled “{summary}”.'
     kind: '{kind}: {summary}'
+    # In place of a summary the narrator cannot read aloud (written in another script).
+    kindScoped: 'This is {kind} in {scope}.'
+    kindAlone: 'This is {kind}.'
   page:
     home: the home page
     homeHeading: Home page

@@ -1,5 +1,5 @@
 import type { EvidenceIndex } from '@covi/core';
-import { EDGE_MIN, nodeBoxRect } from '../runtime/routes.ts';
+import { EDGE_MIN, type NodeSplit, nodeBoxRect } from '../runtime/routes.ts';
 import type {
   ChangeSide,
   DirectionBeat,
@@ -39,8 +39,8 @@ export function beatTargets(beat: ShotBeat | DirectionBeat): string[] {
 /**
  * Slots for a shot's elements, aligned with them: each gets its slot for the shot's layout, except
  * a packet one of `beats` (the resolved ones, in time order) carries, which travels between nodes;
- * its box is the drawn box of the node its first flow leaves (`fans`: the count of a split that
- * fans out of that node, which moves it). A packet whose trips were all left out takes a slot of
+ * its box is the drawn box of the node its first flow leaves (`fans`: the split that fans out of
+ * that node, which moves it). A packet whose trips were all left out takes a slot of
  * its own, as one no flow carries does, rather than rest on that node's name. In a shot that asks
  * for a flow, a node's slot keeps clear of the slots beside it, so that the edge between two nodes
  * side by side is at least `EDGE_MIN` long: a node's box fills a narrow slot, and the gap between
@@ -54,7 +54,7 @@ export function flowSlots(
   orientation: 'vertical' | 'landscape' | 'square',
   gap: number,
   unit: number,
-  fans: ReadonlyMap<string, number> = new Map(),
+  fans: ReadonlyMap<string, Pick<NodeSplit, 'count' | 'rests'>> = new Map(),
 ): Rect[] {
   // The node each travelling packet leaves first.
   const leaves = new Map<string, string>();
@@ -80,7 +80,10 @@ export function flowSlots(
     if (own) return own;
     const from = leaves.get(e.id)!;
     const slot = slotOf.get(from);
-    return slot ? nodeBoxRect(slot, unit, orientation === 'vertical', fans.get(from)) : region;
+    const fan = fans.get(from);
+    return slot
+      ? nodeBoxRect(slot, unit, orientation === 'vertical', fan?.count, fan?.rests)
+      : region;
   });
 }
 

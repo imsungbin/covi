@@ -725,6 +725,8 @@ narration:
     imperative: '이제 {clause}'
     titled: '{kind}입니다. 제목은 “{summary}”입니다.'
     kind: '{kind}입니다: {summary}'
+    kindScoped: '{scope}의 {kind}입니다.'
+    kindAlone: '{kind}입니다.'
   page:
     home: 홈 페이지
     homeHeading: 홈 페이지

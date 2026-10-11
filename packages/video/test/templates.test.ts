@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { heroScene, loadTemplates } from '../src/templates.ts';
+import { ShotBeatSchema } from '../src/direction/schema.ts';
+import { BEAT_VERBS_MAX, heroScene, loadTemplates } from '../src/templates.ts';
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -19,7 +20,17 @@ const HERO: Record<string, string[]> = {
   'quick-review': ['core'],
 };
 
-function templateDir(hero: string): string {
+/** The bug-fix story's suggested verbs, beat by beat: the benchmark's story. */
+const BUG_FIX_VERBS: Record<string, string[]> = {
+  context: ['reveal', 'camera'],
+  problem: ['split', 'stack', 'flow', 'reveal'],
+  fix: ['morph', 'camera'],
+  proof: ['count', 'merge', 'camera'],
+  review: ['reveal', 'camera'],
+  summary: ['place'],
+};
+
+function templateDir(hero: string, verbs?: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'covi-templates-'));
   dirs.push(dir);
   writeFileSync(
@@ -30,7 +41,7 @@ function templateDir(hero: string): string {
       'description: d',
       'use_when: u',
       'beats:',
-      '  - { id: context, eyebrow: C, eyebrows: { ko: C, ja: C, zh: C }, goal: g, visuals: [title] }',
+      `  - { id: context, eyebrow: C, eyebrows: { ko: C, ja: C, zh: C }, goal: g, visuals: [title]${verbs === undefined ? '' : `, verbs: ${verbs}`} }`,
       '  - { id: summary, eyebrow: S, eyebrows: { ko: S, ja: S, zh: S }, goal: g, visuals: [summary] }',
       'short: [context, summary]',
       `hero: ${hero}`,
@@ -71,5 +82,60 @@ describe('story templates', () => {
     const scenes = [{ beat: 'context' }, { beat: 'fix' }, { beat: 'review', hero: true }];
     expect(heroScene(scenes, ['fix'])).toBe(2);
     expect(heroScene(scenes, undefined)).toBe(2);
+  });
+
+  it('suggest direction verbs for every beat, each one the beat can stage', async () => {
+    // The verbs the direction reference teaches, which are the direction schema's verbs: a beat
+    // suggests only what an agent can look up.
+    const reference = readFileSync(
+      join(import.meta.dirname, '../../../skills/covi-video/references/direction.md'),
+      'utf8',
+    );
+    const table = reference.split(/^## /m).find((s) => s.startsWith('Verbs\n'))!;
+    const verbs = new Set([...table.matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1]!));
+    expect([...verbs].sort()).toEqual(ShotBeatSchema.options.map((o) => o.shape.verb.value).sort());
+    // Verbs that need a measured number or a connection: never on a beat that can show neither.
+    const measured = ['count', 'count-up', 'split', 'stack', 'merge', 'flow'];
+    const plain = ['title', 'change-map', 'code', 'findings', 'callout', 'summary'];
+    const templates = await loadTemplates();
+    expect(Object.fromEntries(templates.get('bug-fix')!.beats.map((b) => [b.id, b.verbs]))).toEqual(
+      BUG_FIX_VERBS,
+    );
+    for (const t of templates.values())
+      for (const beat of t.beats) {
+        const at = `${t.id}: ${beat.id}`;
+        const kinds = beat.visuals.map((v) => v.split(':')[0]!);
+        expect(beat.verbs, at).toBeDefined();
+        const suggested = beat.verbs!;
+        for (const verb of suggested) expect(verbs.has(verb), `${at}: ${verb}`).toBe(true);
+        if (suggested.includes('morph')) expect(kinds, at).toContain('code');
+        // A wrap keeps its card; every other beat suggests something that moves.
+        if (kinds.every((k) => k === 'summary')) expect(suggested, at).toEqual(['place']);
+        else expect(suggested, at).not.toContain('place');
+        if (kinds.every((k) => plain.includes(k)))
+          for (const verb of suggested) expect(measured, `${at}: ${verb}`).not.toContain(verb);
+      }
+  });
+
+  it('load a beat without verbs, and refuse verbs that are unknown, repeated, or too many', async () => {
+    await expect(loadTemplates(templateDir('[context]'))).resolves.toBeDefined();
+    const loaded = await loadTemplates(templateDir('[context]', '[morph, camera]'));
+    expect(loaded.get('tiny')!.beats[0]!.verbs).toEqual(['morph', 'camera']);
+    // An unknown verb is named by its place, with every verb the beat could use instead.
+    const unknown = await loadTemplates(templateDir('[context]', '[morph, zoom]')).then(
+      () => '',
+      (error: Error) => error.message,
+    );
+    expect(unknown).toMatch(/tiny\.yml is invalid:\n {2}beats\.0\.verbs\.1: /);
+    for (const option of ShotBeatSchema.options)
+      expect(unknown).toContain(`"${option.shape.verb.value}"`);
+    await expect(loadTemplates(templateDir('[context]', '[reveal, reveal]'))).rejects.toThrow(
+      /beats\.0\.verbs: name each verb once: "reveal" is named twice/,
+    );
+    await expect(loadTemplates(templateDir('[context]', '[]'))).rejects.toThrow(/beats\.0\.verbs/);
+    expect(BEAT_VERBS_MAX).toBe(4);
+    await expect(
+      loadTemplates(templateDir('[context]', '[reveal, camera, morph, count, flow]')),
+    ).rejects.toThrow(/beats\.0\.verbs/);
   });
 });

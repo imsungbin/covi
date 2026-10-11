@@ -370,6 +370,10 @@ describe('the transition-variety check', () => {
     const check = transitionVarietyCheck(entering('fade', 'fade', 'fade', 'push'));
     expect(check).toMatchObject({ id: 'transition-variety', status: 'warn' });
     expect(check.message).toMatch(/3 of 4 story transitions are fade \(75%\)/);
+    // The advice matches the direction reference: leave transitions to the camera, or vary `enter`.
+    expect(check.message).toMatch(/`transition` unset/);
+    expect(check.message).toMatch(/`enter`/);
+    expect(check.message).not.toMatch(/Set `transition`/);
   });
 
   it('passes at 60%, and below four transitions', () => {

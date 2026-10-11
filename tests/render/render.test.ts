@@ -1529,9 +1529,10 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
   for (const [example, flags] of [
     ['ui-comment-composer', ['--short', '--duration', '30s']],
     ['api-users-pagination', ['--standard']],
-    // The benchmark for changes with nothing to see: a command's output before and after, and code.
+    // The benchmark for changes with nothing to see: what a command counted before and after,
+    // staged, and code.
     ['backend-slim-request', ['--standard']],
-    // Square: a narrow row for the number and the command beside it.
+    // Square: the number in a narrow row with the request, above the pile.
     ['backend-slim-request', ['--custom', '--width', '1080', '--height', '1080']],
   ] as const) {
     it(`renders ${example} (${flags.join(' ')})`, async () => {
@@ -1581,7 +1582,7 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         for (const { s, b } of morphs)
           expect(tiles).toContain(Math.round((s.start + b.t + b.seconds / 2) * timeline.fps));
         // The key number is a metric: request bytes count down from 70,406 to 9,907 beside the
-        // command that printed them.
+        // other counts the command printed.
         const index = timeline.scenes.findIndex((s) =>
           s.direction?.elements.some((e) => e.kind === 'metric'),
         );
@@ -1607,9 +1608,13 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
           sceneFrame(timeline, index, scene.start + metricSettledAt(scene.direction!, counter)),
         );
         expect(metricSettledAt(scene.direction!, counter)).toBeGreaterThan(count.t + count.seconds);
-        // It lands once the terminal beside it has typed the output its number comes from.
+        // It lands no earlier than the terminal it replaces would have typed the output its number
+        // comes from, and settles before the next scene starts to come in.
         expect(count.t + count.seconds).toBeGreaterThanOrEqual(
           settledAt(scene.visual, scene.end - scene.start, scene.phases) - 1e-3,
+        );
+        expect(scene.start + metricSettledAt(scene.direction!, counter)).toBeLessThanOrEqual(
+          timeline.scenes[index + 1]!.start + 1e-3,
         );
         // Where the scene has settled (its count has landed), the counter is the largest text.
         const frames = JSON.parse(
@@ -1625,10 +1630,32 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         expect(x).toBeGreaterThan(counter.rect.x);
         expect(x).toBeLessThan(counter.rect.x + counter.rect.width);
         expect(fonts[1]!.font!).toBeLessThan(0.6 * fonts[0]!.font!);
-        // The terminal's code beside it stays at its floor.
-        const code = settled.items.filter((i) => i.text === 'code');
-        expect(code.length).toBeGreaterThan(0);
-        for (const c of code) expect(c.font! / unit).toBeGreaterThanOrEqual(TEXT_FLOOR.code - 0.1);
+        // The problem is staged, not told: the request splits into its four chunks and merges
+        // into one, and the reader's steps pile up, 28 before and 10 after, beside the counter.
+        const direction = scene.direction!;
+        expect(direction.elements.map((e) => e.kind)).toEqual(['metric', 'packet', 'pile']);
+        expect(direction.beats.map((b) => b.verb).sort()).toEqual([
+          'count',
+          'merge',
+          'split',
+          'stack',
+        ]);
+        expect(direction.beats.find((b) => b.verb === 'split')).toMatchObject({
+          element: 'packet',
+          count: 4,
+          name: 'chunks',
+          side: 'base',
+        });
+        expect(direction.beats.find((b) => b.verb === 'merge')).toMatchObject({
+          into: { count: 1, name: 'chunks', side: 'head' },
+        });
+        expect(direction.elements.find((e) => e.kind === 'pile')).toMatchObject({
+          name: 'reader steps',
+          rows: [
+            { side: 'base', count: 28 },
+            { side: 'head', count: 10 },
+          ],
+        });
       }
     }, 600_000);
   }

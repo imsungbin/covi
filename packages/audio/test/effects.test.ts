@@ -243,7 +243,7 @@ describe('the sounds of a directed shot', () => {
   it('map the camera, a count, a merge, and an appearance to their recipes and ranks', () => {
     expect(effectRecipe(cue(1, 'camera', 'zoom'), config)).toEqual({
       recipe: 'camera',
-      priority: 0,
+      priority: -0.5,
     });
     expect(effectRecipe(count(1, 1.6), config)).toEqual({ recipe: 'tick', priority: 1 });
     expect(effectRecipe(cue(1, 'merge'), config)).toEqual({ recipe: 'thump', priority: 1 });
@@ -357,6 +357,20 @@ describe('the sounds of a directed shot', () => {
       [1.6, undefined, 10],
     ]);
     expect(JSON.stringify(placed)).not.toMatch(/null/);
+  });
+
+  it("give way to a scene's entrance: the camera's whoosh inside a scene is the softer one", () => {
+    for (const camera of [2.9, 3, 3.1]) {
+      const { placed, dropped } = placeEffects(
+        [cue(camera, 'camera', 'zoom'), cue(3, 'transition', 'push')],
+        config,
+      );
+      expect(
+        placed.map((p) => p.kind),
+        `${camera}`,
+      ).toEqual(['transition']);
+      expect(dropped.map((d) => d.kind)).toEqual(['camera']);
+    }
   });
 
   it('let an accent give way to a landing, and a camera whoosh to an accent', () => {

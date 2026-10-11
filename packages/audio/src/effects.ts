@@ -11,10 +11,11 @@ import { countTicks, TICK_GAP } from './sfx/train.ts';
  * merging into one (a thump), and an element appearing (a soft accent). If an effect is
  * noticeable, it is too loud: their levels are written against the music bed (the same with any
  * placement, or with no music), ticks, accents, and swells lower still, and density limits keep a
- * busy stretch from turning into a rattle; when effects crowd, the swells give way first, then
- * the accents. A counter's ticks are one effect, placed or dropped whole; two counters never tick
- * at once, and two that touch share the tick where they meet. The outro's sign-off plays only when
- * no music does: with music, the music's own sonic logo lands on that moment.
+ * busy stretch from turning into a rattle; when effects crowd, the swells give way first (the
+ * camera's to a scene's entrance), then the accents. A counter's ticks are one effect, placed or
+ * dropped whole; two counters never tick at once, and two that touch share the tick where they
+ * meet. The outro's sign-off plays only when no music does: with music, the music's own sonic logo
+ * lands on that moment.
  */
 
 const Recipe = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
@@ -135,13 +136,15 @@ export function effectRecipe(
         : { recipe: r.finding, priority: 1 };
     case 'hero':
       return { recipe: r.hero, priority: 3 };
-    // An accent gives way to every landing, and a swell gives way to it.
+    // An accent gives way to every landing, and a swell gives way to it; the camera's whoosh, a
+    // move inside a scene, gives way to the bigger move between scenes.
     case 'appear':
       return { recipe: r.appear, priority: 0.5 };
     case 'transition':
     case 'riser':
-    case 'camera':
       return { recipe: r[cue.kind], priority: 0 };
+    case 'camera':
+      return { recipe: r.camera, priority: -0.5 };
     default:
       return { recipe: r[cue.kind], priority: 1 };
   }
@@ -174,13 +177,13 @@ const overlaps = (a: { t: number; seconds?: number }, b: { t: number; seconds?: 
 
 /**
  * Chooses which cues sound. The outro first, then the verdict and the hero's hit, then
- * high-severity findings, then the rest, then accents, and the swells last, each in time order; a
- * cue is dropped when it would come within `minSpacing` of a placed one or make any second hold
- * more than `maxPerSecond`. A riser is exempt from the spacing (its onset is quiet), not from the
- * density. A counter's ticks count as one effect at its start, and a count that would tick while a
- * placed one still does is dropped; one that starts as the one before it lands, or within
- * `TICK_GAP` after, is tied to it and leaves out its opening tick, so no tick stacks on another or
- * blurs into it.
+ * high-severity findings, then the rest, then accents, and the swells last (the camera's after the
+ * others), each in time order; a cue is dropped when it would come within `minSpacing` of a placed
+ * one or make any second hold more than `maxPerSecond`. A riser is exempt from the spacing (its
+ * onset is quiet), not from the density. A counter's ticks count as one effect at its start, and a
+ * count that would tick while a placed one still does is dropped; one that starts as the one
+ * before it lands, or within `TICK_GAP` after, is tied to it and leaves out its opening tick, so
+ * no tick stacks on another or blurs into it.
  */
 export function placeEffects(
   cues: readonly EffectCue[],

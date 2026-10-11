@@ -26,6 +26,7 @@ import {
   beatView,
   between,
   type CameraStep,
+  captionsClosure,
   clampView,
   clipRect,
   drawnRect,
@@ -205,6 +206,12 @@ const EYES = { x: 70, y: 52 };
 const CLIP_RAMP = 0.2;
 /** How far a beat magnifies a stop by the time the viewport has closed (a push never closes it). */
 const CLIP_ZOOM = 0.1;
+/**
+ * How far a beat magnifies a stop by the time the viewport closes for the captions as soon as they
+ * need it. The push-in alone scales about the region's middle and keeps the region's foot clear of
+ * them, so the closure only follows a beat in, and from nothing as it starts.
+ */
+const CLIP_CAPTIONS = 0.01;
 /** Room kept between the tail and what it must not cover, in view-box units. */
 const TAIL_MARGIN = 4;
 
@@ -927,10 +934,20 @@ export class Stage {
     return Math.max(travel, ends);
   }
 
-  /** How far a scene's beats magnify its stop at `time`, toward closing the viewport (0–1). */
+  /**
+   * How far a scene's beats magnify its stop at `time`, toward closing the viewport (0–1), and at
+   * the latest as what the camera draws, the push-in included, carries the region's foot toward
+   * the captions: a view held to the region passes its foot while a zoom eases in, before the
+   * beat's own scale has closed the viewport.
+   */
   private magnified(m: MountedScene, time: number): number {
     const view = viewAt(m.steps, Math.max(0, time - m.scene.start), restView(this.pivot));
-    return clamp((view.scale - 1) / CLIP_ZOOM);
+    const room = this.regions.captions.y - (m.region.y + m.region.height);
+    const captions = captionsClosure(this.localView(m, time), m.region, this.pivot, room);
+    return Math.max(
+      clamp((view.scale - 1) / CLIP_ZOOM),
+      clamp((view.scale - 1) / CLIP_CAPTIONS) * captions,
+    );
   }
 
   /**

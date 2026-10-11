@@ -6,6 +6,7 @@ import {
   buildTimeline,
   type DirectionBeat,
   type LayoutReport,
+  layoutChecks,
   layoutScenes,
   type MorphRow,
   pacingFor,
@@ -448,6 +449,54 @@ describe.skipIf(!available)('the token morph', () => {
         expect(drawn.head.top, name).toBeGreaterThanOrEqual(regions.media.y - 1);
       }
       expect(zoomed, name).toBe(4);
+      expect(v.errors).toEqual([]);
+    }
+  });
+
+  it('never draws the card it zooms toward under the captions, even while the zoom eases in', async () => {
+    // A lone card as tall as the region, a modest zoom: magnified, its foot passes the region's
+    // bottom by more than the room above the captions, before the viewport has closed to its band.
+    const follow: DirectionBeat = {
+      verb: 'camera',
+      move: 'follow',
+      to: 'm',
+      zoom: 1.1,
+      t: 1,
+      seconds: 0.8,
+    };
+    // The changed lines at the top of a tall card: following them, the camera keeps the card's
+    // top row in view, so all the zoom adds below it goes past the region's foot.
+    const tall: DiffLine[] = [
+      context('async function load(ids) {', 1),
+      del('  return send(parts);', 2),
+      add('  return send(parts.map((p) => p.id));', 2),
+      ...Array.from({ length: 11 }, (_, i) => context(`  log(part${i}.id);`, i + 3)),
+    ];
+    for (const size of [
+      { width: W, height: H },
+      { width: H, height: W },
+    ]) {
+      const regions = computeRegions({
+        ...size,
+        orientation: size.width > size.height ? 'landscape' : 'vertical',
+      });
+      const v = await morphed(tall, [follow, MORPH], regions.media, undefined, size);
+      const reports: LayoutReport[] = [];
+      for (let frame = v.at(follow.t); frame <= v.at(MORPH.t + MORPH.seconds + 0.5); frame++)
+        reports.push(await v.report(frame));
+      const name = `${size.width}×${size.height}`;
+      expect(reports.filter((r) => r.captions).length, name).toBeGreaterThan(10);
+      const check = layoutChecks(v.timeline, reports).find(
+        (c) => c.id === 'captions-clear-of-content',
+      )!;
+      expect(check.status, `${name}: ${check.message}`).toBe('pass');
+      // Nor within its tolerance, nor between two lines, when no caption shows: the card ends
+      // above the captions' band at every frame.
+      for (const r of reports)
+        for (const item of r.items.filter((i) => i.role !== 'text'))
+          expect(item.rect.y + item.rect.height, `${name} @${r.frame}`).toBeLessThanOrEqual(
+            regions.captions.y + 0.01,
+          );
       expect(v.errors).toEqual([]);
     }
   });

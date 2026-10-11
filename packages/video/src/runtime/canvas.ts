@@ -341,6 +341,19 @@ export function featherOf(
   };
 }
 
+/**
+ * How closed (0–1) a stop's viewport must be for what `view` (stop-local) draws of its `region` to
+ * stay out of the captions, which start `room` px below the region: open while the region's foot is
+ * drawn less than half the room past it, closed once it is drawn the whole room past, when the band
+ * cuts it (feathered within the room). What a stop lays out lies inside its region, so until then
+ * nothing of it reaches the captions, however open the viewport is.
+ */
+export function captionsClosure(view: View, region: Rect, pivot: Point, room: number): number {
+  const foot = region.y + region.height;
+  const past = pivot.y + (foot - view.y) * view.scale - foot;
+  return room > 0 ? clamp((2 * past) / room - 1) : past > 0 ? 1 : 0;
+}
+
 /** The part of a box inside the clip, or nothing when none of it is. */
 export function clipRect(rect: Rect, clip: Rect): Rect | undefined {
   const x = Math.max(rect.x, clip.x);

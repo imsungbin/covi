@@ -4,6 +4,7 @@ import {
   beatView,
   between,
   type CameraStep,
+  captionsClosure,
   clampView,
   clipRect,
   drawnRect,
@@ -361,6 +362,33 @@ describe('the canvas camera', () => {
 });
 
 describe('the canvas viewport', () => {
+  it('closes in time for the captions as a zoom carries the region’s foot down, open at rest', () => {
+    for (const [width, height, orientation] of [
+      [1920, 1080, 'landscape'],
+      [1080, 1920, 'vertical'],
+    ] as const) {
+      const r = computeRegions({ width, height, orientation });
+      const m = r.media;
+      const p = { x: m.x + m.width / 2, y: m.y + m.height / 2 };
+      const room = r.captions.y - (m.y + m.height);
+      const closure = (view: { x: number; y: number; scale: number }) =>
+        captionsClosure(view, m, p, room);
+      // At rest, and under the push-in a shot makes while its beats wait, the region's foot stays
+      // more than half the room clear of the captions: the stop is drawn whole.
+      expect(closure(restView(p))).toBe(0);
+      expect(closure(clampView(withPush(restView(p), 0.02), m, p))).toBe(0);
+      // Held to the region's top, a zoom carries its foot past by the region's height times
+      // what it adds: closing from half the room past, closed once it is the whole room past.
+      const top = (scale: number) =>
+        clampView({ x: p.x, y: Number.NEGATIVE_INFINITY, scale }, m, p);
+      const past = (k: number) => 1 + (k * room) / m.height;
+      expect(closure(top(past(0.5))), orientation).toBeCloseTo(0, 9);
+      expect(closure(top(past(0.75))), orientation).toBeCloseTo(0.5, 9);
+      expect(closure(top(past(1))), orientation).toBeCloseTo(1, 9);
+      expect(closure(top(1.25))).toBe(1);
+    }
+  });
+
   it('clips to a region, and keeps only the part of a box inside it', () => {
     expect(insetOf({ x: 10, y: 20, width: 100, height: 50 }, 200, 100)).toBe(
       'inset(20.00px 90.00px 30.00px 10.00px)',

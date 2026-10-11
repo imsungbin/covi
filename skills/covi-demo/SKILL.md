@@ -17,6 +17,7 @@ The question that drives every demonstration: **what does the reviewer need to s
 | changes an API | the same request against base and head; the response difference |
 | changes a CLI | the same command against base and head; the output difference |
 | changes error handling | the error state itself, triggered on purpose |
+| changes what a backend does with nothing to see (sizes, counts, retries, timeouts) | a command that prints what it measures at base and head, one `label: number` line per measure with nothing after the unit: Covi reads them as `metric:` evidence a video can count and stage |
 | is internal (refactor, tests, CI, types) | nothing; say so, and let the explanation carry it |
 
 `context.json` → `demonstration` already holds Covi's assessment (value, kinds, candidates, whether it can run the project). Use it as a starting point, not a verdict.

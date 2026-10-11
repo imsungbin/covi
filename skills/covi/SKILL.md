@@ -82,7 +82,7 @@ findings.json         your findings; review.json/.md is the merged, rendered rev
 evidence.json         every piece of evidence in the run, with the ids claims cite
 summary.md            compact summary for PR/MR descriptions
 demo/                 captures.json, screenshots, diffs, recordings, traces, behavior-diff.json, subject.json
-video/                storyboard.json, timeline.json, captions, audio.json, music.wav, covi-review.mp4, qc.json
+video/                storyboard.json, direction.json, timeline.json, captions, audio.json, music.wav, covi-review.mp4, qc.json, draft/
 ```
 
 ## Asking the user

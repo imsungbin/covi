@@ -1,5 +1,6 @@
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadSkill, methodologyOf } from '@covi/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../packages/cli/src/examples.ts';
 import { DirectionSchema } from '../packages/video/src/direction/schema.ts';
@@ -129,5 +130,19 @@ describe('the direction method’s worked example', () => {
     await expect(directedTimeline({ ...drafted, storyboard }, example.direction)).rejects.toThrow(
       /shot 3 \(scene s3\), beat 3 \(count\) quotes "ten thousand"/,
     );
+  });
+});
+
+/** The most words the covi-video methodology may carry into the narration prompt. */
+const PROMPT_WORDS = 2800;
+
+describe('the covi-video methodology in model prompts', () => {
+  it('carries direction as one short rule, leaving the verb reference and the draft loop to agents', async () => {
+    const methodology = methodologyOf(await loadSkill('covi-video'));
+    expect(methodology).toContain('**Direct the picture.**');
+    expect(methodology).toContain('references/direction.md');
+    for (const term of ['--draft', 'video/draft', 'covi render', 'count-up', 'qc.json'])
+      expect(methodology, term).not.toContain(term);
+    expect(methodology.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(PROMPT_WORDS);
   });
 });

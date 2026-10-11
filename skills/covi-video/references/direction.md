@@ -1,6 +1,6 @@
 # Direction
 
-Evidence decides what a video shows; direction decides how. `video/direction.json` gives storyboard scenes a **shot**: the **elements** on screen, each drawn from an evidence id or a short label, and the **beats** that move them, each a verb that lands on a phrase of the scene's line. Covi draws it the same way every time. Its default director directs every scene you leave out, so direct the scenes where you can tell the change better than it does.
+Evidence decides what a video shows; direction decides how. `video/direction.json` gives storyboard scenes a **shot**: the **elements** on screen, each drawn from an evidence id or a short label, and the **beats** that move them, each a verb that lands on a phrase of the scene's line. Covi draws it the same way every time. Its default director directs every scene you leave out, so direct the scenes where you can tell the change better than it does. It morphs a code scene that shows one small hunk's changed lines, and finds that hunk by the scene's line numbers: number a deleted line as before the change and an added line as after it, as the diff does.
 
 ## Show the change happening
 
@@ -35,12 +35,16 @@ The key number is the largest thing on screen when it lands: make its `metric` t
 
 A `count` or a `count-up` lands on its phrase, so quote the words that say the number; every other verb starts on its phrase once what it acts on is in place (a morph may start earlier, so its new code can be read). Beats without `at` spread through the line in the order written. `flow`, `split`, `merge`, and `stack` are the flow verbs.
 
+A `count` or `count-up` of a metric you also `reveal` waits for the reveal, shortened so that it still lands on its phrase: start the reveal at least 2.1 s before that phrase for a full count (1.1 s at the least, for a count of 0.6 s), or leave the reveal out. A beat that cannot play where you put it (a split with no room beside its node's name, a trip while its packet is split) is left out with a warning that says why.
+
 ## Elements
 
-- From evidence: `visual` (the scene's storyboard visual, drawn as without direction; a title or summary card only alone, without a reveal), `code` (a `diff-hunk:` id; `side`, `lines`), `morph` (a `diff-hunk:` id with code on both sides and at most 12 changed lines a side, close enough together to fit one card), `output` (a `terminal:` id; `side`), `capture` (a `screenshot:` id), `metric` (a `metric:` id; `show`, `side`, and `label`, its name in the video's language), and `pile` (a `metric:` id that counts something; `side`, `label`). Without a `label`, a command's metric or pile is named as its output named it.
+- From evidence: `visual` (the scene's storyboard visual, drawn as without direction; a title or summary card only alone, without a reveal), `code` (a `diff-hunk:` id; `side`, `lines`), `morph` (a `diff-hunk:` id with code on both sides and at most 12 changed lines a side, close enough together to fit one card; show a hunk too long or too spread out to morph as `code` with `lines`), `output` (a `terminal:` id; `side`), `capture` (a `screenshot:` id), `metric` (a `metric:` id; `show`, `side`, and `label`, its name in the video's language), and `pile` (a `metric:` id that counts something; `side`, `label`). Without a `label`, a command's metric or pile is named as its output named it.
 - Written by you: `node` (a `label`, and the evidence ids it stands for), `packet` (an optional `label`), and `label` (`text`, and `tone`: `neutral`, `warning`, or `success`).
 
 A shot without a `visual` element replaces the scene's storyboard visual. Keep that visual true to the shot anyway: it is what `--direction off` draws.
+
+Shots name scenes by id. Ids are optional (Covi numbers scenes `s1`, `s2`, …), but each is the scene's own: a storyboard that gives two scenes one id, such as `"id": "s2"` beside an unnamed second scene, is refused.
 
 ## Bind everything to evidence
 

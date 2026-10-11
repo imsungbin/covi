@@ -1,6 +1,12 @@
 import { EFFECTS_UNDER_VOICE_DB, MUSIC_JUMP_DB } from '@covi/audio';
 import { LANGUAGE_NAME } from '@covi/core';
-import { densityChecks } from './density.ts';
+import {
+  choreographyChecks,
+  onlyCameraMoves,
+  STILL_SECONDS,
+  spokenStills,
+} from './choreography.ts';
+import { densityChecks, listed } from './density.ts';
 import { localeLanguage, type SpeechRecord, unspokenAcronyms } from './narration/speech.ts';
 import { suggestedVoice } from './narration/tts.ts';
 import type { Media } from './render/ffmpeg.ts';
@@ -160,8 +166,8 @@ export function durationCheck(seconds: number, window: VideoSpec['duration']): Q
   };
 }
 
-/** How long the picture may freeze under narration before the scene reads as a slide (s). */
-export const STILL_SECONDS = 1.5;
+// One rule for frozen pixels and the timeline's planned stills: `motion-gap` keeps the value.
+export { STILL_SECONDS };
 /** ffmpeg freezedetect's noise tolerance: −60 dB, its default. A 2% drift is never frozen. */
 export const STILL_NOISE = 0.001;
 
@@ -200,41 +206,31 @@ export function mediaCrop(timeline: Pick<Timeline, 'width' | 'height' | 'orienta
 
 /**
  * The picture keeps moving while the narration speaks: a freeze of the media region that covers
- * 1.5 s or more of the lines (summed over the lines it spans) is a still, named by its scene.
+ * 1.5 s or more of the lines (summed over the lines it spans) is a still, named by its scene, and
+ * said to be a stretch the plan moved only with the camera's slow push-in when it was.
  */
 export function stillCheck(
-  timeline: Pick<Timeline, 'scenes'>,
+  timeline: Pick<Timeline, 'scenes' | 'transition'>,
   freezes: readonly Freeze[],
 ): QcCheck {
-  const stills: Array<{ scene: string; seconds: number; at: number }> = [];
-  for (const f of freezes) {
-    let spoken = 0;
-    let scene: string | undefined;
-    for (const s of storyScenes(timeline.scenes)) {
-      if (!s.speech) continue;
-      const overlap = Math.min(f.end, s.speech.end) - Math.max(f.start, s.speech.start);
-      if (overlap <= 0) continue;
-      spoken += overlap;
-      scene ??= s.id;
-    }
-    if (scene && spoken >= STILL_SECONDS - 1e-6)
-      stills.push({ scene, seconds: spoken, at: f.start });
-  }
+  const stills = spokenStills(timeline, freezes);
   if (!stills.length)
     return {
       id: 'still',
       status: 'pass',
       message: 'The picture keeps moving while the narration speaks.',
     };
+  const named = stills.map(
+    (s) =>
+      `${s.scene} (${s.seconds.toFixed(1)} s from ${s.at.toFixed(1)} s)${
+        // The plan moved only the camera there, and too slowly to see.
+        onlyCameraMoves(timeline, s) ? ", where only the camera's slow push-in moves" : ''
+      }`,
+  );
   return {
     id: 'still',
     status: 'warn',
-    message: `The picture holds still while the narration continues in ${stills
-      .slice(0, 3)
-      .map((s) => `${s.scene} (${s.seconds.toFixed(1)} s from ${s.at.toFixed(1)} s)`)
-      .join(
-        ', ',
-      )}${stills.length > 3 ? ', …' : ''}. Split the scene, sync its visual to the line, or let the camera drift.`,
+    message: `The picture holds still while the narration continues in ${listed(named)}. Split the scene, sync its visual to the line, pin a beat to a phrase there, or let the camera drift.`,
   };
 }
 
@@ -246,7 +242,7 @@ export function stillCheck(
 export async function measureStill(
   media: Pick<Media, 'analyze'>,
   video: string,
-  timeline: Pick<Timeline, 'scenes' | 'width' | 'height' | 'orientation'>,
+  timeline: Pick<Timeline, 'scenes' | 'transition' | 'width' | 'height' | 'orientation'>,
   duration: number,
 ): Promise<QcCheck> {
   let frozen: string;
@@ -919,6 +915,7 @@ export async function runQc(input: QcInput): Promise<QcReport> {
   checks.push(
     ...layoutChecks(input.timeline, input.layouts),
     ...densityChecks(input.timeline, input.layouts),
+    ...choreographyChecks(input.timeline),
     ...timingChecks(input.timeline, input.speech),
     ...speechChecks(input.speech),
   );

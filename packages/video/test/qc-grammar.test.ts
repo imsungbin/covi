@@ -28,7 +28,8 @@ const scene = (
   narrator: true,
   ...(speech ? { speech: { start: speech[0], end: speech[1], text: 'x' } } : {}),
 });
-const timeline = (scenes: TimelineScene[]) => ({ scenes }) as Pick<Timeline, 'scenes'>;
+const timeline = (scenes: TimelineScene[]) =>
+  ({ scenes, transition: 0.45 }) as Pick<Timeline, 'scenes' | 'transition'>;
 const story = timeline([
   scene('s1', 0, 4.5, [0.3, 4]),
   scene('s2', 4.2, 9.55, [4.5, 9]),
@@ -56,6 +57,20 @@ describe('the still gate', () => {
     expect(check.message).toContain('s2 (2.5 s from 5.0 s)');
     // A freeze across a cut between two lines counts both lines.
     expect(stillCheck(story, [{ start: 3, end: 5.5 }]).message).toContain('s1 (2.0 s from 3.0 s)');
+  });
+
+  it('says when only the camera’s slow push-in moved where the picture froze', () => {
+    // s2's callout has risen by 4.8 s; from then on only the push-in moves until the outro.
+    expect(stillCheck(story, [{ start: 5, end: 7.5 }]).message).toContain(
+      "s2 (2.5 s from 5.0 s), where only the camera's slow push-in moves",
+    );
+    // Across the cut, s2's entrance and its callout rising move: something else was planned.
+    expect(stillCheck(story, [{ start: 3, end: 5.5 }]).message).not.toContain('push-in');
+    // A static scene plans no push-in: nothing moved there at all.
+    const held = timeline(
+      story.scenes.map((s) => (s.id === 's2' ? { ...s, camera: 'static' } : s)),
+    );
+    expect(stillCheck(held, [{ start: 5, end: 7.5 }]).message).not.toContain('push-in');
   });
 
   it('stays quiet for freezes in silence or under 1.5 s of narration', () => {

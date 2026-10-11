@@ -1,6 +1,19 @@
 // The score format agents write (`covi schema score`); the CLI reaches the audio package here.
 export { type Score, ScoreSchema } from '@covi/audio';
 export { buildCaptions, captionOptionsFor, chunkCaption, toSrt, toVtt } from './captions.ts';
+export {
+  BUSY_BEATS,
+  BUSY_MOVES,
+  choreographyChecks,
+  droppedBeatsCheck,
+  MORPH_READING,
+  motionBusyCheck,
+  motionGapCheck,
+  READING,
+  readingSeconds,
+  readingTimeCheck,
+  STILL_SECONDS,
+} from './choreography.ts';
 export { AssetCollector, fontFiles, writeComposition } from './composition/build.ts';
 export { imageSize } from './composition/images.ts';
 export { runtimeScript } from './composition/runtime-bundle.ts';

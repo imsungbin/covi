@@ -60,8 +60,8 @@ const percent = (share: number) => `${Math.round(100 * share)}%`;
 const tenths = (share: number) => `${Math.floor(1000 * share + 1e-9) / 10}%`;
 
 /** The first three of `names`, and an ellipsis for the rest. */
-const listed = (names: readonly string[]) =>
-  `${names.slice(0, 3).join(', ')}${names.length > 3 ? ', …' : ''}`;
+export const listed = (names: readonly string[], sep = ', ') =>
+  `${names.slice(0, 3).join(sep)}${names.length > 3 ? `${sep}…` : ''}`;
 
 /**
  * Reports sampled while a story scene had settled and was alone on screen, and at the frame before

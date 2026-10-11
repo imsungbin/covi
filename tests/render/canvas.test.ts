@@ -37,7 +37,7 @@ import {
 import { resolveDirection } from '../../packages/video/src/direction/resolve.ts';
 import { type DirectionInput, DirectionSchema } from '../../packages/video/src/direction/schema.ts';
 import { directionSources, type SourcesInput } from '../../packages/video/src/direction/sources.ts';
-import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
+import { clearance, computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import {
   settledFrame,
   settledSpan,
@@ -91,10 +91,10 @@ function camera(transform: string | null) {
 const insetTop = (clip: string | null) => Number(/inset\(([\d.]+)px/.exec(clip ?? '')![1]);
 
 /**
- * Builds a directed 640×360 composition the way the pipeline does (default director, the given
- * shots over it, entrances, timing, resolution) and opens it. `off` builds it as 0.2.0 did;
- * `language` is the narration's; `edit` changes the timeline before it is written; `capture` puts
- * a 640×400 capture at demo/a.png.
+ * Builds a directed composition (640×360 unless `size` says otherwise) the way the pipeline does
+ * (default director, the given shots over it, entrances, timing, resolution) and opens it. `off`
+ * builds it as 0.2.0 did; `language` is the narration's; `edit` changes the timeline before it is
+ * written; `capture` puts a 640×400 capture at demo/a.png.
  */
 async function directed(
   scenes: StoryboardInput['scenes'],
@@ -105,8 +105,10 @@ async function directed(
     sources?: SourcesInput;
     edit?: (timeline: Timeline) => void;
     capture?: boolean;
+    size?: { width: number; height: number };
   } = {},
 ) {
+  const size = options.size ?? { width: W, height: H };
   const dir = mkdtempSync(join(tmpdir(), 'covi-canvas-'));
   dirs.push(dir);
   if (options.capture) {
@@ -118,7 +120,7 @@ async function directed(
     await capture.screenshot({ path: join(dir, 'demo', 'a.png') });
     await capture.close();
   }
-  const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', width: W, height: H });
+  const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', ...size });
   const title = 'Send only the ids';
   const parsed = StoryboardSchema.parse({ title, template: 'bug-fix', scenes }).scenes;
   const seed = seedFrom(title);
@@ -161,7 +163,7 @@ async function directed(
   options.edit?.(timeline);
   const composition = join(dir, 'composition');
   await writeComposition(composition, timeline, assets.files);
-  const page = await browser!.newPage({ viewport: { width: W, height: H } });
+  const page = await browser!.newPage({ viewport: size });
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`file://${join(composition, 'index.html')}`);
@@ -504,31 +506,42 @@ describe.skipIf(!available)('the canvas', () => {
   });
 
   it('feathers the clip’s top and bottom edges while it is closed, and masks nothing at rest', async () => {
-    const v = await directed(story, moves);
-    const beat = v.scene('s3').direction!.beats[0]!;
-    const at = async (id: string, seconds: number) =>
-      v.of(await v.state(v.frameAt(id, seconds)), id);
-    for (const [id, seconds] of [
-      ['s2', 1],
-      ['s3', 1.2],
-    ] as const) {
-      const rest = await at(id, seconds);
-      expect([rest.clip, rest.mask]).toEqual(['', '']);
+    for (const size of [
+      { width: W, height: H },
+      { width: H, height: W },
+    ]) {
+      const v = await directed(story, moves, { size });
+      const name = `${size.width}×${size.height}`;
+      const r = computeRegions({
+        ...size,
+        orientation: size.width > size.height ? 'landscape' : 'vertical',
+      });
+      const beat = v.scene('s3').direction!.beats[0]!;
+      const at = async (id: string, seconds: number) =>
+        v.of(await v.state(v.frameAt(id, seconds)), id);
+      for (const [id, seconds] of [
+        ['s2', 1],
+        ['s3', 1.2],
+      ] as const) {
+        const rest = await at(id, seconds);
+        expect([rest.clip, rest.mask], name).toEqual(['', '']);
+      }
+      // Mid-move and while a beat magnifies the stop, the picture fades out past the clip's edges.
+      expect((await at('s3', 0.45)).mask, name).toContain('linear-gradient');
+      const zoomed = await at('s3', beat.t + beat.seconds + 0.1);
+      const stops = [...(zoomed.mask ?? '').matchAll(/(-?[\d.]+)px/g)].map((m) => Number(m[1]));
+      // The region's rows are drawn whole; the fade fills the room the layout leaves above and
+      // below them (16 units at 16:9, 36 at 9:16), so a card passing under the header fades away,
+      // and it never reaches the header or the captions.
+      const m = r.media;
+      const feather = clearance(r);
+      expect(stops, name).toHaveLength(4);
+      for (const [k, y] of [m.y - feather, m.y, m.y + m.height, m.y + m.height + feather].entries())
+        expect(stops[k], name).toBeCloseTo(y, 1);
+      expect(insetTop(zoomed.clip), name).toBeCloseTo(m.y - feather, 1);
+      expect(stops[0], name).toBeGreaterThanOrEqual(r.header.y + r.header.height - 0.5);
+      expect(stops[3], name).toBeLessThanOrEqual(r.captions.y + 0.5);
     }
-    // Mid-move and while a beat magnifies the stop, the picture fades out past the clip's edges.
-    expect((await at('s3', 0.45)).mask).toContain('linear-gradient');
-    const zoomed = await at('s3', beat.t + beat.seconds + 0.1);
-    const stops = [...(zoomed.mask ?? '').matchAll(/(-?[\d.]+)px/g)].map((m) => Number(m[1]));
-    // The region's rows are drawn whole; the fade lies in the gaps above and below them, so a card
-    // passing under the header fades away, and it never reaches the header or the captions.
-    const m = regions.media;
-    const feather = 16 * regions.unit;
-    expect(stops).toHaveLength(4);
-    for (const [k, y] of [m.y - feather, m.y, m.y + m.height, m.y + m.height + feather].entries())
-      expect(stops[k]).toBeCloseTo(y, 1);
-    expect(insetTop(zoomed.clip)).toBeCloseTo(m.y - feather, 1);
-    expect(stops[0]).toBeGreaterThanOrEqual(regions.header.y + regions.header.height - 0.5);
-    expect(stops[3]).toBeLessThanOrEqual(regions.captions.y + 0.5);
   });
 
   it('hands the header over across a camera move: two are never on screen at once', async () => {

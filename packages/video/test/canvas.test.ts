@@ -20,7 +20,7 @@ import {
   viewAt,
   withPush,
 } from '../src/runtime/canvas.ts';
-import { computeRegions, gridSpacing } from '../src/runtime/layout.ts';
+import { clearance, computeRegions, gridSpacing } from '../src/runtime/layout.ts';
 import { isCameraMove, type Point } from '../src/timeline/types.ts';
 
 const { media } = computeRegions({ width: 1920, height: 1080, orientation: 'landscape' });
@@ -391,6 +391,27 @@ describe('the canvas viewport', () => {
       clip: 'inset(0.00px 0.00px 0.00px 0.00px)',
       mask: 'linear-gradient(to bottom, transparent 0.00px, #000 4.00px, #000 294.00px, transparent 300.00px)',
     });
+  });
+
+  it('feathers no further than the room the layout leaves around a band, in every orientation', () => {
+    for (const [width, height, orientation, units] of [
+      [1920, 1080, 'landscape', 16],
+      [1080, 1920, 'vertical', 36],
+      [1080, 1080, 'square', 18],
+    ] as const) {
+      const r = computeRegions({ width, height, orientation });
+      const below = (b: { y: number; height: number }) => b.y + b.height;
+      // The media region under the header and the full frame of a card without one under the
+      // progress bar, each above the captions.
+      const gaps = [
+        r.media.y - below(r.header),
+        r.captions.y - below(r.media),
+        r.full.y - below(r.progress),
+        r.captions.y - below(r.full),
+      ];
+      expect(clearance(r), orientation).toBeCloseTo(Math.min(...gaps), 9);
+      expect(clearance(r) / r.unit, orientation).toBeCloseTo(units, 9);
+    }
   });
 
   it('moves the dots with the camera, and lines them up with the stage’s at a stop', () => {

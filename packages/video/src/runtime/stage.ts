@@ -69,7 +69,7 @@ import {
 } from './components/types.ts';
 import { mountShot, type ShotComponent } from './direction/elements.ts';
 import { drawnBox, drawnRects, el, fitText, place } from './dom.ts';
-import { computeRegions, gridSpacing, type Regions } from './layout.ts';
+import { clearance, computeRegions, gridSpacing, type Regions } from './layout.ts';
 import {
   aimAt,
   clearAim,
@@ -205,12 +205,6 @@ const EYES = { x: 70, y: 52 };
 const CLIP_RAMP = 0.2;
 /** How far a beat magnifies a stop by the time the viewport has closed (a push never closes it). */
 const CLIP_ZOOM = 0.1;
-/**
- * How far the closed viewport fades the picture out past its band's top and bottom, in design
- * units: no further than the gap between the media region and the header (16 at 16:9) or the
- * captions, so neither is ever drawn over, while a card passing under the header fades away.
- */
-const FEATHER = 16;
 /** Room kept between the tail and what it must not cover, in view-box units. */
 const TAIL_MARGIN = 4;
 
@@ -240,6 +234,12 @@ export class Stage {
   private grid?: HTMLDivElement;
   /** Where a view's focus is drawn: the media region's center, as the push-in always scaled from. */
   private readonly pivot: Point;
+  /**
+   * How far the closed viewport fades the picture out past its band's top and bottom (px): the
+   * room the layout leaves there, so a card passing under the header fades away, and neither the
+   * header nor the captions is ever drawn over.
+   */
+  private readonly feather: number;
 
   constructor(root: HTMLElement, timeline: Timeline) {
     this.root = root;
@@ -247,6 +247,7 @@ export class Stage {
     this.regions = computeRegions(timeline);
     const m = this.regions.media;
     this.pivot = { x: m.x + m.width / 2, y: m.y + m.height / 2 };
+    this.feather = clearance(this.regions);
     const style = document.createElement('style');
     style.textContent = stylesheet(timeline, this.regions);
     document.head.appendChild(style);
@@ -565,7 +566,7 @@ export class Stage {
         m.media.style.transform = layerTransform(this.cameraAt(i, time), scene.stop, this.pivot);
         const viewport = this.viewportAt(i, time);
         const edges =
-          viewport && featherOf(viewport.clip, FEATHER * unit * viewport.closed, t.width, t.height);
+          viewport && featherOf(viewport.clip, this.feather * viewport.closed, t.width, t.height);
         m.viewport.style.clipPath = edges?.clip ?? '';
         m.viewport.style.maskImage = edges?.mask ?? '';
       } else if (!m.component.camera)

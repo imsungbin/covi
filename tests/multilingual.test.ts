@@ -2,9 +2,9 @@ import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   buildReview,
+  endSentence,
   explainHeuristically,
   Git,
-  intentSentence,
   type Language,
   loadRepositoryConfig,
   renderComment,
@@ -131,12 +131,17 @@ function fixRepo(subject: string): TempRepo {
   return repo;
 }
 
-async function draftIn(dir: string, language: Language, mode: 'short' | 'standard') {
+async function draftIn(
+  dir: string,
+  language: Language,
+  mode: 'short' | 'standard',
+  summary?: string,
+) {
   const { config, change, context, review, explanation } = await analyze(dir, language);
   const storyboard = draftStoryboard({
     change,
     context,
-    explanation,
+    explanation: summary ? { ...explanation, summary } : explanation,
     review,
     spec: resolveVideoSpec(config, { mode }),
     templates: await loadTemplates(),
@@ -147,11 +152,11 @@ async function draftIn(dir: string, language: Language, mode: 'short' | 'standar
 }
 
 describe('the opening line in Korean, Japanese, and Chinese', () => {
-  /** The opening scene's words, written and spoken. */
-  const opened = (scenes: Array<{ narration: string; say?: string }>) =>
-    `${scenes[0]!.narration} ${scenes[0]!.say}`;
+  /** Every scene's words, written and spoken. */
+  const heard = (scenes: Array<{ narration: string; say?: string }>) =>
+    scenes.map((s) => `${s.narration} ${s.say}`).join(' ');
 
-  it('says the kind and scope of a change with an English subject, never the subject', async () => {
+  it('says the kind and scope of a change with an English subject, and no scene reads the subject', async () => {
     const dir = await materializeExample(
       (await listExamples()).find((e) => e.name === 'bugfix-cli-slugify')!,
     );
@@ -168,29 +173,38 @@ describe('the opening line in Korean, Japanese, and Chinese', () => {
       const { context, storyboard } = await draftIn(dir, language, 'standard');
       expect(context.intent).toMatchObject({ kind: 'bug-fix', scope: 'slugify' });
       expect(storyboard.scenes[0]!.narration.startsWith(opening[language]), language).toBe(true);
-      expect(opened(storyboard.scenes), language).not.toMatch(/accented|separators/i);
-      // An opening that says only the kind repeats no later scene, and drops none: the callout
-      // saying what the change does, the explanation's way, is the one place it is said.
-      const lead = intentSentence(context, language);
-      expect(storyboard.scenes[0]!.narration, language).not.toContain(lead);
+      // The callout that would quote the subject, the explanation's way, goes as in English.
+      expect(heard(storyboard.scenes), language).not.toMatch(/accented|separators/i);
       expect(
         storyboard.scenes.map((s) => s.beat),
         language,
-      ).toEqual(['fix', 'problem', 'review', 'summary']);
-      expect(storyboard.scenes[1]!.narration, language).toContain(lead);
+      ).toEqual(['fix', 'review', 'summary']);
     }
+    // An explanation written in the narration's language keeps its callout.
+    const own = '슬러그가 악센트 문자를 지우던 문제를 고칩니다.';
+    const korean = await draftIn(dir, 'ko', 'standard', `${own} 테스트 두 개가 확인합니다.`);
+    expect(korean.storyboard.scenes.map((s) => s.beat)).toEqual([
+      'fix',
+      'problem',
+      'review',
+      'summary',
+    ]);
+    expect(korean.storyboard.scenes[1]!.narration).toBe(own);
   });
 
   it('says the kind alone when the subject names no scope', async () => {
     const repo = fixRepo('fix: send document references so the reader fetches each one itself');
     const opening = { ko: '버그 수정입니다.', ja: 'バグ修正です。', zh: '这是一次缺陷修复。' };
-    for (const language of ['ko', 'ja', 'zh'] as const) {
-      const { context, storyboard } = await draftIn(repo.root, language, 'short');
-      expect(context.intent.kind).toBe('bug-fix');
-      expect(context.intent.scope).toBeUndefined();
-      expect(storyboard.scenes[0]!.narration.startsWith(opening[language]), language).toBe(true);
-      expect(opened(storyboard.scenes), language).not.toMatch(/document|references|fetches/i);
-    }
+    for (const mode of ['short', 'standard'] as const)
+      for (const language of ['ko', 'ja', 'zh'] as const) {
+        const { context, storyboard } = await draftIn(repo.root, language, mode);
+        expect(context.intent.kind).toBe('bug-fix');
+        expect(context.intent.scope).toBeUndefined();
+        expect(storyboard.scenes[0]!.narration.startsWith(opening[language]), language).toBe(true);
+        expect(heard(storyboard.scenes), `${language} ${mode}`).not.toMatch(
+          /document|references|fetches/i,
+        );
+      }
   });
 
   it('reads a subject already written in the narration’s script', async () => {
@@ -205,6 +219,33 @@ describe('the opening line in Korean, Japanese, and Chinese', () => {
       /^バグ修正です: readerの文書参照送信。/,
     );
     expect(japanese.storyboard.scenes.map((s) => s.beat)).toEqual(['fix', 'review', 'summary']);
+  });
+
+  it.each([
+    ['fix: review의 Send document references so the reader fetches each one', 'ko', false],
+    ['Fix typo', 'ja', false],
+    // A Hangul subject in a Japanese voice, a kana one in a Chinese voice.
+    ['fix: 문서 참조 수정', 'ja', false],
+    ['fix: 文書参照を送る', 'zh', false],
+    // Code-switched subjects read: a CJK character weighs as much as three Latin letters.
+    ['fix: readFile 함수 수정', 'ko', true],
+    ['fix: Add 문서 지원 for reader streams', 'ko', true],
+    ['fix: 修复文档引用', 'zh', true],
+    // No prose to judge, only an identifier, which the speech tables spell out.
+    ['fix: readFile', 'zh', true],
+  ] as const)('opens "%s" in %s with the subject: %s', async (subject, language, reads) => {
+    const { context, storyboard } = await draftIn(fixRepo(subject).root, language, 'short');
+    const { kind, scope, summary } = context.intent;
+    const phrase = t(language, `explain.kindPhrase.${kind}`);
+    const kindLine = endSentence(
+      language,
+      scope
+        ? t(language, 'narration.opening.kindScoped', { kind: phrase, scope })
+        : t(language, 'narration.opening.kindAlone', { kind: phrase }),
+    );
+    const opening = storyboard.scenes[0]!.narration;
+    expect(opening.startsWith(kindLine)).toBe(!reads);
+    expect(opening.toLowerCase().includes(summary.toLowerCase())).toBe(reads);
   });
 });
 

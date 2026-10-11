@@ -1,5 +1,5 @@
 import type { EvidenceIndex } from '@covi/core';
-import { nodeBoxRect } from '../runtime/routes.ts';
+import { EDGE_MIN, nodeBoxRect } from '../runtime/routes.ts';
 import type {
   ChangeSide,
   DirectionBeat,
@@ -41,10 +41,14 @@ export function beatTargets(beat: ShotBeat | DirectionBeat): string[] {
  * a packet one of `beats` (the resolved ones, in time order) carries, which travels between nodes;
  * its box is the drawn box of the node its first flow leaves (`fans`: the count of a split that
  * fans out of that node, which moves it). A packet whose trips were all left out takes a slot of
- * its own, as one no flow carries does, rather than rest on that node's name.
+ * its own, as one no flow carries does, rather than rest on that node's name. In a shot that asks
+ * for a flow, a node's slot keeps clear of the slots beside it, so that the edge between two nodes
+ * side by side is at least `EDGE_MIN` long: a node's box fills a narrow slot, and the gap between
+ * slots alone would leave an edge that its arrowhead all but covers. Its text, its split, and the
+ * edges that join it are all laid out in that slot.
  */
 export function flowSlots(
-  shot: Pick<Shot, 'elements' | 'layout'>,
+  shot: Pick<Shot, 'elements' | 'layout' | 'beats'>,
   beats: readonly DirectionBeat[],
   region: Rect,
   orientation: 'vertical' | 'landscape' | 'square',
@@ -65,7 +69,12 @@ export function flowSlots(
     orientation,
     gap,
   );
-  const slotOf = new Map(placed.map((e, i) => [e.id, slots[i]!]));
+  const clear = shot.beats.some((b) => b.verb === 'flow')
+    ? Math.max(0, (EDGE_MIN * unit - gap) / 2)
+    : 0;
+  const slotOf = new Map(
+    placed.map((e, i) => [e.id, e.kind === 'node' ? inset(slots[i]!, clear) : slots[i]!]),
+  );
   return shot.elements.map((e) => {
     const own = slotOf.get(e.id);
     if (own) return own;
@@ -74,6 +83,14 @@ export function flowSlots(
     return slot ? nodeBoxRect(slot, unit, orientation === 'vertical', fans.get(from)) : region;
   });
 }
+
+/** `r` with `by` pixels taken off each side. */
+const inset = (r: Rect, by: number): Rect => ({
+  x: r.x + by,
+  y: r.y + by,
+  width: Math.max(0, r.width - 2 * by),
+  height: Math.max(0, r.height - 2 * by),
+});
 
 /**
  * Why `metric`'s `side` cannot give a whole count of at least `min`, or nothing when it can: a

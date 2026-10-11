@@ -9,6 +9,7 @@ import {
   defaultDirection,
   directionSources,
   type LayoutReport,
+  layoutChecks,
   layoutScenes,
   OVERLAP_SHARE,
   outOfFrameCheck,
@@ -27,9 +28,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { elementSlots } from '../../packages/video/src/direction/layout.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import {
+  EDGE_MIN,
   edgeRoute,
   PILE_ITEM_MIN,
   pointAlong,
+  routeLength,
   splitLayout,
   stackCount,
   stackRows,
@@ -1134,9 +1137,10 @@ describe.skipIf(!available)('the default director’s staged counts', () => {
 
 /**
  * A diagram scene as the storyboard drafter writes one (every area changed, its line counts as
- * details, no edge labels), directed by Covi and resolved as a render does, opened at `size`.
+ * details, no edge labels), directed by Covi and resolved as a render does, opened at `size`: four
+ * areas, or (`pair`) the first two and the edge between them.
  */
-async function draftedDiagram(size: Size) {
+async function draftedDiagram(size: Size, pair = false) {
   const orientation = orientationOf(size.width, size.height);
   const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', ...size });
   const title = 'Play the theme under every video';
@@ -1168,13 +1172,13 @@ async function draftedDiagram(size: Size) {
             area('n1', 'packages/video', '+48 −20'),
             area('n2', 'packages/core', '+4 −1'),
             area('n3', 'packages/audio', '+96 −0'),
-          ],
+          ].slice(0, pair ? 2 : 4),
           edges: [
             { from: 'n0', to: 'n1' },
             { from: 'n0', to: 'n2' },
             { from: 'n1', to: 'n2' },
             { from: 'n1', to: 'n3' },
-          ],
+          ].slice(0, pair ? 1 : 4),
         },
       },
     ],
@@ -1279,5 +1283,29 @@ describe.skipIf(!available)('the default director’s staged diagrams', () => {
         inside(mid.dots[i]!, v.media);
       }
       expect(v.errors).toEqual([]);
+    });
+
+  for (const [name, size] of [
+    ['a square frame', { width: 1080, height: 1080 }],
+    ['a tall frame', { width: 1080, height: 1920 }],
+  ] as const)
+    it(`keeps every edge three arrowheads long between nodes side by side, in ${name}`, async () => {
+      for (const pair of [true, false]) {
+        const v = await draftedDiagram(size, pair);
+        expect(v.direction.dropped).toBeUndefined();
+        const frame = settledFrame(v.timeline, 1)!;
+        const drawn = await diagramAt(v, frame);
+        expect(drawn.edges).toHaveLength(pair ? 1 : 4);
+        for (const edge of drawn.edges) {
+          const route = [];
+          for (let i = 0; i < edge.points.length; i += 2)
+            route.push({ x: edge.points[i]!, y: edge.points[i + 1]! });
+          expect(routeLength(route) / v.unit).toBeGreaterThanOrEqual(EDGE_MIN - 0.5);
+        }
+        // The nodes give the edges their room and still hold their names whole.
+        const fits = layoutChecks(v.timeline, [await v.report(frame)]);
+        expect(fits.find((c) => c.id === 'text-fits')!.status).toBe('pass');
+        expect(v.errors).toEqual([]);
+      }
     });
 });

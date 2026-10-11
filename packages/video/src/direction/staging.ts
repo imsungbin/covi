@@ -85,12 +85,13 @@ export function countShot(
 }
 
 /**
- * A diagram scene as nodes with something travelling each of its edges, in order: its nodes'
- * names are the storyboard's own, and their details are left out (a drafted area's line counts:
- * a shot draws numbers only from metric evidence). Nothing, so the scene keeps its diagram, when a
- * name is not a label (digits, symbols, too long), when it singles out some nodes as changed or
- * words an edge (a node carries no emphasis and a flow no words, and Covi never discards either),
- * when it has more nodes than a shot has elements, or when no edge joins two of its nodes.
+ * A diagram scene as nodes with something travelling each of its edges, in order (as many as a
+ * shot has beats): its nodes' names are the storyboard's own, and their details are left out (a
+ * drafted area's line counts: a shot draws numbers only from metric evidence). Nothing, so the
+ * scene keeps its diagram, when a name is not a label (digits, symbols, too long), when it singles
+ * out some nodes as changed or words an edge (a node carries no emphasis and a flow no words, and
+ * Covi never discards either), when it has more nodes than a shot has elements, or when no edge
+ * joins two of its nodes.
  */
 export function diagramShot(scene: Pick<Scene, 'visual'>): Staged | undefined {
   const v = scene.visual;

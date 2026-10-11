@@ -14,7 +14,7 @@ import {
   rectOf,
 } from '../components/types.ts';
 import { el, fitText, place, svg } from '../dom.ts';
-import { formatNumber } from '../numbers.ts';
+import { type CountSpan, formatNumber } from '../numbers.ts';
 import {
   arrowHead,
   edgeRoute,
@@ -52,11 +52,8 @@ type Split = Extract<DirectionBeat, { verb: 'split' }>;
 type Merge = Extract<DirectionBeat, { verb: 'merge' }>;
 type Stack = Extract<DirectionBeat, { verb: 'stack' }>;
 
-/** A beat's span on an element's own clock, in seconds. */
-export interface BeatSpan {
-  t: number;
-  seconds: number;
-}
+/** A beat's span on an element's own clock, in seconds: a count's, for any flow verb. */
+export type BeatSpan = CountSpan;
 
 /** A split, on its element's clock: how many pieces, what they are, and which side counted them. */
 export interface SplitSpan extends BeatSpan {
@@ -282,6 +279,12 @@ interface Room {
   height?: number;
 }
 
+/** A side of the change in the video's own words: what a count's caption and a pile's row say. */
+const sideName = (side: ChangeSide, ctx: ComponentContext) =>
+  side === 'base'
+    ? (ctx.timeline.labels?.before ?? 'Before')
+    : (ctx.timeline.labels?.after ?? 'After');
+
 /** What a count's caption shrinks to, below the body floor, rather than leave a room too short. */
 const CAPTION_FALLBACK = 18;
 
@@ -298,14 +301,8 @@ function countBadge(
   room: Room,
   ctx: ComponentContext,
 ): Badge {
-  const labels = ctx.timeline.labels;
   const badge = el('div', 'fbadge', ctx.root);
-  const caption = el(
-    'div',
-    'fside',
-    badge,
-    side === 'base' ? (labels?.before ?? 'Before') : (labels?.after ?? 'After'),
-  );
+  const caption = el('div', 'fside', badge, sideName(side, ctx));
   const line = el('div', 'fline', badge);
   const what = el('div', 'fname', line, name);
   const num = el('div', 'fnum', line, formatNumber(count, 0));
@@ -570,18 +567,12 @@ function holdWidest(parts: readonly HTMLElement[]): void {
  */
 export function pile(e: PileElement, ctx: ComponentContext, spans: FlowSpans): Component {
   const u = ctx.u;
-  const labels = ctx.timeline.labels;
   const card = el('div', 'pcard', ctx.root);
   place(card, e.rect);
   const name = el('div', 'pname', card, e.name);
   const rows = e.rows.map((r) => {
     const row = el('div', 'prow', card);
-    const cap = el(
-      'div',
-      'pcap',
-      row,
-      r.side === 'base' ? (labels?.before ?? 'Before') : (labels?.after ?? 'After'),
-    );
+    const cap = el('div', 'pcap', row, sideName(r.side, ctx));
     const grid = el('div', 'pgrid', row);
     const num = el('div', 'pnum', row, formatNumber(r.count, 0));
     return { ...r, cap, grid, num, row };

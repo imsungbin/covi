@@ -62,6 +62,8 @@ const COUNT_MIN = 0.6;
 export const CODE_LINES = { landscape: 14, vertical: 18 } as const;
 /** Beats without a phrase start this far into the line, then spread evenly through the rest. */
 const SPACED_FROM = 0.15;
+/** Moments and lengths to the millisecond, so a beat's timing reads the same everywhere. */
+const round = (n: number) => Math.round(n * 1000) / 1000;
 
 export interface ResolveInput {
   plan: Pick<Direction, 'shots'>;
@@ -408,7 +410,7 @@ function timeBeats(
   shown: readonly DirectionElement[],
   ctx: Pick<Context, 'sources' | 'labels'>,
   limit: number,
-): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
+): Pass {
   const duration = timing.end - timing.start;
   const text = parseEmphasis(scene.narration).text;
   const kept = new Set(shown.map((e) => e.id));
@@ -416,7 +418,6 @@ function timeBeats(
   const spoken = timing.speechEnd > timing.speechStart;
   const from = spoken ? timing.speechStart - timing.start : 0;
   const span = spoken ? timing.speechEnd - timing.speechStart : duration;
-  const round = (n: number) => Math.round(n * 1000) / 1000;
   /** A beat from `start` lasting `seconds`, kept inside the scene. */
   const inside = (start: number, seconds: number) => {
     const t = round(Math.min(Math.max(0, start), Math.max(0, duration - 0.1)));
@@ -554,11 +555,35 @@ function makeWay(written: readonly Written[], first: number): Written[] {
     if (w.phrased || !STRETCHES.has(b.verb)) return w;
     const tick = during(b.t, b.t + b.seconds);
     if (!tick) return w;
-    const t = Math.round((tick.t - b.seconds) * 1000) / 1000;
+    const t = round(tick.t - b.seconds);
     if (t < Math.max(first, w.ready) - 1e-9 || during(t, tick.t)) return w;
     return { ...w, beat: { ...b, t } };
   });
 }
+
+/** What a pass over the timed beats keeps, and what it leaves out, said why. */
+interface Pass {
+  beats: DirectionBeat[];
+  dropped: DroppedBeat[];
+}
+
+/** The beats `out` finds no reason to leave out, and the ones it does, in order. */
+function sift(
+  beats: readonly DirectionBeat[],
+  out: (b: DirectionBeat) => DroppedBeat | undefined,
+): Pass {
+  const dropped: DroppedBeat[] = [];
+  const kept = beats.filter((b) => {
+    const left = out(b);
+    if (left) dropped.push(left);
+    return !left;
+  });
+  return { beats: kept, dropped };
+}
+
+/** Why a packet's trip is left out after one before it was: it would leave where it never got. */
+const afterLost = (packet: string) =>
+  `the flow of "${packet}" follows a trip of "${packet}" that was left out`;
 
 /** The element a flow verb moves: a flow's packet (a dot is no element), else what it acts on. */
 const moved = (b: DirectionBeat): string | undefined =>
@@ -581,16 +606,12 @@ const named = (b: DirectionBeat): string =>
  * ends; one with no room even so is left out, and so are the later trips of a packet whose trip
  * was left out, which would leave from where it never arrived.
  */
-function sequenced(
-  written: readonly Written[],
-  limit: number,
-): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
+function sequenced(written: readonly Written[], limit: number): Pass {
   // The last flow verb on each element: as it was timed (a phrase's moment), and as placed.
   const last = new Map<string, { written: Written; placed: DirectionBeat }>();
   const lost = new Set<string>();
   const beats: DirectionBeat[] = [];
   const dropped: DroppedBeat[] = [];
-  const round = (n: number) => Math.round(n * 1000) / 1000;
   for (const w of written) {
     const b = w.beat;
     if (!STRETCHES.has(b.verb)) {
@@ -604,8 +625,7 @@ function sequenced(
     // By its own length: one near the scene's end was cut short, and it may move earlier.
     const seconds = Math.min(BEAT_SECONDS[b.verb], Math.max(FLOW_MIN, limit - t));
     let reason: string | undefined;
-    if (key !== undefined && b.verb === 'flow' && lost.has(key))
-      reason = `${named(b)} follows a trip of "${key}" that was left out`;
+    if (key !== undefined && b.verb === 'flow' && lost.has(key)) reason = afterLost(key);
     // Phrases in the written order never drop a beat, however close: it waits its turn instead.
     else if (before?.written.phrased && w.phrased && b.t < before.written.beat.t) {
       const what = before.placed.verb === b.verb ? `previous ${b.verb}` : before.placed.verb;
@@ -666,19 +686,18 @@ const piecesText = (count: number) => `${count} ${count === 1 ? 'piece' : 'piece
  * another split fans out of already (the first in time takes it), is left out, and said why.
  */
 function fanRoom(
-  beats: DirectionBeat[],
+  beats: readonly DirectionBeat[],
   elements: readonly DirectionElement[],
   ctx: Pick<Context, 'regions' | 'orientation'>,
-): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
+): Pass {
   const byId = new Map(elements.map((e) => [e.id, e]));
   const taken = new Map<string, string>();
-  const dropped: DroppedBeat[] = [];
-  const kept = beats.filter((b) => {
-    if (b.verb !== 'split') return true;
+  return sift(beats, (b) => {
+    if (b.verb !== 'split') return undefined;
     const kind = byId.get(b.element)?.kind;
     const node = kind === 'node' ? b.element : kind === 'packet' ? restingAt(beats, b) : undefined;
     const slot = node === undefined ? undefined : byId.get(node)?.rect;
-    if (node === undefined || !slot) return true;
+    if (node === undefined || !slot) return undefined;
     const where =
       node === b.element ? `node "${node}"` : `node "${node}", where "${b.element}" rests,`;
     const by = taken.get(node);
@@ -686,14 +705,10 @@ function fanRoom(
     if (by !== undefined) reason = `${where} already makes room for the split of "${by}"`;
     else if (!arrangedSplit(slot, ctx.regions.unit, ctx.orientation === 'vertical', b.count))
       reason = `the slot of ${where} has no room beside its label for ${piecesText(b.count)}`;
-    if (reason === undefined) {
-      taken.set(node, b.element);
-      return true;
-    }
-    dropped.push({ verb: b.verb, element: b.element, reason });
-    return false;
+    if (reason !== undefined) return { verb: b.verb, element: b.element, reason };
+    taken.set(node, b.element);
+    return undefined;
   });
-  return { beats: kept, dropped };
 }
 
 /**
@@ -701,7 +716,7 @@ function fanRoom(
  * trip leaves stays where it is, so its pieces never cross to the next node, over its label. That
  * trip is left out, and so are the trips after it.
  */
-function travelsWhole(beats: DirectionBeat[]): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
+function travelsWhole(beats: readonly DirectionBeat[]): Pass {
   const split = new Map(
     beats.flatMap((b) => (b.verb === 'split' ? [[b.element, b] as const] : [])),
   );
@@ -709,22 +724,18 @@ function travelsWhole(beats: DirectionBeat[]): { beats: DirectionBeat[]; dropped
     beats.flatMap((b) => (b.verb === 'merge' ? [[b.element, b] as const] : [])),
   );
   const lost = new Set<string>();
-  const dropped: DroppedBeat[] = [];
-  const kept = beats.filter((b) => {
-    if (b.verb !== 'flow' || b.packet === undefined) return true;
+  return sift(beats, (b) => {
+    if (b.verb !== 'flow' || b.packet === undefined) return undefined;
     const s = split.get(b.packet);
     const m = merge.get(b.packet);
     let reason: string | undefined;
-    if (lost.has(b.packet))
-      reason = `the flow of "${b.packet}" follows a trip of "${b.packet}" that was left out`;
+    if (lost.has(b.packet)) reason = afterLost(b.packet);
     else if (s && s.t <= b.t && !(m && m.t + m.seconds <= b.t + 1e-9))
       reason = `the flow of "${b.packet}" at ${b.t.toFixed(1)} s leaves while "${b.packet}" is split; merge it first`;
-    if (reason === undefined) return true;
-    dropped.push({ verb: b.verb, element: b.packet, reason });
+    if (reason === undefined) return undefined;
     lost.add(b.packet);
-    return false;
+    return { verb: b.verb, element: b.packet, reason };
   });
-  return { beats: kept, dropped };
 }
 
 /**
@@ -732,17 +743,13 @@ function travelsWhole(beats: DirectionBeat[]): { beats: DirectionBeat[]; dropped
  * merges any time), and a count-up that has landed by the time its counter's count starts (which
  * then ticks from where the count-up ended). The ones that cannot play are left out, and said why.
  */
-function flowOrder(
-  beats: DirectionBeat[],
-  elements: readonly DirectionElement[],
-): { beats: DirectionBeat[]; dropped: DroppedBeat[] } {
+function flowOrder(beats: readonly DirectionBeat[], elements: readonly DirectionElement[]): Pass {
   const piles = new Set(elements.flatMap((e) => (e.kind === 'pile' ? [e.id] : [])));
   const split = new Set(beats.flatMap((b) => (b.verb === 'split' ? [b.element] : [])));
   const count = new Map(
     beats.flatMap((b) => (b.verb === 'count' ? [[b.element, b.t] as const] : [])),
   );
-  /** Why a beat cannot play where it was timed, as the beat left out; nothing when it can. */
-  const out = (b: DirectionBeat): DroppedBeat | undefined => {
+  return sift(beats, (b) => {
     // `sequenced` keeps a merge after its split, so one without its split lost the split.
     if (b.verb === 'merge' && !piles.has(b.element) && !split.has(b.element))
       return {
@@ -758,14 +765,7 @@ function flowOrder(
         reason: `the count-up of "${b.element}" lands at ${(b.t + b.seconds).toFixed(1)} s, after its count starts`,
       };
     return undefined;
-  };
-  const dropped: DroppedBeat[] = [];
-  const kept = beats.filter((b) => {
-    const left = out(b);
-    if (left) dropped.push(left);
-    return !left;
   });
-  return { beats: kept, dropped };
 }
 
 /** Flow verbs, which may take longer than their own length, and end before the shot settles. */
@@ -794,8 +794,7 @@ function stretchFlows(beats: DirectionBeat[], limit: number): DirectionBeat[] {
     if (!STRETCHES.has(b.verb) || !next) return b;
     const own = BEAT_SECONDS[b.verb];
     const room = Math.min(next.t - STRETCH_GAP, limit) - b.t;
-    const seconds =
-      Math.round(Math.min(STRETCH_MAX * own, Math.max(b.seconds, room)) * 1000) / 1000;
+    const seconds = round(Math.min(STRETCH_MAX * own, Math.max(b.seconds, room)));
     return seconds === b.seconds ? b : { ...b, seconds };
   });
 }

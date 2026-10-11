@@ -24,7 +24,7 @@ The key number is the largest thing on screen when it lands: make its `metric` t
 |---|---|---|
 | `place` | any element | being there from the shot's start (the default; rarely written) |
 | `reveal` | any element | arriving with its words: `rise` (the default), `pop` for a warning, `wipe`, `type` for output |
-| `camera` | `to` an element | `zoom` to frame it, `pan` to it at the same scale, `follow` a morph's changing lines or a travelling packet; leave `zoom` out and Covi fits the element to the shot's region |
+| `camera` | `to` an element | `zoom` to frame it, `pan` to it at the same scale, `follow` a morph's changing lines or a travelling packet; leave `zoom` out and Covi fits the element to the shot's region, except for an element that already fills the shot's width or height (its only element, or a full-width one in a column): give it a `zoom` above 1, or the camera stays where it is |
 | `morph` | a `morph` | the hunk's old code turning into its new code |
 | `count` | a `metric` with a value before and after | the number ticking from before to after |
 | `count-up` | a `metric` drawn as a counter | a counter rising from zero to one side's value (`side`) |
@@ -37,7 +37,7 @@ A `count` or a `count-up` lands on its phrase, so quote the words that say the n
 
 A `count` or `count-up` of a metric you also `reveal` waits for the reveal, shortened so that it still lands on its phrase: start the reveal at least 2.1 s before that phrase for a full count (1.1 s at the least, for a count of 0.6 s), or leave the reveal out. A beat that cannot play where you put it (a split with no room beside its node's name and clear of its packet's pill, or, for a packet no flow carries, none past its pill in its own slot; a trip while its packet is split) is left out with a warning that says why.
 
-**What the beats sound like.** Covi gives a shot's motion its own quiet effects: a soft whoosh mid-way through each `camera` move that changes what the camera frames, ticks while a `count` or `count-up` runs (spaced like the number on screen, the last as it lands), a thump as a `merge`'s pieces meet, and a soft accent as an element's first `reveal` begins. `place`, `morph`, `flow`, `split`, and `stack` are silent. Only one counter ticks at a time, so stagger two counts rather than landing them on one phrase. Do not add a storyboard `cues` entry for a moment a beat already sounds.
+**What the beats sound like.** Covi gives a shot's motion its own quiet effects: a soft whoosh mid-way through each `camera` move (none for a pan or a `zoom` of 1 at full frame, or for a beat that repeats the camera's framing: its move, target, and `zoom`; a `zoom` or `follow` without a `zoom` always whooshes), ticks while a `count` or `count-up` runs (on the steps of the number on screen and never more often than it changes, the last as it lands: a count-up from 0 to 1 ticks twice), a thump as a `merge`'s pieces meet, and a soft accent as an element's first `reveal` begins. `place`, `morph`, `flow`, `split`, and `stack` are silent. Only one counter ticks at a time, so stagger two counts rather than landing them on one phrase: a count that would tick over another is dropped, and only `video/audio.json` shows it, under `dropped` ("while another counter ticks"). Do not add a storyboard `cues` entry for a moment a beat already sounds.
 
 ## Elements
 

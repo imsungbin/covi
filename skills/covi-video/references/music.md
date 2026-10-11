@@ -9,7 +9,7 @@ Covi's videos carry quiet music: the Covi theme by default, or a score written f
 - The bed is heard throughout: quiet under the voice, louder before the first line and over the outro. A pause lifts it only when it lasts about 4.5 s, so the breaths Covi leaves in a narrated standard review keep the bed's level, but nobody speaks over them: the breath after the hook (about 1.6 s before the second line: the intro, or the first loop), about 1.5–2 s before the hero's line (the hero section's first bar, free to lift), the breath after the hero's line, and the pauses before the verdict and after long stretches of talk. Make the intro, the hero's first bar, and the ending say something on their own.
 - If the music is noticeable while someone talks, it is too busy.
 - The hero has effects of its own: a 0.8 s riser into the hero's moment and a soft hit on it. The music's lift lands as the hero scene settles, close to the hit; do not write a swell of your own into the hero.
-- Directed shots have effects of their own too: ticks while a counter counts, a thump when pieces merge, and a soft accent when something appears (pitched in C, so they move into the score's key), and soft whooshes for the camera's moves. Leave those moments to them: do not write ticks, hits, or swells into the score for them.
+- Directed shots have effects of their own too: ticks while a counter counts, a thump when pieces merge, and a soft accent when something appears (all three pitched in C, so they move into the score's key), and soft whooshes for the camera's moves. Leave those moments to them: do not write ticks, hits, or swells into the score for them.
 
 ## Mood by kind of change
 - **Bug fix:** restrained, then it lifts at the proof (the hero scene shows the fix working).

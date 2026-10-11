@@ -511,7 +511,8 @@ function timeBeats(
     // before it, which no terminal types. Spaced to land after `limit`, either starts earlier to
     // land by it, never before it may, so the scene settles on the number landed.
     const begin = Math.max(was.ready, b.verb === 'count' ? typed - BEAT_SECONDS.count : 0);
-    const latest = b.verb === 'count' || b.verb === 'count-up' ? limit - b.seconds : b.t;
+    // By its own length: a slot near the scene's end cut it short, and it is timed again at full.
+    const latest = b.verb === 'count' || b.verb === 'count-up' ? limit - BEAT_SECONDS[b.verb] : b.t;
     const t = Math.max(begin, Math.min(b.t, latest));
     return { beat: t === b.t ? b : { ...b, ...moment(b.verb, t) }, ...was };
   });

@@ -438,6 +438,64 @@ describe('flow verbs in the direction file', () => {
     );
   });
 
+  it('land a count without a phrase by the limit on a short line, at its full length', () => {
+    // So short a line that the count's spaced slot starts within its length of the scene's end,
+    // where the slot alone would have cut it short.
+    const short = [
+      scenes[0]!,
+      SceneSchema.parse({
+        id: 's2',
+        beat: 's2',
+        narration: 'It prints fewer bytes now.',
+        visual: scenes[1]!.visual,
+      }),
+    ];
+    const timed = layoutScenes(short, new Map(), new Map(), 'en', pacingFor(spec));
+    const limit = timed.outro!.start - timed.scenes[1]!.start - 0.5;
+    for (const last of [
+      { verb: 'count', element: 'm' },
+      { verb: 'count-up', element: 'm', side: 'base' },
+    ]) {
+      const [, s2] = resolveDirection({
+        plan: DirectionSchema.parse(
+          shot(STAGE, [
+            { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+            { verb: 'stack', element: 'r' },
+            { verb: 'merge', element: 'p' },
+            last,
+          ]),
+        ),
+        scenes: short,
+        layout: timed,
+        spec,
+        language: 'en',
+        sources,
+        image: () => ({ src: '', width: 1, height: 1 }),
+        seed: 5,
+        redact: (value) => value,
+      });
+      const number = s2!.direction.beats.find((b) => b.verb === last.verb)!;
+      expect(number.seconds).toBe(BEAT_SECONDS[last.verb as 'count' | 'count-up']);
+      expect(number.t + number.seconds).toBeCloseTo(limit, 3);
+    }
+  });
+
+  it('start a count without a phrase no earlier than it may, though it then lands late', () => {
+    // The counter is revealed on a late phrase: its count waits for the reveal, even where that
+    // lands it after the limit.
+    const d = resolve(
+      shot(STAGE, [
+        { verb: 'reveal', element: 'm', at: 'request bytes' },
+        { verb: 'count', element: 'm' },
+      ]),
+    )[1]!.direction;
+    const reveal = d.beats.find((b) => b.verb === 'reveal')!;
+    const count = d.beats.find((b) => b.verb === 'count')!;
+    expect(reveal.t + reveal.seconds).toBeGreaterThan(LIMIT - BEAT_SECONDS.count);
+    expect(count.t).toBeCloseTo(reveal.t + reveal.seconds, 3);
+    expect(count.t + count.seconds).toBeGreaterThan(LIMIT);
+  });
+
   it('stretch flows, splits, merges, and stacks toward the next beat, up to three times their length', () => {
     const [, s2] = resolve(
       shot(STAGE, [

@@ -7,6 +7,7 @@ import {
   type DirectionBeat,
   type DirectionElement,
   type LayoutReport,
+  layoutChecks,
   layoutScenes,
   pacingFor,
   type Rect,
@@ -405,6 +406,25 @@ describe.skipIf(!available)('a metric on screen', () => {
     expect(read.name).toBe(name);
     expect((await v.report(landed)).items.some((i) => i.overflow)).toBe(false);
     for (const part of read.parts) expect(inside(part, read.card!)).toBe(true);
+  });
+
+  it('reports a counter its card is too short to hold whole, however short the card', async () => {
+    // A wide, short card: the counter shrinks to keep its value and name whole while it can, and
+    // QC hears of it when it cannot, even where the card squeezes a part down to nothing.
+    const { media, unit } = computeRegions({ ...LANDSCAPE, orientation: 'landscape' });
+    const fits = async (height: number) => {
+      const v = await staged(
+        () => bytes({ ...media, height: height * unit }),
+        [COUNT],
+        LANDSCAPE,
+        'static',
+      );
+      const report = await v.report(v.frameAt(COUNT.t + COUNT.seconds + 0.4));
+      expect(v.errors).toEqual([]);
+      return layoutChecks(v.timeline, [report]).find((c) => c.id === 'text-fits')!.status;
+    };
+    expect(await fits(286)).toBe('pass');
+    for (const height of [200, 150, 120, 90]) expect(await fits(height), `${height}`).toBe('warn');
   });
 
   it('shows one value alone without a change, and its name as text, whatever it holds', async () => {

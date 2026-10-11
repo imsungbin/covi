@@ -43,10 +43,10 @@ export function isStagedCount(item: Pick<EvidenceItem, 'kind' | 'metric'>): bool
 
 /**
  * A terminal scene's counts, staged beside the key number its metric shot shows: the count that
- * goes from one to many (or many to one) is a packet that splits into its pieces, and merges back
- * into one when the change leaves one; the count that changed most of the rest is a pile, before
- * above after. They take the place of the command's output, whose numbers they show. Nothing when
- * the command counted nothing else.
+ * goes from one to many (or many to one) is a packet, named as the output named that count, that
+ * splits into its pieces, and merges back into one when the change leaves one; the count that
+ * changed most of the rest is a pile, before above after. They take the place of the command's
+ * output, whose numbers they show. Nothing when the command counted nothing else.
  */
 export function countShot(
   scene: Pick<Scene, 'visual'>,
@@ -68,7 +68,14 @@ export function countShot(
   // Many to one: the request splits as it was, then merges into what it became.
   const merges = split !== undefined && split.metric!.base! > split.metric!.head!;
   if (split) {
-    elements.push({ id: 'packet', kind: 'packet' });
+    // Named by what it splits into, as the run's output called it: a pill with no words reads as
+    // an empty shape. A name that is no label (digits, symbols) leaves it unlabeled.
+    const label = LabelSchema.safeParse(split.label);
+    elements.push({
+      id: 'packet',
+      kind: 'packet',
+      ...(label.success ? { label: label.data } : {}),
+    });
     beats.push({
       verb: 'split',
       element: 'packet',

@@ -1637,6 +1637,10 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         // into one, and the reader's steps pile up, 28 before and 10 after, beside the counter.
         const direction = scene.direction!;
         expect(direction.elements.map((e) => e.kind)).toEqual(['metric', 'packet', 'pile']);
+        // The pill says what splits, as the command's output named it.
+        expect(direction.elements.find((e) => e.kind === 'packet')).toMatchObject({
+          label: 'chunks',
+        });
         expect(direction.beats.map((b) => b.verb).sort()).toEqual([
           'count',
           'merge',

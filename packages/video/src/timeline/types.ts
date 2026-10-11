@@ -184,10 +184,10 @@ export type DirectionBeat =
 
 /** A beat the direction asked for that the resolver left out, and why. */
 export interface DroppedBeat {
-  verb: string;
+  verb: DirectionBeat['verb'];
   /** What it acted on. */
   element: string;
-  /** Why, in a phrase QC quotes after the scene's id. */
+  /** Why, in a phrase the run's warning quotes after the beat's verb. */
   reason: string;
 }
 

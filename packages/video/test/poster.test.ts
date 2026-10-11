@@ -80,6 +80,12 @@ describe('the poster', () => {
       scene('s2', 7.55, 14, { direction: counted(metric('b', 70406, 9907), count('b', 2)) }),
     ]);
     expect(posterTime(fold)).toBeCloseTo(7.55 + 2 + 1.6 + 0.3, 9);
+    // Two counts that change their metrics alike: the earlier one.
+    const tie = timeline([
+      scene('s1', 0, 8, { direction: counted(metric('a', 10, 1), count('a', 1)) }),
+      scene('s2', 7.55, 14, { direction: counted(metric('b', 10, 1), count('b', 2)) }),
+    ]);
+    expect(posterTime(tie)).toBeCloseTo(1 + 1.6 + 0.3, 9);
   });
 
   it('holds the moment before the next scene starts to enter', () => {
@@ -90,6 +96,19 @@ describe('the poster', () => {
     // The count lands at 7.4 s; s2 starts to enter at 7.55 s.
     expect(posterTime(t)).toBeCloseTo(7.55, 9);
     expect(posterFrame(t)).toBe(Math.floor(7.55 * 30 - 1e-6));
+  });
+
+  it('holds a count that lands while its scene still enters until the entrance is done', () => {
+    const t = timeline([
+      scene('s1', 0, 4),
+      scene('s2', 3.55, 9, {
+        transition: { kind: 'zoom', seconds: 0.9 },
+        direction: counted(metric('a', 10, 1), { ...count('a', 0), seconds: 0.2 }),
+      }),
+    ]);
+    // Landed and centred 0.5 s in, during the 0.9 s zoom that brings s2 in.
+    expect(posterTime(t)).toBeCloseTo(3.55 + 0.9, 9);
+    expect(posterFrame(t)).toBe(Math.ceil((3.55 + 0.9) * 30 - 1e-6));
   });
 
   it('passes over a count that lands while the next scene enters, for the hero after its accent', () => {
@@ -144,7 +163,7 @@ describe('an opening’s samples', () => {
     output: 'request bytes: 9907',
   } as const;
 
-  it('cover a scene from its entrance until it settles, every half second', () => {
+  it('cover a scene from the end of its entrance until it settles, every half second', () => {
     const t = timeline([scene('s1', 0, 5, { visual: terminal }), scene('s2', 4.55, 9)]);
     const [from, to] = openingSpan(t, 0)!;
     expect(from).toBe(0);

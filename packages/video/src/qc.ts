@@ -207,7 +207,8 @@ export function mediaCrop(timeline: Pick<Timeline, 'width' | 'height' | 'orienta
 /**
  * The picture keeps moving while the narration speaks: a freeze of the media region that covers
  * 1.5 s or more of the lines (summed over the lines it spans) is a still, named by its scene, and
- * said to be a stretch the plan moved only with the camera's slow push-in when it was.
+ * said to be a stretch the plan moved only with the camera's slow push-in when it was. Pinning a
+ * beat is advised only for a scene with a direction, which has beats.
  */
 export function stillCheck(
   timeline: Pick<Timeline, 'scenes' | 'transition'>,
@@ -227,10 +228,12 @@ export function stillCheck(
         onlyCameraMoves(timeline, s) ? ", where only the camera's slow push-in moves" : ''
       }`,
   );
+  // Only a scene with a direction has beats to pin.
+  const directed = stills.some((s) => timeline.scenes.find((c) => c.id === s.scene)?.direction);
   return {
     id: 'still',
     status: 'warn',
-    message: `The picture holds still while the narration continues in ${listed(named)}. Split the scene, sync its visual to the line, pin a beat to a phrase there, or let the camera drift.`,
+    message: `The picture holds still while the narration continues in ${listed(named)}. Split the scene, sync its visual to the line, ${directed ? 'pin a beat to a phrase there, ' : ''}or let the camera drift.`,
   };
 }
 

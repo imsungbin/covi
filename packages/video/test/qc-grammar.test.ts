@@ -73,6 +73,23 @@ describe('the still gate', () => {
     expect(stillCheck(held, [{ start: 5, end: 7.5 }]).message).not.toContain('push-in');
   });
 
+  it('advises pinning a beat only where a scene has a direction to pin it in', () => {
+    const advice = 'pin a beat to a phrase there';
+    expect(stillCheck(story, [{ start: 5, end: 7.5 }]).message).not.toContain(advice);
+    const directed = timeline(
+      story.scenes.map((s) =>
+        s.id === 's2' ? { ...s, direction: { whole: true, elements: [], beats: [] } } : s,
+      ),
+    );
+    expect(stillCheck(directed, [{ start: 5, end: 7.5 }]).message).toContain(
+      'sync its visual to the line, pin a beat to a phrase there, or let the camera drift.',
+    );
+    // A still in an undirected scene of a directed video has no beat to pin.
+    expect(stillCheck(directed, [{ start: 0.3, end: 3 }]).message).toContain(
+      'sync its visual to the line, or let the camera drift.',
+    );
+  });
+
   it('stays quiet for freezes in silence or under 1.5 s of narration', () => {
     expect(stillCheck(story, [{ start: 9, end: 12 }]).status).toBe('pass');
     expect(stillCheck(story, [{ start: 3.5, end: 5.2 }]).status).toBe('pass');

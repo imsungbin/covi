@@ -182,8 +182,10 @@ export function posterMoment(
 }
 
 /**
- * When the poster is taken, in seconds: `posterMoment`, held inside its scene (after its entrance,
- * before the next one starts to enter), else 1.6 s in, or a third of the way for very short videos.
+ * The poster's moment in seconds: `posterMoment`, held inside its scene (after its entrance, before
+ * the next one starts to enter), else 1.6 s in, or a third of the way for very short videos. The
+ * renderer's `posterFrame` picks the frame: it puts `posterMoment` on `sceneFrame`, which can land
+ * up to a frame after this, and reads this only for the fixed moment.
  */
 export function posterTime(timeline: Pick<Timeline, 'scenes' | 'transition' | 'duration'>): number {
   const moment = posterMoment(timeline);

@@ -149,5 +149,23 @@ describe('motion spans', () => {
     // The compare lands on its own: arrow, after value, then its change.
     expect(parts.find((p) => p.name === 'b')!.span[1]).toBeCloseTo(1 + 0.6 + 0.3 + 0.3, 9);
     expect(shotSettledAt(s)).toBeCloseTo(3.9, 9);
+    // Counted, a compare waits for its count, its arrow coming in over the 0.3 s before it.
+    const counted = scene('s', 0, 6, {
+      direction: {
+        whole: false,
+        elements: [metric('b', 'compare')],
+        beats: [
+          { verb: 'reveal', element: 'b', style: 'rise', t: 1, seconds: 0.5 },
+          { verb: 'count', element: 'b', t: 2.5, seconds: 1.6 },
+        ],
+      },
+    });
+    const compare = shotMotion(counted).filter((p) => p.name === 'b');
+    expect(compare.map((p) => p.span)).toEqual([
+      [1, 1.5],
+      [2.2, 2.5],
+    ]);
+    expect(shotMotion(counted).filter((p) => p.beat)).toHaveLength(2);
+    expect(shotSettledAt(counted)).toBeCloseTo(2.5 + 1.6 + 0.3, 9);
   });
 });

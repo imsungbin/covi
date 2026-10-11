@@ -65,7 +65,8 @@ export const listed = (names: readonly string[], sep = ', ') =>
 
 /**
  * Reports sampled while a story scene had settled and was alone on screen, and at the frame before
- * a directed scene's first camera beat, where its stop is at rest at its own scale.
+ * a directed scene's first camera beat, where its stop is at its own scale but for the push-in
+ * (at most 2%).
  */
 export function settledReports(
   timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps'>,
@@ -95,7 +96,8 @@ const units = (size: number) => Math.round(10 * size) / 10;
 /**
  * Code and terminal text at least 24 px and body text at least 28 px at 1080p, as drawn at the
  * settled frames and before a camera beat zooms in, relative to the frame's short side. Chips,
- * file paths, and small labels are exempt.
+ * file paths, and small labels are exempt. The push-in has magnified both by up to 2%, so text that
+ * close under its floor can pass.
  */
 export function textSizeCheck(
   timeline: DensityTimeline,

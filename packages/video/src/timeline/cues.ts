@@ -1,4 +1,4 @@
-import { metricSettled } from '../runtime/numbers.ts';
+import { COMPARE_RISE, metricSettled } from '../runtime/numbers.ts';
 import {
   type CodeLine,
   type DirectionBeat,
@@ -692,10 +692,10 @@ export function settledFrame(
 }
 
 /**
- * The last frame before a directed scene's first camera beat, where its stop is at rest at its
- * own scale: a beat's zoom magnifies what QC measures at the settled frame, so text sizes are read
- * here too. None without a camera beat, or when the beat starts before the scene has entered and
- * the reveals before it have played.
+ * The last frame before a directed scene's first camera beat, where its stop is at its own scale
+ * but for the push-in (at most 2%): a beat's zoom magnifies what QC measures at the settled frame,
+ * so text sizes are read here too. None without a camera beat, or when the beat starts before the
+ * scene has entered and the reveals before it have played.
  */
 export function restFrame(
   timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames'>,
@@ -763,8 +763,9 @@ export interface ShotMotion {
  * and played its own choreography (the storyboard visual on the scene's phases, code typing in, a
  * metric landing when nothing counts it), and every beat. The beat a morph plays lasts until its
  * added tokens have settled, and the one a metric's value lands on (its count, else its count-up)
- * until the value has centered and its change has faded in; a node, a label, a packet, or a pile
- * is in place half a second after it enters, and its verbs are beats.
+ * until the value has centered and its change has faded in; a compare's arrow comes in just
+ * before its count. A node, a label, a packet, or a pile is in place half a second after it
+ * enters, and its verbs are beats.
  */
 export function shotMotion(
   scene: Pick<TimelineScene, 'visual' | 'direction' | 'phases' | 'start' | 'end'>,
@@ -776,9 +777,9 @@ export function shotMotion(
     d.beats.find((b) => b.verb === verb && 'element' in b && b.element === id);
   // Where a beat ends once what it moved has settled, when that is after the beat itself.
   const settles = new Map<DirectionBeat, number>();
-  const elements = d.elements.map((e): ShotMotion => {
+  const elements = d.elements.flatMap((e): ShotMotion[] => {
     const at = own('reveal', e.id)?.t ?? 0;
-    const until = (end: number): ShotMotion => ({ name: e.id, beat: false, span: [at, end] });
+    const until = (end: number): ShotMotion[] => [{ name: e.id, beat: false, span: [at, end] }];
     if (e.kind === 'visual')
       return until(Math.max(at, settledAt(scene.visual, duration, scene.phases)));
     if (e.kind === 'code' || e.kind === 'output' || e.kind === 'capture')
@@ -793,6 +794,12 @@ export function shotMotion(
       const beat = own('count', e.id) ?? own('count-up', e.id);
       if (!beat) return until(metricSettledAt(d, e));
       settles.set(beat, Math.max(beat.t + beat.seconds, metricSettledAt(d, e)));
+      // A compare's arrow comes in over the moment before its count starts (`compareLands`).
+      if (e.show === 'compare' && beat.verb === 'count')
+        return [
+          ...until(at + 0.5),
+          { name: e.id, beat: false, span: [Math.max(at, beat.t - COMPARE_RISE), beat.t] },
+        ];
     }
     return until(at + 0.5);
   });

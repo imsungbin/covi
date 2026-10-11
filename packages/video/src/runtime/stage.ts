@@ -1,7 +1,9 @@
 import { blendPoses, type FoxOptions, foxPose, foxSvg, type Pose } from '@covi/brand';
 import {
+  type CameraKind,
   type DirectionElement,
   HERO_PHASE,
+  isCameraMove,
   type LayoutReport,
   type Point,
   type Rect,
@@ -22,7 +24,6 @@ import { type CameraPlan, cameraPlan, cameraPush, heroAccent } from './camera.ts
 import {
   beatView,
   between,
-  type CameraKind,
   type CameraStep,
   clampView,
   clipRect,
@@ -30,7 +31,6 @@ import {
   follower,
   gridStyle,
   insetOf,
-  isCameraMove,
   layerTransform,
   lerpRect,
   PULL_MARGIN,

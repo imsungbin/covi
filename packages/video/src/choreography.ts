@@ -2,14 +2,13 @@ import { listed } from './density.ts';
 import type { QcCheck } from './qc.ts';
 import { isCjk } from './text.ts';
 import { OUTRO_ID, storyScenes } from './timeline/build.ts';
-import { entranceSeconds, MORPH_SETTLE } from './timeline/cues.ts';
+import { entranceSeconds, keptTokens, MORPH_SETTLE, shotSettledAt } from './timeline/cues.ts';
 import { type MotionSpan, motionSpans } from './timeline/motion.ts';
 import {
-  CAMERA_TRANSITIONS,
   type DirectionElement,
+  isCameraMove,
   type MorphVisual,
   type Timeline,
-  type TransitionKind,
 } from './timeline/types.ts';
 
 /*
@@ -64,8 +63,9 @@ export function spokenStills(
 
 /**
  * Whether the timeline plans nothing to move in a still stretch but the scene camera's slow
- * push-in: what `still` names when frozen pixels have no other cause. A stretch the plan holds
- * wholly still is `motion-gap`'s to name, and a drift is never frozen (`STILL_NOISE`).
+ * push-in: what `still` names when frozen pixels have no other cause (`motion-gap` names it too
+ * when the push is a shot's steady one, waiting on its beats). A stretch the plan holds wholly
+ * still is `motion-gap`'s alone to name, and a drift is never frozen (`STILL_NOISE`).
  */
 export function onlyCameraMoves(
   timeline: Pick<Timeline, 'scenes' | 'transition'>,
@@ -77,12 +77,32 @@ export function onlyCameraMoves(
   return moving.length > 0 && moving.every((m) => m.kind === 'camera' && m.name === 'push');
 }
 
-/** The stretches of the story in which the timeline plans nothing to move. */
+/**
+ * The motion `motion-gap` counts, ordered by start: every span `motionSpans` lists, but a shot's
+ * steady push only once the shot has settled. Before then it keeps the frame from freezing while
+ * the beats wait on the line; the wait itself is what the check names.
+ */
+function countedMotion(timeline: Pick<Timeline, 'scenes' | 'transition'>): MotionSpan[] {
+  const scenes = new Map(timeline.scenes.map((s) => [s.id, s]));
+  return motionSpans(timeline)
+    .flatMap((m): MotionSpan[] => {
+      const scene = scenes.get(m.scene);
+      if (!m.steady || !scene) return [m];
+      const from = Math.max(m.span[0], scene.start + shotSettledAt(scene));
+      return from < m.span[1] - 1e-9 ? [{ ...m, span: [from, m.span[1]] }] : [];
+    })
+    .sort((a, b) => a.span[0] - b.span[0]);
+}
+
+/**
+ * The stretches of the story in which the timeline plans nothing to move, as `motion-gap` counts
+ * motion (a shot's steady push from its settle).
+ */
 export function plannedStills(timeline: Pick<Timeline, 'scenes' | 'transition'>): Stretch[] {
   const end = storyScenes(timeline.scenes).at(-1)?.end ?? 0;
   const out: Stretch[] = [];
   let at = 0;
-  for (const { span } of motionSpans(timeline)) {
+  for (const { span } of countedMotion(timeline)) {
     if (span[0] >= end) break;
     if (span[0] > at + 1e-6) out.push({ start: at, end: span[0] });
     at = Math.max(at, span[1]);
@@ -94,9 +114,13 @@ export function plannedStills(timeline: Pick<Timeline, 'scenes' | 'transition'>)
 const seconds = (n: number) => `${n.toFixed(1)} s`;
 
 /**
- * Something moves whenever the narration speaks: the timeline's own plan (entrances, elements
- * entering, beats, the scene camera) leaves no stretch of 1.5 s or more of narration in which
- * nothing moves. `still` measures the same on the rendered pixels.
+ * Something moves whenever the narration speaks: the timeline's own plan leaves no stretch of
+ * 1.5 s or more of narration in which nothing moves. Motion is every scene's entrance (a camera
+ * move between stops among them), its visual or shot elements entering and playing their own
+ * choreography, its beats, and the scene camera: a capture's drift, the hero's punch, and the
+ * push-in once the visual has settled. A shot's steady push, which runs from its entrance while
+ * its beats wait on the line, counts only from when the shot has settled, so a wait between beats
+ * is a gap. `still` measures the same on the rendered pixels.
  */
 export function motionGapCheck(timeline: Pick<Timeline, 'scenes' | 'transition'>): QcCheck {
   const stretches = plannedStills(timeline);
@@ -109,7 +133,7 @@ export function motionGapCheck(timeline: Pick<Timeline, 'scenes' | 'transition'>
       message: `Something moves whenever the narration speaks (the longest still stretch under it is ${seconds(longest)}).`,
     };
   }
-  const spans = motionSpans(timeline);
+  const spans = countedMotion(timeline);
   const named = gaps.map((g) => {
     const next = spans.find((m) => m.span[0] >= g.end - 1e-6);
     return `${g.scene} (${seconds(g.seconds)} from ${seconds(g.at)}${next ? `, until ${what(next)} at ${seconds(next.span[0])}` : ''})`;
@@ -152,9 +176,6 @@ function crowded(
   return undefined;
 }
 
-const travels = (kind: TransitionKind | undefined) =>
-  (CAMERA_TRANSITIONS as readonly string[]).includes(kind ?? '');
-
 /**
  * The picture is never too busy to follow: no more than three beats start within any second,
  * and no more than two camera moves (camera beats, and pans and zooms between stops) within any
@@ -166,7 +187,7 @@ export function motionBusyCheck(timeline: Pick<Timeline, 'scenes'>): QcCheck {
     (s.direction?.beats ?? []).map((b) => ({ t: s.start + b.t, scene: s.id })),
   );
   const moves = story.flatMap((s, i) => [
-    ...(i > 0 && s.stop && story[i - 1]!.stop && travels(s.transition?.kind)
+    ...(i > 0 && s.stop && story[i - 1]!.stop && isCameraMove(s.transition?.kind ?? 'fade')
       ? [{ t: s.start, scene: s.id }]
       : []),
     ...(s.direction?.beats ?? []).flatMap((b) =>
@@ -220,9 +241,9 @@ function wordsOf(e: DirectionElement): string | undefined {
   return undefined;
 }
 
-/** The code a morph adds: the head's tokens no link keeps, its markers for elided runs aside. */
+/** The code a morph adds: the head's tokens it does not keep, its markers for elided runs aside. */
 function addedCode(morph: MorphVisual): string {
-  const kept = new Set(morph.tokens.map(([, , row, token]) => `${row}:${token}`));
+  const kept = keptTokens(morph).head;
   return morph.head
     .flatMap((row, r) =>
       row.type === 'elided'

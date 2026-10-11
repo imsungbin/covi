@@ -10,7 +10,6 @@ import {
   follower,
   gridStyle,
   insetOf,
-  isCameraMove,
   layerTransform,
   lerpRect,
   pullBack,
@@ -20,7 +19,7 @@ import {
   withPush,
 } from '../src/runtime/canvas.ts';
 import { computeRegions, gridSpacing } from '../src/runtime/layout.ts';
-import type { Point } from '../src/timeline/types.ts';
+import { isCameraMove, type Point } from '../src/timeline/types.ts';
 
 const { media } = computeRegions({ width: 1920, height: 1080, orientation: 'landscape' });
 const pivot = { x: media.x + media.width / 2, y: media.y + media.height / 2 };

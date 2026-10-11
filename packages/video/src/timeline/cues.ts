@@ -6,6 +6,7 @@ import {
   type FrameMark,
   HERO_PHASE,
   type HighlightGroup,
+  type MorphVisual,
   type SceneDirection,
   type Timeline,
   type TimelineCue,
@@ -714,6 +715,20 @@ export const MORPH_PHASES = {
 } as const satisfies Record<string, Span>;
 /** Added tokens keep the added color this long after a morph, then take their syntax colors. */
 export const MORPH_SETTLE = 0.5;
+
+/**
+ * The tokens a morph keeps, on each side, as `row:token` keys: they travel from the base to the
+ * head. Every other base token is removed, and every other head token is added.
+ */
+export function keptTokens(morph: Pick<MorphVisual, 'tokens'>): {
+  base: Set<string>;
+  head: Set<string>;
+} {
+  return {
+    base: new Set(morph.tokens.map(([b, i]) => `${b}:${i}`)),
+    head: new Set(morph.tokens.map(([, , h, j]) => `${h}:${j}`)),
+  };
+}
 
 /**
  * A part of a directed scene that moves: an element entering and playing its own choreography,

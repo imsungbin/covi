@@ -80,6 +80,11 @@ export interface MotionSpan {
   /** The element or the beat's verb that moves; for the camera, how it moves. */
   name: string;
   span: Span;
+  /**
+   * A shot's steady push: from its entrance at an even pace while its beats wait on the line, so
+   * the frame never holds still before the first of them.
+   */
+  steady?: true;
 }
 
 /**
@@ -91,9 +96,15 @@ export interface MotionSpan {
 export function motionSpans(timeline: Pick<Timeline, 'scenes' | 'transition'>): MotionSpan[] {
   const spans: MotionSpan[] = [];
   timeline.scenes.forEach((scene, i) => {
-    const add = (kind: MotionKind, name: string, s: Span) => {
+    const add = (kind: MotionKind, name: string, s: Span, steady = false) => {
       if (s[1] > s[0] + 1e-9)
-        spans.push({ scene: scene.id, kind, name, span: [scene.start + s[0], scene.start + s[1]] });
+        spans.push({
+          scene: scene.id,
+          kind,
+          name,
+          span: [scene.start + s[0], scene.start + s[1]],
+          ...(steady ? { steady: true as const } : {}),
+        });
     };
     add('entrance', scene.transition?.kind ?? 'fade', [0, entranceSeconds(timeline, i)]);
     if (scene.visual.kind === 'outro') return;
@@ -109,7 +120,7 @@ export function motionSpans(timeline: Pick<Timeline, 'scenes' | 'transition'>): 
       plan.speechEnd !== undefined &&
       plan.settled < Math.min(plan.speechEnd, duration)
     )
-      add('camera', 'push', [plan.settled, duration]);
+      add('camera', 'push', [plan.settled, duration], plan.steady);
     if (plan.hero !== undefined) add('camera', 'punch', [plan.hero, plan.hero + PUNCH_OUT]);
   });
   return spans.sort((a, b) => a.span[0] - b.span[0]);

@@ -33,6 +33,11 @@ export type TransitionKind = 'fade' | 'cut' | 'push' | 'wipe' | 'zoom-through' |
  * there, `zoom` pulls back to show both stops and pushes into the next. Only direction gives them.
  */
 export const CAMERA_TRANSITIONS = ['pan', 'zoom'] as const satisfies readonly TransitionKind[];
+export type CameraKind = (typeof CAMERA_TRANSITIONS)[number];
+
+export function isCameraMove(kind: TransitionKind): kind is CameraKind {
+  return (CAMERA_TRANSITIONS as readonly TransitionKind[]).includes(kind);
+}
 
 /** A scene's stop on the canvas: the top-left corner of its frame-sized region, in world pixels. */
 export interface Stop {

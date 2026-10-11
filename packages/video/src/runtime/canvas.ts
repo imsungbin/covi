@@ -1,11 +1,4 @@
-import {
-  CAMERA_TRANSITIONS,
-  type CameraMove,
-  type Point,
-  type Rect,
-  type Stop,
-  type TransitionKind,
-} from '../timeline/types.ts';
+import type { CameraKind, CameraMove, Point, Rect, Stop } from '../timeline/types.ts';
 import { clamp, easeInOutCubic, lerp } from './anim.ts';
 
 /*
@@ -20,8 +13,6 @@ export interface View {
   y: number;
   scale: number;
 }
-
-export type CameraKind = (typeof CAMERA_TRANSITIONS)[number];
 
 /**
  * A camera beat inside a stop: from `t` (seconds since the scene started) for `seconds`, toward
@@ -39,10 +30,6 @@ export const MAX_ZOOM = 2.5;
 const FIT = 0.9;
 /** A zoom between stops pulls back a little further than both regions need, so they breathe. */
 export const PULL_MARGIN = 0.92;
-
-export function isCameraMove(kind: TransitionKind): kind is CameraKind {
-  return (CAMERA_TRANSITIONS as readonly TransitionKind[]).includes(kind);
-}
 
 /** The view at rest in a stop, in stop-local coordinates: its own region, unmagnified. */
 export function restView(pivot: Point): View {

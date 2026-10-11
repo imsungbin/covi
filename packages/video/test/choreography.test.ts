@@ -75,9 +75,24 @@ describe('motion gaps', () => {
     expect(check.message).toContain('s1 (2.0 s from 3.5 s, until the outro at 6.0 s)');
   });
 
-  it('pass a shot whose camera pushes in while its beats wait on the line', () => {
-    const moving = { ...held, camera: undefined };
-    expect(motionGapCheck(timeline([moving, outro(6)])).status).toBe('pass');
+  it('count the wait between beats even while the camera pushes in through it', () => {
+    // Under the default camera the shot pushes in from its entrance at an even pace, but that
+    // push is motion only once the shot has settled (3.5 s): the 2 s wait for the second label
+    // is still a gap, and the push covers the rest of the line.
+    const pushing = { ...held, camera: undefined };
+    const check = motionGapCheck(timeline([pushing, outro(6)]));
+    expect(check.status).toBe('warn');
+    expect(check.message).toContain('s1 (2.0 s from 1.0 s, until the reveal at 3.0 s)');
+    expect(check.message).not.toContain('3.5 s');
+  });
+
+  it('stay quiet when the beats leave just under 1.5 s of narration between them', () => {
+    const close = scene('s1', 0, 6, {
+      direction: shot([label('a', 'One'), label('b', 'Two')], [reveal('a', 0.5), reveal('b', 2.4)]),
+    });
+    const check = motionGapCheck(timeline([close, outro(6)]));
+    expect(check.status).toBe('pass');
+    expect(check.message).toContain('the longest still stretch under it is 1.4 s');
   });
 
   it('do not count silence: a still stretch with no line is not a gap', () => {

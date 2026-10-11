@@ -42,7 +42,10 @@ describe('motion spans', () => {
       },
     });
     const s2 = scene('s2', 5.3, 10, { transition: { kind: 'pan', seconds: 0.7 } });
-    expect(round(motionSpans({ scenes: [s1, s2], transition: 0.45 }))).toEqual([
+    const spans = motionSpans({ scenes: [s1, s2], transition: 0.45 });
+    // Only the shot whose beats wait on its line pushes in steadily from its entrance.
+    expect(spans.filter((m) => m.steady).map((m) => [m.scene, m.name])).toEqual([['s1', 'push']]);
+    expect(round(spans)).toEqual([
       ['s1', 'element', 'n', 0, 0.5],
       ['s1', 'camera', 'push', 0.5, 6],
       ['s1', 'beat', 'reveal', 2, 2.5],

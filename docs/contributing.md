@@ -237,6 +237,7 @@ Each beat has:
 - `eyebrows`: the same label in Korean, Japanese, and Chinese (`{ ko: …, ja: …, zh: … }`).
 - `goal`: what the scene must accomplish.
 - `visuals`: preferred visuals in order of preference. The options are `title`, `change-map`, `code`, `screenshot`, `before-after`, `interaction`, `terminal`, `api`, `findings`, `callout`, `diagram`, and `summary`. Add a `:before` or `:after` suffix, as in `screenshot:before`, to pick a revision.
+- `verbs` (optional): up to four direction verbs that suit the beat, most fitting first, each once (`covi schema direction` lists them). They are suggestions for agents; Covi's default director does not read them. Every shipped beat has them, and a test checks that they fit its visuals: a `morph` needs `code`, a wrap suggests only `place`, and counts and flows need something measured or connected.
 - `expression`: the narrator expression; defaults to `explaining`.
 - `optional`: defaults to `false`.
 
@@ -272,6 +273,8 @@ The browser runtime in `packages/video/src/runtime/` draws every frame. It conta
 
 - `stage.ts`: scenes with their transitions and camera, the hero accent, the narrator, captions, and progress. It hands the summary card's fox to the outro, which takes it over.
 - `transitions.ts` and `camera.ts`: how a scene enters and leaves, and the camera's drift, linger, and hero punch, as pure functions tested in Node (`packages/video/test/motion.test.ts`).
+- `canvas.ts`: the canvas the scenes sit on, and the camera's travel between their stops.
+- `direction/`: a directed shot's elements, drawn as one component (`elements.ts`), with the code morph, measured numbers, and flows in their own modules.
 - `components/`: the visuals; `outro.ts` draws Covi's outro, whose settle moment (`outroSettle` in `timeline/cues.ts`) is also where the music's logo lands.
 - `layout.ts`: the safe-area regions.
 - `styles.ts`: the stylesheet.
@@ -325,10 +328,11 @@ Files that agents and models write are validated with Zod:
 | `explanation.json` | `ExplanationSchema`, `packages/core/src/model/explanation.ts` |
 | `findings.json` | `FindingsFileSchema`, `packages/core/src/model/finding.ts` |
 | `video/storyboard.json` | `StoryboardSchema`, `packages/video/src/storyboard/schema.ts` |
+| `video/direction.json` | `DirectionSchema`, `packages/video/src/direction/schema.ts` |
 | `demo/plan.json` | `DemoPlanSchema`, `packages/capture/src/plan.ts` |
 | `.covi/config.yml` | `ConfigInputSchema`, `packages/core/src/config/schema.ts` |
 
-`covi schema <explanation|findings|storyboard|demo-plan|config>` prints the JSON Schema generated from these, and the skills point agents at that command.
+`covi schema <explanation|findings|storyboard|direction|demo-plan|config>` prints the JSON Schema generated from these, and the skills point agents at that command.
 
 The schemas use strict objects, so a file with an unknown key is rejected. Follow these rules:
 

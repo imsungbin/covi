@@ -25,7 +25,7 @@ So changing how Covi reviews usually means editing a skill, not code. Agents rea
 | `covi-review` | Review | Combines understand, explain, demonstrate (when behavior matters), and risk inspection. Findings are classified by certainty and severity, and each needs evidence. The agent writes `findings.json`, and `covi report` merges it with the rule findings and derives the verdict. Checklists are in `references/checklists.md`. |
 | `covi-demo` | Demonstrate | Decides what a reviewer needs to see, writes a demo plan when the defaults are not enough, runs `covi demo --plan` (or `covi review --demo --plan`), and checks the captures. When the repository's configured commands are not trusted on this machine yet, it shows them to the user and asks before running `covi trust --yes`; it never trusts them on its own. |
 | `covi-visual-review` | Review (UI) | Reviews UI, CSS, layout, and theming changes visually. It compares before/after screenshots across viewports, checks pixel diffs, interaction states, responsive behavior, and accessibility. Each finding cites a screenshot and a region. |
-| `covi-video` | Demonstrate | Makes a narrated review video, but only when seeing the change helps. It plans from the user's words, asks only what is missing (type, length, and then music), grounds a storyboard in captured evidence, renders it with music and sound effects, and checks the result. Uses `references/storytelling.md`, `references/narration.md`, and `references/music.md` (writing a score). |
+| `covi-video` | Demonstrate | Makes a narrated review video, but only when seeing the change helps. It plans from the user's words, asks only what is missing (type, length, and then music), grounds a storyboard in captured evidence, renders it with music and sound effects, and checks the result. Uses `references/storytelling.md`, `references/narration.md`, `references/direction.md` (directing shots), and `references/music.md` (writing a score). |
 | `covi-summarize` | Summarize | Writes a PR/MR description, changelog entry, release note, or standup note, all grounded in Covi's understanding and review (`covi summarize`). |
 
 Print any skill with `covi skills show <name>`.
@@ -72,6 +72,7 @@ Files agents write:
 | `findings.json` (findings, dismissed rule findings, what was checked, what was not verified) | `covi schema findings` | `covi report` |
 | Demo plan (any path; kept as `demo/plan.json`) | `covi schema demo-plan` | `covi demo --plan <file>`, `covi review --demo --plan <file>` |
 | `video/storyboard.json` | `covi schema storyboard` | `covi render`, `covi video --storyboard <file>` |
+| `video/direction.json` | `covi schema direction` | `covi render` (unless `video.direction` is `off`) |
 | `.covi/config.yml` | `covi schema config` | every command that loads configuration |
 
 Skills ask the user a question only when the answer changes the result and cannot be inferred. They ask in one prompt, with concrete options, using the client's question tool. In CI nobody is asked, and configuration and defaults decide. The video question protocol is in [Video](video.md#which-questions-are-asked).

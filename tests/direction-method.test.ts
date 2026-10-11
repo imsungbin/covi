@@ -86,7 +86,9 @@ describe('the direction method’s worked example', () => {
     expect(authored.shots.flatMap((s) => s.beats.map((b) => b.verb))).toEqual(
       expect.arrayContaining(['reveal', 'flow', 'split', 'camera', 'morph', 'merge', 'count']),
     );
-    expect(elements).toContainEqual(expect.objectContaining({ kind: 'label', tone: 'warning' }));
+    expect(authored.shots.find((s) => s.scene === 's1')!.elements).toContainEqual(
+      expect.objectContaining({ kind: 'label', tone: 'warning' }),
+    );
     expect(storyboard.scenes.find((s) => s.id === 's1')!.evidenceIds).toEqual([
       'metric:terminal-1:timeouts',
     ]);
@@ -101,12 +103,13 @@ describe('the direction method’s worked example', () => {
     for (const check of checks) expect(check, check.message).toMatchObject({ status: 'pass' });
   });
 
-  it('practises what it teaches: short labels without numbers, camera moves for entrances, a phrase for every beat', () => {
+  it('practises what it teaches: short labels without numbers, the entrances Variety teaches, a phrase for every beat', () => {
     const { shots } = DirectionSchema.parse(directionExample().direction);
     for (const shot of shots) {
       expect(shot.elements.length, shot.scene).toBeLessThanOrEqual(4);
       expect(shot.beats.length, shot.scene).toBeLessThanOrEqual(4);
-      if (shot.enter) expect(['pan', 'zoom', 'wipe', 'cut'], shot.scene).toContain(shot.enter);
+      if (shot.enter)
+        expect(['pan', 'zoom', 'wipe', 'cut', 'push'], shot.scene).toContain(shot.enter);
       for (const beat of shot.beats) expect(beat, shot.scene).toHaveProperty('at');
       for (const element of shot.elements) {
         const words =
@@ -124,7 +127,7 @@ describe('the direction method’s worked example', () => {
     );
     const storyboard = rewriteScenes(drafted.storyboard, scenes);
     await expect(directedTimeline({ ...drafted, storyboard }, example.direction)).rejects.toThrow(
-      /s3[\s\S]*ten thousand/,
+      /shot 3 \(scene s3\), beat 3 \(count\) quotes "ten thousand"/,
     );
   });
 });

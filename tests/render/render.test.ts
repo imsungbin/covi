@@ -2618,14 +2618,15 @@ describe.skipIf(!available || !fullRenders)('the direction example (full pipelin
       runDir,
       'video/qc.json',
     );
-    // The run is removed afterwards, so a failure names its checks.
+    // Every check passes. The run is removed afterwards, so a failure names the checks that did
+    // not, and the ones the example is about are asked for by name, so none goes unchecked.
     expect(
       result.video.qc,
       qc.checks
-        .filter((c) => c.status === 'fail')
-        .map((c) => `${c.id}: ${c.message}`)
+        .filter((c) => c.status !== 'pass')
+        .map((c) => `${c.id} (${c.status}): ${c.message}`)
         .join('\n'),
-    ).not.toBe('fail');
+    ).toBe('pass');
     for (const id of [
       'text-size',
       'empty-frame',

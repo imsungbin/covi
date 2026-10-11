@@ -16,7 +16,7 @@ Choose by what the change does. Each template beat's `verbs` (`covi templates sh
 | fixes that | the same staging after the change: the pieces `merge`, the pile is shorter, the counter lands on the new value |
 | shows a screen or prints output | the scene's `visual` (or a `capture`, an `output`) and a `camera` move to what changed |
 
-The key number is the largest thing on screen when it lands: make its `metric` the shot's first element, or give it a shot of its own.
+The key number is the largest thing on screen when it lands: make its `metric` the first element of a `"layout": "split"` (the first element takes half the region, and the rest share the other half), or give it a shot of its own.
 
 ## Verbs
 
@@ -30,14 +30,14 @@ The key number is the largest thing on screen when it lands: make its `metric` t
 | `count-up` | a `metric` drawn as a counter | a counter rising from zero to one side's value (`side`) |
 | `flow` | `from` a node `to` a node | something travelling between parts (`packet`: what travels) |
 | `split` | a packet or a node | one thing breaking into a measured count of pieces (`count`: a `metric:` id; `side`) |
-| `merge` | a split, or a pile | the pieces coming back together, after their split |
+| `merge` | a split, or a pile | a split's pieces coming back together (after the split), or a pile collapsing |
 | `stack` | a `pile` | items piling up, one by one, to the measured count |
 
-A `count` or a `count-up` lands on its phrase, so quote the words that say the number; every other verb starts on its phrase. Beats without `at` spread through the line in the order written. `flow`, `split`, `merge`, and `stack` are the flow verbs.
+A `count` or a `count-up` lands on its phrase, so quote the words that say the number; every other verb starts on its phrase once what it acts on is in place (a morph may start earlier, so its new code can be read). Beats without `at` spread through the line in the order written. `flow`, `split`, `merge`, and `stack` are the flow verbs.
 
 ## Elements
 
-- From evidence: `visual` (the scene's storyboard visual, drawn as without direction; a title or summary card only alone, without a reveal), `code` (a `diff-hunk:` id; `side`, `lines`), `morph` (a `diff-hunk:` id with code on both sides and at most 12 changed lines a side, close enough together to fit one card), `output` (a `terminal:` id; `side`), `capture` (a `screenshot:` id), `metric` (a `metric:` id; `show`, `side`), and `pile` (a `metric:` id that counts something; `side`).
+- From evidence: `visual` (the scene's storyboard visual, drawn as without direction; a title or summary card only alone, without a reveal), `code` (a `diff-hunk:` id; `side`, `lines`), `morph` (a `diff-hunk:` id with code on both sides and at most 12 changed lines a side, close enough together to fit one card), `output` (a `terminal:` id; `side`), `capture` (a `screenshot:` id), `metric` (a `metric:` id; `show`, `side`, and `label`, its name in the video's language), and `pile` (a `metric:` id that counts something; `side`, `label`). Without a `label`, a command's metric or pile is named as its output named it.
 - Written by you: `node` (a `label`, and the evidence ids it stands for), `packet` (an optional `label`), and `label` (`text`, and `tone`: `neutral`, `warning`, or `success`).
 
 A shot without a `visual` element replaces the scene's storyboard visual. Keep that visual true to the shot anyway: it is what `--direction off` draws.
@@ -51,8 +51,8 @@ A shot without a `visual` element replaces the scene's storyboard visual. Keep t
 
 ## Variety
 
-- **No more than two shots of one kind in a row.** A shot's kind is its first element's (a `visual` counts as the storyboard visual's kind), and a shot with a flow verb counts as a flow.
-- **Camera moves over fades.** `enter: "pan"` to the next step, `"zoom"` into the hero, `"wipe"` from before to after, `"cut"` when the same subject continues; `"push"` slides in the next step of a sequence. Leave the storyboard's `transition`s unset so these decide, and use no entrance for more than 60% of the scene changes.
+- **No more than two shots of one kind in a row.** A shot's kind is its first element's, counted as the picture it looks like (a `morph` counts as code, an `output` as a terminal, a `visual` as the storyboard visual's kind), and a shot with a flow verb counts as a flow.
+- **Camera moves over fades.** `enter: "pan"` to the next step, `"zoom"` into the hero, `"wipe"` from before to after, `"cut"` when the same subject continues; `"push"` slides in the next step of a sequence. Leave the storyboard's `transition`s unset, so scenes you give no `enter` take Covi's camera rotation, not a fade. Use no entrance for more than 60% of the scene changes.
 - **One idea per shot.** About four elements and four beats at most. No more than three beats start within any second, and no more than two camera moves within any two seconds. In 9:16, give a `code` or `morph` element a shot alone or with one partner: a third slot draws its code too small to read.
 - **Keep it moving.** No 1.5 s of narration without a beat, a camera move, or an element arriving: spread the beats over the line, each on its own phrase.
 - **Give words time.** Anything with words on it (a label, a node, a packet's, a pile's, or a metric's name) needs 0.4 s plus a second for every 15 characters (8 in Korean, Japanese, or Chinese) before the next scene comes in, which happens about when the line ends; the code a morph adds needs as long once the morph has landed, up to 2 s. Bring them in on a phrase in the first half of the line, and keep the end of the line for beats without words: a `count`, a `merge`, a camera move.
@@ -78,19 +78,19 @@ The rewritten scenes of `video/storyboard.json`. Every field not shown stays as 
   "scenes": [
     {
       "id": "s1",
-      "narration": "The reader [[timed out]]: the review went out in four chunks, every document embedded.",
+      "narration": "The reader timed out: the review went out in four chunks, [[every document embedded]].",
       "evidenceIds": ["metric:terminal-1:timeouts"]
     },
     {
       "id": "s2",
-      "narration": "Now the reader [[fetches each document]] itself, and the request just lists references!"
+      "narration": "Now the reader fetches each document itself, and the request just [[lists references]]!"
     },
     {
       "id": "s3",
       "beat": "proof",
       "eyebrow": "After",
       "expression": "success",
-      "narration": "Those four chunks are now [[one request]], and request bytes fall below ten thousand.",
+      "narration": "Those four chunks are now one request, and request bytes fall below [[ten thousand]].",
       "evidenceIds": ["metric:terminal-1:chunks", "metric:terminal-1:request-bytes"],
       "visual": {
         "kind": "terminal",
@@ -157,7 +157,7 @@ The rewritten scenes of `video/storyboard.json`. Every field not shown stays as 
 }
 ```
 
-- `s1` opens on the two parts, split so that they fill the frame. "Timed out" pops in as the line says it, every document travels to the reader, and it splits into the four chunks the command measured before the change.
+- `s1` opens on the two parts, split so that they fill the frame. "Timed out" pops in as the line says it, every document travels to the reader, and it splits into the four chunks the command measured before the change. The line runs on after "four chunks", so the split has room to end before the scene moves on.
 - `s2` zooms into the hero. The camera follows the reader's loop while it morphs, early in the line, into the one that fetches each document, and the rest of the line leaves time to read the new code.
 - `s3` pans to the proof. The four chunks merge into one request (the command measured one after the change), and the request's bytes count down to the new value as the line says it, the largest thing on screen.
 - `s4` keeps Covi's shot: the summary card.

@@ -352,8 +352,6 @@ interface Pieces {
   spread(t: number): number;
   /** How much of the source shows: a packet breaks apart into its pieces, a node stays. */
   source(t: number): number;
-  /** How much of the source shows as it was before the split: what a merge brings back is new. */
-  left(t: number): number;
   update(t: number, origin: Point): void;
   boxes(t: number, origin: Point): Rect[];
   report(): LayoutItem[];
@@ -383,14 +381,13 @@ function pieces(
     easeOutCubic(seg(t, split.t, split.t + split.seconds)) *
     (1 - (merge ? easeInOutCubic(seg(t, merge.t, merge.t + merge.seconds)) : 0));
   const live = (t: number) => t >= split.t && !(merge && t >= merge.t + merge.seconds);
-  const left = (t: number) => (stays ? 1 : 1 - seg(t, split.t, split.t + 0.3 * split.seconds));
   return {
     spread,
-    left,
     source(t) {
       if (stays) return 1;
+      const gone = seg(t, split.t, split.t + 0.3 * split.seconds);
       const back = merge ? seg(t, merge.t + 0.6 * merge.seconds, merge.t + merge.seconds) : 0;
-      return Math.max(left(t), back);
+      return Math.max(1 - gone, back);
     },
     update(t, origin) {
       const k = spread(t);
@@ -457,27 +454,17 @@ export function packet(e: PacketElement, ctx: ComponentContext, spans: FlowSpans
   const split =
     spans.split &&
     packetPieces(spans.split, spans, at(spans.split.t), { width, height }, room, ctx);
-  // A packet merged into what its label names comes back without the label: the caption under it
-  // names it, with its count.
-  const renamed = Boolean(label) && spans.merge?.into?.name === e.label;
   return {
     update(clock) {
       const c = at(clock.t);
       const whole = split ? split.source(clock.t) : 1;
       pill.style.transform = `translate(${(c.x - width / 2).toFixed(2)}px, ${(c.y - height / 2).toFixed(2)}px)`;
       pill.style.opacity = whole.toFixed(3);
-      // The label shows only as much as the packet as it was: it fades with the pill as it
-      // splits, and stays out of the pill a merge brings back.
-      if (label && split && renamed)
-        label.style.opacity = (whole > 0 ? split.left(clock.t) / whole : 0).toFixed(3);
       split?.update(clock.t, c);
     },
     report: () => [
       ...(visible(pill)
-        ? [
-            { role: 'media' as const, rect: rectOf(pill) },
-            ...(label && visible(label) ? [textItem(label)] : []),
-          ]
+        ? [{ role: 'media' as const, rect: rectOf(pill) }, ...(label ? [textItem(label)] : [])]
         : []),
       ...(split?.report() ?? []),
     ],

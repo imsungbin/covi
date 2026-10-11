@@ -435,7 +435,7 @@ describe.skipIf(!available)('splits and merges', () => {
     ]);
   });
 
-  it('brings a packet back from its merge without the label its caption now says', async () => {
+  it('brings a packet back from its merge with its label, even where its caption names the same', async () => {
     const MERGE = {
       verb: 'merge',
       element: 'q',
@@ -443,24 +443,19 @@ describe.skipIf(!available)('splits and merges', () => {
       t: 3,
       seconds: 0.8,
     } as const;
-    const labeled = (label: string) => (r: ReturnType<typeof regionsOf>) =>
-      [{ id: 'q', kind: 'packet', rect: r.media, label }] as DirectionElement[];
-    const v = await staged(labeled('chunks'), [chunks(4), MERGE]);
+    const v = await staged(
+      (r) => [{ id: 'q', kind: 'packet', rect: r.media, label: 'chunks' }],
+      [chunks(4), MERGE],
+    );
     const label = (d: Drawn) => d.packet!.labelOpacity * d.packet!.opacity;
-    const texts = async (frame: number) =>
-      (await v.report(frame)).items.filter((i) => i.role === 'text').length;
     expect(label(await read(v, v.frameAt(0.5)))).toBe(1);
-    // It fades with the pill as it splits, never on its own.
-    const breaking = await read(v, v.frameAt(1.1));
-    expect(breaking.packet!.labelOpacity).toBe(1);
+    // A pill with no words over its caption would read as an empty shape: it comes back named.
     const merged = await read(v, v.frameAt(4.1));
-    expect(merged.packet!.opacity).toBe(1);
-    expect(label(merged)).toBe(0);
-    // The caption's three parts are all the text on screen.
-    expect(await texts(v.frameAt(4.1))).toBe(3);
-    // A label that says something else stays.
-    const other = await staged(labeled('documents'), [chunks(4), MERGE]);
-    expect(label(await read(other, other.frameAt(4.1)))).toBe(1);
+    expect(merged.packet).toMatchObject({ opacity: 1, label: 'chunks' });
+    expect(label(merged)).toBe(1);
+    const texts = (await v.report(v.frameAt(4.1))).items.filter((i) => i.role === 'text');
+    // Its label and the caption's three parts.
+    expect(texts).toHaveLength(4);
   });
 
   it('fans a node’s pieces out below it, the node staying where it is', async () => {

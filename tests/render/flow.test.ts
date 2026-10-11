@@ -386,7 +386,7 @@ describe.skipIf(!available)('a packet’s layout report', () => {
 });
 
 describe.skipIf(!available)('splits and merges', () => {
-  it('breaks a packet into as many pieces as its count, with the true count under them', async () => {
+  it('fans as many pieces as its count out of a packet, with the true count under them', async () => {
     const v = await staged(alone, [chunks(4)]);
     const before = await read(v, v.frameAt(0.5));
     expect(before.pieces).toHaveLength(0);
@@ -394,14 +394,20 @@ describe.skipIf(!available)('splits and merges', () => {
     expect(before.badges[0]!.opacity).toBe(0);
     const split = await read(v, v.frameAt(2.2));
     expect(split.pieces).toHaveLength(4);
-    expect(split.packet!.opacity).toBe(0);
+    // The packet stays whole, where it rested (to the camera's slow push-in).
+    expect(split.packet!.opacity).toBe(1);
+    expect(near(center(split.packet!), center(before.packet!))).toBeLessThan(1);
     expect(split.badges).toEqual([
       { opacity: 1, side: 'Before', name: 'chunks', num: '4', children: 0 },
     ]);
-    // Fanned out in a row around where the packet was.
+    // Fanned out in a row under it, and the count under them.
     const xs = split.pieces.map((p) => center(p).x);
     expect(xs).toEqual([...xs].sort((a, b) => a - b));
     expect(Math.abs((xs[0]! + xs.at(-1)!) / 2 - center(before.packet!).x)).toBeLessThan(1);
+    for (const piece of split.pieces) {
+      expect(piece.y).toBeGreaterThan(split.packet!.y + split.packet!.height);
+      expect(split.badgeBoxes[0]!.y).toBeGreaterThan(piece.y + piece.height);
+    }
   });
 
   it('draws at most twelve pieces, and the count it measured', async () => {
@@ -541,8 +547,9 @@ describe.skipIf(!available)('splits and merges', () => {
     const frame = v.frameAt(3.8);
     const slot = v.r.right;
     const b = await node(v, frame, 'b');
-    // The node makes room in its slot as if it split itself, and the edge meets it there.
-    const layout = splitLayout(slot, v.r.regions.unit, false, 4);
+    // The node makes room in its slot under its box, past the pill resting on it, and the edge
+    // meets it there.
+    const layout = splitLayout(slot, v.r.regions.unit, false, 4, true);
     for (const key of ['x', 'y', 'width', 'height'] as const)
       expect(b.placed[key]).toBeCloseTo(layout.box[key], 1);
     const drawn = await read(v, frame);
@@ -554,16 +561,110 @@ describe.skipIf(!available)('splits and merges', () => {
       expect(apart(part, b.label)).toBe(true);
       expect(apart(part, b.box)).toBe(true);
     }
-    // It breaks apart where it arrived, on the edge's end, and is whole there again once merged.
+    // It splits where it arrived, on the edge's end, and stays whole there, clear of its pieces,
+    // until it has merged.
     const end = edgeRoute((await node(v, frame, 'a')).placed, b.placed).at(-1)!;
     const arrived = await read(v, v.frameAt(2.4));
     expect(near(center(arrived.packet!), end)).toBeLessThan(1);
+    expect(drawn.packet!.opacity).toBe(1);
+    expect(near(center(drawn.packet!), end)).toBeLessThan(1);
+    for (const part of [...drawn.pieces, ...drawn.badgeBoxes])
+      expect(apart(part, drawn.packet!)).toBe(true);
     const merged = await read(v, v.frameAt(5.6));
     expect(merged.pieces).toHaveLength(0);
     expect(merged.packet!.opacity).toBe(1);
     expect(near(center(merged.packet!), end)).toBeLessThan(1);
     expect(v.errors).toEqual([]);
   });
+
+  for (const [name, size] of [
+    ['16:9', LANDSCAPE],
+    ['9:16', VERTICAL],
+    ['square', { width: 360, height: 360 }],
+  ] as const)
+    it(`keeps a packet’s label readable from its split until its merge ends, in ${name}`, async () => {
+      const SPLIT = {
+        verb: 'split',
+        count: 4,
+        name: 'chunks',
+        side: 'base',
+        seconds: 0.9,
+      } as const;
+      const MERGE = { verb: 'merge', seconds: 0.8 } as const;
+      /** The slot the default director's staged shot gives its packet: beside its number. */
+      const countSlot = (r: ReturnType<typeof regionsOf>) =>
+        elementSlots(
+          ['metric', 'packet', 'pile'],
+          'split',
+          r.media,
+          r.orientation,
+          28 * r.regions.unit,
+        )[1]!;
+      const shots = [
+        // In a slot of its own: the staged shot's, and the whole frame.
+        await staged(
+          (r) => [{ id: 'q', kind: 'packet', rect: countSlot(r), label: 'chunks' }],
+          [
+            { ...SPLIT, element: 'q', t: 1 },
+            { ...MERGE, element: 'q', t: 3 },
+          ],
+          size,
+        ),
+        await staged(
+          (r) => [{ id: 'q', kind: 'packet', rect: r.media, label: 'Review request' }],
+          [
+            { ...SPLIT, element: 'q', t: 1 },
+            { ...MERGE, element: 'q', t: 3 },
+          ],
+          size,
+        ),
+        // Resting against the node it rode to, where its split fans out of that node's slot.
+        await staged(
+          (r) => [
+            ...twoNodes()(r),
+            { id: 'q', kind: 'packet', rect: r.left, label: 'Every document' },
+          ],
+          [
+            { ...FLOW, packet: 'q' },
+            { ...SPLIT, element: 'q', t: 2.6 },
+            { ...MERGE, element: 'q', t: 4.4 },
+          ],
+          size,
+        ),
+      ];
+      for (const [i, v] of shots.entries()) {
+        const beats = v.timeline.scenes.find((s) => s.id === 's2')!.direction!.beats;
+        const split = beats.find((b) => b.verb === 'split')!;
+        const merge = beats.find((b) => b.verb === 'merge')!;
+        // Every frame from the split's start until its merge ends: the fanned one and the
+        // merge's start among them.
+        const frames = new Set([v.frameAt(split.t + split.seconds), v.frameAt(merge.t)]);
+        for (let f = v.frameAt(split.t); f <= v.frameAt(merge.t + merge.seconds); f++)
+          frames.add(f);
+        let pieces = 0;
+        for (const frame of frames) {
+          const drawn = (await v.seek(
+            frame,
+            `const scene = document.querySelector('[data-scene="s2"]');
+             const box = (n) => { const r = n.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+             const op = (n) => Number.parseFloat(n.style.opacity || '1');
+             const pill = scene.querySelector('.fpacket');
+             return {
+               opacity: op(pill),
+               label: box(pill.querySelector('.nlabel')),
+               pieces: [...scene.querySelectorAll('.fpiece')].filter((n) => op(n) > 0).map(box),
+             };`,
+          )) as { opacity: number; label: Rect; pieces: Rect[] };
+          const where = `shot ${i + 1}, frame ${frame}`;
+          // The pill stays whole, so its label reads, and no piece covers it.
+          expect(drawn.opacity, where).toBe(1);
+          for (const piece of drawn.pieces) expect(apart(piece, drawn.label), where).toBe(true);
+          pieces += drawn.pieces.length;
+        }
+        expect(pieces).toBeGreaterThan(0);
+        expect(v.errors).toEqual([]);
+      }
+    });
 
   it('lets the first split to reach a node take its room, in a timeline built by hand', async () => {
     // A resolved direction never has both; drawn anyway, the node's own split gives way.

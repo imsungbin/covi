@@ -1,7 +1,13 @@
 import { type DiffLine, type Language, t } from '@covi/core';
 import { type CaptionOptions, captionOptionsFor } from '../captions.ts';
 import { computeRegions, gridSpacing, type Regions } from '../runtime/layout.ts';
-import { arrangedSplit, nodeFans, restingAt } from '../runtime/routes.ts';
+import {
+  arrangedPacketSplit,
+  arrangedSplit,
+  type NodeFanCount,
+  nodeFans,
+  restingAt,
+} from '../runtime/routes.ts';
 import { orientationOf, type VideoSpec } from '../spec.ts';
 import { clipLines } from '../storyboard/draft.ts';
 import { parseEmphasis } from '../storyboard/grammar.ts';
@@ -246,7 +252,7 @@ function resolveShot(
   const timed = timeBeats(shot, scene, timing, ctx.options, shown, ctx, { settle, entered });
   const counted = timed.beats.filter((b) => b.verb !== 'count' || countable.has(b.element));
   /** The shown elements in the slots `beats` leave them (`fans`: see `flowSlots`). */
-  const placed = (beats: readonly DirectionBeat[], fans?: ReadonlyMap<string, number>) => {
+  const placed = (beats: readonly DirectionBeat[], fans?: ReadonlyMap<string, NodeFanCount>) => {
     const slots = flowSlots(shot, beats, region, ctx.orientation, gap, ctx.regions.unit, fans);
     return resolved.flatMap((e, k) => (e ? [{ ...e, rect: slots[k]! }] : []));
   };
@@ -264,7 +270,7 @@ function resolveShot(
   const beats = stretchFlows(ordered.beats, limit);
   const dropped = [timed, roomy, travels, ordered].flatMap((pass) => pass.dropped);
   // A packet riding from a node a split fans out of starts on the box the split leaves that node.
-  const fans = new Map([...nodeFans({ elements, beats })].map(([id, fan]) => [id, fan.count]));
+  const fans = nodeFans({ elements, beats });
   if (fans.size) elements = placed(beats, fans);
   // Content a validated shot cites is in the run; should all of it be gone, the visual stays.
   if (!elements.length) {
@@ -728,10 +734,11 @@ function typedAt(
 const piecesText = (count: number) => `${count} ${count === 1 ? 'piece' : 'pieces'}`;
 
 /**
- * The splits that fan out of a node and have room to: a node's own, and a packet's that rests
- * against a node when it splits, whose pieces fan out in that node's slot rather than over its
- * label. A split whose slot has no arrangement for its pieces beside the label, or whose node
- * another split fans out of already (the first in time takes it), is left out, and said why.
+ * The splits that have room to fan out: a node's own, a packet's that rests against a node when
+ * it splits, whose pieces fan out in that node's slot rather than over its label, under its box
+ * and clear of the pill, and a packet's in its own slot, past its pill. A split whose slot has no
+ * arrangement for its pieces beside the label, or whose node another split fans out of already
+ * (the first in time takes it), is left out, and said why.
  */
 function fanRoom(
   beats: readonly DirectionBeat[],
@@ -740,18 +747,26 @@ function fanRoom(
 ): Pass {
   const byId = new Map(elements.map((e) => [e.id, e]));
   const taken = new Map<string, string>();
+  const { unit } = ctx.regions;
+  const tall = ctx.orientation === 'vertical';
   return sift(beats, (b) => {
     if (b.verb !== 'split') return undefined;
     const kind = byId.get(b.element)?.kind;
     const node = kind === 'node' ? b.element : kind === 'packet' ? restingAt(beats, b) : undefined;
-    const slot = node === undefined ? undefined : byId.get(node)?.rect;
-    if (node === undefined || !slot) return undefined;
-    const where =
-      node === b.element ? `node "${node}"` : `node "${node}", where "${b.element}" rests,`;
+    if (node === undefined) {
+      const own = kind === 'packet' ? byId.get(b.element)?.rect : undefined;
+      if (!own || arrangedPacketSplit(own, unit, tall, b.count)) return undefined;
+      const reason = `the slot of packet "${b.element}" has no room beside its label for ${piecesText(b.count)}`;
+      return { verb: b.verb, element: b.element, reason };
+    }
+    const slot = byId.get(node)?.rect;
+    if (!slot) return undefined;
+    const rests = node !== b.element;
+    const where = rests ? `node "${node}", where "${b.element}" rests,` : `node "${node}"`;
     const by = taken.get(node);
     let reason: string | undefined;
     if (by !== undefined) reason = `${where} already makes room for the split of "${by}"`;
-    else if (!arrangedSplit(slot, ctx.regions.unit, ctx.orientation === 'vertical', b.count))
+    else if (!arrangedSplit(slot, unit, tall, b.count, rests))
       reason = `the slot of ${where} has no room beside its label for ${piecesText(b.count)}`;
     if (reason !== undefined) return { verb: b.verb, element: b.element, reason };
     taken.set(node, b.element);

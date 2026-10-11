@@ -1,17 +1,23 @@
 import { describe, expect, it } from 'vitest';
+import { flowSlots } from '../src/direction/flow.ts';
 import { elementSlots } from '../src/direction/layout.ts';
+import type { Shot } from '../src/direction/schema.ts';
 import { computeRegions } from '../src/runtime/layout.ts';
 import {
+  arrangedPacketSplit,
   arrangedSplit,
   arrowHead,
   DRAWN_ITEMS,
   edgeRoute,
+  fanBoxes,
   fanOut,
   legPoint,
   nodeBoxRect,
   nodeFans,
+  packetSplit,
   pileGrid,
   pileGridWidth,
+  pillHeight,
   pointAlong,
   restingAt,
   routeLength,
@@ -367,9 +373,168 @@ describe('where splits fan out of nodes', () => {
     expect(nodeFans({ elements, beats: [...trips, split('p', 4, 3.5)] })).toEqual(new Map());
     expect(
       nodeFans({ elements, beats: [split('b', 3, 0.5), ...trips, split('p', 4, 2.5)] }),
-    ).toEqual(new Map([['b', { count: 3, element: 'b' }]]));
+    ).toEqual(new Map([['b', { count: 3, element: 'b', rests: false }]]));
     expect(nodeFans({ elements, beats: [...trips, split('p', 4, 5)] })).toEqual(
-      new Map([['c', { count: 4, element: 'p' }]]),
+      new Map([['c', { count: 4, element: 'p', rests: true }]]),
     );
+  });
+});
+
+describe('a packet that splits', () => {
+  const overlap = (a: Rect, b: Rect) =>
+    Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 1e-6 &&
+    Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 1e-6;
+  const inside = (r: Rect, slot: Rect) =>
+    r.x >= slot.x - 1e-6 &&
+    r.y >= slot.y - 1e-6 &&
+    r.x + r.width <= slot.x + slot.width + 1e-6 &&
+    r.y + r.height <= slot.y + slot.height + 1e-6;
+  // From where the pieces start, through the spread, to fanned out: a merge plays the same poses.
+  const POSES = [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1];
+  const FRAMES = [
+    ['16:9', 1920, 1080],
+    ['9:16', 1080, 1920],
+    ['square', 1080, 1080],
+  ] as const;
+  const frame = (width: number, height: number) => {
+    const orientation = orientationOf(width, height);
+    const regions = computeRegions({ width, height, orientation });
+    return { regions, orientation, unit: regions.unit, tall: orientation === 'vertical' };
+  };
+  const counts = [1, 2, 3, 4, 5, 6, 7, 9, 12, 40];
+
+  it('fans out past its pill in its own slot, off its label at every pose, as staged shots lay it out', () => {
+    let laid = 0;
+    for (const [name, width, height] of FRAMES) {
+      const { regions, orientation, unit, tall } = frame(width, height);
+      const at = (kinds: DirectionElement['kind'][], layout: 'auto' | 'split') =>
+        elementSlots(kinds, layout, regions.media, orientation, 28 * unit)[
+          kinds.indexOf('packet')
+        ]!;
+      // The default director's staged shot, the worked example's proof, and a packet alone.
+      const shots = [
+        ['the benchmark', at(['metric', 'packet', 'pile'], 'split')],
+        ['the example', at(['metric', 'packet'], 'split')],
+        ['alone', at(['packet'], 'auto')],
+      ] as const;
+      for (const [shot, slot] of shots) {
+        // Both staged shots keep their four chunks.
+        if (shot !== 'alone')
+          expect(arrangedPacketSplit(slot, unit, tall, 4), `${name}, ${shot}`).toBeDefined();
+        for (const count of counts) {
+          const l = arrangedPacketSplit(slot, unit, tall, count);
+          if (!l) continue;
+          laid++;
+          const where = `${name}, ${shot}, ${count} pieces`;
+          // The pill holds the label: a piece clear of the pill is clear of the label.
+          const pill = l.box;
+          expect(pill.height, where).toBeCloseTo(pillHeight(unit, tall), 6);
+          expect(pill.width, where).toBeCloseTo(Math.min(slot.width, 420 * unit), 6);
+          for (const k of POSES)
+            for (const piece of fanBoxes(l.fan, l.origin, k))
+              expect(overlap(piece, pill), `${where}, at ${k}`).toBe(false);
+          const fanned = fanBoxes(l.fan, l.origin, 1);
+          expect(fanned, where).toHaveLength(Math.min(count, DRAWN_ITEMS));
+          for (const r of [pill, l.caption, ...fanned]) expect(inside(r, slot), where).toBe(true);
+          expect(overlap(l.caption, pill), where).toBe(false);
+          for (const r of fanned) expect(overlap(r, l.caption), where).toBe(false);
+          // A narrower pill, as its label draws it, is laid out the same way or with more room.
+          expect(packetSplit(slot, unit, tall, count, 150 * unit).fan.width).toBeGreaterThanOrEqual(
+            l.fan.width - 1e-9,
+          );
+        }
+      }
+    }
+    expect(laid).toBeGreaterThan(80);
+  });
+
+  it('leaves a slot too small for its pill, its pieces, and their count without a split', () => {
+    const { unit } = frame(1920, 1080);
+    expect(arrangedPacketSplit(box(0, 0, 300, 150), unit, false, 4)).toBeUndefined();
+    // Drawn anyway (a timeline built by hand), its pieces still keep off its pill.
+    const l = packetSplit(box(0, 0, 300, 150), unit, false, 4);
+    for (const k of POSES)
+      for (const piece of fanBoxes(l.fan, l.origin, k)) expect(overlap(piece, l.box)).toBe(false);
+  });
+
+  it('fans out off a pill resting anywhere on the node it splits beside, at every pose', () => {
+    let laid = 0;
+    for (const [name, width, height] of FRAMES) {
+      const { unit, tall } = frame(width, height);
+      // A column's slots are short: no room under the box there, past a resting pill.
+      const layouts = [
+        ['2 side by side', slots(width, height, 2, 'auto').rects],
+        ['2×2', slots(width, height, 4, 'auto').rects],
+        ['a split for three', slots(width, height, 3, 'split').rects],
+        ['4 in a column', slots(width, height, 4, 'column').rects],
+      ] as const;
+      for (const [layout, rects] of layouts)
+        for (const slot of rects)
+          for (const count of counts) {
+            const l = arrangedSplit(slot, unit, tall, count, true);
+            if (!l) continue;
+            laid++;
+            const where = `${name}, ${layout}, ${count} pieces`;
+            expect(l, where).toEqual(splitLayout(slot, unit, tall, count, true));
+            expect(nodeBoxRect(slot, unit, tall, count, true), where).toEqual(l.box);
+            // The pill rests where an edge meets the box: anywhere on its sides, or at its center
+            // (boxes that overlap join center to center), at its widest.
+            const size = { width: 420 * unit, height: pillHeight(unit, tall) };
+            const b = l.box;
+            const rests = [
+              { x: b.x + b.width / 2, y: b.y + b.height / 2 },
+              ...[0, 0.25, 0.5, 0.75, 1].flatMap((f) => [
+                { x: b.x + f * b.width, y: b.y },
+                { x: b.x + f * b.width, y: b.y + b.height },
+                { x: b.x, y: b.y + f * b.height },
+                { x: b.x + b.width, y: b.y + f * b.height },
+              ]),
+            ];
+            const fanned = fanBoxes(l.fan, l.origin, 1);
+            for (const r of [l.caption, ...fanned]) {
+              expect(inside(r, slot), where).toBe(true);
+              expect(overlap(r, b), where).toBe(false);
+            }
+            for (const p of rests) {
+              const pill = {
+                x: p.x - size.width / 2,
+                y: p.y - size.height / 2,
+                ...size,
+              };
+              expect(overlap(l.caption, pill), where).toBe(false);
+              for (const k of POSES)
+                for (const piece of fanBoxes(l.fan, l.origin, k))
+                  expect(overlap(piece, pill), `${where}, at ${k}`).toBe(false);
+            }
+          }
+    }
+    expect(laid).toBeGreaterThan(200);
+  });
+
+  it('keeps the worked example’s split beside the reader, where its packet rests', () => {
+    // s1 of references/direction.md: two parts and a warning, split; the packet rides.
+    for (const [name, width, height] of FRAMES) {
+      const { regions, orientation, unit, tall } = frame(width, height);
+      const shot: Pick<Shot, 'elements' | 'layout' | 'beats'> = {
+        layout: 'split',
+        elements: [
+          { id: 'review', kind: 'node', label: 'Review' },
+          { id: 'reader', kind: 'node', label: 'Reader' },
+          { id: 'docs', kind: 'packet', label: 'Every document' },
+          { id: 'late', kind: 'label', text: 'Timed out', tone: 'warning' },
+        ],
+        beats: [{ verb: 'flow', from: 'review', to: 'reader', packet: 'docs' }],
+      };
+      const flow = { verb: 'flow', from: 'review', to: 'reader', packet: 'docs' } as const;
+      const placed = flowSlots(
+        shot,
+        [{ ...flow, t: 1, seconds: 1 }],
+        regions.media,
+        orientation,
+        28 * unit,
+        unit,
+      );
+      expect(arrangedSplit(placed[1]!, unit, tall, 4, true), name).toBeDefined();
+    }
   });
 });

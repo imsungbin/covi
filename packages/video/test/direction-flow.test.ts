@@ -1098,6 +1098,31 @@ describe('flow verbs in the direction file', () => {
     ]);
   });
 
+  it('leave out a split of a packet in its own slot with no room past its pill, saying why', () => {
+    // The packet no flow carries gets a row of the crowd: too short for its pill, its pieces
+    // under or beside it, and their count.
+    const d = crowded([
+      { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+    ]).direction;
+    expect(d.beats).toEqual([]);
+    expect(d.dropped).toEqual([
+      {
+        verb: 'split',
+        element: 'p',
+        reason: 'the slot of packet "p" has no room beside its label for 4 pieces',
+      },
+    ]);
+    // With a slot of its own that has room, it splits there.
+    const roomy = resolve(
+      shot(
+        [{ id: 'p', kind: 'packet', label: 'Request' }],
+        [{ verb: 'split', element: 'p', count: id('chunks'), side: 'base' }],
+      ),
+    )[1]!.direction;
+    expect(roomy.beats.map((b) => b.verb)).toEqual(['split']);
+    expect(roomy).not.toHaveProperty('dropped');
+  });
+
   it('start a packet that rides from a node that splits on the box the split leaves it', () => {
     const [, s2] = resolve(
       shot(

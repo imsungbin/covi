@@ -15,6 +15,7 @@ import {
   pullBack,
   restView,
   toWorld,
+  unview,
   viewAt,
   withPush,
 } from '../src/runtime/canvas.ts';
@@ -237,5 +238,45 @@ describe('the canvas viewport', () => {
     });
     expect(gridStyle({ ...at, x: at.x + 10 }, pivot, 30).position).toBe('20.00px 0.00px');
     expect(gridStyle({ ...at, scale: 2 }, pivot, 30).size).toBe('60.000px 60.000px');
+  });
+});
+
+describe('undoing the camera', () => {
+  it('puts a box drawn through a view back where its stop lays it out', () => {
+    const view = { x: pivot.x + 120, y: pivot.y - 40, scale: 1.6 };
+    const laid = { x: 300, y: 260, width: 200, height: 90 };
+    // What layerTransform draws: stop point p at pivot + scale · (p − view).
+    const drawn = {
+      x: pivot.x + view.scale * (laid.x - view.x),
+      y: pivot.y + view.scale * (laid.y - view.y),
+      width: laid.width * view.scale,
+      height: laid.height * view.scale,
+    };
+    const back = unview(drawn, view, pivot);
+    for (const k of ['x', 'y', 'width', 'height'] as const) expect(back[k]).toBeCloseTo(laid[k], 9);
+    expect(unview(laid, restView(pivot), pivot)).toEqual(laid);
+    // The inverse of drawnRect, wherever the stop sits.
+    const through = drawnRect(laid, toWorld(view, stop), stop, pivot);
+    for (const k of ['x', 'y', 'width', 'height'] as const)
+      expect(unview(through, view, pivot)[k]).toBeCloseTo(laid[k], 9);
+  });
+});
+
+describe('camera edge cases', () => {
+  it('cuts on a beat of no length: the view before it, then its target, never NaN', () => {
+    const rest = restView(pivot);
+    const to = { x: 900, y: 500, scale: 2 };
+    const steps: CameraStep[] = [{ t: 1, seconds: 0, to }];
+    expect(viewAt(steps, 0.99, rest)).toEqual(rest);
+    expect(viewAt(steps, 1, rest)).toEqual(rest);
+    expect(viewAt(steps, 1 + 1 / 30, rest)).toEqual(to);
+    expect(viewAt(steps, 5, rest)).toEqual(to);
+  });
+
+  it('leaves a view that pulls back alone: between stops it shows past the region', () => {
+    const back = { x: pivot.x + 900, y: pivot.y - 300, scale: 0.4 };
+    expect(clampView(back, media, pivot)).toEqual(back);
+    // At 1× and above it is held inside the region.
+    expect(clampView({ ...back, scale: 1 }, media, pivot)).toEqual(restView(pivot));
   });
 });

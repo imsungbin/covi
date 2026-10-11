@@ -7,6 +7,7 @@ import {
   type LayoutReport,
   type Point,
   type Rect,
+  type ShotReport,
   type Timeline,
   type TimelineScene,
 } from '../timeline/types.ts';
@@ -37,6 +38,7 @@ import {
   pullBack,
   restView,
   toWorld,
+  unview,
   type View,
   viewAt,
   withPush,
@@ -766,7 +768,25 @@ export class Stage {
       narratorParts: parts,
       headerText: active?.headerText.length ? active.headerText : undefined,
       imagesLoaded: this.imagesOk,
+      shot: active ? this.shotReport(active, time) : undefined,
       fontsFailed: this.fontsFailed.length ? this.fontsFailed : undefined,
+    };
+  }
+
+  /**
+   * A shot's elements as its stop lays them out, the camera undone, and the region it owns: what
+   * QC holds to the frame and to one another. Only between camera moves, and only for shots that
+   * lay out elements (a storyboard visual alone is drawn as without direction). The boxes are
+   * measured as drawn, through the camera; the view the frame was drawn with puts them back. An
+   * entrance, an exit, or a reveal still moves them: QC reads frames where the scene has settled.
+   */
+  private shotReport(m: MountedScene, time: number): ShotReport | undefined {
+    const moving = this.moveAt(m.index, time) || this.moveAt(m.index + 1, time);
+    if (!m.shot || !m.scene.stop || moving) return undefined;
+    const view = this.localView(m, time);
+    return {
+      region: m.region,
+      elements: m.shot.placed().map((e) => ({ id: e.id, rect: unview(e.rect, view, this.pivot) })),
     };
   }
 
@@ -801,10 +821,15 @@ export class Stage {
 
   /** Where the camera looks in a scene's own stop at `time` (world coordinates): beats, then push. */
   private stopView(m: MountedScene, time: number): View {
+    return toWorld(this.localView(m, time), m.scene.stop!);
+  }
+
+  /** The same view in the stop's own coordinates. */
+  private localView(m: MountedScene, time: number): View {
     const local = Math.max(0, time - m.scene.start);
     const push = m.camera && !m.component.camera ? cameraPush(local, m.camera) : 0;
     const view = viewAt(m.steps, local, restView(this.pivot));
-    return toWorld(clampView(withPush(view, push), m.region, this.pivot), m.scene.stop!);
+    return clampView(withPush(view, push), m.region, this.pivot);
   }
 
   /** Where the camera looks at `time` as it arrives at scene `j`'s stop, or rests there. */

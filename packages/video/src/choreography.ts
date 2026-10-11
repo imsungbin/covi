@@ -1,5 +1,6 @@
-import { listed } from './density.ts';
+import { area, clip, listed, settledReports } from './density.ts';
 import type { QcCheck } from './qc.ts';
+import { computeRegions } from './runtime/layout.ts';
 import { isCjk } from './text.ts';
 import { OUTRO_ID, storyScenes } from './timeline/build.ts';
 import { entranceSeconds, keptTokens, MORPH_SETTLE, shotSettledAt } from './timeline/cues.ts';
@@ -7,15 +8,24 @@ import { type MotionSpan, motionSpans } from './timeline/motion.ts';
 import {
   type DirectionElement,
   isCameraMove,
+  type LayoutReport,
   type MorphVisual,
+  type Rect,
   type Timeline,
 } from './timeline/types.ts';
 
 /*
  * Choreography checks: does something move whenever the narration speaks, without crowding the
- * moment; is every word on screen long enough to read; and did every beat asked for play. They
- * warn: they judge pacing, not broken output.
+ * moment; is every word on screen long enough to read; do a shot's elements keep clear of one
+ * another and of the frame's edges; and did every beat asked for play. They warn: they judge
+ * pacing, not broken output; only an element the frame cuts off fails.
  */
+
+/** What the choreography checks read of a timeline. */
+export type ChoreographyTimeline = Pick<
+  Timeline,
+  'scenes' | 'transition' | 'fps' | 'width' | 'height' | 'orientation'
+>;
 
 /** How long the picture may hold still under narration before the scene reads as a slide (s). */
 export const STILL_SECONDS = 1.5;
@@ -326,12 +336,116 @@ export function droppedBeatsCheck(timeline: Pick<Timeline, 'scenes'>): QcCheck {
   };
 }
 
+/** `inner` lies inside `outer`, give or take `tolerance` pixels on every side. */
+function inside(inner: Rect, outer: Rect, tolerance: number): boolean {
+  return (
+    inner.x >= outer.x - tolerance &&
+    inner.y >= outer.y - tolerance &&
+    inner.x + inner.width <= outer.x + outer.width + tolerance &&
+    inner.y + inner.height <= outer.y + outer.height + tolerance
+  );
+}
+
+/** Two elements overlapping by more than this share of the smaller collide. */
+export const OVERLAP_SHARE = 0.04;
+/** Boxes within this many design units of each other's edges are not told apart. */
+const EDGE_UNITS = 4;
+
+/**
+ * A shot's elements keep clear of one another where it has settled: no two of them overlap by
+ * more than 4% of the smaller, unless one lies wholly inside the other, which the layout does on
+ * purpose (a packet resting on its node).
+ */
+export function overlapCheck(
+  timeline: ChoreographyTimeline,
+  layouts: readonly LayoutReport[],
+): QcCheck {
+  const tolerance = EDGE_UNITS * computeRegions(timeline).unit;
+  // The largest overlap of each pair, over the frames it was measured at.
+  const hits = new Map<string, { scene: string; a: string; b: string; share: number }>();
+  let measured = 0;
+  for (const { scene, report } of settledReports(timeline, layouts)) {
+    const elements = report.shot?.elements ?? [];
+    if (elements.length > 1) measured++;
+    for (const [i, a] of elements.entries())
+      for (const b of elements.slice(i + 1)) {
+        if (inside(a.rect, b.rect, tolerance) || inside(b.rect, a.rect, tolerance)) continue;
+        const part = clip(a.rect, b.rect);
+        const share = part ? area(part) / Math.max(1, Math.min(area(a.rect), area(b.rect))) : 0;
+        const key = `${scene.id} ${a.id} ${b.id}`;
+        if (share > OVERLAP_SHARE + 1e-9 && share > (hits.get(key)?.share ?? 0))
+          hits.set(key, { scene: scene.id, a: a.id, b: b.id, share });
+      }
+  }
+  if (!hits.size)
+    return {
+      id: 'overlap',
+      status: 'pass',
+      message: measured
+        ? `No two elements of a shot overlap by more than ${Math.round(100 * OVERLAP_SHARE)}% of the smaller.`
+        : 'No shot with several elements was measured at a settled frame.',
+    };
+  const named = [...hits.values()].map(
+    (h) => `"${h.a}" and "${h.b}" in ${h.scene} (${Math.round(100 * h.share)}%)`,
+  );
+  return {
+    id: 'overlap',
+    status: 'warn',
+    message: `Elements collide: ${listed(named)}. Choose another \`layout\` for the shot, or fewer elements.`,
+  };
+}
+
+/**
+ * Where a shot has settled, every element is drawn inside the band its viewport closes to: the
+ * scene's region's rows across the frame's width (the header and the captions sit above and
+ * below; the sides hold nothing else). Elements are held where the stop lays them out: a camera
+ * that zooms toward one element crops the others by design, and that framing is not held against
+ * them. An element past the band is cut off by the frame or the viewport: broken output, so this
+ * fails.
+ */
+export function outOfFrameCheck(
+  timeline: ChoreographyTimeline,
+  layouts: readonly LayoutReport[],
+): QcCheck {
+  const tolerance = EDGE_UNITS * computeRegions(timeline).unit;
+  const out = new Map<string, string>();
+  let measured = 0;
+  for (const { scene, report } of settledReports(timeline, layouts)) {
+    const shot = report.shot;
+    if (!shot) continue;
+    measured++;
+    const r = shot.region;
+    const band = { x: 0, y: r.y, width: timeline.width, height: r.height };
+    for (const e of shot.elements)
+      if (!inside(e.rect, band, tolerance))
+        out.set(`${scene.id} ${e.id}`, `"${e.id}" in ${scene.id}`);
+  }
+  if (!out.size)
+    return {
+      id: 'out-of-frame',
+      status: 'pass',
+      message: measured
+        ? 'Every element of a shot is drawn inside its frame.'
+        : 'No shot was measured at a settled frame.',
+    };
+  return {
+    id: 'out-of-frame',
+    status: 'fail',
+    message: `Elements are cut off by the frame: ${listed([...out.values()])}. Show fewer lines or elements in the shot, or split it.`,
+  };
+}
+
 /** The choreography checks, in the order `qc.json` lists them. */
-export function choreographyChecks(timeline: Pick<Timeline, 'scenes' | 'transition'>): QcCheck[] {
+export function choreographyChecks(
+  timeline: ChoreographyTimeline,
+  layouts: readonly LayoutReport[],
+): QcCheck[] {
   return [
     motionGapCheck(timeline),
     motionBusyCheck(timeline),
     readingTimeCheck(timeline),
+    overlapCheck(timeline, layouts),
+    outOfFrameCheck(timeline, layouts),
     droppedBeatsCheck(timeline),
   ];
 }

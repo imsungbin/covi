@@ -67,7 +67,7 @@ export const listed = (names: readonly string[], sep = ', ') =>
  * Reports sampled while a story scene had settled and was alone on screen, and at the frame before
  * a directed scene's first camera beat, where its stop is at rest at its own scale.
  */
-function settledReports(
+export function settledReports(
   timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps'>,
   layouts: readonly LayoutReport[],
 ): Array<{ scene: TimelineScene; report: LayoutReport }> {
@@ -137,10 +137,10 @@ export function textSizeCheck(
   };
 }
 
-const area = (r: Rect) => Math.max(0, r.width) * Math.max(0, r.height);
+export const area = (r: Rect) => Math.max(0, r.width) * Math.max(0, r.height);
 
 /** The part of `a` inside `b`, if any. */
-function clip(a: Rect, b: Rect): Rect | undefined {
+export function clip(a: Rect, b: Rect): Rect | undefined {
   const x = Math.max(a.x, b.x);
   const y = Math.max(a.y, b.y);
   const right = Math.min(a.x + a.width, b.x + b.width);

@@ -215,6 +215,20 @@ export function drawnRect(rect: Rect, view: View, stop: Stop, pivot: Point): Rec
   };
 }
 
+/**
+ * A box drawn on screen through a stop-local `view`, back where the stop lays it out: what it
+ * covers when the camera is at rest. The inverse of `drawnRect`, which draws stop point p at
+ * pivot + scale · (p − view).
+ */
+export function unview(rect: Rect, view: View, pivot: Point): Rect {
+  return {
+    x: view.x + (rect.x - pivot.x) / view.scale,
+    y: view.y + (rect.y - pivot.y) / view.scale,
+    width: rect.width / view.scale,
+    height: rect.height / view.scale,
+  };
+}
+
 export function lerpRect(a: Rect, b: Rect, k: number): Rect {
   return {
     x: lerp(a.x, b.x, k),

@@ -503,6 +503,16 @@ export interface LayoutItem {
   text?: 'code' | 'body' | 'meta';
 }
 
+/**
+ * A directed scene's elements as its stop lays them out, the camera aside: each element's box
+ * around all it draws, and the region the scene owns, in stage pixels (where they are on screen
+ * when the camera is at rest).
+ */
+export interface ShotReport {
+  region: Rect;
+  elements: Array<{ id: string; rect: Rect }>;
+}
+
 export interface LayoutReport {
   frame: number;
   scene?: string;
@@ -517,6 +527,8 @@ export interface LayoutReport {
   /** The scene header's lines of text. */
   headerText?: Rect[];
   imagesLoaded: boolean;
+  /** A directed scene's elements and region, while no camera move between stops is under way. */
+  shot?: ShotReport;
   /** Font families with a declared face that failed to load. */
   fontsFailed?: string[];
 }

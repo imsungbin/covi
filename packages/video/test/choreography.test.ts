@@ -4,12 +4,17 @@ import {
   droppedBeatsCheck,
   motionBusyCheck,
   motionGapCheck,
+  outOfFrameCheck,
+  overlapCheck,
   readingSeconds,
   readingTimeCheck,
 } from '../src/choreography.ts';
+import { computeRegions } from '../src/runtime/layout.ts';
+import { settledFrame } from '../src/timeline/cues.ts';
 import type {
   DirectionBeat,
   DirectionElement,
+  LayoutReport,
   Timeline,
   TimelineScene,
 } from '../src/timeline/types.ts';
@@ -229,15 +234,80 @@ describe('dropped beats', () => {
   });
 });
 
-describe('the choreography checks', () => {
-  it('come in one order, and warn', () => {
-    const checks = choreographyChecks(timeline([scene('s1', 0, 6), outro(6)]));
+describe('shots on the frame', () => {
+  const media = computeRegions({ width: 1920, height: 1080, orientation: 'landscape' }).media;
+  const t = timeline([scene('s1', 0, 6, { direction: shot([label('a', 'A'), label('b', 'B')]) })]);
+  const at = (elements: Array<{ id: string; rect: typeof rect }>, frame = settledFrame(t, 0)!) =>
+    [
+      { frame, scene: 's1', items: [], imagesLoaded: true, shot: { region: media, elements } },
+    ] as LayoutReport[];
+  const box = (x: number, y: number, width = 400, height = 300) => ({ x, y, width, height });
+
+  it('warn on elements that collide, but not on one set inside another', () => {
+    const a = box(media.x, media.y);
+    expect(
+      overlapCheck(
+        t,
+        at([
+          { id: 'a', rect: a },
+          { id: 'b', rect: box(media.x + 350, media.y) },
+        ]),
+      ).message,
+    ).toContain('"a" and "b" in s1 (13%)');
+    // 3% of the smaller: close, not colliding.
+    expect(
+      overlapCheck(
+        t,
+        at([
+          { id: 'a', rect: a },
+          { id: 'b', rect: box(media.x + 388, media.y) },
+        ]),
+      ).status,
+    ).toBe('pass');
+    // A packet on its node lies wholly inside it, by design.
+    expect(
+      overlapCheck(
+        t,
+        at([
+          { id: 'a', rect: a },
+          { id: 'p', rect: box(media.x + 50, media.y + 50, 100, 60) },
+        ]),
+      ).status,
+    ).toBe('pass');
+  });
+
+  it('fail an element drawn past the frame, within a few pixels of tolerance', () => {
+    const past = outOfFrameCheck(t, at([{ id: 'a', rect: box(t.width - 380, media.y) }]));
+    expect(past).toMatchObject({ id: 'out-of-frame', status: 'fail' });
+    expect(past.message).toContain('"a" in s1');
+    const edge = box(t.width - 403, media.y);
+    expect(outOfFrameCheck(t, at([{ id: 'a', rect: edge }])).status).toBe('pass');
+    // The side margin is drawn even while the viewport clips: only the region's rows are cut.
+    const margin = box(media.x + media.width - 380, media.y);
+    expect(outOfFrameCheck(t, at([{ id: 'a', rect: margin }])).status).toBe('pass');
+    const above = outOfFrameCheck(t, at([{ id: 'a', rect: box(media.x, media.y - 20) }]));
+    expect(above.status).toBe('fail');
+  });
+
+  it('read only frames where the scene has settled, and say when nothing was measured', () => {
+    const early = at([{ id: 'a', rect: box(media.x + media.width - 100, media.y) }], 1);
+    expect(outOfFrameCheck(t, early).message).toBe('No shot was measured at a settled frame.');
+    // A frames.json written before shots were reported: nothing to hold, nothing failed.
+    const old = at([]).map(({ shot: _, ...report }) => report);
+    expect(outOfFrameCheck(t, old)).toMatchObject({ status: 'pass' });
+    expect(overlapCheck(t, old)).toMatchObject({ status: 'pass' });
+  });
+
+  it('come in one order, out-of-frame the only one that fails', () => {
+    const checks = choreographyChecks(t, at([{ id: 'a', rect: box(-50, media.y) }]));
     expect(checks.map((c) => c.id)).toEqual([
       'motion-gap',
       'motion-busy',
       'reading-time',
+      'overlap',
+      'out-of-frame',
       'dropped-beats',
     ]);
-    expect(checks.every((c) => c.status === 'pass')).toBe(true);
+    expect(checks.filter((c) => c.status === 'fail').map((c) => c.id)).toEqual(['out-of-frame']);
   });
 });

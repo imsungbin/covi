@@ -17,6 +17,7 @@ import {
   type LayoutReport,
   layoutChecks,
   layoutScenes,
+  outOfFrameCheck,
   pacingFor,
   type Rect,
   resolveVideoSpec,
@@ -1006,5 +1007,62 @@ describe.skipIf(!available)('a shot’s elements', () => {
     expect(ring.opacity).toBeGreaterThan(0.05);
     expect(Math.abs(ring.x - pivot.x)).toBeLessThan(1);
     expect(Math.abs(ring.y - pivot.y)).toBeLessThan(1);
+  });
+});
+
+describe.skipIf(!available)('a shot reported to QC', () => {
+  it('reports each element where its stop lays it out, whatever the camera does', async () => {
+    const v = await directed(
+      story,
+      [
+        {
+          scene: 's3',
+          layout: 'row',
+          elements,
+          beats: [{ verb: 'camera', move: 'zoom', to: 'note', at: 'and nothing else' }],
+        },
+      ],
+      { sources: run },
+    );
+    const s3 = v.scene('s3');
+    const beat = s3.direction!.beats.find((b) => b.verb === 'camera')!;
+    const zoomed = v.frameAt('s3', beat.t + beat.seconds + 0.1);
+    expect(camera(v.of(await v.state(zoomed), 's3').transform).scale).toBeGreaterThan(1.5);
+    const before = (await v.report(v.frameAt('s3', beat.t - 0.05))).shot!;
+    const after = (await v.report(zoomed)).shot!;
+    expect(after.region).toEqual(regions.media);
+    expect(after.elements.map((e) => e.id)).toEqual(['req', 'note', 'out']);
+    for (const [i, e] of after.elements.entries()) {
+      // The zoom and the push-in are undone: the same box before and after the camera moved.
+      const was = before.elements[i]!.rect;
+      for (const k of ['x', 'y', 'width', 'height'] as const)
+        expect(Math.abs(e.rect[k] - was[k]), `${e.id} ${k}`).toBeLessThan(0.5);
+      // Inside its own slot.
+      const slot = s3.direction!.elements.find((x) => x.id === e.id)!.rect;
+      expect(e.rect.x, e.id).toBeGreaterThanOrEqual(slot.x - 0.5);
+      expect(e.rect.x + e.rect.width, e.id).toBeLessThanOrEqual(slot.x + slot.width + 0.5);
+    }
+    // A storyboard visual shown alone is drawn as without direction: no shot to report.
+    expect((await v.report(v.frameAt('s2', 1.5))).shot).toBeUndefined();
+  });
+
+  it('fails a label pushed past the frame, and passes it where the layout put it', async () => {
+    const single: DirectionInput['shots'] = [
+      { scene: 's3', elements: [{ id: 'note', kind: 'label', text: 'Much smaller' }] },
+    ];
+    const check = async (v: Awaited<ReturnType<typeof directed>>) => {
+      const index = v.timeline.scenes.findIndex((s) => s.id === 's3');
+      return outOfFrameCheck(v.timeline, [await v.report(settledFrame(v.timeline, index)!)]);
+    };
+    expect((await check(await directed(story, single))).status).toBe('pass');
+    const pushed = await directed(story, single, {
+      edit: (timeline) => {
+        const note = timeline.scenes.find((s) => s.id === 's3')!.direction!.elements[0]!;
+        note.rect = { ...note.rect, x: note.rect.x + 0.6 * note.rect.width };
+      },
+    });
+    const failed = await check(pushed);
+    expect(failed.status).toBe('fail');
+    expect(failed.message).toContain('"note" in s3');
   });
 });

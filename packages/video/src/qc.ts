@@ -915,7 +915,7 @@ export async function runQc(input: QcInput): Promise<QcReport> {
   checks.push(
     ...layoutChecks(input.timeline, input.layouts),
     ...densityChecks(input.timeline, input.layouts),
-    ...choreographyChecks(input.timeline),
+    ...choreographyChecks(input.timeline, input.layouts),
     ...timingChecks(input.timeline, input.speech),
     ...speechChecks(input.speech),
   );

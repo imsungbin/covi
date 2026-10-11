@@ -35,7 +35,7 @@ The key number is the largest thing on screen when it lands: make its `metric` t
 
 A `count` or a `count-up` lands on its phrase, so quote the words that say the number; every other verb starts on its phrase once what it acts on is in place (a morph may start earlier, so its new code can be read). Beats without `at` spread through the line in the order written. `flow`, `split`, `merge`, and `stack` are the flow verbs.
 
-A `count` or `count-up` of a metric you also `reveal` waits for the reveal, shortened so that it still lands on its phrase: start the reveal at least 2.1 s before that phrase for a full count (1.1 s at the least, for a count of 0.6 s), or leave the reveal out. A beat that cannot play where you put it (a split with no room beside its node's name, a trip while its packet is split) is left out with a warning that says why.
+A `count` or `count-up` of a metric you also `reveal` waits for the reveal, shortened so that it still lands on its phrase: start the reveal at least 2.1 s before that phrase for a full count (1.1 s at the least, for a count of 0.6 s), or leave the reveal out. A beat that cannot play where you put it (a split with no room beside its node's name and clear of its packet's pill, or, for a packet no flow carries, none past its pill in its own slot; a trip while its packet is split) is left out with a warning that says why.
 
 ## Elements
 

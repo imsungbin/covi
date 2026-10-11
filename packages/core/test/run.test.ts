@@ -152,7 +152,7 @@ describe('Run', () => {
     await run.stage('understand', async () => run.warn('Model analysis failed'));
     await run.stage('video', async () => {
       run.warn('Video QC warn: X');
-      // Already the run's, from another stage: not the video's to take back.
+      // Already the run's, from another stage, which stands behind it whatever the video does.
       run.warn('Model analysis failed');
       run.warn('Video QC fail: tok-secret-123 leaked');
     });
@@ -182,17 +182,38 @@ describe('Run', () => {
     ]);
     const manifest = JSON.parse(readFileSync(join(run.dir, 'run.json'), 'utf8'));
     expect(manifest.warnings).toEqual(reopened.manifest.warnings);
-    // Each stage records what it added to the run.
+    // Each stage records what it raised.
     expect(
       manifest.stages.map((s: { name: string; warnings?: string[] }) => [s.name, s.warnings]),
     ).toEqual([
       ['understand', ['Model analysis failed']],
-      ['video', ['Video QC warn: X', 'Video QC fail: [REDACTED] leaked']],
+      ['video', ['Video QC warn: X', 'Model analysis failed', 'Video QC fail: [REDACTED] leaked']],
       ['draft', ['Draft only']],
       ['video', ['Video QC warn: Y']],
       ['video', undefined],
       ['draft', ['Draft only']],
     ]);
+  });
+
+  it('keeps a warning two stages raised until neither stands behind it', async () => {
+    root = mkdtempSync(join(tmpdir(), 'covi-run-'));
+    const run = await Run.create(options());
+    const shared = 'Narration requested but unavailable: no voice. Rendering with captions only.';
+    // A draft raises it, then the render: running the draft again without it keeps it, since the
+    // render still stands behind it, and the render's taking it back too lets it go.
+    await run.stage('draft', async () => run.warn(shared));
+    await run.stage('video', async () => run.warn(shared));
+    expect(run.retracted('draft')).toEqual(new Set());
+    await run.stage('draft', async () => {});
+    expect(run.manifest.warnings).toEqual([shared]);
+    expect(run.retracted('video')).toEqual(new Set([shared]));
+    await run.stage('video', async () => {});
+    expect(run.manifest.warnings).toEqual([]);
+    // Raised by the render first and a draft after: the render's going leaves the draft's.
+    await run.stage('video', async () => run.warn(shared));
+    await run.stage('draft', async () => run.warn(shared));
+    await run.stage('video', async () => {});
+    expect(run.manifest.warnings).toEqual([shared]);
   });
 
   it('refuses artifact paths that escape the run directory', async () => {

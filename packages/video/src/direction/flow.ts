@@ -1,5 +1,5 @@
 import type { EvidenceIndex } from '@covi/core';
-import { EDGE_MIN, type NodeFanCount, nodeBoxRect } from '../runtime/routes.ts';
+import { EDGE_MIN, type NodeSplit, nodeBoxRect } from '../runtime/routes.ts';
 import type {
   ChangeSide,
   DirectionBeat,
@@ -54,7 +54,7 @@ export function flowSlots(
   orientation: 'vertical' | 'landscape' | 'square',
   gap: number,
   unit: number,
-  fans: ReadonlyMap<string, Pick<NodeFanCount, 'count' | 'rests'>> = new Map(),
+  fans: ReadonlyMap<string, Pick<NodeSplit, 'count' | 'rests'>> = new Map(),
 ): Rect[] {
   // The node each travelling packet leaves first.
   const leaves = new Map<string, string>();

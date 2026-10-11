@@ -19,6 +19,7 @@ import {
   pileGridWidth,
   pillHeight,
   pointAlong,
+  type Resting,
   restingAt,
   routeLength,
   type SplitLayout,
@@ -455,9 +456,12 @@ describe('a packet that splits', () => {
     const l = packetSplit(box(0, 0, 300, 150), unit, false, 4);
     for (const k of POSES)
       for (const piece of fanBoxes(l.fan, l.origin, k)) expect(overlap(piece, l.box)).toBe(false);
+    // A slot shorter than the pill has no room, however wide.
+    expect(arrangedPacketSplit(box(0, 0, 1200, 40), unit, false, 4)).toBeUndefined();
+    expect(arrangedPacketSplit(box(0, 0, 1200, 64), unit, false, 1)).toBeDefined();
   });
 
-  it('fans out off a pill resting anywhere on the node it splits beside, at every pose', () => {
+  it('fans out off a pill resting anywhere on the node it splits beside, where that is not known', () => {
     let laid = 0;
     for (const [name, width, height] of FRAMES) {
       const { unit, tall } = frame(width, height);
@@ -509,6 +513,56 @@ describe('a packet that splits', () => {
           }
     }
     expect(laid).toBeGreaterThan(200);
+  });
+
+  it('fans out off a pill resting where its trip meets the node, at every pose, in more slots', () => {
+    let laid = 0;
+    let more = 0;
+    for (const [name, width, height] of FRAMES) {
+      const { unit, tall } = frame(width, height);
+      const layouts = [
+        ['2 side by side', slots(width, height, 2, 'auto').rects],
+        ['2×2', slots(width, height, 4, 'auto').rects],
+        ['a split for three', slots(width, height, 3, 'split').rects],
+        ['a split for four', slots(width, height, 4, 'split').rects],
+        ['4 in a column', slots(width, height, 4, 'column').rects],
+      ] as const;
+      for (const [layout, rects] of layouts)
+        for (const [i, slot] of rects.entries())
+          for (const [j, from] of rects.entries()) {
+            if (i === j) continue;
+            const other = textBoxRect(from, unit, tall);
+            for (const arrives of [true, false])
+              for (const count of counts) {
+                const rests: Resting = { other, arrives, width: 420 * unit };
+                const where = `${name}, ${layout}, ${j}→${i}, ${arrives ? 'arrived' : 'leaving'}, ${count} pieces`;
+                const l = arrangedSplit(slot, unit, tall, count, rests);
+                // Wherever it fits not knowing where the pill is, it fits knowing it.
+                if (arrangedSplit(slot, unit, tall, count, true)) expect(l, where).toBeDefined();
+                if (!l) continue;
+                laid++;
+                if (!arrangedSplit(slot, unit, tall, count, true)) more++;
+                expect(l, where).toEqual(splitLayout(slot, unit, tall, count, rests));
+                expect(nodeBoxRect(slot, unit, tall, count, rests), where).toEqual(l.box);
+                // The pill, at its widest, rests where the edge between the boxes meets this one.
+                const at = arrives ? edgeRoute(other, l.box).at(-1)! : edgeRoute(l.box, other)[0]!;
+                const size = { width: 420 * unit, height: pillHeight(unit, tall) };
+                const pill = { x: at.x - size.width / 2, y: at.y - size.height / 2, ...size };
+                const fanned = fanBoxes(l.fan, l.origin, 1);
+                for (const r of [l.caption, ...fanned]) {
+                  expect(inside(r, slot), where).toBe(true);
+                  expect(overlap(r, l.box), where).toBe(false);
+                }
+                expect(overlap(l.caption, pill), where).toBe(false);
+                for (const k of POSES)
+                  for (const piece of fanBoxes(l.fan, l.origin, k))
+                    expect(overlap(piece, pill), `${where}, at ${k}`).toBe(false);
+              }
+          }
+    }
+    expect(laid).toBeGreaterThan(1000);
+    // Knowing where the pill rests finds room in many slots that keeping off every side does not.
+    expect(more).toBeGreaterThan(200);
   });
 
   it('keeps the worked example’s split beside the reader, where its packet rests', () => {

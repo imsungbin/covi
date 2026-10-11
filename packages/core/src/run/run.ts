@@ -55,7 +55,7 @@ export interface StageRecord {
   durationMs: number;
   reason?: string;
   error?: string;
-  /** The warnings it added to the run, which running the stage again takes back. */
+  /** The warnings it raised, which running the stage again takes back unless another stage did too. */
   warnings?: string[];
 }
 
@@ -334,13 +334,26 @@ export class Run {
   }
 
   /**
+   * The warnings running stage `name` again takes back: what it raised before that no other stage
+   * stands behind (as its latest run raised it).
+   */
+  retracted(name: string): Set<string> {
+    const latest = new Map(this.manifest.stages.map((s) => [s.name, s]));
+    latest.delete(name);
+    const others = new Set([...latest.values()].flatMap((s) => s.warnings ?? []));
+    return new Set(
+      this.manifest.stages.flatMap((s) =>
+        s.name === name ? (s.warnings ?? []).filter((w) => !others.has(w)) : [],
+      ),
+    );
+  }
+
+  /**
    * Runs a stage and records it. A stage that ran before replaces what it warned about then (a
    * re-render's checks describe the new video, not the last one); other warnings stay.
    */
   async stage<T>(name: string, fn: () => Promise<T>): Promise<T> {
-    const stale = new Set(
-      this.manifest.stages.flatMap((s) => (s.name === name ? (s.warnings ?? []) : [])),
-    );
+    const stale = this.retracted(name);
     this.manifest.warnings = this.manifest.warnings.filter((w) => !stale.has(w));
     const started = Date.now();
     const record: StageRecord = {
@@ -385,9 +398,10 @@ export class Run {
 
   warn(message: string): void {
     const m = this.redactor.redact(message);
-    if (this.manifest.warnings.includes(m)) return;
-    this.manifest.warnings.push(m);
-    if (this.running) this.running.warnings = [...(this.running.warnings ?? []), m];
+    if (!this.manifest.warnings.includes(m)) this.manifest.warnings.push(m);
+    // Every stage that raises it stands behind it, even one that raised it again.
+    const own = this.running?.warnings ?? [];
+    if (this.running && !own.includes(m)) this.running.warnings = [...own, m];
   }
 
   setChange(change: CodeChange): void {

@@ -25,7 +25,7 @@ import {
   type Leg,
   legPoint,
   legProgress,
-  nodeFans,
+  nodeSplits,
   PILE_ITEM_MIN,
   packetSplit,
   pileGrid,
@@ -100,7 +100,8 @@ export interface NodeFan {
 
 /**
  * Every node a split fans out of, laid out in its slot so the pieces and their count keep off its
- * label: a node that splits, and a node a packet rests against when it splits (`nodeFans`).
+ * label: a node that splits, and a node a packet rests against when it splits, whose pieces also
+ * keep off the pill where it rests (`nodeSplits`).
  */
 export function nodeFanLayouts(
   direction: SceneDirection,
@@ -109,7 +110,7 @@ export function nodeFanLayouts(
   const tall = ctx.timeline.orientation === 'vertical';
   const slots = new Map(direction.elements.map((e) => [e.id, e.rect]));
   const fans = new Map<string, NodeFan>();
-  for (const [node, fan] of nodeFans(direction)) {
+  for (const [node, fan] of nodeSplits(direction, ctx.regions.unit, tall)) {
     const slot = slots.get(node);
     if (slot)
       fans.set(node, {
@@ -359,10 +360,14 @@ interface Pieces {
   report(): LayoutItem[];
 }
 
+/** The share of a split's time its pieces take to fade in, and of a merge's to fade out. */
+const PIECE_FADE = 0.15;
+
 /**
  * The pieces a split fans out of a source, which stays whole (a node's box, or a packet's pill and
  * its label), and the count they stand for, captioned with the side it was measured on. A merge
- * pulls them back into the source.
+ * pulls them back into the source. They fade in as they come out and out as they go back, so
+ * they never pop in or out stacked where they come out.
  */
 function pieces(
   split: SplitSpan,
@@ -382,14 +387,17 @@ function pieces(
     easeOutCubic(seg(t, split.t, split.t + split.seconds)) *
     (1 - (merge ? easeInOutCubic(seg(t, merge.t, merge.t + merge.seconds)) : 0));
   const live = (t: number) => t >= split.t && !(merge && t >= merge.t + merge.seconds);
+  const shown = (t: number) =>
+    seg(t, split.t, split.t + PIECE_FADE * split.seconds) *
+    (merge ? 1 - seg(t, merge.t + (1 - PIECE_FADE) * merge.seconds, merge.t + merge.seconds) : 1);
   return {
     spread,
     update(t, origin) {
-      const on = live(t);
+      const opacity = live(t) ? shown(t).toFixed(3) : '0';
       fanBoxes(fan, origin, spread(t)).forEach((box, i) => {
         const piece = nodes[i]!;
         piece.style.transform = `translate(${box.x.toFixed(2)}px, ${box.y.toFixed(2)}px)`;
-        piece.style.opacity = on ? '1' : '0';
+        piece.style.opacity = opacity;
       });
       const fadeOut = merge ? 1 - seg(t, merge.t, merge.t + 0.4 * merge.seconds) : 1;
       for (const [b, opacity] of [

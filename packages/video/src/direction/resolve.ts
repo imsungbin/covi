@@ -4,8 +4,8 @@ import { computeRegions, gridSpacing, type Regions } from '../runtime/layout.ts'
 import {
   arrangedPacketSplit,
   arrangedSplit,
-  type NodeFanCount,
-  nodeFans,
+  type NodeSplit,
+  nodeSplits,
   restingAt,
 } from '../runtime/routes.ts';
 import { orientationOf, type VideoSpec } from '../spec.ts';
@@ -252,25 +252,41 @@ function resolveShot(
   const timed = timeBeats(shot, scene, timing, ctx.options, shown, ctx, { settle, entered });
   const counted = timed.beats.filter((b) => b.verb !== 'count' || countable.has(b.element));
   /** The shown elements in the slots `beats` leave them (`fans`: see `flowSlots`). */
-  const placed = (beats: readonly DirectionBeat[], fans?: ReadonlyMap<string, NodeFanCount>) => {
+  const placed = (beats: readonly DirectionBeat[], fans?: ReadonlyMap<string, NodeSplit>) => {
     const slots = flowSlots(shot, beats, region, ctx.orientation, gap, ctx.regions.unit, fans);
     return resolved.flatMap((e, k) => (e ? [{ ...e, rect: slots[k]! }] : []));
   };
   // Which packets travel decides the layout, and the layout which splits have room. A trip that
   // leaves while its packet is split is left out, so a packet left with no trip takes a slot of
   // its own; on that layout, splits find their room, and a trip left out only for a split that
-  // then has no room travels after all. The second pass cannot change which packets ride or what
-  // the layout reserved: a packet that splits at or before its first trip keeps its split here.
-  const travelling = travelsWhole(counted).beats;
+  // then has no room travels after all, for a packet that rides anyway. The second pass cannot
+  // change which packets ride or what the layout reserved: a packet that rides on no trip keeps
+  // its slot, and its trips stay left out as they were, even once its split is left out too.
+  const first = travelsWhole(counted);
+  const travelling = first.beats;
   let elements = placed(travelling);
   const roomy = fanRoom(travelling, elements, ctx);
   const room = new Set(roomy.beats);
-  const travels = travelsWhole(counted.filter((b) => b.verb !== 'split' || room.has(b)));
+  const rides = new Set(
+    travelling.flatMap((b) => (b.verb === 'flow' && b.packet !== undefined ? [b.packet] : [])),
+  );
+  const grounded = (b: DirectionBeat) =>
+    b.verb === 'flow' && b.packet !== undefined && !rides.has(b.packet);
+  const second = travelsWhole(
+    counted.filter((b) => (b.verb !== 'split' || room.has(b)) && !grounded(b)),
+  );
+  const travels: Pass = {
+    beats: second.beats,
+    dropped: [
+      ...second.dropped,
+      ...first.dropped.filter((d) => d.verb === 'flow' && !rides.has(d.element)),
+    ],
+  };
   const ordered = flowOrder(travels.beats, elements);
   const beats = stretchFlows(ordered.beats, limit);
   const dropped = [timed, roomy, travels, ordered].flatMap((pass) => pass.dropped);
   // A packet riding from a node a split fans out of starts on the box the split leaves that node.
-  const fans = nodeFans({ elements, beats });
+  const fans = nodeSplits({ elements, beats }, ctx.regions.unit, ctx.orientation === 'vertical');
   if (fans.size) elements = placed(beats, fans);
   // Content a validated shot cites is in the run; should all of it be gone, the visual stays.
   if (!elements.length) {
@@ -735,10 +751,10 @@ const piecesText = (count: number) => `${count} ${count === 1 ? 'piece' : 'piece
 
 /**
  * The splits that have room to fan out: a node's own, a packet's that rests against a node when
- * it splits, whose pieces fan out in that node's slot rather than over its label, under its box
- * and clear of the pill, and a packet's in its own slot, past its pill. A split whose slot has no
- * arrangement for its pieces beside the label, or whose node another split fans out of already
- * (the first in time takes it), is left out, and said why.
+ * it splits, whose pieces fan out in that node's slot rather than over its label, clear of the
+ * pill where it rests (`nodeSplits`), and a packet's in its own slot, past its pill. A split whose
+ * slot has no arrangement for its pieces beside the label, or whose node another split fans out
+ * of already (the first in time takes it), is left out, and said why.
  */
 function fanRoom(
   beats: readonly DirectionBeat[],
@@ -749,6 +765,8 @@ function fanRoom(
   const taken = new Map<string, string>();
   const { unit } = ctx.regions;
   const tall = ctx.orientation === 'vertical';
+  // Where each resting packet's pill is, as the render lays its node out.
+  const planned = nodeSplits({ elements, beats }, unit, tall);
   return sift(beats, (b) => {
     if (b.verb !== 'split') return undefined;
     const kind = byId.get(b.element)?.kind;
@@ -761,7 +779,9 @@ function fanRoom(
     }
     const slot = byId.get(node)?.rect;
     if (!slot) return undefined;
-    const rests = node !== b.element;
+    const plan = planned.get(node);
+    // A node an earlier split took and left out: its pill may be anywhere on the box's sides.
+    const rests = node === b.element ? false : plan?.element === b.element ? plan.rests : true;
     const where = rests ? `node "${node}", where "${b.element}" rests,` : `node "${node}"`;
     const by = taken.get(node);
     let reason: string | undefined;

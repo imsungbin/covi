@@ -30,6 +30,7 @@ import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import {
   EDGE_MIN,
   edgeRoute,
+  nodeSplits,
   PILE_ITEM_MIN,
   pointAlong,
   routeLength,
@@ -249,7 +250,7 @@ const read = (v: Staged, frame: number) =>
      const dot = scene.querySelector('.fdot');
      return {
        nodes,
-       packet: pill ? { ...box(pill), opacity: op(pill), label: pill.querySelector('.nlabel')?.textContent ?? null, labelOpacity: pill.querySelector('.nlabel') ? op(pill.querySelector('.nlabel')) : 0, children: pill.querySelector('.nlabel')?.children.length ?? 0 } : null,
+       packet: pill ? { ...box(pill), opacity: Number(getComputedStyle(pill).opacity), label: pill.querySelector('.nlabel')?.textContent ?? null, labelOpacity: pill.querySelector('.nlabel') ? op(pill.querySelector('.nlabel')) : 0, children: pill.querySelector('.nlabel')?.children.length ?? 0 } : null,
        pieces: [...scene.querySelectorAll('.fpiece')].filter((n) => op(n) > 0).map(box),
        badges: [...scene.querySelectorAll('.fbadge')].map((badge) => ({ opacity: op(badge), side: badge.querySelector('.fside').textContent,
          name: badge.querySelector('.fname').textContent, num: badge.querySelector('.fnum').textContent, children: badge.querySelector('.fname').children.length })),
@@ -441,6 +442,38 @@ describe.skipIf(!available)('splits and merges', () => {
     ]);
   });
 
+  it('fades the pieces in as they come out and out as they go back, never popping', async () => {
+    const MERGE = { verb: 'merge', element: 'q', t: 3, seconds: 0.8 } as const;
+    const SPLIT = chunks(4);
+    const v = await staged(alone, [SPLIT, MERGE]);
+    const ramp = (t: number, from: number, to: number) =>
+      Math.min(1, Math.max(0, (t - from) / (to - from)));
+    const opacities = (frame: number) =>
+      v.seek(
+        frame,
+        `return [...document.querySelectorAll('[data-scene="s2"] .fpiece')].map((n) => Number.parseFloat(n.style.opacity || '1'));`,
+      ) as Promise<number[]>;
+    // Over the first 15% of the split they fade in; over the last 15% of the merge, out.
+    const start = SPLIT.t + 0.15 * SPLIT.seconds;
+    const end = MERGE.t + MERGE.seconds;
+    const fades = [
+      ...Array.from({ length: 6 }, (_, i) => v.frameAt(SPLIT.t - 0.05 + 0.04 * i)),
+      ...Array.from({ length: 6 }, (_, i) => v.frameAt(end - 0.15 + 0.04 * i)),
+    ];
+    for (const frame of fades) {
+      const t = v.local(frame);
+      const want =
+        t < SPLIT.t || t >= end
+          ? 0
+          : ramp(t, SPLIT.t, start) * (1 - ramp(t, MERGE.t + 0.85 * MERGE.seconds, end));
+      expect(await opacities(frame), `${t.toFixed(3)} s`).toEqual(
+        Array(4).fill(expect.closeTo(want, 2)),
+      );
+    }
+    expect(Math.max(...(await opacities(v.frameAt(start + 0.05))))).toBe(1);
+    expect(v.errors).toEqual([]);
+  });
+
   it('brings a packet back from its merge with its label, even where its caption names the same', async () => {
     const MERGE = {
       verb: 'merge',
@@ -547,9 +580,12 @@ describe.skipIf(!available)('splits and merges', () => {
     const frame = v.frameAt(3.8);
     const slot = v.r.right;
     const b = await node(v, frame, 'b');
-    // The node makes room in its slot under its box, past the pill resting on it, and the edge
-    // meets it there.
-    const layout = splitLayout(slot, v.r.regions.unit, false, 4, true);
+    // The node makes room in its slot, off the pill where it rests on its box, and the edge meets
+    // it there.
+    const s2 = v.timeline.scenes.find((s) => s.id === 's2')!.direction!;
+    const rests = nodeSplits(s2, v.r.regions.unit, false).get('b')!.rests;
+    expect(rests).toMatchObject({ arrives: true });
+    const layout = splitLayout(slot, v.r.regions.unit, false, 4, rests);
     for (const key of ['x', 'y', 'width', 'height'] as const)
       expect(b.placed[key]).toBeCloseTo(layout.box[key], 1);
     const drawn = await read(v, frame);
@@ -648,15 +684,18 @@ describe.skipIf(!available)('splits and merges', () => {
             `const scene = document.querySelector('[data-scene="s2"]');
              const box = (n) => { const r = n.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
              const op = (n) => Number.parseFloat(n.style.opacity || '1');
+             const shown = (n) => Number(getComputedStyle(n).opacity);
              const pill = scene.querySelector('.fpacket');
+             const label = pill.querySelector('.nlabel');
              return {
-               opacity: op(pill),
-               label: box(pill.querySelector('.nlabel')),
+               // As drawn: the label, its pill, and the element's layer, whatever sets it.
+               opacity: shown(label) * shown(pill) * shown(pill.closest('[data-element]')),
+               label: box(label),
                pieces: [...scene.querySelectorAll('.fpiece')].filter((n) => op(n) > 0).map(box),
              };`,
           )) as { opacity: number; label: Rect; pieces: Rect[] };
           const where = `shot ${i + 1}, frame ${frame}`;
-          // The pill stays whole, so its label reads, and no piece covers it.
+          // The label stays drawn, so it reads, and no piece covers it.
           expect(drawn.opacity, where).toBe(1);
           for (const piece of drawn.pieces) expect(apart(piece, drawn.label), where).toBe(true);
           pieces += drawn.pieces.length;

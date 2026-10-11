@@ -1,4 +1,4 @@
-import type { DirectionBeat, Point, Rect, SceneDirection } from '../timeline/types.ts';
+import type { DirectionBeat, DirectionElement, Point, Rect } from '../timeline/types.ts';
 
 /*
  * Where flows travel and piles stack: edge routes between node boxes, a packet's place along
@@ -266,6 +266,20 @@ const SPLIT = {
 } as const;
 
 /**
+ * Where a packet that splits against a node rests: on the node box's side where the trip that
+ * brought it ends (or where the trip that takes it on starts), as the runtime routes edges
+ * (`edgeRoute`), a pill at most `width` wide.
+ */
+export interface Resting {
+  /** The box of the node at the other end of that trip. */
+  other: Rect;
+  /** It arrived by that trip, else it waits for it to leave. */
+  arrives: boolean;
+  /** The widest its pill is drawn. */
+  width: number;
+}
+
+/**
  * Where a node that splits into `count` pieces is drawn in its slot, so that neither its pieces
  * nor its count cover its box (and its label) or leave the slot. Of three arrangements, the one
  * that shows the pieces largest (the first on a tie): under the box with the count under them (a
@@ -276,17 +290,20 @@ const SPLIT = {
  * left. The pieces shrink to the room they have. In a slot with room for none of them, the box
  * gives way to small pieces under it (see `arrangedSplit`, which the resolver asks first).
  *
- * When the split is a packet's that `rests` against the node, the pill lies across one of the
- * box's sides (where its edge meets it), or on its middle: its pieces and their count go under
- * the box only, past half a pill's height below it, and come out from there, so they keep off the
- * pill and its label wherever it rests.
+ * When the split is a packet's that `rests` against the node, its pieces come out past the box
+ * and keep off the pill and its label. Known where it rests (`Resting`), an arrangement is kept
+ * only if no piece meets the pill as it fans out, nor the count's room; under the box, the pieces
+ * may also go half a pill's height lower, past a pill on its bottom side. Where it rests is not
+ * known (`true`: the trip's other node also has a packet resting against it, whose box moves with
+ * its own pill), the pieces go under the box only, half a pill's height lower, which keeps off a
+ * pill resting anywhere on the box's sides or on its middle.
  */
 export function splitLayout(
   slot: Rect,
   unit: number,
   tall: boolean,
   count: number,
-  rests = false,
+  rests: boolean | Resting = false,
 ): SplitLayout {
   const { best, squeezed } = splitArrangements(
     slot,
@@ -306,7 +323,7 @@ export function arrangedSplit(
   unit: number,
   tall: boolean,
   count: number,
-  rests = false,
+  rests: boolean | Resting = false,
 ): SplitLayout | undefined {
   return splitArrangements(slot, unit, count, nodeSplitting(slot, unit, tall, rests)).best;
 }
@@ -316,8 +333,9 @@ export function arrangedSplit(
  * `width` wide (at most its widest there, as the resolver measures it): laid out as a node's
  * split is, the pill for the box, which keeps its size (its label is measured), centered in the
  * slot and moved up, or left, to make room. Its pieces come out past the pill's side, so they
- * never cross its label, and the pill rests there for the whole shot. In a slot with room for no
- * arrangement, the pill keeps the slot's top and its small pieces go under it.
+ * never cross its label, and the pill rests there for the whole shot. A slot shorter than the pill
+ * has no arrangement; in a slot with room for none, the pill keeps the slot's top and its small
+ * pieces go under it.
  */
 export function packetSplit(
   slot: Rect,
@@ -360,18 +378,33 @@ interface Splitting {
   whole: Rect;
   /** A pill keeps its size; a node's box is cut and narrowed to make room. */
   fixed: boolean;
-  /**
-   * Room kept between the box and the pieces under it: half the height of a packet resting across
-   * one of its sides. The pieces then go under the box only (the pill may rest on its right side).
-   */
+  /** Half the height of a packet resting against the box, when one does; else 0. */
   clear: number;
+  /** Where that pill is, at its widest, for a given box: unknown, it may be anywhere on its sides. */
+  pill?: (box: Rect) => Rect;
 }
 
-const nodeSplitting = (slot: Rect, unit: number, tall: boolean, rests: boolean): Splitting => ({
-  whole: textBoxRect(slot, unit, tall),
-  fixed: false,
-  clear: rests ? pillHeight(unit, tall) / 2 : 0,
-});
+function nodeSplitting(
+  slot: Rect,
+  unit: number,
+  tall: boolean,
+  rests: boolean | Resting,
+): Splitting {
+  const whole = textBoxRect(slot, unit, tall);
+  if (rests === false) return { whole, fixed: false, clear: 0 };
+  const height = pillHeight(unit, tall);
+  if (rests === true) return { whole, fixed: false, clear: height / 2 };
+  const { other, arrives, width } = rests;
+  return {
+    whole,
+    fixed: false,
+    clear: height / 2,
+    pill(box) {
+      const at = arrives ? edgeRoute(other, box).at(-1)! : edgeRoute(box, other)[0]!;
+      return { x: at.x - width / 2, y: at.y - height / 2, width, height };
+    },
+  };
+}
 
 function pillSplitting(slot: Rect, unit: number, tall: boolean, width: number): Splitting {
   const height = pillHeight(unit, tall);
@@ -387,12 +420,35 @@ function pillSplitting(slot: Rect, unit: number, tall: boolean, width: number): 
   };
 }
 
+/** Whether boxes `a` and `b` both lie wholly on one side of `r`: so does every box between them. */
+function sameSide(a: Rect, b: Rect, r: Rect): boolean {
+  const e = 1e-9;
+  const right = r.x + r.width;
+  const bottom = r.y + r.height;
+  return (
+    (a.y >= bottom - e && b.y >= bottom - e) ||
+    (a.y + a.height <= r.y + e && b.y + b.height <= r.y + e) ||
+    (a.x >= right - e && b.x >= right - e) ||
+    (a.x + a.width <= r.x + e && b.x + b.width <= r.x + e)
+  );
+}
+
+/**
+ * A layout whose pieces keep off `pill` from where they come out to fanned out (they move in a
+ * straight line, so the poses between keep to the same side) and whose count's room does too.
+ */
+function offPill(l: SplitLayout, pill: Rect): boolean {
+  const from = fanBoxes(l.fan, l.origin, 0);
+  const to = fanBoxes(l.fan, l.origin, 1);
+  return sameSide(l.caption, l.caption, pill) && from.every((a, i) => sameSide(a, to[i]!, pill));
+}
+
 /** A split's best arrangement in its slot, if any has room, and the one when none has. */
 function splitArrangements(
   slot: Rect,
   unit: number,
   count: number,
-  { whole, fixed, clear }: Splitting,
+  { whole, fixed, clear, pill }: Splitting,
 ): { best: SplitLayout | undefined; squeezed: () => SplitLayout } {
   const u = (n: number) => n * unit;
   // A packet's pieces come out past the box (and the pill resting across it), off its label.
@@ -414,9 +470,6 @@ function splitArrangements(
   };
   /** A layout's pieces as a share of their full size. */
   const shown = (l: SplitLayout) => (l.fan.offsets.length ? l.fan.width / (0.6 * piece.width) : 1);
-  /** Where pieces come out under a box whose bottom middle is `bottom`. */
-  const under = (bottom: Point, fan: Fan) =>
-    past ? { x: bottom.x, y: bottom.y + clear + fan.height / 2 } : bottom;
   /** The layout with the pieces' block centered at `at`. */
   const laid = (box: Rect, origin: Point, fan: Fan, at: Point, caption: Rect, beside: boolean) => ({
     box,
@@ -428,85 +481,103 @@ function splitArrangements(
     caption,
     beside,
   });
-  const candidates: SplitLayout[] = [];
 
-  // Under the box, the count under the pieces.
-  const room = slot.height - 2 * gap - clear - captionHeight;
-  const height = Math.min(
-    whole.height,
-    Math.max(boxMin, room - extent(fanned(wide, tallest)).height),
-  );
-  if (room - height > 0) {
-    const fan = fanned(wide, room - height);
-    const block = extent(fan).height;
-    const top =
-      slot.y + Math.max(0, (slot.height - (height + 2 * gap + clear + block + captionHeight)) / 2);
-    const bottom = { x: whole.x + whole.width / 2, y: top + height };
-    const below = bottom.y + clear;
-    const caption = { x: slot.x + margin, y: below + 2 * gap + block, width: wide };
-    candidates.push(
-      laid(
-        { ...whole, y: top, height },
-        under(bottom, fan),
-        fan,
-        { x: bottom.x, y: below + gap + block / 2 },
-        { ...caption, height: captionHeight },
-        false,
-      ),
+  /** The arrangements with `clear` kept between the box and the pieces under it. */
+  const arrange = (clear: number, right: boolean): SplitLayout[] => {
+    const candidates: SplitLayout[] = [];
+    /** Where pieces come out under a box whose bottom middle is `bottom`. */
+    const under = (bottom: Point, fan: Fan) =>
+      past ? { x: bottom.x, y: bottom.y + clear + fan.height / 2 } : bottom;
+
+    // Under the box, the count under the pieces.
+    const room = slot.height - 2 * gap - clear - captionHeight;
+    const height = Math.min(
+      whole.height,
+      Math.max(boxMin, room - extent(fanned(wide, tallest)).height),
     );
-  }
+    if (room - height > 0) {
+      const fan = fanned(wide, room - height);
+      const block = extent(fan).height;
+      const top =
+        slot.y +
+        Math.max(0, (slot.height - (height + 2 * gap + clear + block + captionHeight)) / 2);
+      const bottom = { x: whole.x + whole.width / 2, y: top + height };
+      const below = bottom.y + clear;
+      const caption = { x: slot.x + margin, y: below + 2 * gap + block, width: wide };
+      candidates.push(
+        laid(
+          { ...whole, y: top, height },
+          under(bottom, fan),
+          fan,
+          { x: bottom.x, y: below + gap + block / 2 },
+          { ...caption, height: captionHeight },
+          false,
+        ),
+      );
+    }
 
-  // Under the box, the count beside the pieces: a row as tall as the count.
-  const rowCaption = Math.min(u(SPLIT.caption.width), 0.45 * wide);
-  const rowBox = Math.min(whole.height, slot.height - gap - clear - captionHeight);
-  if (rowBox >= boxMin && rowCaption >= u(SPLIT.captionMin)) {
-    const across = wide - gap - rowCaption;
-    const top = slot.y + (slot.height - (rowBox + gap + clear + captionHeight)) / 2;
-    const bottom = { x: whole.x + whole.width / 2, y: top + rowBox };
-    const row = bottom.y + clear + gap;
-    // The pieces end where the count starts.
-    const fan = fanned(across, captionHeight);
-    candidates.push(
-      laid(
-        { ...whole, y: top, height: rowBox },
-        under(bottom, fan),
-        fan,
-        { x: slot.x + margin + across - extent(fan).width / 2, y: row + captionHeight / 2 },
-        { x: slot.x + margin + across + gap, y: row, width: rowCaption, height: captionHeight },
-        true,
-      ),
-    );
-  }
+    // Under the box, the count beside the pieces: a row as tall as the count.
+    const rowCaption = Math.min(u(SPLIT.caption.width), 0.45 * wide);
+    const rowBox = Math.min(whole.height, slot.height - gap - clear - captionHeight);
+    if (rowBox >= boxMin && rowCaption >= u(SPLIT.captionMin)) {
+      const across = wide - gap - rowCaption;
+      const top = slot.y + (slot.height - (rowBox + gap + clear + captionHeight)) / 2;
+      const bottom = { x: whole.x + whole.width / 2, y: top + rowBox };
+      const row = bottom.y + clear + gap;
+      // The pieces end where the count starts.
+      const fan = fanned(across, captionHeight);
+      candidates.push(
+        laid(
+          { ...whole, y: top, height: rowBox },
+          under(bottom, fan),
+          fan,
+          { x: slot.x + margin + across - extent(fan).width / 2, y: row + captionHeight / 2 },
+          { x: slot.x + margin + across + gap, y: row, width: rowCaption, height: captionHeight },
+          true,
+        ),
+      );
+    }
 
-  // To the right of the box, the count beside the pieces. The box stays where it is unsplit while
-  // that leaves room for the pieces at half their size; else it moves left, then narrows. Never
-  // beside a packet resting on the box: it may rest on that side.
-  const right = slot.x + slot.width - margin;
-  const need = 2 * gap + u(SPLIT.caption.width) + 0.5 * extent(fanned(Infinity, slot.height)).width;
-  const short = need - (right - (whole.x + whole.width));
-  const move = Math.max(0, Math.min(short, whole.x - (slot.x + margin)));
-  const narrow = Math.max(0, Math.min(short - move, whole.width - boxWidth));
-  const box = { ...whole, x: whole.x - move, width: whole.width - narrow };
-  const side = { x: box.x + box.width, y: box.y + box.height / 2 };
-  const across = right - side.x - 2 * gap;
-  const sideCaption = Math.min(u(SPLIT.caption.width), 0.45 * across);
-  if (clear === 0 && sideCaption >= u(SPLIT.captionMin)) {
-    const fan = fanned(across - sideCaption, slot.height);
-    const block = extent(fan).width;
-    const x = side.x + 2 * gap + block;
-    const caption = { x, y: slot.y + (slot.height - captionHeight) / 2, width: right - x };
-    candidates.push(
-      laid(
-        box,
-        past ? { x: side.x + fan.width / 2, y: side.y } : side,
-        fan,
-        { x: side.x + gap + block / 2, y: side.y },
-        { ...caption, height: captionHeight },
-        true,
-      ),
-    );
-  }
+    // To the right of the box, the count beside the pieces. The box stays where it is unsplit
+    // while that leaves room for the pieces at half their size; else it moves left, then narrows.
+    const end = slot.x + slot.width - margin;
+    const need =
+      2 * gap + u(SPLIT.caption.width) + 0.5 * extent(fanned(Infinity, slot.height)).width;
+    const short = need - (end - (whole.x + whole.width));
+    const move = Math.max(0, Math.min(short, whole.x - (slot.x + margin)));
+    const narrow = Math.max(0, Math.min(short - move, whole.width - boxWidth));
+    const box = { ...whole, x: whole.x - move, width: whole.width - narrow };
+    const side = { x: box.x + box.width, y: box.y + box.height / 2 };
+    const across = end - side.x - 2 * gap;
+    const sideCaption = Math.min(u(SPLIT.caption.width), 0.45 * across);
+    if (right && sideCaption >= u(SPLIT.captionMin)) {
+      const fan = fanned(across - sideCaption, slot.height);
+      const block = extent(fan).width;
+      const x = side.x + 2 * gap + block;
+      const caption = { x, y: slot.y + (slot.height - captionHeight) / 2, width: end - x };
+      candidates.push(
+        laid(
+          box,
+          past ? { x: side.x + fan.width / 2, y: side.y } : side,
+          fan,
+          { x: side.x + gap + block / 2, y: side.y },
+          { ...caption, height: captionHeight },
+          true,
+        ),
+      );
+    }
+    return candidates;
+  };
 
+  // A pill taller than its slot has no room at all. Where a resting pill is known, every
+  // arrangement that keeps off it counts, the pieces right under the box first; where it is not,
+  // only the ones under the box, past half a pill's height (which keep off it wherever it is).
+  const candidates =
+    fixed && whole.height > slot.height + 1e-9
+      ? []
+      : pill
+        ? [...arrange(0, true), ...arrange(clear, false)].filter((l) => offPill(l, pill(l.box)))
+        : arrange(clear, clear === 0);
   const best = candidates.reduce<SplitLayout | undefined>(
     (a, b) => (a && shown(a) >= shown(b) - 1e-9 ? a : b),
     undefined,
@@ -515,12 +586,13 @@ function splitArrangements(
   const squeezed = () => {
     const fan = fanned(wide, SPLIT.scale * tallest);
     const block = extent(fan).height;
+    const room = slot.height - 2 * gap - clear - captionHeight;
     const height = fixed ? whole.height : Math.max(0, Math.min(whole.height, room - block));
     const bottom = { x: whole.x + whole.width / 2, y: slot.y + height };
     const below = bottom.y + clear;
     return laid(
       { ...whole, y: slot.y, height },
-      under(bottom, fan),
+      past ? { x: bottom.x, y: below + fan.height / 2 } : bottom,
       fan,
       { x: bottom.x, y: below + gap + block / 2 },
       { x: slot.x + margin, y: below + 2 * gap + block, width: wide, height: captionHeight },
@@ -528,6 +600,30 @@ function splitArrangements(
     );
   };
   return { best, squeezed };
+}
+
+type Flow = Extract<DirectionBeat, { verb: 'flow' }>;
+
+/** A shot's elements (a node's rect is its slot) and its beats, in time order. */
+type FlowShot = { elements: readonly DirectionElement[]; beats: readonly DirectionBeat[] };
+
+/**
+ * The trip that puts a packet against a node when its split starts (`beats` in time order): its
+ * last trip before then (it arrived), or, before its first trip, that trip (it waits to leave).
+ * None while it travels, nor for a packet no flow carries.
+ */
+export function restingTrip(
+  beats: readonly DirectionBeat[],
+  split: { element: string; t: number },
+): { trip: Flow; arrives: boolean } | undefined {
+  let last: Flow | undefined;
+  for (const b of beats) {
+    if (b.verb !== 'flow' || b.packet !== split.element) continue;
+    if (split.t < b.t) return last ? { trip: last, arrives: true } : { trip: b, arrives: false };
+    if (split.t < b.t + b.seconds) return undefined;
+    last = b;
+  }
+  return last && { trip: last, arrives: true };
 }
 
 /**
@@ -539,14 +635,8 @@ export function restingAt(
   beats: readonly DirectionBeat[],
   split: { element: string; t: number },
 ): string | undefined {
-  let at: string | undefined;
-  for (const b of beats) {
-    if (b.verb !== 'flow' || b.packet !== split.element) continue;
-    if (split.t < b.t) return at ?? b.from;
-    if (split.t < b.t + b.seconds) return undefined;
-    at = b.to;
-  }
-  return at;
+  const rest = restingTrip(beats, split);
+  return rest && (rest.arrives ? rest.trip.to : rest.trip.from);
 }
 
 /** A split that fans out of a node: how many pieces, what splits, and whether it is a packet. */
@@ -563,9 +653,7 @@ export interface NodeFanCount {
  * node's slot rather than over its label. The first split to reach a node takes it (a resolved
  * direction has no other).
  */
-export function nodeFans(
-  direction: Pick<SceneDirection, 'elements' | 'beats'>,
-): Map<string, NodeFanCount> {
+export function nodeFans(direction: FlowShot): Map<string, NodeFanCount> {
   const kinds = new Map(direction.elements.map((e) => [e.id, e.kind]));
   const fans = new Map<string, NodeFanCount>();
   for (const b of direction.beats) {
@@ -579,6 +667,53 @@ export function nodeFans(
   return fans;
 }
 
+/** A split that fans out of a node, with where its packet rests when it is a packet's. */
+export interface NodeSplit {
+  count: number;
+  element: string;
+  rests: boolean | Resting;
+}
+
+/**
+ * Every split that fans out of a node (`nodeFans`), with where a resting packet's pill is, so its
+ * node's layout keeps off it: on the trip's other node's box as drawn, which is known unless a
+ * packet rests against that node too (its box then moves with that pill; the split keeps off a
+ * pill anywhere on the box's sides instead). The pill is at most as wide as the box of the node
+ * its first trip leaves, unsplit, as the packet is drawn. Node slots are the elements' rects.
+ */
+export function nodeSplits(
+  direction: FlowShot,
+  unit: number,
+  tall: boolean,
+): Map<string, NodeSplit> {
+  const fans = nodeFans(direction);
+  const slots = new Map(direction.elements.map((e) => [e.id, e.rect]));
+  const resting = (fan: NodeFanCount): Resting | true => {
+    const split = direction.beats.find(
+      (b): b is Extract<DirectionBeat, { verb: 'split' }> =>
+        b.verb === 'split' && b.element === fan.element,
+    );
+    const rest = split && restingTrip(direction.beats, split);
+    const first = direction.beats.find(
+      (b): b is Flow => b.verb === 'flow' && b.packet === fan.element,
+    );
+    if (!rest || !first) return true;
+    const other = rest.arrives ? rest.trip.from : rest.trip.to;
+    const slot = slots.get(other);
+    const from = slots.get(first.from);
+    const its = fans.get(other);
+    if (!slot || !from || its?.rests) return true;
+    return {
+      other: nodeBoxRect(slot, unit, tall, its?.count),
+      arrives: rest.arrives,
+      width: pillWidths(textBoxRect(from, unit, tall), unit).most,
+    };
+  };
+  return new Map(
+    [...fans].map(([node, fan]) => [node, { ...fan, rests: fan.rests ? resting(fan) : false }]),
+  );
+}
+
 /**
  * A node's box, as both its text and the edges that join it are drawn: `textBoxRect`'s, or, when
  * a split of `count` pieces fans out of it (a packet's that `rests` against it, or its own), the
@@ -589,7 +724,7 @@ export function nodeBoxRect(
   unit: number,
   tall: boolean,
   count?: number,
-  rests = false,
+  rests: boolean | Resting = false,
 ): Rect {
   return count === undefined
     ? textBoxRect(slot, unit, tall)

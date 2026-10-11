@@ -666,6 +666,22 @@ export function sceneFrame(
   return Math.max(0, Math.min(timeline.frames - 1, first, last));
 }
 
+/**
+ * When scene `index` is on screen but still coming in, in seconds from the start of the video:
+ * from the end of its entrance to where it has settled (see `settledSpan`). Absent when it has
+ * settled by the time its entrance ends.
+ */
+export function openingSpan(
+  timeline: Pick<Timeline, 'scenes' | 'transition'>,
+  index: number,
+): Span | undefined {
+  const scene = timeline.scenes[index];
+  const settled = settledSpan(timeline, index);
+  if (!scene || !settled) return undefined;
+  const from = scene.start + entranceSeconds(timeline, index);
+  return settled[0] - from > 1e-6 ? [from, settled[0]] : undefined;
+}
+
 /** The frame QC reads a settled scene at: the first frame of its settled span (`sceneFrame`). */
 export function settledFrame(
   timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames'>,

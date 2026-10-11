@@ -43,7 +43,7 @@ const FLOWING: ReadonlySet<string> = new Set(FLOW_VERBS);
  * frame (a metric's card fills its slot). A capture keeps its image's aspect ratio, and title and
  * summary cards are laid out around the fox.
  */
-const CARDS: ReadonlySet<LeadKind> = new Set([
+export const CARDS: ReadonlySet<LeadKind> = new Set([
   'code',
   'terminal',
   'api',

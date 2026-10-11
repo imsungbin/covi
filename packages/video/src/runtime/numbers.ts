@@ -41,6 +41,19 @@ export function percentChange(from: number, to: number): number | undefined {
   return rounded || 0;
 }
 
+/** A value on a log scale that keeps its sign, so a change through zero spans both sides. */
+const signedLog = (v: number) => Math.sign(v) * Math.log1p(Math.abs(v));
+
+/**
+ * How much a metric changed, for choosing the one to show (and the poster's number): how many
+ * times larger or smaller its magnitude became, each plus one (a fold change with a pseudocount),
+ * so `1 → 0` (one timeout gone) does not outrank `70406 → 9907` (the request shrank sevenfold). A
+ * value that changes sign travels through zero, so `−5 → 5` is a change, not none.
+ */
+export function metricChange(base: number, head: number): number {
+  return Math.abs(signedLog(head) - signedLog(base));
+}
+
 /** A change in percent as drawn: `−86%`, `+4.5%`, `0%`. */
 export function formatPercent(percent: number): string {
   const sign = percent > 0 ? '+' : percent < 0 ? '−' : '';

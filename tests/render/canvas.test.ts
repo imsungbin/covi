@@ -1066,3 +1066,33 @@ describe.skipIf(!available)('a shot reported to QC', () => {
     expect(failed.message).toContain('"note" in s3');
   });
 });
+
+describe.skipIf(!available)('what a scene visibly draws', () => {
+  it('leaves out an element still to come, and counts it once it is in', async () => {
+    const v = await directed(
+      story,
+      [
+        {
+          scene: 's3',
+          layout: 'row',
+          elements,
+          beats: [{ verb: 'reveal', element: 'out', style: 'rise', at: 'and nothing else' }],
+        },
+      ],
+      { sources: run },
+    );
+    const s3 = v.scene('s3');
+    const reveal = s3.direction!.beats.find((b) => b.verb === 'reveal')!;
+    const slot = s3.direction!.elements.find((e) => e.id === 'out')!.rect;
+    const right = (r: { x: number; width: number }) => r.x + r.width;
+    const before = (await v.report(v.frameAt('s3', reveal.t - 0.1))).content!;
+    const after = (await v.report(v.frameAt('s3', reveal.t + reveal.seconds + 0.1))).content!;
+    // Its slot is laid out from the start, but nothing of it is drawn before its reveal.
+    expect(right(before)).toBeLessThan(slot.x);
+    expect(right(after)).toBeGreaterThan(slot.x + slot.width / 2);
+    for (const box of [before, after]) {
+      expect(box.x).toBeGreaterThanOrEqual(regions.media.x - 0.5);
+      expect(right(box)).toBeLessThanOrEqual(right(regions.media) + 0.5);
+    }
+  });
+});

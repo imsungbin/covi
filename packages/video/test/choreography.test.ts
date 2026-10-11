@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   choreographyChecks,
   droppedBeatsCheck,
+  emptyOpeningCheck,
   motionBusyCheck,
   motionGapCheck,
   outOfFrameCheck,
@@ -347,10 +348,72 @@ describe('shots on the frame', () => {
       'motion-gap',
       'motion-busy',
       'reading-time',
+      'empty-opening',
       'overlap',
       'out-of-frame',
       'dropped-beats',
     ]);
     expect(checks.filter((c) => c.status === 'fail').map((c) => c.id)).toEqual(['out-of-frame']);
+  });
+});
+
+describe('empty openings', () => {
+  const media = computeRegions({ width: 1920, height: 1080, orientation: 'landscape' }).media;
+  // A terminal whose after window comes in late: its opening lasts until it has settled.
+  const terminal = {
+    kind: 'terminal',
+    command: 'node scripts/measure.js',
+    before: 'request bytes: 70406',
+    output: 'request bytes: 9907',
+  } as const;
+  const t = timeline([scene('s1', 0, 8, { visual: terminal }), outro(8)]);
+  const at = (t0: number, share: number) =>
+    ({
+      frame: Math.round(t0 * 30),
+      scene: 's1',
+      items: [],
+      imagesLoaded: true,
+      content: { ...media, width: media.width * share },
+    }) as LayoutReport;
+
+  it('warn while a card shows little of itself under narration as it comes in', () => {
+    // Half the window, a third of the region, from 0.5 s to 3 s; then the after window.
+    const layouts = [0.5, 1, 1.5, 2, 2.5].map((t0) => at(t0, 0.3)).concat(at(3, 0.95));
+    const check = emptyOpeningCheck(t, layouts);
+    expect(check.status).toBe('warn');
+    expect(check.message).toContain('s1 (30% of the media region for 2.5 s from 0.5 s)');
+    // Filled from the start: nothing to say.
+    expect(
+      emptyOpeningCheck(
+        t,
+        layouts.map((r) => ({ ...r, content: media })),
+      ).status,
+    ).toBe('pass');
+    // Under 1.5 s of narration: a short stretch is a scene coming in, not an empty frame.
+    expect(emptyOpeningCheck(t, [at(0.5, 0.3), at(1, 0.3), at(1.5, 0.95)]).status).toBe('pass');
+  });
+
+  it('read only openings, only cards and shots, and pass reports without a drawn box', () => {
+    // A capture keeps its own aspect ratio, as empty-frame leaves it.
+    const capture = timeline([
+      scene('s1', 0, 8, {
+        visual: {
+          kind: 'screenshot',
+          image: { src: 'a.png', width: 1, height: 1 },
+          device: 'desktop',
+        },
+      }),
+    ]);
+    const layouts = [0.5, 1, 1.5, 2].map((t0) => at(t0, 0.2));
+    expect(emptyOpeningCheck(capture, layouts).status).toBe('pass');
+    // Once settled (4.2 s in), the frame is empty-frame's to judge.
+    expect(
+      emptyOpeningCheck(
+        t,
+        [5, 5.5, 6, 6.5].map((t0) => at(t0, 0.2)),
+      ).status,
+    ).toBe('pass');
+    const old = layouts.map(({ content: _, ...r }) => r);
+    expect(emptyOpeningCheck(t, old).message).toBe('No scene was measured while it came in.');
   });
 });

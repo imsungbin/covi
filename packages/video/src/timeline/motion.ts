@@ -1,10 +1,20 @@
-import { entranceSeconds, type Span, settledAt, shotMotion, shotSettledAt } from './cues.ts';
+import { metricChange } from '../runtime/numbers.ts';
+import {
+  entranceSeconds,
+  metricSettledAt,
+  type Span,
+  settledAt,
+  settledSpan,
+  shotMotion,
+  shotSettledAt,
+} from './cues.ts';
 import { HERO_PHASE, type Timeline, type TimelineScene } from './types.ts';
 
 /*
  * When the picture moves, as pure functions of the timeline: the scene camera's plan, which the
- * runtime pushes in with, and every stretch of motion a timeline plans, which QC holds against
- * the narration. No DOM and no Node APIs: the runtime bundles this file.
+ * runtime pushes in with, every stretch of motion a timeline plans, which QC holds against the
+ * narration, and the moment the poster shows. No DOM and no Node APIs: the runtime bundles this
+ * file.
  */
 
 export interface CameraPlan {
@@ -36,8 +46,10 @@ const CAPTURES = new Set<TimelineScene['visual']['kind']>([
 
 /** When a visual's entrance has risen into place (the first `rise` of every component). */
 export const ENTERED = 0.5;
-/** The hero's punch is over this long after its phase. */
+/** The hero's punch is over this long after its phase… */
 export const PUNCH_OUT = 0.6;
+/** …and its ring this long: the hero has had its accent. */
+export const ACCENT_OUT = 0.7;
 
 /**
  * How the camera moves in a scene; the outro moves on its own. A capture drifts through its whole
@@ -124,4 +136,59 @@ export function motionSpans(timeline: Pick<Timeline, 'scenes' | 'transition'>): 
     if (plan.hero !== undefined) add('camera', 'punch', [plan.hero, plan.hero + PUNCH_OUT]);
   });
   return spans.sort((a, b) => a.span[0] - b.span[0]);
+}
+
+/** A moment in a scene: the scene's index, and seconds from the start of the video. */
+export interface SceneMoment {
+  index: number;
+  at: number;
+}
+
+/**
+ * The moment the poster shows, a settled one: where the key number's count lands (the count that
+ * changes its metric the most, as the director measures change, the earliest on a tie), once the
+ * value has centred and its change in percent has faded in; else the hero scene once its accent
+ * has played and the scene has settled. A count whose value lands after the next scene starts to
+ * enter is passed over. None without either: the poster falls back to a fixed moment.
+ */
+export function posterMoment(
+  timeline: Pick<Timeline, 'scenes' | 'transition'>,
+): SceneMoment | undefined {
+  let key: SceneMoment | undefined;
+  let most = 0;
+  timeline.scenes.forEach((s, index) => {
+    const d = s.direction;
+    const leaves = settledSpan(timeline, index)?.[1];
+    if (!d || leaves === undefined) return;
+    for (const b of d.beats) {
+      if (b.verb !== 'count') continue;
+      const e = d.elements.find((x) => x.id === b.element);
+      // A count-up shows one side, not the change.
+      if (e?.kind !== 'metric' || e.from === undefined) continue;
+      if (s.start + b.t + b.seconds > leaves + 1e-6) continue;
+      const change = metricChange(e.from, e.to);
+      if (change > most + 1e-9) {
+        key = { index, at: s.start + metricSettledAt(d, e) };
+        most = change;
+      }
+    }
+  });
+  if (key) return key;
+  const index = timeline.scenes.findIndex((s) => s.hero && s.phases?.[HERO_PHASE] !== undefined);
+  const hero = timeline.scenes[index];
+  const span = settledSpan(timeline, index);
+  if (!hero || !span) return undefined;
+  return { index, at: Math.max(hero.start + hero.phases![HERO_PHASE]! + ACCENT_OUT, span[0]) };
+}
+
+/**
+ * When the poster is taken, in seconds: `posterMoment`, held inside its scene (after its entrance,
+ * before the next one starts to enter), else 1.6 s in, or a third of the way for very short videos.
+ */
+export function posterTime(timeline: Pick<Timeline, 'scenes' | 'transition' | 'duration'>): number {
+  const moment = posterMoment(timeline);
+  if (!moment) return Math.min(1.6, timeline.duration / 3);
+  const scene = timeline.scenes[moment.index]!;
+  const enters = scene.start + entranceSeconds(timeline, moment.index);
+  return Math.min(Math.max(enters, moment.at), settledSpan(timeline, moment.index)![1]);
 }

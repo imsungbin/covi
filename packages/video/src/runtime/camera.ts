@@ -1,5 +1,5 @@
 import { motion } from '@covi/brand';
-import { type CameraPlan, PUNCH_OUT } from '../timeline/motion.ts';
+import { ACCENT_OUT, type CameraPlan, PUNCH_OUT } from '../timeline/motion.ts';
 import { easeInOutCubic, easeInOutSine, easeOutCubic, seg } from './anim.ts';
 
 /*
@@ -30,7 +30,6 @@ export function cameraPush(t: number, plan: CameraPlan): number {
 }
 
 const PUNCH_IN = 0.1;
-const RING = 0.7;
 
 /** The hero's punch, 0–1: in fast, out slowly. `dt` is seconds since the hero phase. */
 export function heroPunch(dt: number): number {
@@ -50,7 +49,7 @@ export function heroAccent(dt: number): { flash: number; ring: number; ringOpaci
       : dt < peak
         ? (opacity * dt) / peak
         : opacity * (1 - (dt - peak) / (seconds - peak));
-  if (dt < 0 || dt >= RING) return { flash, ring: 0, ringOpacity: 0 };
-  const ring = easeOutCubic(dt / RING);
+  if (dt < 0 || dt >= ACCENT_OUT) return { flash, ring: 0, ringOpacity: 0 };
+  const ring = easeOutCubic(dt / ACCENT_OUT);
   return { flash, ring, ringOpacity: 0.9 * (1 - ring) };
 }

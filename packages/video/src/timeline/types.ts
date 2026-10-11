@@ -529,6 +529,11 @@ export interface LayoutReport {
   imagesLoaded: boolean;
   /** A directed scene's elements and region, while no camera move between stops is under way. */
   shot?: ShotReport;
+  /**
+   * The box around what the scene in front visibly draws in its region, as drawn (hidden parts
+   * and empty containers left out): how much of the frame a viewer sees filled.
+   */
+  content?: Rect;
   /** Font families with a declared face that failed to load. */
   fontsFailed?: string[];
 }

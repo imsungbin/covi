@@ -7,6 +7,7 @@ export {
   type ChoreographyTimeline,
   choreographyChecks,
   droppedBeatsCheck,
+  emptyOpeningCheck,
   MORPH_READING,
   motionBusyCheck,
   motionGapCheck,
@@ -22,6 +23,7 @@ export { AssetCollector, fontFiles, writeComposition } from './composition/build
 export { imageSize } from './composition/images.ts';
 export { runtimeScript } from './composition/runtime-bundle.ts';
 export {
+  CARDS,
   type DensityTimeline,
   densityChecks,
   EMPTY_SHARE,
@@ -106,6 +108,7 @@ export {
   canReuseFrames,
   type FramesRecord,
   framesKey,
+  posterFrame,
   type RenderOptions,
   type RenderResult,
   remuxAudio,
@@ -166,4 +169,5 @@ export {
   timelineLabels,
 } from './timeline/build.ts';
 export { buildCues, outroSettle } from './timeline/cues.ts';
+export { posterTime } from './timeline/motion.ts';
 export type * from './timeline/types.ts';

@@ -1,9 +1,24 @@
-import { area, clip, type DensityTimeline, listed, settledReports } from './density.ts';
+import {
+  area,
+  CARDS,
+  clip,
+  type DensityTimeline,
+  EMPTY_SHARE,
+  leadKind,
+  listed,
+  settledReports,
+} from './density.ts';
 import type { QcCheck } from './qc.ts';
 import { computeRegions } from './runtime/layout.ts';
 import { isCjk } from './text.ts';
 import { OUTRO_ID, storyScenes } from './timeline/build.ts';
-import { entranceSeconds, keptTokens, MORPH_SETTLE, shotSettledAt } from './timeline/cues.ts';
+import {
+  entranceSeconds,
+  keptTokens,
+  MORPH_SETTLE,
+  openingSpan,
+  shotSettledAt,
+} from './timeline/cues.ts';
 import { type MotionSpan, motionSpans } from './timeline/motion.ts';
 import {
   type DirectionElement,
@@ -17,9 +32,10 @@ import {
 
 /*
  * Choreography checks: does something move whenever the narration speaks, without crowding the
- * moment; is every word on screen long enough to read; do a shot's elements keep clear of one
- * another and of the frame's edges; and did every beat asked for play. They warn: they judge
- * pacing, not broken output; only an element the frame cuts off fails.
+ * moment; is every word on screen long enough to read; does a scene fill the frame while it comes
+ * in; do a shot's elements keep clear of one another and of the frame's edges; and did every beat
+ * asked for play. They warn: they judge pacing, not broken output; only an element the frame cuts
+ * off fails.
  */
 
 /** What the choreography checks read of a timeline: the same as the density checks. */
@@ -334,6 +350,72 @@ export function droppedBeatsCheck(timeline: Pick<Timeline, 'scenes'>): QcCheck {
   };
 }
 
+/**
+ * Scenes whose frame the runtime fills: cards (as `empty-frame` holds them) and shots that lay
+ * out elements.
+ */
+const fillsFrame = (scene: Pick<TimelineScene, 'visual' | 'direction'>) =>
+  Boolean(scene.direction && !scene.direction.whole) || CARDS.has(leadKind(scene));
+
+/**
+ * A card or a shot fills the frame while it comes in, not only once it has settled: no stretch of
+ * its opening (from its entrance to its settled moment) covering 1.5 s or more of narration in
+ * which what it visibly draws covers less than 40% of the media region, sampled every half second.
+ */
+export function emptyOpeningCheck(
+  timeline: ChoreographyTimeline,
+  layouts: readonly LayoutReport[],
+): QcCheck {
+  const media = computeRegions(timeline).media;
+  const stretches: Stretch[] = [];
+  // The smallest share each stretch fell to, by when it starts.
+  const shares = new Map<number, number>();
+  let measured = 0;
+  timeline.scenes.forEach((scene, i) => {
+    if (scene.visual.kind === 'outro' || !fillsFrame(scene)) return;
+    const opening = openingSpan(timeline, i);
+    if (!opening) return;
+    const samples = layouts
+      .filter((r) => r.scene === scene.id && r.content !== undefined)
+      .map((r) => {
+        const part = clip(r.content!, media);
+        return { t: r.frame / timeline.fps, share: part ? area(part) / area(media) : 0 };
+      })
+      .filter((s) => s.t >= opening[0] - 1e-6 && s.t < opening[1] - 1e-6)
+      .sort((a, b) => a.t - b.t);
+    if (samples.length) measured++;
+    let from: { t: number; share: number } | undefined;
+    // Once settled, the frame is empty-frame's to judge: the opening's end closes a stretch.
+    for (const s of [...samples, { t: opening[1], share: 1 }]) {
+      if (s.share < EMPTY_SHARE - 1e-9)
+        from = { t: from?.t ?? s.t, share: Math.min(from?.share ?? 1, s.share) };
+      else if (from) {
+        stretches.push({ start: from.t, end: s.t });
+        shares.set(from.t, from.share);
+        from = undefined;
+      }
+    }
+  });
+  const empty = spokenStills(timeline, stretches);
+  if (!empty.length)
+    return {
+      id: 'empty-opening',
+      status: 'pass',
+      message: measured
+        ? `Every card and shot fills at least ${Math.round(100 * EMPTY_SHARE)}% of the media region as it comes in.`
+        : 'No scene was measured while it came in.',
+    };
+  const named = empty.map(
+    (e) =>
+      `${e.scene} (${Math.round(100 * (shares.get(e.at) ?? 0))}% of the media region for ${seconds(e.seconds)} from ${seconds(e.at)})`,
+  );
+  return {
+    id: 'empty-opening',
+    status: 'warn',
+    message: `The frame stays mostly empty while ${listed(named)} comes in. Bring the scene's content in together, or open it on what it shows once settled.`,
+  };
+}
+
 /** `inner` lies inside `outer`, give or take `tolerance` pixels on every side. */
 function inside(inner: Rect, outer: Rect, tolerance: number): boolean {
   return (
@@ -452,6 +534,7 @@ export function choreographyChecks(
     motionGapCheck(timeline),
     motionBusyCheck(timeline),
     readingTimeCheck(timeline),
+    emptyOpeningCheck(timeline, layouts),
     overlapCheck(timeline, layouts),
     outOfFrameCheck(timeline, layouts),
     droppedBeatsCheck(timeline),

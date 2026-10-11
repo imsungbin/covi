@@ -67,7 +67,7 @@ import {
   type SceneClock,
 } from './components/types.ts';
 import { mountShot, type ShotComponent } from './direction/elements.ts';
-import { el, fitText, place } from './dom.ts';
+import { drawnBox, el, fitText, place } from './dom.ts';
 import { computeRegions, gridSpacing, type Regions } from './layout.ts';
 import {
   aimAt,
@@ -769,6 +769,7 @@ export class Stage {
       headerText: active?.headerText.length ? active.headerText : undefined,
       imagesLoaded: this.imagesOk,
       shot: active ? this.shotReport(active, time) : undefined,
+      content: active ? drawnBox(active.media, clip ?? active.region) : undefined,
       fontsFailed: this.fontsFailed.length ? this.fontsFailed : undefined,
     };
   }

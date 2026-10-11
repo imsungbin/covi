@@ -7,10 +7,12 @@ import { type Browser, chromium, type Page } from 'playwright';
 import {
   entranceSeconds,
   metricSettledAt,
+  openingSpan,
   restFrame,
   sceneFrame,
   settledFrame,
 } from '../timeline/cues.ts';
+import { posterMoment, posterTime } from '../timeline/motion.ts';
 import {
   type CompositionApi,
   HERO_PHASE,
@@ -36,6 +38,7 @@ export interface RenderOptions {
   layoutFrames?: number[];
   /** Frames for the contact sheet (defaults to `contactSheetFrames`). */
   sheetFrames?: number[];
+  /** The poster's frame (defaults to `posterFrame`). */
   posterFrame?: number;
   onProgress?: (done: number, total: number) => void;
 }
@@ -175,10 +178,12 @@ export function contactSheetFrames(
 }
 
 /**
- * Frames the layout checks read: 35% and 70% of the way through every scene, and the frame where
- * each story scene has settled, at which QC measures text sizes and how much of the frame the
- * content fills, with the frame before a directed scene's first camera beat, where its text is
- * read at its own scale. The outro is Covi's own card, so it is not held to those checks.
+ * Frames the layout checks read: 35% and 70% of the way through every scene, the frame where each
+ * story scene has settled, at which QC measures text sizes and how much of the frame the content
+ * fills, with the frame before a directed scene's first camera beat, where its text is read at
+ * its own scale, and every half second of each story scene's opening (at most eight frames),
+ * where QC measures how much of the frame it fills while it comes in. The outro is Covi's own
+ * card, so it is not held to those checks.
  */
 export function layoutSampleFrames(
   timeline: Pick<Timeline, 'fps' | 'frames' | 'scenes' | 'transition'>,
@@ -195,8 +200,36 @@ export function layoutSampleFrames(
     if (s.visual.kind === 'outro') return;
     for (const frame of [settledFrame(timeline, i), restFrame(timeline, i)])
       if (frame !== undefined) frames.add(frame);
+    const opening = openingSpan(timeline, i);
+    if (!opening) return;
+    const [from, to] = opening;
+    const step = Math.max(OPENING_STEP, (to - from) / OPENING_SAMPLES);
+    // From the first frame the entrance is done: a frame before it still shows the scene before.
+    const first = Math.ceil(from * timeline.fps - 1e-6);
+    for (let k = 0; from + k * step < to - 1e-6; k++)
+      frames.add(Math.min(last, Math.max(first, Math.round((from + k * step) * timeline.fps))));
   });
   return [...frames].sort((a, b) => a - b);
+}
+
+/** A scene's opening is sampled this often… */
+const OPENING_STEP = 0.5;
+/** …at most this many times. */
+const OPENING_SAMPLES = 8;
+
+/**
+ * The frame the poster is taken at: `posterMoment`'s, on the first frame at or after it while its
+ * scene is alone on screen (the last before the next scene enters, when it comes later), else
+ * `posterTime`'s fixed moment on the nearest frame.
+ */
+export function posterFrame(
+  timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames' | 'duration'>,
+): number {
+  const moment = posterMoment(timeline);
+  const frame = moment
+    ? sceneFrame(timeline, moment.index, moment.at)!
+    : Math.round(posterTime(timeline) * timeline.fps);
+  return Math.max(0, Math.min(timeline.frames - 1, frame));
 }
 
 /** Contact sheet columns: six narrow tiles for vertical video; three wide ones, four past twelve. */
@@ -309,9 +342,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
   });
   const layoutFrames = new Set(options.layoutFrames ?? layoutSampleFrames(timeline));
   const sheetFrames = new Set(options.sheetFrames ?? contactSheetFrames(timeline));
-  const posterFrame =
-    options.posterFrame ??
-    Math.min(total - 1, Math.round(Math.min(1.6, timeline.duration / 3) * timeline.fps));
+  const posterAt = options.posterFrame ?? posterFrame(timeline);
 
   const server = await serveStatic(options.compositionDir);
   const browser = await chromium.launch({ args: LAUNCH_ARGS });
@@ -354,7 +385,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
               await page.evaluate(() => (globalThis as CompositionWindow).covi!.layout()),
             );
           if (sheetFrames.has(frame)) sheet.set(frame, await shootTile(page, timeline, frame));
-          if (frame === posterFrame) poster = await page.screenshot({ type: 'png' });
+          if (frame === posterAt) poster = await page.screenshot({ type: 'png' });
           done++;
           if (done % 15 === 0 || done === total) options.onProgress?.(done, total);
         }

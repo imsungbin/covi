@@ -58,7 +58,14 @@ import {
   settledFrame,
 } from '../../packages/video/src/timeline/cues.ts';
 import type { DirectionElement, TimelineVisual } from '../../packages/video/src/timeline/types.ts';
-import { directedTimeline, readVideoRun } from '../helpers/direction.ts';
+import {
+  choreography,
+  directedTimeline,
+  directionExample,
+  readVideoRun,
+  rewriteScenes,
+  TIMELINE_CHECKS,
+} from '../helpers/direction.ts';
 import { canRenderVideo, fullRenders } from '../helpers/env.ts';
 
 const available = await canRenderVideo();
@@ -2574,5 +2581,67 @@ describe.skipIf(!available || !fullRenders)('an agent’s direction (full pipeli
     expect(
       frames.layouts.some((l) => l.scene === drawn.id && body(l) === 2 + (drawn.heading ? 1 : 0)),
     ).toBe(true);
+  }, 600_000);
+});
+
+describe.skipIf(!available || !fullRenders)('the direction example (full pipeline)', () => {
+  it('renders the worked example of references/direction.md cleanly, as the tests plan it', async () => {
+    const repo = await materializeExample(
+      (await listExamples()).find((e) => e.name === 'backend-slim-request')!,
+    );
+    dirs.push(repo);
+    const { runDir } = covi(['video', '--repo', repo, '--standard', '--draft', '--force']);
+    const run = await readVideoRun(runDir, repo);
+    const example = directionExample();
+    const storyboard = rewriteScenes(run.storyboard, example.scenes);
+    writeFileSync(
+      join(runDir, 'video', 'storyboard.json'),
+      `${JSON.stringify(storyboard, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(runDir, 'video', 'direction.json'),
+      `${JSON.stringify(example.direction, null, 2)}\n`,
+    );
+    // Captions only: the timing is Covi's estimate, so the test can plan the very same timeline.
+    const result = covi([
+      'render',
+      '--repo',
+      repo,
+      '--run',
+      runDir,
+      '--no-narration',
+      '--music',
+      'none',
+    ]);
+    expect(result.video.rendered).toBe(true);
+    const qc = read<{ checks: Array<{ id: string; status: string; message: string }> }>(
+      runDir,
+      'video/qc.json',
+    );
+    // The run is removed afterwards, so a failure names its checks.
+    expect(
+      result.video.qc,
+      qc.checks
+        .filter((c) => c.status === 'fail')
+        .map((c) => `${c.id}: ${c.message}`)
+        .join('\n'),
+    ).not.toBe('fail');
+    for (const id of [
+      'text-size',
+      'empty-frame',
+      'empty-opening',
+      'overlap',
+      'out-of-frame',
+      'still',
+      ...TIMELINE_CHECKS,
+    ])
+      expect(
+        qc.checks.find((c) => c.id === id),
+        id,
+      ).toMatchObject({ status: 'pass' });
+    const drawn = read<Timeline>(runDir, 'video/timeline.json');
+    const spec = { ...run.spec, narration: { ...run.spec.narration, enabled: false } };
+    const { timeline } = await directedTimeline({ ...run, storyboard, spec }, example.direction);
+    expect(choreography(drawn)).toEqual(choreography(timeline));
   }, 600_000);
 });

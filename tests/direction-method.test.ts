@@ -7,7 +7,9 @@ import { FLOW_VERBS } from '../packages/video/src/timeline/types.ts';
 import { covi } from './helpers/cli.ts';
 import {
   directedTimeline,
+  directionExample,
   readVideoRun,
+  rewriteScenes,
   TIMELINE_CHECKS,
   timelineChecks,
   type VideoRun,
@@ -52,5 +54,77 @@ describe('the benchmark’s default direction', () => {
     const checks = timelineChecks(timeline);
     expect(checks.map((c) => c.id)).toEqual([...TIMELINE_CHECKS]);
     for (const check of checks) expect(check, check.message).toMatchObject({ status: 'pass' });
+  });
+});
+
+/**
+ * English number words: the example's labels hold none. A label's schema refuses digits, but it
+ * cannot tell a number word from any other word, so the example has to practise the rule itself.
+ */
+const NUMBER_WORDS =
+  /\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|dozen)\b/i;
+
+describe('the direction method’s worked example', () => {
+  it('directs the benchmark as written: every id, kind, side, and phrase fits, and every check of its timeline passes', async () => {
+    const example = directionExample();
+    const authored = DirectionSchema.parse(example.direction);
+    const storyboard = rewriteScenes(drafted.storyboard, example.scenes);
+    const { plan, timeline } = await directedTimeline(
+      { ...drafted, storyboard },
+      example.direction,
+    );
+    // The agent's shots stand as written; Covi directs only the summary it left out.
+    expect(plan.draft).toBe(false);
+    expect(plan.shots.slice(0, authored.shots.length)).toEqual(authored.shots);
+    expect(plan.shots.map((s) => s.scene)).toEqual(['s1', 's2', 's3', 's4']);
+    // It stages the change with what the method teaches: a morph, a measured count, flow verbs,
+    // and the timeout as a warning on the scene that cites the measured timeout.
+    const elements = authored.shots.flatMap((s) => s.elements);
+    expect(elements.map((e) => e.kind)).toEqual(
+      expect.arrayContaining(['node', 'packet', 'label', 'morph', 'metric']),
+    );
+    expect(authored.shots.flatMap((s) => s.beats.map((b) => b.verb))).toEqual(
+      expect.arrayContaining(['reveal', 'flow', 'split', 'camera', 'morph', 'merge', 'count']),
+    );
+    expect(elements).toContainEqual(expect.objectContaining({ kind: 'label', tone: 'warning' }));
+    expect(storyboard.scenes.find((s) => s.id === 's1')!.evidenceIds).toEqual([
+      'metric:terminal-1:timeouts',
+    ]);
+    // Every beat plays, in the order written, and the timeline passes every check it can.
+    for (const shot of authored.shots)
+      expect(
+        timeline.scenes.find((s) => s.id === shot.scene)!.direction!.beats.map((b) => b.verb),
+        shot.scene,
+      ).toEqual(shot.beats.map((b) => b.verb));
+    const checks = timelineChecks(timeline);
+    expect(checks.map((c) => c.id)).toEqual([...TIMELINE_CHECKS]);
+    for (const check of checks) expect(check, check.message).toMatchObject({ status: 'pass' });
+  });
+
+  it('practises what it teaches: short labels without numbers, camera moves for entrances, a phrase for every beat', () => {
+    const { shots } = DirectionSchema.parse(directionExample().direction);
+    for (const shot of shots) {
+      expect(shot.elements.length, shot.scene).toBeLessThanOrEqual(4);
+      expect(shot.beats.length, shot.scene).toBeLessThanOrEqual(4);
+      if (shot.enter) expect(['pan', 'zoom', 'wipe', 'cut'], shot.scene).toContain(shot.enter);
+      for (const beat of shot.beats) expect(beat, shot.scene).toHaveProperty('at');
+      for (const element of shot.elements) {
+        const words =
+          'label' in element ? element.label : 'text' in element ? element.text : undefined;
+        if (words !== undefined)
+          expect(words, `${shot.scene}: ${element.id}`).not.toMatch(NUMBER_WORDS);
+      }
+    }
+  });
+
+  it('is refused, naming the shot and the beat, once a line no longer says a phrase its beats quote', async () => {
+    const example = directionExample();
+    const scenes = example.scenes.map((s) =>
+      s.id === 's3' ? { ...s, narration: 'Those four chunks are now [[one request]].' } : s,
+    );
+    const storyboard = rewriteScenes(drafted.storyboard, scenes);
+    await expect(directedTimeline({ ...drafted, storyboard }, example.direction)).rejects.toThrow(
+      /s3[\s\S]*ten thousand/,
+    );
   });
 });

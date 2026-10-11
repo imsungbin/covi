@@ -42,6 +42,7 @@ import {
   directionSources,
 } from '../../packages/video/src/direction/sources.ts';
 import { storyboardImages } from '../../packages/video/src/pipeline.ts';
+import type { Rect } from '../../packages/video/src/timeline/types.ts';
 
 /**
  * Directing a run as `covi render` does, without drawing a frame: the steps of `produceVideo`
@@ -182,4 +183,77 @@ export function timelineChecks(timeline: Timeline): QcCheck[] {
     readingTimeCheck(timeline),
     droppedBeatsCheck(timeline),
   ];
+}
+
+/** The worked example of `skills/covi-video/references/direction.md`: scene edits and a direction. */
+export interface DirectionExample {
+  /** What the rewrite changes in each scene it lists; every other field stays as drafted. */
+  scenes: Array<{ id: string } & Record<string, unknown>>;
+  direction: unknown;
+}
+
+const EXAMPLE_HEADING = 'Example: a change with no UI';
+
+/** Reads the example from the reference itself, so the text agents learn from is the text tested. */
+export function directionExample(): DirectionExample {
+  const path = join(
+    import.meta.dirname,
+    '..',
+    '..',
+    'skills',
+    'covi-video',
+    'references',
+    'direction.md',
+  );
+  const section = readFileSync(path, 'utf8')
+    .split(/^## /m)
+    .find((s) => s.startsWith(`${EXAMPLE_HEADING}\n`));
+  if (!section) throw new Error(`references/direction.md has no "## ${EXAMPLE_HEADING}" section`);
+  const blocks = [...section.matchAll(/^```json\n([\s\S]*?)^```$/gm)].map(
+    (m) => JSON.parse(m[1]!) as unknown,
+  );
+  if (blocks.length !== 2)
+    throw new Error(
+      `"## ${EXAMPLE_HEADING}" must hold two JSON blocks, the scenes then the direction; it holds ${blocks.length}`,
+    );
+  return {
+    scenes: (blocks[0] as { scenes: DirectionExample['scenes'] }).scenes,
+    direction: blocks[1],
+  };
+}
+
+/**
+ * The drafted storyboard with the example's rewrite applied: each listed scene takes the fields
+ * shown and drops `say`, the spoken form of its old line; every other field stays as drafted.
+ */
+export function rewriteScenes(
+  storyboard: Storyboard,
+  scenes: DirectionExample['scenes'],
+): Storyboard {
+  const edits = new Map(scenes.map((s) => [s.id, s]));
+  for (const id of edits.keys())
+    if (!storyboard.scenes.some((s) => s.id === id))
+      throw new Error(`the example rewrites scene ${id}, which the draft does not have`);
+  return StoryboardSchema.parse({
+    ...storyboard,
+    draft: false,
+    scenes: storyboard.scenes.map((scene) => {
+      const edit = edits.get(scene.id ?? '');
+      if (!edit) return scene;
+      const { say: _old, ...kept } = scene;
+      return { ...kept, ...edit };
+    }),
+  });
+}
+
+/** What a viewer sees happen, and when: each scene's span and entrance, its elements, its beats. */
+export function choreography(timeline: Pick<Timeline, 'scenes'>) {
+  return timeline.scenes.map((s) => ({
+    id: s.id,
+    start: s.start,
+    end: s.end,
+    transition: s.transition?.kind,
+    elements: s.direction?.elements.map((e): [string, string, Rect] => [e.id, e.kind, e.rect]),
+    beats: s.direction?.beats.map((b): [string, number, number] => [b.verb, b.t, b.seconds]),
+  }));
 }

@@ -834,6 +834,47 @@ describe('flow verbs in the direction file', () => {
     expect(Math.max(...ends(beats))).toBeCloseTo(limit, 3);
   });
 
+  it('give a flow verb on a line’s last word its least length, though the scene cuts away soon after', () => {
+    // So short a last word, with a cut straight after the line, that the scene ends less than
+    // 0.6 s after the word starts: the stack on it must still take 0.6 s, started earlier.
+    const cut = [
+      scenes[0]!,
+      SceneSchema.parse({
+        id: 's2',
+        beat: 's2',
+        narration: 'The reader now takes plan B.',
+        visual: { kind: 'callout', title: 'After' },
+      }),
+      SceneSchema.parse({
+        id: 's3',
+        beat: 's3',
+        narration: 'The reader now takes ten steps.',
+        transition: 'cut',
+        visual: { kind: 'callout', title: 'Then' },
+      }),
+    ];
+    const timed = layoutScenes(cut, new Map(), new Map(), 'en', pacingFor(spec));
+    const s2 = timed.scenes[1]!;
+    const options = { ...captionOptionsFor('landscape'), language: 'en' as const };
+    const word = phraseMoment('The reader now takes plan B.', 'B', s2, options)!;
+    expect(s2.end - s2.start - word).toBeLessThan(0.6);
+    const [, staged] = resolveDirection({
+      plan: DirectionSchema.parse(shot(STAGE, [{ verb: 'stack', element: 'r', at: 'B' }])),
+      scenes: cut,
+      layout: timed,
+      spec,
+      language: 'en',
+      sources,
+      image: () => ({ src: '', width: 1, height: 1 }),
+      seed: 5,
+      redact: (value) => value,
+    });
+    const limit = timed.scenes[2]!.start - s2.start - 0.5;
+    const stack = staged!.direction.beats.find((b) => b.verb === 'stack')!;
+    expect(stack.seconds).toBe(0.6);
+    expect(stack.t + stack.seconds).toBeCloseTo(limit, 3);
+  });
+
   it('keep a packet that split beside a node there until it merges back', () => {
     const d = resolve(
       shot(

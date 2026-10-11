@@ -599,7 +599,8 @@ function sequenced(
     const before = key === undefined ? undefined : last.get(key);
     const earliest = Math.max(w.ready, before ? before.placed.t + before.placed.seconds : 0);
     let t = Math.max(b.t, earliest);
-    const seconds = Math.min(b.seconds, Math.max(FLOW_MIN, limit - t));
+    // By its own length: one near the scene's end was cut short, and it may move earlier.
+    const seconds = Math.min(BEAT_SECONDS[b.verb], Math.max(FLOW_MIN, limit - t));
     let reason: string | undefined;
     if (key !== undefined && b.verb === 'flow' && lost.has(key))
       reason = `${named(b)} follows a trip of "${key}" that was left out`;

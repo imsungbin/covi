@@ -106,6 +106,11 @@ export interface Session {
    * only: nothing changes a finding's certainty because of it.
    */
   calibration?: Calibration;
+  /**
+   * How many warnings an existing run held when this command opened it, before the command raised
+   * any: a draft's result reports only what came after.
+   */
+  warningsAtOpen?: number;
 }
 
 export interface LanguageSettings {
@@ -455,6 +460,7 @@ export async function openSession(
   const resolved = resolveConfig(buildLayers(sessionOptions, repoConfig));
   const redactor = Redactor.fromProcess();
   const run = await Run.open(ref, { root, runsDir: resolved.config.output.dir, redactor });
+  const warningsAtOpen = run.manifest.warnings.length;
   const context = await run.readJson<ReviewContext>('context.json');
   // A run keeps the language it was written in, unless this command names another.
   const settings = languageSettingsOf(resolved);
@@ -487,5 +493,6 @@ export async function openSession(
     execution: { allowed: true, withheld },
     language,
     languageSettings: settings,
+    warningsAtOpen,
   };
 }

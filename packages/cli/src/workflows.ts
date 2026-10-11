@@ -1091,7 +1091,8 @@ export async function renderWorkflow(
   const demo = (await run.has(DEMO_PATHS.captures))
     ? await run.readJson<Demonstration>(DEMO_PATHS.captures)
     : undefined;
-  const known = run.manifest.warnings.length;
+  // What the run held before this command opened it: the warnings of the renders before.
+  const known = session.warningsAtOpen ?? run.manifest.warnings.length;
   // A draft is not the video: its stage, and a failure in it, are recorded as a draft.
   const produced = await run.stage(options.draft ? 'draft' : 'video', () =>
     produceVideo({

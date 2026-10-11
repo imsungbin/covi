@@ -444,11 +444,13 @@ async function finish(
     // A draft's result already holds its own warnings; the run's are the video's.
     if (!result.video?.draft)
       result.warnings.push(...s.run.manifest.warnings.filter((w) => !result.warnings.includes(w)));
+    // A refused draft is a round of the critique loop, not a part of the run that failed.
+    const failed = s.run.manifest.errors.filter((e) => e.stage !== 'draft');
     const status: RunOutcome['status'] =
       result.exitCode === ExitCode.gate
         ? 'gated'
         : result.ok
-          ? s.run.manifest.errors.length
+          ? failed.length
             ? 'partial'
             : 'success'
           : 'failed';

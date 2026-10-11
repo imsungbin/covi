@@ -216,6 +216,12 @@ export async function produceVideo(input: ProduceVideoInput): Promise<ProduceVid
     notes.push(message);
   };
   await mkdir(run.path('video'), { recursive: true });
+  // A draft is one round: nothing of an earlier one stays beside it, on disk or in run.json, even
+  // when this one is refused or stops partway.
+  if (draft) {
+    await rm(run.path(DRAFT_DIR), { recursive: true, force: true });
+    for (const rel of Object.values(DRAFT_PATHS)) await run.discard(rel);
+  }
 
   // 1. Storyboard: authored, or drafted from evidence (optionally polished by a model).
   // Everything downstream (narration audio, captions, frames, the composition) is drawn from the
@@ -715,10 +721,6 @@ interface DraftInput {
 async function renderDraft(input: ProduceVideoInput, d: DraftInput): Promise<ProduceVideoResult> {
   const { run, logger } = input;
   const { spec, timeline, media } = d;
-  // A draft is one round: nothing of an earlier one stays beside it, on disk or in run.json, even
-  // when this one stops partway.
-  await rm(run.path(DRAFT_DIR), { recursive: true, force: true });
-  for (const rel of Object.values(DRAFT_PATHS)) await run.discard(rel);
   await run.writeJson(DRAFT_PATHS.timeline, timeline, 'draft');
   const compositionDir = run.path(DRAFT_PATHS.composition);
   await writeComposition(compositionDir, timeline, d.images);

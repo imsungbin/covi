@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { videoQuestion } from '@covi/video';
@@ -457,6 +457,13 @@ describe('covi CLI', () => {
       json.artifacts.direction!,
       JSON.stringify({ shots: [{ scene: 'nope', elements: [{ id: 'v', kind: 'visual' }] }] }),
     );
+    // An earlier round's draft, on disk and in run.json: its checks describe another direction.
+    const runJson = join(json.runDir, 'run.json');
+    mkdirSync(join(json.runDir, 'video', 'draft'));
+    writeFileSync(join(json.runDir, 'video', 'draft', 'qc.json'), '{"status":"pass","checks":[]}');
+    const earlier = JSON.parse(readFileSync(runJson, 'utf8')) as { artifacts: unknown[] };
+    earlier.artifacts.push({ path: 'video/draft/qc.json', kind: 'draft', sha256: '0', bytes: 2 });
+    writeFileSync(runJson, JSON.stringify(earlier));
     const draft = covi(['render', '--repo', dir, '--run', json.runId, '--draft', '--json']);
     expect(draft.code).toBe(2);
     expect((draft.json() as { error: string }).error).toMatch(
@@ -464,12 +471,19 @@ describe('covi CLI', () => {
     );
     expect(existsSync(join(json.runDir, 'video', 'draft'))).toBe(false);
     // The refusal is the draft's, not the video's.
-    const manifest = JSON.parse(readFileSync(join(json.runDir, 'run.json'), 'utf8')) as {
+    const manifest = JSON.parse(readFileSync(runJson, 'utf8')) as {
       stages: Array<{ name: string; status: string }>;
       errors: Array<{ stage: string }>;
+      artifacts: Array<{ path: string }>;
     };
     expect(manifest.stages.at(-1)).toMatchObject({ name: 'draft', status: 'failed' });
     expect(manifest.errors.at(-1)).toMatchObject({ stage: 'draft' });
+    expect(manifest.artifacts.filter((a) => a.path.startsWith('video/draft/'))).toEqual([]);
+    // A refused draft is a round of the critique loop, not a part of the run that failed.
+    expect(covi(['report', '--repo', dir, '--run', json.runId, '--json']).code).toBe(0);
+    expect(
+      (JSON.parse(readFileSync(runJson, 'utf8')) as { outcome: { status: string } }).outcome.status,
+    ).toBe('success');
   });
 
   it('reports a draft render as a preview, never as the video', async () => {

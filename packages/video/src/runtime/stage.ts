@@ -574,8 +574,9 @@ export class Stage {
       // The opening scene's header is in place at frame 0, like the rest of it.
       if (m.header) {
         // Across a camera move both headers sit in one place: the old one has gone (over the
-        // move's first 40%) before the new one comes in.
-        const lead = cameraIn ? 0.4 * enterWith.seconds : 0;
+        // move's first 40%) before the new one comes in. After a card without one (a title),
+        // there is nothing to wait for: it comes in with its scene.
+        const lead = cameraIn && this.scenes[i - 1]!.header ? 0.4 * enterWith.seconds : 0;
         const eyebrow = m.header.firstElementChild as HTMLElement;
         eyebrow.style.opacity = easeOutCubic(
           first ? 1 : seg(local, lead + 0.05, lead + 0.4),

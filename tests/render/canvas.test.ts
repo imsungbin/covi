@@ -529,6 +529,24 @@ describe.skipIf(!available)('the canvas', () => {
     }
   });
 
+  it('brings a header in with its scene after a card without one, and after the old one otherwise', async () => {
+    const v = await directed(story, moves);
+    const header = async (id: string, seconds: number) =>
+      (await v.seek(
+        v.frameAt(id, seconds),
+        `return [...document.querySelector('[data-scene="${id}"] > .scene-header').children]
+           .map((c) => Number.parseFloat(c.style.opacity));`,
+      )) as number[];
+    // The title card has no header to make way for: the callout's comes in as the camera sets off.
+    expect(v.scene('s1').visual.kind).toBe('title');
+    expect((await header('s2', 0.45))[0]).toBeCloseTo(1, 2);
+    for (const opacity of await header('s2', 0.6)) expect(opacity).toBeCloseTo(1, 2);
+    // The callout's own header goes over the zoom's first 40% before the code's comes in.
+    const lead = 0.4 * v.scene('s3').transition!.seconds;
+    expect((await header('s3', lead))[0]).toBeLessThan(0.05);
+    expect((await header('s3', lead + 0.45))[0]).toBeCloseTo(1, 2);
+  });
+
   it('eases the narrator in from a card with its own fox, and out into one', async () => {
     const into = {
       scene: 's4',

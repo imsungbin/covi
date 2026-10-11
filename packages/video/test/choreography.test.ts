@@ -237,13 +237,15 @@ describe('dropped beats', () => {
 describe('shots on the frame', () => {
   const media = computeRegions({ width: 1920, height: 1080, orientation: 'landscape' }).media;
   const t = timeline([scene('s1', 0, 6, { direction: shot([label('a', 'A'), label('b', 'B')]) })]);
-  const at = (elements: Array<{ id: string; rect: typeof rect }>, frame = settledFrame(t, 0)!) =>
+  type Placed = Array<{ id: string; rect: typeof rect }>;
+  const reported = (tl: Timeline, elements: Placed, frame = settledFrame(tl, 0)!) =>
     [
       { frame, scene: 's1', items: [], imagesLoaded: true, shot: { region: media, elements } },
     ] as LayoutReport[];
+  const at = (elements: Placed, frame?: number) => reported(t, elements, frame);
   const box = (x: number, y: number, width = 400, height = 300) => ({ x, y, width, height });
 
-  it('warn on elements that collide, but not on one set inside another', () => {
+  it('warn on elements that collide, even one set wholly over another', () => {
     const a = box(media.x, media.y);
     expect(
       overlapCheck(
@@ -264,29 +266,70 @@ describe('shots on the frame', () => {
         ]),
       ).status,
     ).toBe('pass');
-    // A packet on its node lies wholly inside it, by design.
+    // Two elements in one slot (a `single` layout): the smaller is covered whole.
     expect(
       overlapCheck(
         t,
         at([
           { id: 'a', rect: a },
-          { id: 'p', rect: box(media.x + 50, media.y + 50, 100, 60) },
+          { id: 'b', rect: box(media.x + 50, media.y + 50, 100, 60) },
         ]),
-      ).status,
-    ).toBe('pass');
+      ).message,
+    ).toContain('"a" and "b" in s1 (100%)');
   });
 
-  it('fail an element drawn past the frame, within a few pixels of tolerance', () => {
+  it('let a packet rest on the nodes its trips start and end at, and on no other', () => {
+    const node = (id: string, x: number): DirectionElement => ({
+      id,
+      kind: 'node',
+      rect: box(x, media.y),
+      label: id,
+    });
+    const packet: DirectionElement = { id: 'p', kind: 'packet', rect: box(media.x, media.y) };
+    const trip: DirectionBeat = {
+      verb: 'flow',
+      from: 'a',
+      to: 'b',
+      packet: 'p',
+      t: 1,
+      seconds: 1.2,
+    };
+    const elements = [
+      node('a', media.x),
+      node('b', media.x + 600),
+      node('c', media.x + 1200),
+      packet,
+    ];
+    const flowing = timeline([scene('s1', 0, 6, { direction: shot(elements, [trip]) })]);
+    // The packet sits on the edge's end: half of it over the node's side.
+    const resting = (id: string, x: number) =>
+      overlapCheck(
+        flowing,
+        reported(flowing, [
+          { id, rect: box(x, media.y) },
+          { id: 'p', rect: box(x - 50, media.y + 120, 100, 60) },
+        ]),
+      );
+    expect(resting('a', media.x + 400).status).toBe('pass');
+    expect(resting('b', media.x + 600).status).toBe('pass');
+    expect(resting('c', media.x + 1200).message).toContain('"c" and "p" in s1 (50%)');
+  });
+
+  it('fail an element drawn past the frame, within 4 units of tolerance', () => {
     const past = outOfFrameCheck(t, at([{ id: 'a', rect: box(t.width - 380, media.y) }]));
     expect(past).toMatchObject({ id: 'out-of-frame', status: 'fail' });
     expect(past.message).toContain('"a" in s1');
-    const edge = box(t.width - 403, media.y);
-    expect(outOfFrameCheck(t, at([{ id: 'a', rect: edge }])).status).toBe('pass');
+    const held = (x: number, y: number) =>
+      outOfFrameCheck(t, at([{ id: 'a', rect: box(x, y) }])).status;
+    // At 1080p a unit is a pixel: 3 px past the frame's side or the region's top row is the
+    // rounding of a drawn box, 6 px is cut off.
+    expect(held(t.width - 403, media.y)).toBe('pass');
+    expect(held(t.width - 397, media.y)).toBe('pass');
+    expect(held(t.width - 394, media.y)).toBe('fail');
+    expect(held(media.x, media.y - 3)).toBe('pass');
+    expect(held(media.x, media.y - 6)).toBe('fail');
     // The side margin is drawn even while the viewport clips: only the region's rows are cut.
-    const margin = box(media.x + media.width - 380, media.y);
-    expect(outOfFrameCheck(t, at([{ id: 'a', rect: margin }])).status).toBe('pass');
-    const above = outOfFrameCheck(t, at([{ id: 'a', rect: box(media.x, media.y - 20) }]));
-    expect(above.status).toBe('fail');
+    expect(held(media.x + media.width - 380, media.y)).toBe('pass');
   });
 
   it('read only frames where the scene has settled, and say when nothing was measured', () => {

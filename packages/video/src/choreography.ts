@@ -1,4 +1,4 @@
-import { area, clip, listed, settledReports } from './density.ts';
+import { area, clip, type DensityTimeline, listed, settledReports } from './density.ts';
 import type { QcCheck } from './qc.ts';
 import { computeRegions } from './runtime/layout.ts';
 import { isCjk } from './text.ts';
@@ -12,6 +12,7 @@ import {
   type MorphVisual,
   type Rect,
   type Timeline,
+  type TimelineScene,
 } from './timeline/types.ts';
 
 /*
@@ -21,11 +22,8 @@ import {
  * pacing, not broken output; only an element the frame cuts off fails.
  */
 
-/** What the choreography checks read of a timeline. */
-export type ChoreographyTimeline = Pick<
-  Timeline,
-  'scenes' | 'transition' | 'fps' | 'width' | 'height' | 'orientation'
->;
+/** What the choreography checks read of a timeline: the same as the density checks. */
+export type ChoreographyTimeline = DensityTimeline;
 
 /** How long the picture may hold still under narration before the scene reads as a slide (s). */
 export const STILL_SECONDS = 1.5;
@@ -348,19 +346,29 @@ function inside(inner: Rect, outer: Rect, tolerance: number): boolean {
 
 /** Two elements overlapping by more than this share of the smaller collide. */
 export const OVERLAP_SHARE = 0.04;
-/** Boxes within this many design units of each other's edges are not told apart. */
+/** A box within this many design units past an edge is inside it: the rounding of drawn boxes. */
 const EDGE_UNITS = 4;
 
 /**
+ * Whether a packet rests on a node by design: the node is an end of one of the packet's trips,
+ * where it sits on the edge's end, half over the node.
+ */
+function ridesTo(scene: TimelineScene, packet: string, node: string): boolean {
+  return (scene.direction?.beats ?? []).some(
+    (b) => b.verb === 'flow' && b.packet === packet && (b.from === node || b.to === node),
+  );
+}
+
+/**
  * A shot's elements keep clear of one another where it has settled: no two of them overlap by
- * more than 4% of the smaller, unless one lies wholly inside the other, which the layout does on
- * purpose (a packet resting on its node).
+ * more than 4% of the smaller, except a packet and a node one of its trips starts or ends at,
+ * which it rests against by design. What an element draws inside its own slot (a split's pieces,
+ * a pile's items) is part of that element.
  */
 export function overlapCheck(
   timeline: ChoreographyTimeline,
   layouts: readonly LayoutReport[],
 ): QcCheck {
-  const tolerance = EDGE_UNITS * computeRegions(timeline).unit;
   // The largest overlap of each pair, over the frames it was measured at.
   const hits = new Map<string, { scene: string; a: string; b: string; share: number }>();
   let measured = 0;
@@ -369,7 +377,7 @@ export function overlapCheck(
     if (elements.length > 1) measured++;
     for (const [i, a] of elements.entries())
       for (const b of elements.slice(i + 1)) {
-        if (inside(a.rect, b.rect, tolerance) || inside(b.rect, a.rect, tolerance)) continue;
+        if (ridesTo(scene, a.id, b.id) || ridesTo(scene, b.id, a.id)) continue;
         const part = clip(a.rect, b.rect);
         const share = part ? area(part) / Math.max(1, Math.min(area(a.rect), area(b.rect))) : 0;
         const key = `${scene.id} ${a.id} ${b.id}`;

@@ -10,6 +10,9 @@ import {
   directionSources,
   type LayoutReport,
   layoutScenes,
+  OVERLAP_SHARE,
+  outOfFrameCheck,
+  overlapCheck,
   pacingFor,
   type Rect,
   resolveDirection,
@@ -291,6 +294,22 @@ describe.skipIf(!available)('packets on edges', () => {
     const after = await read(v, v.frameAt(FLOW.t + FLOW.seconds + 0.3));
     expect(near(center(after.packet!), route(after).at(-1)!)).toBeLessThan(1.5);
     expect(after.edge).toMatchObject({ offset: 0, head: 1 });
+    expect(v.errors).toEqual([]);
+  });
+
+  it('rests on the node its trip ends at where QC reads it, which is no collision', async () => {
+    const v = await staged(twoNodes(true), [FLOW]);
+    const index = v.timeline.scenes.findIndex((s) => s.id === 's2');
+    const report = await v.report(settledFrame(v.timeline, index)!);
+    const at = new Map(report.shot!.elements.map((e) => [e.id, e.rect]));
+    const [b, p] = [at.get('b')!, at.get('p')!];
+    // Half the pill lies over the node's side: between any other two elements, a collision.
+    const w = Math.min(b.x + b.width, p.x + p.width) - Math.max(b.x, p.x);
+    const h = Math.min(b.y + b.height, p.y + p.height) - Math.max(b.y, p.y);
+    expect((w * h) / (p.width * p.height)).toBeGreaterThan(10 * OVERLAP_SHARE);
+    expect(overlapCheck(v.timeline, [report])).toMatchObject({ status: 'pass' });
+    expect(overlapCheck(v.timeline, [report]).message).not.toContain('No shot');
+    expect(outOfFrameCheck(v.timeline, [report]).status).toBe('pass');
     expect(v.errors).toEqual([]);
   });
 

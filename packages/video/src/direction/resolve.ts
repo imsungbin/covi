@@ -383,7 +383,8 @@ function codeWindow(view: readonly DiffLine[], max: number): DiffLine[] {
  * evenly spaced slot over the line from 0.15 of it (over the scene when it has no line). A count
  * or a count-up with `at` ticks in the moments before its phrase instead, so the number on screen
  * lands as it is said; a count without one never lands before the terminals beside it have typed
- * their output, where its number comes from. `place` is the default made explicit, so it resolves
+ * their output, where its number comes from, and one spaced to land after `limit` (a count-up
+ * too) starts earlier to land by it. `place` is the default made explicit, so it resolves
  * to nothing; beats on elements that are gone drop. Nothing plays on an element that is not in
  * place yet: a beat that moves the camera toward, acts on, or (a flow) travels between or carries
  * a revealed element starts once its (first) reveal is done (the latest of them, for a flow); a
@@ -507,9 +508,12 @@ function timeBeats(
     if (at !== undefined && (b.verb === 'count' || b.verb === 'count-up'))
       return { beat: b.t >= was.ready ? b : { ...b, ...landing(at, was.ready, b.verb) }, ...was };
     // A count without a phrase waits for its number to be typed; a count-up shows the value
-    // before it, which no terminal types.
+    // before it, which no terminal types. Spaced to land after `limit`, either starts earlier to
+    // land by it, never before it may, so the scene settles on the number landed.
     const begin = Math.max(was.ready, b.verb === 'count' ? typed - BEAT_SECONDS.count : 0);
-    return { beat: b.t >= begin ? b : { ...b, ...moment(b.verb, begin) }, ...was };
+    const latest = b.verb === 'count' || b.verb === 'count-up' ? limit - b.seconds : b.t;
+    const t = Math.max(begin, Math.min(b.t, latest));
+    return { beat: t === b.t ? b : { ...b, ...moment(b.verb, t) }, ...was };
   });
   const out = sequenced(makeWay(aimed, from + span * SPACED_FROM), limit);
   // Stable: beats at the same moment keep the order the agent wrote.

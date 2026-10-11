@@ -396,6 +396,48 @@ describe('flow verbs in the direction file', () => {
     expect(twice!.direction).not.toHaveProperty('dropped');
   });
 
+  it('land a count or a count-up without a phrase half a second before the scene moves on', () => {
+    // The benchmark's staging on a line that never says the number, as in a short square video:
+    // spaced, the count would still tick as the outro comes in (8.97 s), and the frame QC reads
+    // the scene settled at would show it mid-count.
+    const staged = (last: object) =>
+      resolve(
+        shot(STAGE, [
+          { verb: 'flow', from: 'a', to: 'b', packet: 'p' },
+          { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+          { verb: 'stack', element: 'r' },
+          { verb: 'merge', element: 'p' },
+          last,
+        ]),
+      )[1]!.direction;
+    for (const last of [
+      { verb: 'count', element: 'm' },
+      { verb: 'count-up', element: 'm', side: 'base' },
+    ]) {
+      const d = staged(last);
+      const number = d.beats.at(-1)!;
+      expect(number.verb).toBe(last.verb);
+      expect(number.t + number.seconds).toBeCloseTo(LIMIT, 3);
+      expect(number.seconds).toBe(BEAT_SECONDS[last.verb as 'count' | 'count-up']);
+      // The flow verbs still make way: the number ticks alone, after all of them.
+      for (const b of d.beats.slice(0, -1))
+        expect(b.t + b.seconds, b.verb).toBeLessThanOrEqual(number.t + 1e-6);
+      expect(d).not.toHaveProperty('dropped');
+    }
+    // One spaced early enough keeps its slot.
+    const early = resolve(
+      shot(STAGE, [
+        { verb: 'count', element: 'm' },
+        { verb: 'stack', element: 'r' },
+      ]),
+    )[1]!.direction.beats.find((b) => b.verb === 'count')!;
+    const timing = layout.scenes[1]!;
+    expect(early.t).toBeCloseTo(
+      timing.speechStart - timing.start + 0.15 * (timing.speechEnd - timing.speechStart),
+      3,
+    );
+  });
+
   it('stretch flows, splits, merges, and stacks toward the next beat, up to three times their length', () => {
     const [, s2] = resolve(
       shot(STAGE, [

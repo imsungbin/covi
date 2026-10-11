@@ -771,6 +771,74 @@ describe.skipIf(!available)('piles and count-ups', () => {
     }
   });
 
+  it('shrinks a short row’s number so its one line of items keeps its least size', async () => {
+    // A row too short for two lines of items draws them in one line of twelve, which needs more
+    // than twice the width two lines of six do: the number gives way for that width, not the
+    // narrower one, so a card wide enough for it at the body floor draws its items whole.
+    const BIG = { width: 1920, height: 1080 };
+    const pileIn = (rect: Rect) =>
+      staged(
+        () => [
+          {
+            id: 'reads',
+            kind: 'pile',
+            rect,
+            name: 'steps',
+            rows: [{ side: 'base', count: 1234567 }],
+          },
+        ],
+        [STACK],
+        BIG,
+      );
+    const measure = (v: Staged) =>
+      v.seek(
+        v.frameAt(3),
+        `const scene = document.querySelector('[data-scene="s2"]');
+         const q = (s) => scene.querySelector(s);
+         const num = q('.pnum');
+         const items = [...scene.querySelectorAll('.pitem')].map((n) => Number.parseFloat(n.style.width));
+         return { row: q('.prow').clientHeight, rowWidth: q('.prow').clientWidth, cap: q('.pcap').offsetWidth, size: Number.parseFloat(num.style.fontSize), item: Math.min(...items) };`,
+      ) as Promise<{ row: number; rowWidth: number; cap: number; size: number; item: number }>;
+    // What the number takes at a size, as the pile holds it (two pixels to spare).
+    const widthAt = (v: Staged, size: number) =>
+      v.seek(
+        v.frameAt(3),
+        `const num = document.querySelector('[data-scene="s2"] .pnum');
+         num.style.minWidth = ''; num.style.fontSize = '${size}px';
+         return num.scrollWidth + 2;`,
+      ) as Promise<number>;
+    // A row 55 px tall is short of two lines of items, and caps the number at 0.55 of it.
+    const rowHeight = 55;
+    const most = 0.55 * rowHeight;
+    const card = { x: 100, y: 300, width: 1400, height: 180 };
+    const wide = await pileIn(card);
+    // At 1080p a design unit is a pixel, so sizes read as they are written.
+    expect(wide.r.regions.unit).toBe(1);
+    const first = await measure(wide);
+    const floorWidth = await widthAt(wide, TEXT_FLOOR.body);
+    const mostWidth = await widthAt(wide, most);
+    expect(mostWidth).toBeGreaterThan(floorWidth);
+    const gap = 18;
+    const oneLine = 12 * PILE_ITEM_MIN + 11 * 10;
+    // A row exactly as wide as one line of items needs with the number at the floor, and half of
+    // what the number gains at its largest to spare.
+    const row = first.cap + gap + oneLine + (mostWidth - floorWidth) / 2 + gap + floorWidth;
+    const v = await pileIn({
+      ...card,
+      width: card.width + row - first.rowWidth,
+      height: card.height + rowHeight - first.row,
+    });
+    const drawn = await measure(v);
+    expect(drawn.row).toBe(rowHeight);
+    expect(drawn.row).toBeLessThan(2 * PILE_ITEM_MIN + 10);
+    // The largest number would fit its share of the row: only the items make it smaller.
+    expect(mostWidth).toBeLessThanOrEqual(0.3 * drawn.rowWidth);
+    expect(drawn.size).toBeLessThan(most - 0.25);
+    expect(drawn.size).toBeGreaterThanOrEqual(TEXT_FLOOR.body);
+    expect(drawn.item).toBeGreaterThanOrEqual(PILE_ITEM_MIN - 0.1);
+    expect((await v.report(v.frameAt(3))).items.some((i) => i.overflow)).toBe(false);
+  });
+
   it('wraps a long name onto two lines, and reports one too long even for that', async () => {
     // Half the frame's width, as a staged shot gives a pile beside its counter.
     const named = (name: string) =>

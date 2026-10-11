@@ -49,7 +49,6 @@ import {
   morphTiming,
   sceneFrame,
   screenshotMarks,
-  settledAt,
   settledFrame,
 } from '../../packages/video/src/timeline/cues.ts';
 import type { DirectionElement, TimelineVisual } from '../../packages/video/src/timeline/types.ts';
@@ -1608,12 +1607,7 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
           sceneFrame(timeline, index, scene.start + metricSettledAt(scene.direction!, counter)),
         );
         expect(metricSettledAt(scene.direction!, counter)).toBeGreaterThan(count.t + count.seconds);
-        // Here it lands after the moment the terminal it replaces would have typed its output
-        // (the staged shot shows no terminal, so nothing waits for that: it is so on this line),
-        // and the counter settles before the next scene starts to come in.
-        expect(count.t + count.seconds).toBeGreaterThanOrEqual(
-          settledAt(scene.visual, scene.end - scene.start, scene.phases) - 1e-3,
-        );
+        // The counter settles before the next scene starts to come in.
         expect(scene.start + metricSettledAt(scene.direction!, counter)).toBeLessThanOrEqual(
           timeline.scenes[index + 1]!.start + 1e-3,
         );

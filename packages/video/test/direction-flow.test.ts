@@ -344,9 +344,14 @@ describe('flow verbs in the direction file', () => {
     const options = { ...captionOptionsFor('landscape'), language: 'en' as const };
     const timing = layout.scenes[1]!;
     const said = (phrase: string) => phraseMoment(NARRATION, phrase, timing, options)!;
-    // Where the spacing starts: no beat without a phrase starts before it.
-    const first =
-      timing.speechStart - timing.start + 0.15 * (timing.speechEnd - timing.speechStart);
+    // Where flow verbs' spacing starts, as the shot lands or its line starts: no flow verb
+    // without a phrase starts before it.
+    const end = timing.speechEnd - timing.start;
+    const first = Math.max(
+      0.5,
+      layout.scenes[0]!.end - timing.start,
+      timing.speechStart - timing.start,
+    );
     // The default director's staging of the benchmark: spaced, the merge and the stack would
     // still be moving while the request bytes count down.
     const [, s2] = resolve(
@@ -391,7 +396,7 @@ describe('flow verbs in the direction file', () => {
     expect(crossed.t).toBeLessThan(landed);
     expect(crossed.t + crossed.seconds).toBeGreaterThan(landed - BEAT_SECONDS.count);
     // Nor before what it acts on is in place: ending as the count starts, this stack would start
-    // before its pile is revealed, so it keeps its spaced slot, after the reveal.
+    // before its pile is revealed, so it keeps its spaced slot, or waits for the reveal.
     const waits = resolve(
       shot(STAGE, [
         { verb: 'reveal', element: 'r', at: 'before and after' },
@@ -403,12 +408,8 @@ describe('flow verbs in the direction file', () => {
     const early = said('request bytes') - BEAT_SECONDS.count - BEAT_SECONDS.stack;
     expect(early).toBeGreaterThan(first);
     expect(early).toBeLessThan(shown);
-    const spaced =
-      timing.speechStart -
-      timing.start +
-      (timing.speechEnd - timing.speechStart) * (0.15 + 0.85 / 3);
-    expect(spaced).toBeGreaterThan(shown);
-    expect(waits.find((b) => b.verb === 'stack')!.t).toBeCloseTo(spaced, 3);
+    const spaced = first + (end - first) / 3;
+    expect(waits.find((b) => b.verb === 'stack')!.t).toBeCloseTo(Math.max(spaced, shown), 3);
     // Nor does one make way into another count: between the two, the stack and the merge keep
     // their spaced slots.
     const [, twice] = resolve(
@@ -423,10 +424,7 @@ describe('flow verbs in the direction file', () => {
         ],
       ),
     );
-    const slot = (i: number) =>
-      timing.speechStart -
-      timing.start +
-      (timing.speechEnd - timing.speechStart) * (0.15 + (0.85 * i) / 5);
+    const slot = (i: number) => first + ((end - first) * i) / 5;
     const of = (verb: string) => twice!.direction.beats.find((b) => b.verb === verb)!;
     expect(of('stack').t).toBeCloseTo(slot(2), 3);
     expect(of('merge').t).toBeCloseTo(slot(3), 3);
@@ -531,6 +529,60 @@ describe('flow verbs in the direction file', () => {
     expect(reveal.t + reveal.seconds).toBeGreaterThan(LIMIT - BEAT_SECONDS.count);
     expect(count.t).toBeCloseTo(reveal.t + reveal.seconds, 3);
     expect(count.t + count.seconds).toBeGreaterThan(LIMIT);
+  });
+
+  it('start flow verbs without a phrase as the shot lands, spread through the rest of its line', () => {
+    // The staged scene opens the video, its line starting before its elements have risen into
+    // place; or it follows another, its line starting after the camera has arrived.
+    const opening = [
+      SceneSchema.parse({ ...scenes[1], id: 's1' }),
+      SceneSchema.parse({ ...scenes[0], id: 's2' }),
+    ];
+    for (const [story, k] of [
+      [opening, 0],
+      [scenes, 1],
+    ] as const) {
+      const timed = layoutScenes(story, new Map(), new Map(), 'en', pacingFor(spec));
+      const timing = timed.scenes[k]!;
+      const entrance = k === 0 ? 0 : timed.scenes[k - 1]!.end - timing.start;
+      const from = timing.speechStart - timing.start;
+      const end = timing.speechEnd - timing.start;
+      const spaced = from + 0.15 * (end - from);
+      // Once the camera has arrived and the elements have risen into place, and the line has
+      // started: waiting for 15% of it would hold the frame still under its opening words.
+      const lands = Math.max(0.5, entrance, from);
+      expect(lands).toBeLessThan(spaced - 0.5);
+      const beats = resolveDirection({
+        plan: DirectionSchema.parse({
+          shots: [
+            {
+              scene: story[k]!.id,
+              elements: STAGE,
+              beats: [
+                { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+                { verb: 'stack', element: 'r' },
+                { verb: 'merge', element: 'p' },
+                { verb: 'camera', move: 'zoom', to: 'm' },
+              ],
+            },
+          ],
+        }),
+        scenes: story,
+        layout: timed,
+        spec,
+        language: 'en',
+        sources,
+        image: () => ({ src: '', width: 1, height: 1 }),
+        seed: 5,
+        redact: (value) => value,
+      })[k]!.direction.beats;
+      const at = (verb: string) => beats.find((b) => b.verb === verb)!.t;
+      expect(at('split'), story[k]!.id).toBeCloseTo(lands, 2);
+      expect(at('stack')).toBeCloseTo(lands + (end - lands) / 4, 2);
+      expect(at('merge')).toBeCloseTo(lands + (end - lands) / 2, 2);
+      // Every other beat without a phrase keeps its place from 15% of the line.
+      expect(at('camera')).toBeCloseTo(spaced + (end - spaced) * (3 / 4), 2);
+    }
   });
 
   it('stretch flows, splits, merges, and stacks toward the next beat, up to three times their length', () => {

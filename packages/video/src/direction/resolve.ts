@@ -14,6 +14,7 @@ import {
   timelineLabels,
 } from '../timeline/build.ts';
 import { settledAt } from '../timeline/cues.ts';
+import { ENTERED } from '../timeline/motion.ts';
 import {
   type CodeLine,
   type DirectionBeat,
@@ -139,8 +140,15 @@ export function resolveDirection(input: ResolveInput): SceneStaging[] {
       throw new Error(`Story scene ${i + 1} has no timing in the layout.`);
     // The shot is alone on screen until the next scene, or the outro, starts to come in.
     const next = input.layout.scenes[k + 1]?.start ?? input.layout.outro?.start ?? timing.end;
+    // It has landed once its entrance is over (the scene before it has gone) and its elements
+    // have risen into place.
+    const before = input.layout.scenes[k - 1];
+    const entered = Math.max(ENTERED, before ? before.end - timing.start : 0);
     const shot = shots.get(id) ?? visualOnly(id);
-    return { stop, direction: resolveShot(shot, scene, timing, next - timing.start, ctx) };
+    return {
+      stop,
+      direction: resolveShot(shot, scene, timing, { settle: next - timing.start, entered }, ctx),
+    };
   });
   return input.redact(staged);
 }
@@ -201,12 +209,17 @@ const visualOnly = (scene: string): Shot => ({
   beats: [],
 });
 
-/** `settle`: when the scene starts to leave, in seconds since it started. */
+/** When a shot has landed and when it starts to leave, in seconds since its scene started. */
+interface ShotSpan {
+  entered: number;
+  settle: number;
+}
+
 function resolveShot(
   given: Shot,
   scene: Scene,
   timing: SceneTiming,
-  settle: number,
+  { settle, entered }: ShotSpan,
   ctx: Context,
 ): SceneDirection {
   const shot = withMorphs(given);
@@ -227,7 +240,7 @@ function resolveShot(
     shown.flatMap((e) => (e.kind === 'metric' && e.from !== undefined ? [e.id] : [])),
   );
   const limit = settle - SETTLE_LEAD;
-  const timed = timeBeats(shot, scene, timing, ctx.options, shown, ctx, limit);
+  const timed = timeBeats(shot, scene, timing, ctx.options, shown, ctx, { limit, entered });
   const counted = timed.beats.filter((b) => b.verb !== 'count' || countable.has(b.element));
   /** The shown elements in the slots `beats` leave them (`fans`: see `flowSlots`). */
   const placed = (beats: readonly DirectionBeat[], fans?: ReadonlyMap<string, number>) => {
@@ -391,7 +404,9 @@ function codeWindow(view: readonly DiffLine[], max: number): DiffLine[] {
 /**
  * Beats with their moments (seconds since the scene started), in time order: `at` lands on its
  * phrase as the captions time it; a beat without one, or whose phrase redaction removed, takes an
- * evenly spaced slot over the line from 0.15 of it (over the scene when it has no line). A count
+ * evenly spaced slot over the line from 0.15 of it (over the scene when it has no line), and a
+ * flow verb without one from when the shot has landed (`entered`), or its line has started if that
+ * is later, so a staged story fills the line's opening rather than wait on it. A count
  * or a count-up with `at` ticks in the moments before its phrase instead, so the number on screen
  * lands as it is said; a count without one never lands before the terminals beside it have typed
  * their output, where its number comes from, and one spaced to land after `limit` (a count-up
@@ -410,7 +425,7 @@ function timeBeats(
   options: CaptionOptions,
   shown: readonly DirectionElement[],
   ctx: Pick<Context, 'sources' | 'labels'>,
-  limit: number,
+  { limit, entered }: { limit: number; entered: number },
 ): Pass {
   const duration = timing.end - timing.start;
   const text = parseEmphasis(scene.narration).text;
@@ -419,6 +434,10 @@ function timeBeats(
   const spoken = timing.speechEnd > timing.speechStart;
   const from = spoken ? timing.speechStart - timing.start : 0;
   const span = spoken ? timing.speechEnd - timing.speechStart : duration;
+  // Where the spacing starts: 0.15 into the line, and for flow verbs as the shot lands, never
+  // later than the others start.
+  const first = from + span * SPACED_FROM;
+  const flowFirst = Math.min(first, Math.max(from, entered));
   /** A beat from `start` lasting `seconds`, kept inside the scene. */
   const inside = (start: number, seconds: number) => {
     const t = round(Math.min(Math.max(0, start), Math.max(0, duration - 0.1)));
@@ -451,7 +470,8 @@ function timeBeats(
     i: number,
     pinned: number | undefined,
   ): DirectionBeat[] {
-    const spaced = from + span * (SPACED_FROM + ((1 - SPACED_FROM) * i) / live.length);
+    const start = STRETCHES.has(beat.verb) ? flowFirst : first;
+    const spaced = start + ((from + span - start) * i) / live.length;
     if (beat.verb === 'count' || beat.verb === 'count-up') {
       const timed =
         pinned === undefined ? moment(beat.verb, spaced) : landing(pinned, 0, beat.verb);
@@ -526,7 +546,7 @@ function timeBeats(
     const t = Math.max(begin, Math.min(b.t, latest));
     return { beat: t === b.t ? b : { ...b, ...moment(b.verb, t) }, ...was };
   });
-  const out = sequenced(makeWay(aimed, from + span * SPACED_FROM), limit);
+  const out = sequenced(makeWay(aimed, flowFirst), limit);
   // Stable: beats at the same moment keep the order the agent wrote.
   return { beats: out.beats.sort((a, b) => a.t - b.t), dropped: out.dropped };
 }

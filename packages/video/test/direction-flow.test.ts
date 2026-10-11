@@ -373,6 +373,25 @@ describe('flow verbs in the direction file', () => {
     const landed = said('before and after');
     expect(crossed.t).toBeLessThan(landed);
     expect(crossed.t + crossed.seconds).toBeGreaterThan(landed - BEAT_SECONDS.count);
+    // Nor before what it acts on is in place: ending as the count starts, this stack would start
+    // before its pile is revealed, so it keeps its spaced slot, after the reveal.
+    const waits = resolve(
+      shot(STAGE, [
+        { verb: 'reveal', element: 'r', at: 'before and after' },
+        { verb: 'stack', element: 'r' },
+        { verb: 'count', element: 'm', at: 'request bytes' },
+      ]),
+    )[1]!.direction.beats;
+    const shown = ends(waits.filter((b) => b.verb === 'reveal'))[0]!;
+    const early = said('request bytes') - BEAT_SECONDS.count - BEAT_SECONDS.stack;
+    expect(early).toBeGreaterThan(first);
+    expect(early).toBeLessThan(shown);
+    const spaced =
+      timing.speechStart -
+      timing.start +
+      (timing.speechEnd - timing.speechStart) * (0.15 + 0.85 / 3);
+    expect(spaced).toBeGreaterThan(shown);
+    expect(waits.find((b) => b.verb === 'stack')!.t).toBeCloseTo(spaced, 3);
     // Nor does one make way into another count: between the two, the stack and the merge keep
     // their spaced slots.
     const [, twice] = resolve(

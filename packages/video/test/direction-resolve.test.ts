@@ -159,18 +159,20 @@ describe('element slots', () => {
     // A 1080 × 1080 frame's media region. Side by side, half the width leaves the counter under
     // its 120-unit floor (116.3 units for request bytes 70,406 → 9,907), and 7 parts to 6 leaves
     // a pile's items under their least size; a row of the counter and the packet above a pile as
-    // wide as the frame keeps both (measured: 127.5 and 29.1 units with reader steps 28 → 10).
+    // wide as the frame keeps both, the row taking 3 parts of the height to the pile's 2, where
+    // the counter keeps its whole lines (measured: 127 and 39 units with reader steps 28 → 10;
+    // at half the height each, the counter fits only by cutting off its digits' feet).
     const square = { x: 64, y: 250, width: 952, height: 600 };
     expect(elementSlots(['metric', 'packet', 'pile'], 'split', square, 'square', 28)).toEqual([
-      { x: 64, y: 250, width: 497.54, height: 286 },
-      { x: 589.54, y: 250, width: 426.46, height: 286 },
-      { x: 64, y: 564, width: 952, height: 286 },
+      { x: 64, y: 250, width: 497.54, height: 343.2 },
+      { x: 589.54, y: 250, width: 426.46, height: 343.2 },
+      { x: 64, y: 621.2, width: 952, height: 228.8 },
     ]);
-    // A pile alone beside the number goes under it, as wide as the frame (measured: 129.5 and 29
+    // A pile alone beside the number goes under it, as wide as the frame (measured: 143.2 and 39
     // units).
     expect(elementSlots(['metric', 'pile'], 'split', square, 'square', 28)).toEqual([
-      { x: 64, y: 250, width: 952, height: 286 },
-      { x: 64, y: 564, width: 952, height: 286 },
+      { x: 64, y: 250, width: 952, height: 343.2 },
+      { x: 64, y: 621.2, width: 952, height: 228.8 },
     ]);
     // Any other one element shares the number's row, 7 parts to its 6 (`auto` splits two;
     // measured beside a packet: 127 units).

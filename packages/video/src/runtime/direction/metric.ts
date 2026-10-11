@@ -212,6 +212,7 @@ function counter(
   // The unit is its own text beside the value.
   const print = printer(e, false);
   const printed = [...(e.from === undefined ? [] : [e.from]), e.to].map(print);
+  const nameLine = Number.parseFloat(getComputedStyle(name).lineHeight);
   fitSize(
     (size) => {
       row.style.fontSize = `${size}px`;
@@ -223,14 +224,16 @@ function counter(
       [value],
       printed,
       // The name and the value hide what runs past them, so a short card squeezes them instead
-      // of overflowing: they are kept from being clipped as QC reads it. A name wrapped onto two
+      // of overflowing, and a squeezed line loses its foot (the comma's tail, the descenders)
+      // well before QC calls it clipped: each keeps its whole line. A name wrapped onto two
       // lines may be clipped whatever the size, so it is not held to this.
       () =>
         row.scrollWidth <= row.clientWidth + 1 &&
         row.scrollHeight <= 0.55 * e.rect.height + 1 &&
         box.scrollHeight <= box.clientHeight + 1 &&
-        !overflows(row) &&
-        (name.classList.contains('wrap') || !overflows(name)),
+        row.clientHeight >= value.offsetHeight - 1 &&
+        (name.classList.contains('wrap') ||
+          (!overflows(name) && name.clientHeight >= nameLine - 1)),
     ),
     scaled(COUNTER_FONT, u),
   );

@@ -910,7 +910,8 @@ describe.skipIf(!available)('piles and count-ups', () => {
  * The benchmark's terminal scene with a command that printed `counts` besides its request bytes
  * (70,406 → 9,907), directed by Covi and resolved as a render does, opened in a square frame at
  * its settled frame: what the shot stages, its counter's size and its pile's items, in design
- * units.
+ * units, and how many pixels of the value's and the name's lines a short card cuts off (they
+ * hide what runs past them, so a squeezed line loses the comma's tail and the descenders).
  */
 async function measuredSquare(counts: Array<[string, number, number]>) {
   const size = { width: 1080, height: 1080 };
@@ -980,18 +981,29 @@ async function measuredSquare(counts: Array<[string, number, number]>) {
     frame,
     `const scene = document.querySelector('[data-scene="s2"]');
      const items = [...scene.querySelectorAll('.pitem')].map((n) => n.getBoundingClientRect().width);
-     return { counter: Number.parseFloat(getComputedStyle(scene.querySelector('.mvalue')).fontSize), items: items.length, item: Math.min(...items) };`,
-  )) as { counter: number; items: number; item: number };
+     const value = scene.querySelector('.mvalue');
+     const name = scene.querySelector('.mname');
+     const lost = (n) => Math.max(0, Math.round(n));
+     return { counter: Number.parseFloat(getComputedStyle(value).fontSize), items: items.length, item: Math.min(...items),
+       cut: { value: lost(value.offsetHeight - value.parentElement.clientHeight), name: lost(Number.parseFloat(getComputedStyle(name).lineHeight) - name.clientHeight) } };`,
+  )) as { counter: number; items: number; item: number; cut: { value: number; name: number } };
   const unit = computeRegions({ ...size, orientation: 'square' }).unit;
   return {
     direction,
     counter: drawn.counter / unit,
     items: drawn.items,
     item: drawn.item / unit,
+    cut: drawn.cut,
     overflowing: (await v.report(frame)).items.filter((i) => i.overflow),
     errors: v.errors,
   };
 }
+
+/** The counter's value and name keep their whole lines, to rounding. */
+const whole = (cut: { value: number; name: number }) => {
+  expect(cut.value).toBeLessThanOrEqual(1);
+  expect(cut.name).toBeLessThanOrEqual(1);
+};
 
 describe.skipIf(!available)('the default director’s staged counts', () => {
   it('keeps the benchmark’s counter at its floor and its reads’ items at their least in a square frame', async () => {
@@ -1004,8 +1016,10 @@ describe.skipIf(!available)('the default director’s staged counts', () => {
     // Every beat plays, in the order written: the flow verbs make way, and the count ticks alone.
     expect(drawn.direction.beats.map((b) => b.verb)).toEqual(['split', 'stack', 'merge', 'count']);
     expect(drawn.direction.dropped).toBeUndefined();
-    // Both at once: a counter at its floor beside a pile of dots would not do.
+    // Both at once: a counter at its floor beside a pile of dots would not do, nor one whose
+    // digits lose their feet.
     expect(drawn.counter).toBeGreaterThanOrEqual(120);
+    whole(drawn.cut);
     expect(drawn.items).toBe(22);
     expect(drawn.item).toBeGreaterThanOrEqual(PILE_ITEM_MIN);
     expect(drawn.overflowing).toEqual([]);
@@ -1024,6 +1038,7 @@ describe.skipIf(!available)('the default director’s staged counts', () => {
     expect(pile.item).toBeGreaterThanOrEqual(PILE_ITEM_MIN);
     expect(pile.overflowing).toEqual([]);
     for (const drawn of [packet, pile]) {
+      whole(drawn.cut);
       expect(drawn.direction.dropped).toBeUndefined();
       expect(drawn.errors).toEqual([]);
     }

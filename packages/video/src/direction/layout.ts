@@ -23,6 +23,12 @@ const WEIGHT: Record<ShotElement['kind'], number> = {
  * beside it at its 24-unit floor.
  */
 const SQUARE_METRIC = 3.5;
+/**
+ * Above a pile as wide as a square frame, the number's row takes 3 parts of the height to the
+ * pile's 2: its card holds the counter whole at its floor, its name and change above and below
+ * it, and the pile's rows lay their items in one line there, at more than their least size.
+ */
+const SQUARE_STACK = [3, 2];
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const rounded = (r: Rect): Rect => ({
@@ -74,7 +80,8 @@ function along(region: Rect, weights: readonly number[], axis: 'x' | 'y', gap: n
  * number takes 7 parts to its 6, unless that element is a pile, which goes under the number as
  * wide as the frame: 7 parts to 6 side by side would leave the pile's items under their least
  * size. With more elements and a pile, the number shares a row with the next element (7 parts to
- * its 6), above the rest in a row of their own.
+ * its 6), above the rest in a row of their own. Either way the number's row takes 3 parts of the
+ * height to the pile's 2.
  */
 export function elementSlots(
   kinds: readonly ShotElement['kind'][],
@@ -107,7 +114,7 @@ export function elementSlots(
   else if (resolved === 'split' && orientation === 'square' && kinds[0] === 'metric' && n === 2)
     slots =
       kinds[1] === 'pile'
-        ? along(region, [1, 1], 'y', gap)
+        ? along(region, SQUARE_STACK, 'y', gap)
         : along(region, [SQUARE_METRIC, WEIGHT.visual], 'x', gap);
   else if (
     resolved === 'split' &&
@@ -115,7 +122,7 @@ export function elementSlots(
     kinds[0] === 'metric' &&
     kinds.includes('pile')
   ) {
-    const [pair, rest] = along(region, [1, 1], 'y', gap) as [Rect, Rect];
+    const [pair, rest] = along(region, SQUARE_STACK, 'y', gap) as [Rect, Rect];
     slots = [
       ...along(pair, [SQUARE_METRIC, WEIGHT.visual], 'x', gap),
       ...along(rest, weights.slice(2), 'x', gap),

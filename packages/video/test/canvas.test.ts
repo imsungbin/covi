@@ -23,7 +23,15 @@ import {
   withPush,
 } from '../src/runtime/canvas.ts';
 import { clearance, computeRegions, gridSpacing } from '../src/runtime/layout.ts';
-import { isCameraMove, type Point } from '../src/timeline/types.ts';
+import { beatCues } from '../src/timeline/cues.ts';
+import {
+  type CameraMove,
+  type DirectionBeat,
+  type DirectionElement,
+  isCameraMove,
+  type Point,
+  type Rect,
+} from '../src/timeline/types.ts';
 
 const { media } = computeRegions({ width: 1920, height: 1080, orientation: 'landscape' });
 const pivot = { x: media.x + media.width / 2, y: media.y + media.height / 2 };
@@ -516,5 +524,63 @@ describe('camera edge cases', () => {
     const target = { x: media.x, y: media.y, width: 100, height: 50 };
     expect(beatView('zoom', target, 0.5, restView(pivot), media, pivot)).toEqual(restView(pivot));
     expect(follower(target, 0.5, media, pivot)(target).scale).toBe(1);
+  });
+});
+
+describe("the camera's whoosh", () => {
+  it('sounds exactly when the stage moves the camera, over every run of three written beats', () => {
+    // The cues copy the stage's camera rule, which they cannot import: this ties the copy to
+    // `beatView`. Two targets well inside the region (so no clamp pins both to one view) and one
+    // that fills it, with zooms written out: only the stage measures a fitted zoom or a follow.
+    const box = (cx: number, cy: number): Rect => ({
+      x: media.x + cx * media.width - 0.075 * media.width,
+      y: media.y + cy * media.height - 0.075 * media.height,
+      width: 0.15 * media.width,
+      height: 0.15 * media.height,
+    });
+    const targets: Record<string, Rect> = { a: box(0.35, 0.4), b: box(0.65, 0.6), c: media };
+    const elements: DirectionElement[] = Object.entries(targets).map(([id, rect]) => ({
+      id,
+      kind: 'label',
+      rect,
+      text: id,
+      tone: 'neutral',
+    }));
+    const options = Object.keys(targets).flatMap((to) =>
+      [['pan'], ['pan', 2], ['zoom', 1], ['zoom', 2], ['zoom', 2.5]].map(([move, zoom]) => ({
+        move: move as CameraMove,
+        to,
+        ...(zoom === undefined ? {} : { zoom: zoom as number }),
+      })),
+    );
+    let moves = 0;
+    let stills = 0;
+    for (const x of options)
+      for (const y of options)
+        for (const z of options) {
+          const run = [x, y, z];
+          const beats = run.map(
+            (b, k): DirectionBeat => ({ verb: 'camera', ...b, t: k, seconds: 1 }),
+          );
+          const direction = { whole: false, elements, beats };
+          const sounded = beatCues({ id: 's', start: 0, stop: { x: 0, y: 0 }, direction }).map(
+            (c) => c.t - 0.5,
+          );
+          let view = restView(pivot);
+          const moved: number[] = [];
+          for (const [k, b] of run.entries()) {
+            const next = beatView(b.move, targets[b.to]!, b.zoom, view, media, pivot);
+            const by = Math.abs(next.x - view.x) + Math.abs(next.y - view.y);
+            if (by + Math.abs(next.scale - view.scale) > 1e-6) moved.push(k);
+            view = next;
+          }
+          const name = run.map((b) => `${b.move} ${b.to}${b.zoom ? ` ${b.zoom}` : ''}`).join(' > ');
+          expect(sounded, name).toEqual(moved);
+          moves += moved.length;
+          stills += run.length - moved.length;
+        }
+    // Both sides are swept: beats that move the camera and beats that leave it where it is.
+    expect(moves).toBeGreaterThan(1000);
+    expect(stills).toBeGreaterThan(1000);
   });
 });

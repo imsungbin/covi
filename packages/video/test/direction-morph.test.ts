@@ -1,7 +1,6 @@
 import { buildEvidence, DEFAULT_CONFIG, type Hunk, indexEvidence, Redactor } from '@covi/core';
 import { describe, expect, it } from 'vitest';
 import { captionOptionsFor } from '../src/captions.ts';
-import { morphReading } from '../src/choreography.ts';
 import { directionProblems } from '../src/direction/refs.ts';
 import { BEAT_SECONDS, resolveDirection } from '../src/direction/resolve.ts';
 import { type DirectionInput, DirectionSchema } from '../src/direction/schema.ts';
@@ -10,6 +9,7 @@ import { resolveVideoSpec } from '../src/spec.ts';
 import { type Scene, SceneSchema } from '../src/storyboard/schema.ts';
 import { layoutScenes, pacingFor, phraseMoment } from '../src/timeline/build.ts';
 import { MORPH_SETTLE } from '../src/timeline/cues.ts';
+import { morphReading } from '../src/timeline/reading.ts';
 import type { SceneStaging } from '../src/timeline/types.ts';
 
 // A run with three hunks: a replaced line holding a secret (outside any string, so its tokens

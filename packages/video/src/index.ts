@@ -8,14 +8,11 @@ export {
   choreographyChecks,
   droppedBeatsCheck,
   emptyOpeningCheck,
-  MORPH_READING,
   motionBusyCheck,
   motionGapCheck,
   OVERLAP_SHARE,
   outOfFrameCheck,
   overlapCheck,
-  READING,
-  readingSeconds,
   readingTimeCheck,
   STILL_SECONDS,
 } from './choreography.ts';
@@ -171,4 +168,5 @@ export {
 } from './timeline/build.ts';
 export { buildCues, outroSettle } from './timeline/cues.ts';
 export { posterTime } from './timeline/motion.ts';
+export { MORPH_READING, READING, readingSeconds } from './timeline/reading.ts';
 export type * from './timeline/types.ts';

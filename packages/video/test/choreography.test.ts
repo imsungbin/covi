@@ -7,11 +7,11 @@ import {
   motionGapCheck,
   outOfFrameCheck,
   overlapCheck,
-  readingSeconds,
   readingTimeCheck,
 } from '../src/choreography.ts';
 import { computeRegions } from '../src/runtime/layout.ts';
 import { settledFrame } from '../src/timeline/cues.ts';
+import { readingSeconds } from '../src/timeline/reading.ts';
 import type {
   DirectionBeat,
   DirectionElement,

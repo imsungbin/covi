@@ -8,7 +8,7 @@ import {
 } from '@covi/core';
 import { describe, expect, it } from 'vitest';
 import { captionOptionsFor } from '../src/captions.ts';
-import { morphReading, readingTimeCheck } from '../src/choreography.ts';
+import { readingTimeCheck } from '../src/choreography.ts';
 import { elementSlots, shotRegion } from '../src/direction/layout.ts';
 import {
   BEAT_SECONDS,
@@ -26,6 +26,7 @@ import { orientationOf, resolveVideoSpec } from '../src/spec.ts';
 import { type Scene, SceneSchema } from '../src/storyboard/schema.ts';
 import { buildTimeline, layoutScenes, pacingFor, phraseMoment } from '../src/timeline/build.ts';
 import { MORPH_SETTLE } from '../src/timeline/cues.ts';
+import { morphReading } from '../src/timeline/reading.ts';
 
 const W = 1920;
 const H = 1080;

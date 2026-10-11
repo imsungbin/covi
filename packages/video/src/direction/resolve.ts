@@ -1,6 +1,5 @@
 import { type DiffLine, type Language, t } from '@covi/core';
 import { type CaptionOptions, captionOptionsFor } from '../captions.ts';
-import { morphReading } from '../choreography.ts';
 import { computeRegions, gridSpacing, type Regions } from '../runtime/layout.ts';
 import { arrangedSplit, nodeFans, restingAt } from '../runtime/routes.ts';
 import { orientationOf, type VideoSpec } from '../spec.ts';
@@ -16,6 +15,7 @@ import {
 } from '../timeline/build.ts';
 import { MORPH_SETTLE, settledAt } from '../timeline/cues.ts';
 import { ENTERED } from '../timeline/motion.ts';
+import { morphReading } from '../timeline/reading.ts';
 import {
   type CodeLine,
   type DirectionBeat,

@@ -10,21 +10,14 @@ import {
 } from './density.ts';
 import type { QcCheck } from './qc.ts';
 import { computeRegions } from './runtime/layout.ts';
-import { isCjk } from './text.ts';
 import { OUTRO_ID, storyScenes } from './timeline/build.ts';
-import {
-  entranceSeconds,
-  keptTokens,
-  MORPH_SETTLE,
-  openingSpan,
-  shotSettledAt,
-} from './timeline/cues.ts';
+import { entranceSeconds, MORPH_SETTLE, openingSpan, shotSettledAt } from './timeline/cues.ts';
 import { type MotionSpan, motionSpans } from './timeline/motion.ts';
+import { morphReading, readingSeconds } from './timeline/reading.ts';
 import {
   type DirectionElement,
   isCameraMove,
   type LayoutReport,
-  type MorphVisual,
   type Rect,
   type Timeline,
   type TimelineScene,
@@ -239,23 +232,6 @@ export function motionBusyCheck(timeline: Pick<Timeline, 'scenes'>): QcCheck {
   };
 }
 
-/** Reading time: a fixed glance, then characters at 15 a second, or 8 for CJK characters. */
-export const READING = { glance: 0.4, latin: 15, cjk: 8 } as const;
-/** The code a morph adds is held at most this long (s): a long hunk is read with the narration. */
-export const MORPH_READING = 2;
-
-/** How long `text` takes to read, in seconds: whitespace is free. */
-export function readingSeconds(text: string): number {
-  let latin = 0;
-  let cjk = 0;
-  for (const char of text) {
-    if (/\s/u.test(char)) continue;
-    if (isCjk(char)) cjk++;
-    else latin++;
-  }
-  return READING.glance + latin / READING.latin + cjk / READING.cjk;
-}
-
 /** The words a shot's element puts on screen for the viewer to read, if any. */
 function wordsOf(e: DirectionElement): string | undefined {
   if (e.kind === 'label') return e.text;
@@ -263,27 +239,6 @@ function wordsOf(e: DirectionElement): string | undefined {
   if (e.kind === 'packet') return e.label;
   if (e.kind === 'pile' || e.kind === 'metric') return e.name;
   return undefined;
-}
-
-/** The code a morph adds: the head's tokens it does not keep, its markers for elided runs aside. */
-function addedCode(morph: MorphVisual): string {
-  const kept = keptTokens(morph).head;
-  return morph.head
-    .flatMap((row, r) =>
-      row.type === 'elided'
-        ? []
-        : row.tokens.flatMap((t, i) => (kept.has(`${r}:${i}`) ? [] : [t.text])),
-    )
-    .join('');
-}
-
-/**
- * How long the code a morph adds must stay on screen once it has settled: its reading time, at
- * most 2 s; nothing when it adds no code.
- */
-export function morphReading(morph: MorphVisual): number {
-  const added = addedCode(morph);
-  return added.trim() ? Math.min(MORPH_READING, readingSeconds(added)) : 0;
 }
 
 /**

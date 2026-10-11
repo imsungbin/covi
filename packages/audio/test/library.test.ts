@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { glueCompressor } from '../src/dsp/fx.ts';
+import { placeEffects } from '../src/effects.ts';
 import { hashOf } from '../src/hash.ts';
 import {
   AUDIO_ENGINE_VERSION,
@@ -8,11 +9,14 @@ import {
   loadMusicLibrary,
   musicCacheKey,
 } from '../src/library.ts';
-import { integratedLoudness } from '../src/loudness.ts';
+import { dbToGain, integratedLoudness, momentaryLoudness } from '../src/loudness.ts';
+import { STEM_LUFS } from '../src/mix.ts';
 import { fitMusic } from '../src/music/fit.ts';
 import { logoNotes, noteLimit, renderMusic, scheduleArrangement } from '../src/music/render.ts';
 import { parseScore, ScoreError } from '../src/music/score.ts';
+import { BED_DB } from '../src/placement.ts';
 import { renderSfx } from '../src/sfx/recipes.ts';
+import { TICK_GAP, tickTrain } from '../src/sfx/train.ts';
 import { noteSeconds } from '../src/synth/instruments.ts';
 
 const DIR = join(import.meta.dirname, '..', '..', '..', 'templates', 'music');
@@ -24,6 +28,8 @@ describe('the music library (templates/music)', () => {
     expect(library.patches.size).toBeGreaterThanOrEqual(20);
     expect([...library.kits.keys()].sort()).toEqual(['soft-acoustic', 'soft-electro']);
     expect([...library.recipes.keys()].sort()).toEqual([
+      'accent',
+      'camera',
       'click',
       'finding',
       'finding-high',
@@ -33,6 +39,8 @@ describe('the music library (templates/music)', () => {
       'outro-needs-changes',
       'reveal',
       'riser',
+      'thump',
+      'tick',
       'transition',
       'verdict-looks-good',
       'verdict-needs-attention',
@@ -41,8 +49,10 @@ describe('the music library (templates/music)', () => {
     expect(library.soundEffects).toMatchObject({
       gainDb: 1,
       swellCutDb: 4,
+      softCutDb: 4,
       minSpacing: 0.15,
       maxPerSecond: 3,
+      recipes: { camera: 'camera', count: 'tick', merge: 'thump', appear: 'accent' },
     });
     expect([...library.scores.keys()]).toEqual(['covi-theme']);
   });
@@ -88,8 +98,50 @@ describe('the music library (templates/music)', () => {
     expect(pitch(3)).toBeCloseTo(77.78, 0); // E♭2, in an E♭ render
   });
 
-  it('is a new engine: the mix changed (bus, carve, placement, effect levels)', () => {
-    expect(AUDIO_ENGINE_VERSION).toBe('covi-audio-4');
+  it('renders the sounds of motion: a tick short enough for its train, a thump on the tonic', () => {
+    const sr = 48_000;
+    const tick = library.recipes.get('tick')!;
+    // Ticks of a train come at least TICK_GAP apart: a tick that long never smears into the next.
+    expect(tick.duration).toBeLessThanOrEqual(TICK_GAP);
+    expect(tick.anchor).toBe(0);
+    expect(library.recipes.get('camera')!.anchor).toBeCloseTo(0.16, 9);
+    const thump = library.recipes.get('thump')!;
+    const low = { ...thump, layers: [thump.layers[0]!], fx: undefined };
+    const pitch = (transpose: number) => {
+      const c = renderSfx(low, library.patches, { sampleRate: sr, transpose })[0]!;
+      const crossings: number[] = [];
+      for (let i = Math.round(0.1 * sr); i < Math.round(0.24 * sr); i++)
+        if (c[i - 1]! < 0 && c[i]! >= 0) crossings.push(i - 1 + c[i - 1]! / (c[i - 1]! - c[i]!));
+      return ((crossings.length - 1) * sr) / (crossings.at(-1)! - crossings[0]!);
+    };
+    expect(pitch(0)).toBeCloseTo(65.41, 0); // C2
+    expect(pitch(3)).toBeCloseTo(77.78, 0); // E♭2, in an E♭ render
+  });
+
+  it('keeps every sound of motion under the music bed: none is louder than it under speech', () => {
+    const sr = 48_000;
+    for (const cue of [
+      { t: 1, kind: 'camera', scene: 's' },
+      { t: 1, kind: 'merge', scene: 's' },
+      { t: 1, kind: 'appear', scene: 's' },
+      { t: 1, kind: 'count', scene: 's', seconds: 1.6 },
+    ] as const) {
+      const p = placeEffects([cue], library.soundEffects).placed[0]!;
+      const one = renderSfx(library.recipes.get(p.recipe)!, library.patches, { sampleRate: sr });
+      const sound = p.kind === 'count' ? tickTrain(one, p, sr) : one;
+      // Half a second of silence either side, so every 400 ms window that holds it is measured.
+      const placed = sound.map((c) => {
+        const out = new Float32Array(c.length + sr);
+        for (let i = 0; i < c.length; i++) out[i + sr / 2] = c[i]! * dbToGain(p.gainDb);
+        return out;
+      });
+      const loudest = Math.max(...momentaryLoudness(placed, sr));
+      expect(loudest, cue.kind).toBeLessThanOrEqual(STEM_LUFS + BED_DB);
+    }
+  });
+
+  it('is a new engine: effects follow the motion of directed shots', () => {
+    expect(AUDIO_ENGINE_VERSION).toBe('covi-audio-5');
   });
 
   it('describes the theme the spec asks for', () => {

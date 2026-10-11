@@ -391,22 +391,46 @@ export interface TimelineScene {
 
 /**
  * A moment with a sound: a click, the before/after reveal, a finding card landing, the verdict,
- * a scene moving in, or the hero (its riser and its hit). Timing comes from `timeline/cues.ts`,
- * which the runtime draws with too. Cues exist whether or not sound effects are on, so nothing in
- * the timeline depends on the sound choices.
+ * a scene moving in, the hero (its riser and its hit), or a directed shot's motion (the camera
+ * moving inside the scene, a counter counting, pieces merging, an element appearing). Timing comes
+ * from `timeline/cues.ts`, which the runtime draws with too. Cues exist whether or not sound
+ * effects are on, so nothing in the timeline depends on the sound choices.
  */
 export interface TimelineCue {
   /** Seconds from the start of the video (a riser's is where it starts to swell). */
   t: number;
-  /** `outro`: the outro card settles, where the music's sonic logo lands. */
-  kind: 'click' | 'reveal' | 'finding' | 'verdict' | 'outro' | 'transition' | 'riser' | 'hero';
+  /**
+   * `outro`: the outro card settles, where the music's sonic logo lands. `camera`: the camera moves
+   * inside a scene's stop (`t` mid-move). `count`: a counter counts (`t` its start, for `seconds`).
+   * `merge`: merging pieces become one. `appear`: a shot's element appears.
+   */
+  kind:
+    | 'click'
+    | 'reveal'
+    | 'finding'
+    | 'verdict'
+    | 'outro'
+    | 'transition'
+    | 'riser'
+    | 'hero'
+    | 'camera'
+    | 'count'
+    | 'merge'
+    | 'appear';
   /** The scene id. */
   scene: string;
   /**
    * `high` for a high-severity finding; the verdict for a verdict or outro cue; the transition's
-   * kind for a whoosh.
+   * kind for a whoosh; the camera's move for a camera cue.
    */
   detail?: string;
+  /** How long a counter counts (s): its ticks follow the count's ease over this time. */
+  seconds?: number;
+  /**
+   * How many times a counter's printed number changes as it counts (at most `COUNT_STEPS`, more
+   * than any count draws): its ticks are never more. Absent when the shot has no such number.
+   */
+  steps?: number;
 }
 
 /** The key phrase in a caption line: where it is in the line and when it is spoken. */

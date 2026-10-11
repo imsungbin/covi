@@ -1,0 +1,14 @@
+# Something appears in a shot: a light glass note on the fifth (G in C, which sits in any major or
+# minor key) with a breath of air, and a little room. Softer than a click: a shot may reveal several
+# things in a row.
+id: accent
+description: Soft accent for an element appearing - a light glass note on the fifth with a breath of air.
+license: original
+duration: 0.5
+layers:
+  - gen: notes
+    notes:
+      - { note: G5, at: 0, dur: 0.1, patch: glass-pluck, velocity: 0.5 }
+  - { gen: noise-sweep, color: pink, filter: bandpass, from: 2500, to: 4500, q: 1, env: { a: 0.01, d: 0.06 }, gain: -18 }
+fx:
+  reverb: { size: 0.4, damp: 0.55, mix: 0.12, width: 1 }

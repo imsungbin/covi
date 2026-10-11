@@ -1,4 +1,4 @@
-import { COMPARE_RISE, metricSettled } from '../runtime/numbers.ts';
+import { COMPARE_RISE, metricSettled, printedSteps } from '../runtime/numbers.ts';
 import {
   type CodeLine,
   type DirectionBeat,
@@ -868,13 +868,160 @@ const WHOOSH: ReadonlySet<TransitionKind> = new Set([
 ]);
 
 /**
+ * From when a scene's storyboard visual is on screen, in seconds since the scene started: from
+ * the start without direction or when its shot shows it from the start, from its reveal when the
+ * shot reveals it later; undefined when the shot leaves it out.
+ */
+export function visualShownFrom(scene: Pick<TimelineScene, 'direction'>): number | undefined {
+  const d = scene.direction;
+  if (!d) return 0;
+  const visual = d.elements.find((e) => e.kind === 'visual');
+  if (!visual) return undefined;
+  const reveal = d.beats.find((b) => b.verb === 'reveal' && b.element === visual.id);
+  return reveal?.t ?? 0;
+}
+
+type CameraBeat = Extract<DirectionBeat, { verb: 'camera' }>;
+
+/**
+ * What the camera frames inside a stop, as far as telling a move from none: the element it aims
+ * at, whether it follows that element, and its scale. A scale is the zoom a beat asked for, or,
+ * where only the stage can measure it (a zoom fitted to its target, a follow's framing), the beat
+ * that chose it. Unmagnified, the view rests on the stop's region, whatever it aims at.
+ */
+interface Framing {
+  to?: string;
+  follow?: boolean;
+  scale: number | string;
+}
+
+const AT_REST: Framing = { scale: 1 };
+
+/**
+ * Where a camera beat leaves the camera, as `beatView` and `follower` place it (the canvas maths
+ * shares a module with DOM helpers, so this file cannot import it): a pan keeps the scale, so it
+ * stays at rest when unmagnified, and a zoom or a follow takes its own, at least 1 (the direction
+ * schema already keeps a zoom within the stage's most).
+ */
+function framing(beat: CameraBeat, from: Framing): Framing {
+  if (beat.move === 'pan') return from.scale === 1 ? AT_REST : { to: beat.to, scale: from.scale };
+  if (beat.zoom !== undefined && beat.zoom <= 1) return AT_REST;
+  const scale =
+    beat.move === 'zoom' && beat.zoom !== undefined
+      ? beat.zoom
+      : `${beat.move} ${beat.to} ${beat.zoom ?? 'fit'}`;
+  return { to: beat.to, follow: beat.move === 'follow', scale };
+}
+
+const sameFraming = (a: Framing, b: Framing) =>
+  a.to === b.to && !!a.follow === !!b.follow && a.scale === b.scale;
+
+/**
+ * How far into a merge its pieces have met: they ease in and out, so by then they are within half
+ * a percent of one.
+ */
+export const MERGE_MET = 0.9;
+
+/**
+ * The least a merge's thump lands before the merge ends (s), unless that is before half way, so
+ * it stays clear of the beat that follows: a stretched merge ends 0.15 s before it, and one that
+ * makes way for a count ends exactly as the count starts.
+ */
+export const MERGE_LEAD = 0.2;
+
+/**
+ * The most steps a count's cue records: far more changes than a count's frames can draw, so a
+ * count with more ticks as often as one with this many.
+ */
+export const COUNT_STEPS = 1000;
+
+type CountBeat = Extract<DirectionBeat, { verb: 'count' | 'count-up' }>;
+
+/**
+ * How many times a count's printed number changes, as the stage draws it (at most `COUNT_STEPS`):
+ * a count from its metric's value before to its value after, a count-up from zero to its value,
+ * both with the metric's decimals. Undefined without such a metric in the shot.
+ */
+function countSteps(beat: CountBeat, elements: readonly DirectionElement[]): number | undefined {
+  const e = elements.find((x) => x.id === beat.element);
+  if (e?.kind !== 'metric') return undefined;
+  const from = beat.verb === 'count-up' ? 0 : e.from;
+  const to = beat.verb === 'count-up' ? beat.value : e.to;
+  return from === undefined ? undefined : Math.min(COUNT_STEPS, printedSteps(from, to, e.decimals));
+}
+
+/**
+ * The moments a directed scene's beats sound, in seconds from the start of the video: a soft
+ * whoosh mid-way through each camera move inside the scene's stop, a counter's ticks (one cue that
+ * lasts the count, from `count` and `count-up` alike, with the steps its printed number takes), a
+ * thump as merging pieces meet (at least `MERGE_LEAD` before the merge ends, never before half
+ * way), and a soft accent as an element first appears (the stage draws only its first reveal). The
+ * camera moves as the stage moves it: only on the canvas, toward an element the shot has, and only
+ * when the beat changes what it frames. A pan or a zoom of 1 before anything zooms in leaves it at
+ * rest; a beat that frames the same element at the same scale as the camera does, or pans to the
+ * element it already frames, leaves it where it is; neither makes a sound. A zoom fitted to an
+ * element that already fills the region does not move it either, but only the stage can measure
+ * that, so it sounds. Morphs, flows, splits, and stacks make none of their own.
+ */
+export function beatCues(
+  scene: Pick<TimelineScene, 'id' | 'start' | 'stop' | 'direction'>,
+): TimelineCue[] {
+  const d = scene.direction;
+  if (!d) return [];
+  const cues: TimelineCue[] = [];
+  let framed = AT_REST;
+  const revealed = new Set<string>();
+  for (const beat of d.beats) {
+    const t = scene.start + beat.t;
+    switch (beat.verb) {
+      case 'camera': {
+        if (!scene.stop || !d.elements.some((e) => e.id === beat.to)) break;
+        if (beat.move === 'pan' && framed.to === beat.to) break;
+        const next = framing(beat, framed);
+        if (sameFraming(next, framed)) break;
+        framed = next;
+        cues.push({ t: t + beat.seconds / 2, kind: 'camera', scene: scene.id, detail: beat.move });
+        break;
+      }
+      case 'count':
+      case 'count-up': {
+        const steps = countSteps(beat, d.elements);
+        cues.push({
+          t,
+          kind: 'count',
+          scene: scene.id,
+          seconds: beat.seconds,
+          ...(steps === undefined ? {} : { steps }),
+        });
+        break;
+      }
+      case 'merge': {
+        const lead = Math.max((1 - MERGE_MET) * beat.seconds, MERGE_LEAD);
+        const met = Math.max(beat.seconds / 2, beat.seconds - lead);
+        cues.push({ t: t + met, kind: 'merge', scene: scene.id });
+        break;
+      }
+      case 'reveal':
+        if (!revealed.has(beat.element)) cues.push({ t, kind: 'appear', scene: scene.id });
+        revealed.add(beat.element);
+        break;
+      default:
+        break;
+    }
+  }
+  return cues;
+}
+
+/**
  * Every moment with a sound, in time order. A whoosh plays mid-move for a scene that pushes,
  * wipes, or zooms through, or that the camera pans or zooms to (unless the riser into the hero
  * carries that move); the hero's hit lands at its phase, the riser swelling into it from 0.8 s
- * before (left out before the video starts); and a scene's own cues play where they ask (a riser
- * ends there; one past the scene's end is not played, and one repeating Covi's is merged). Fades,
- * cuts, code, and terminals make no sound. The outro's moment is where the music's logo lands, or,
- * without music, its own sign-off.
+ * before (left out before the video starts); a directed scene's beats sound as `beatCues` says (a
+ * camera move the riser carries makes none); and a scene's own cues play where they ask (a riser
+ * ends there; one past the scene's end is not played, and one repeating Covi's is merged). What
+ * the storyboard visual does sounds only while it is on screen: a shot that leaves it out takes
+ * its sounds with it. Fades, cuts, code, and terminals make no sound. The outro's moment is where
+ * the music's logo lands, or, without music, its own sign-off.
  */
 export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
   const cues: TimelineCue[] = [];
@@ -883,10 +1030,11 @@ export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
     const duration = scene.end - scene.start;
     const phases = scene.phases ?? {};
     const at = (t: number) => scene.start + t;
+    const own: TimelineCue[] = [];
     switch (v.kind) {
       case 'screenshot':
         if (v.click)
-          cues.push({
+          own.push({
             t: at(
               (v.marks?.length
                 ? screenshotMarks(duration, v.marks, phases)
@@ -904,12 +1052,11 @@ export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
           phases,
           v.steps.map((s) => s.marks),
         ).forEach((step, i) => {
-          if (v.steps[i]!.click)
-            cues.push({ t: at(step.press[0]), kind: 'click', scene: scene.id });
+          if (v.steps[i]!.click) own.push({ t: at(step.press[0]), kind: 'click', scene: scene.id });
         });
         break;
       case 'before-after':
-        cues.push({
+        own.push({
           t: at(beforeAfterTiming(v.layout, duration, phases).reveal[0]),
           kind: 'reveal',
           scene: scene.id,
@@ -917,7 +1064,7 @@ export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
         break;
       case 'findings':
         v.findings.forEach((f, i) => {
-          cues.push({
+          own.push({
             t: at(findingLanding(i, phases)),
             kind: 'finding',
             scene: scene.id,
@@ -926,7 +1073,7 @@ export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
         });
         break;
       case 'summary':
-        cues.push({
+        own.push({
           t: at(verdictEntrance()[0]),
           kind: 'verdict',
           scene: scene.id,
@@ -934,7 +1081,7 @@ export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
         });
         break;
       case 'outro':
-        cues.push({
+        own.push({
           t: at(outroSettle()),
           kind: 'outro',
           scene: scene.id,
@@ -944,11 +1091,15 @@ export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
       default:
         break;
     }
+    // What the visual does is heard only once it is on screen.
+    const shown = visualShownFrom(scene);
+    if (shown !== undefined) cues.push(...own.filter((c) => c.t >= at(shown) - 1e-9));
     // The hero: a riser swells into its phase, where the hit lands with the accent.
     const hero = scene.hero ? phaseAt(phases, HERO_PHASE) : undefined;
     const hit = hero === undefined ? undefined : at(hero);
     const riser = hit === undefined ? undefined : hit - RISER_LEAD;
     const rises = riser !== undefined && riser >= 0;
+    const carried = (t: number) => rises && hit !== undefined && t >= riser && t <= hit;
     if (hit !== undefined) {
       cues.push({ t: hit, kind: 'hero', scene: scene.id });
       if (rises) cues.push({ t: riser, kind: 'riser', scene: scene.id });
@@ -957,9 +1108,10 @@ export function buildCues(scenes: readonly TimelineScene[]): TimelineCue[] {
     const move = scene.transition;
     if (move && WHOOSH.has(move.kind)) {
       const t = scene.start + move.seconds / 2;
-      const carried = rises && hit !== undefined && t >= riser && t <= hit;
-      if (!carried) cues.push({ t, kind: 'transition', scene: scene.id, detail: move.kind });
+      if (!carried(t)) cues.push({ t, kind: 'transition', scene: scene.id, detail: move.kind });
     }
+    // A directed scene's beats; the riser carries a camera move inside it too.
+    for (const cue of beatCues(scene)) if (cue.kind !== 'camera' || !carried(cue.t)) cues.push(cue);
     // The storyboard's own cues: a riser ends at its moment.
     for (const cue of scene.cues ?? []) {
       if (cue.at > duration + 1e-6) continue;

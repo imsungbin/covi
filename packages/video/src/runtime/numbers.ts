@@ -73,6 +73,15 @@ export function countProgress(t: number, count: CountSpan | undefined): number {
   return 1 - (1 - k) ** 3;
 }
 
+/**
+ * How many times a number printed with `decimals` changes on its way from `from` to `to`: printed
+ * values are whole steps of the last digit apart, and rounding keeps floating point (2.3 − 1.3 is
+ * 0.9999999999999998) from losing one.
+ */
+export function printedSteps(from: number, to: number, decimals: number): number {
+  return Math.round(Math.abs(to - from) * 10 ** decimals);
+}
+
 /** The value a count shows `progress` (0–1) of the way from `from` to `to`, as printed. */
 export function tickValue(from: number, to: number, progress: number, decimals: number): number {
   if (progress >= 1) return to;

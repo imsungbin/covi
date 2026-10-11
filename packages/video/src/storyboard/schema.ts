@@ -351,7 +351,7 @@ export const SceneSchema = z.strictObject({
     .max(4)
     .optional()
     .describe(
-      "Sound effects of the scene's own: at a phase it pins (a `sync` key, or `hero`) or seconds into the scene. A riser ends at `at`; riser and hero belong to the hero scene. Covi already sounds clicks, reveals, findings, the verdict, whooshes, and the hero.",
+      "Sound effects of the scene's own: at a phase it pins (a `sync` key, or `hero`) or seconds into the scene. A riser ends at `at`; riser and hero belong to the hero scene. Covi already sounds clicks, reveals, findings, the verdict, whooshes, and the hero; a directed shot's beats sound on their own.",
     ),
 });
 

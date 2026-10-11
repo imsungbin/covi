@@ -16,7 +16,7 @@ Choose by what the change does. Each template beat's `verbs` (`covi templates sh
 | fixes that | the same staging after the change: the pieces `merge`, the pile is shorter, the counter lands on the new value |
 | shows a screen or prints output | the scene's `visual` (or a `capture`, an `output`) and a `camera` move to what changed |
 
-The key number is the largest thing on screen when it lands: make its `metric` the first element of a `"layout": "split"`, or give it a shot of its own. A split gives its first element half the region and the rest the other half; in a square frame a number takes 7 parts of the width to the next element's 6, and a `pile` goes in a row under them.
+The key number is the largest thing on screen when it lands: make its `metric` the first element of a `"layout": "split"`, or give it a shot of its own. A split gives its first element half the region and the rest the other half; in a square frame a number beside one other element takes the larger share, 7 parts of the width to its 6, and a `pile` goes in a row under them.
 
 ## Verbs
 
@@ -24,7 +24,7 @@ The key number is the largest thing on screen when it lands: make its `metric` t
 |---|---|---|
 | `place` | any element | being there from the shot's start (the default; rarely written) |
 | `reveal` | any element | arriving with its words: `rise` (the default), `pop` for a warning, `wipe`, `type` for output |
-| `camera` | `to` an element | `zoom` to frame it, `pan` to it at the same scale, `follow` a morph's changing lines or a travelling packet; leave `zoom` out and Covi fits the element to the shot's region |
+| `camera` | `to` an element | `zoom` to frame it, `pan` to it at the same scale, `follow` a morph's changing lines or a travelling packet; leave `zoom` out and Covi fits the element to the shot's region, except for an element that already fills the shot's width or height (its only element, or a full-width one in a column): give it a `zoom` above 1, or the camera stays where it is |
 | `morph` | a `morph` | the hunk's old code turning into its new code |
 | `count` | a `metric` with a value before and after | the number ticking from before to after |
 | `count-up` | a `metric` drawn as a counter | a counter rising from zero to one side's value (`side`) |
@@ -36,6 +36,8 @@ The key number is the largest thing on screen when it lands: make its `metric` t
 A `count` or a `count-up` lands on its phrase, so quote the words that say the number; every other verb starts on its phrase once what it acts on is in place (a morph may start earlier, so its new code can be read). Beats without `at` spread through the line in the order written. `flow`, `split`, `merge`, and `stack` are the flow verbs.
 
 A `count` or `count-up` of a metric you also `reveal` waits for the reveal, shortened so that it still lands on its phrase: start the reveal at least 2.1 s before that phrase for a full count (1.1 s at the least, for a count of 0.6 s), or leave the reveal out. A beat that cannot play where you put it (a split with no room beside its node's name and clear of its packet's pill, or, for a packet no flow carries, none past its pill in its own slot; a trip while its packet is split) is left out with a warning that says why.
+
+**What the beats sound like.** Covi gives a shot's motion its own quiet effects: a soft whoosh mid-way through each `camera` move (none for a pan or a `zoom` of 1 at full frame, or for a beat that repeats the camera's framing: its move, target, and `zoom`; any other `zoom` or `follow` without a `zoom` whooshes, even if the camera stays put), ticks while a `count` or `count-up` runs (on the steps of the number on screen and never more often than it changes, the last as it lands: a count-up from 0 to 1 ticks twice), a thump as a `merge`'s pieces meet, and a soft accent as an element's first `reveal` begins. `place`, `morph`, `flow`, `split`, and `stack` are silent. Only one counter ticks at a time, so stagger two counts rather than landing them on one phrase: a count that would tick over another is dropped, and only `video/audio.json` shows it, under `dropped` ("while another counter ticks"). Do not add a storyboard `cues` entry for a moment a beat already sounds.
 
 ## Elements
 

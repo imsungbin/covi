@@ -99,7 +99,7 @@ Details:
 | `--theme <theme>` | Color theme: `light` or `dark`. |
 | `--music <music>` | Background music: `theme` (the Covi theme, default), `compose` (a score written for this video), or `none`. See [Video](video.md#sound). |
 | `--music-placement <placement>` | Where the music plays: `auto` (continuous, default), `continuous` (a bed under the whole video, ducked under the narration), or `bookends` (before the first line and after the last only). See [Video](video.md#where-the-music-plays). |
-| `--no-sound-effects` | No sound effects for clicks, the before/after reveal, findings, the verdict, and the outro. |
+| `--no-sound-effects` | No sound effects for clicks, the before/after reveal, findings, the verdict, the outro, and each directed shot's motion. |
 | `--outro`, `--no-outro` | End with Covi's branded outro (default), or hold the last scene for a second instead. See [Video](video.md#the-outro). |
 | `--direction <mode>` | `auto` (default): draw the video on Covi's canvas, directed by the run's `video/direction.json` and Covi's default director. `off`: no canvas, as Covi 0.2.0 rendered. See [Video](video.md#direction-and-the-canvas). |
 

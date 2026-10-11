@@ -360,7 +360,7 @@ function addVideo(cmd: Command): Command {
     )
     .option(
       '--no-sound-effects',
-      'no sound effects for clicks, reveals, findings, the verdict, and the outro',
+      "no sound effects for clicks, reveals, findings, the verdict, the outro, and each directed shot's motion",
     )
     .option('--outro', 'end with the branded Covi outro (default)')
     .option('--no-outro', 'no outro: hold the last scene for a second instead')

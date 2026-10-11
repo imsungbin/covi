@@ -2462,7 +2462,7 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
       };
     };
     const audio = read<Audio>(run, 'video/audio.json');
-    expect(audio.engine).toBe('covi-audio-4');
+    expect(audio.engine).toBe('covi-audio-5');
     const placed = (kind: string) => audio.effects.placed.filter((p) => p.kind === kind);
     expect(placed('transition').length).toBeGreaterThanOrEqual(3);
     expect(placed('hero').map((p) => p.t)).toEqual([expect.closeTo(hit.t, 3)]);

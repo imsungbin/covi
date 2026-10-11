@@ -1044,3 +1044,153 @@ describe.skipIf(!available)('the default director’s staged counts', () => {
     }
   });
 });
+
+/**
+ * A diagram scene as the storyboard drafter writes one (every area changed, its line counts as
+ * details, no edge labels), directed by Covi and resolved as a render does, opened at `size`.
+ */
+async function draftedDiagram(size: Size) {
+  const orientation = orientationOf(size.width, size.height);
+  const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', ...size });
+  const title = 'Play the theme under every video';
+  const area = (id: string, label: string, detail: string) => ({
+    id,
+    label,
+    changed: true,
+    detail,
+  });
+  const scenes = StoryboardSchema.parse({
+    title,
+    template: 'architecture-explainer',
+    scenes: [
+      {
+        id: 's1',
+        beat: 'a',
+        narration: 'Every video now ends on the theme.',
+        visual: { kind: 'callout', title: 'Theme' },
+      },
+      {
+        id: 's2',
+        beat: 'b',
+        narration:
+          'The command line asks the video package for a render, and both read the core package. The video package then plays its music through the audio package.',
+        visual: {
+          kind: 'diagram',
+          nodes: [
+            area('n0', 'packages/cli', '+12 −3'),
+            area('n1', 'packages/video', '+48 −20'),
+            area('n2', 'packages/core', '+4 −1'),
+            area('n3', 'packages/audio', '+96 −0'),
+          ],
+          edges: [
+            { from: 'n0', to: 'n1' },
+            { from: 'n0', to: 'n2' },
+            { from: 'n1', to: 'n2' },
+            { from: 'n1', to: 'n3' },
+          ],
+        },
+      },
+    ],
+  }).scenes;
+  const evidence = indexEvidence({ items: [] });
+  const layout = layoutScenes(scenes, new Map(), new Map(), 'en', pacingFor(spec));
+  const image = () => ({ src: '', width: 1, height: 1 });
+  const plan = defaultDirection({ scenes, evidence, seed: 3, orientation });
+  const staging = resolveDirection({
+    plan,
+    scenes,
+    layout,
+    spec,
+    language: 'en',
+    sources: directionSources({ evidence }),
+    image,
+    seed: 3,
+    redact: (value) => value,
+  });
+  const timeline = buildTimeline({ title, scenes, layout, spec, image, staging });
+  const s2 = timeline.scenes[1]!;
+  return {
+    timeline,
+    direction: s2.direction!,
+    media: computeRegions({ ...size, orientation }).media,
+    unit: computeRegions({ ...size, orientation }).unit,
+    /** A frame `seconds` into s2. */
+    frameAt: (seconds: number) => Math.round((s2.start + seconds) * timeline.fps),
+    ...(await opened(timeline, size)),
+  };
+}
+
+/** What a staged diagram draws at a frame: its nodes as placed, edges, and dots, in stage pixels. */
+const diagramAt = (v: Awaited<ReturnType<typeof draftedDiagram>>, frame: number) =>
+  v.seek(
+    frame,
+    `const scene = document.querySelector('[data-scene="s2"]');
+     const px = (n, k) => Number.parseFloat(n.style[k]);
+     const box = (n) => { const r = n.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+     const nodes = {};
+     for (const n of scene.querySelectorAll('[data-element] .dnode'))
+       nodes[n.closest('[data-element]').dataset.element] = {
+         placed: { x: px(n, 'left'), y: px(n, 'top'), width: px(n, 'width'), height: px(n, 'height') },
+         box: box(n),
+         label: box(n.querySelector('.nlabel')),
+       };
+     const edges = [...scene.querySelectorAll('.flows path')].map((p) => ({
+       points: p.getAttribute('d').match(/-?[\\d.]+/g).map(Number),
+       drawn: Number(p.getAttribute('stroke-dashoffset')),
+     }));
+     const heads = [...scene.querySelectorAll('.flows polygon')].map((h) => Number.parseFloat(h.style.opacity));
+     const dots = [...scene.querySelectorAll('.fdot')].map((d) => {
+       const [x, y] = d.style.transform.match(/-?[\\d.]+/g).map(Number);
+       return { x, y, width: px(d, 'width'), height: px(d, 'height'), opacity: Number.parseFloat(d.style.opacity || '1') };
+     });
+     return { nodes, edges, heads, dots };`,
+  ) as Promise<{
+    nodes: Record<string, { placed: Rect; box: Rect; label: Rect }>;
+    edges: Array<{ points: number[]; drawn: number }>;
+    heads: number[];
+    dots: Array<Rect & { opacity: number }>;
+  }>;
+
+describe.skipIf(!available)('the default director’s staged diagrams', () => {
+  for (const [name, size] of [
+    ['a wide frame', LANDSCAPE],
+    ['a square frame', { width: 360, height: 360 }],
+    ['a tall frame', VERTICAL],
+  ] as const)
+    it(`draws a drafted diagram’s nodes, edges, and dots inside their slots, in ${name}`, async () => {
+      const v = await draftedDiagram(size);
+      const d = v.direction;
+      expect(d.whole).toBe(false);
+      expect(d.elements.map((e) => e.kind)).toEqual(['node', 'node', 'node', 'node']);
+      expect(d.beats.map((b) => b.verb)).toEqual(['flow', 'flow', 'flow', 'flow']);
+      expect(d.dropped).toBeUndefined();
+      // Settled: every node in its slot with its label inside it, every edge drawn in with its
+      // arrowhead, every dot arrived and gone, and nothing cut off.
+      const frame = settledFrame(v.timeline, 1)!;
+      const drawn = await diagramAt(v, frame);
+      for (const e of d.elements) {
+        const n = drawn.nodes[e.id]!;
+        inside(n.placed, e.rect);
+        inside(n.label, n.box);
+      }
+      expect(drawn.edges).toHaveLength(4);
+      for (const edge of drawn.edges) {
+        expect(edge.drawn).toBe(0);
+        for (let i = 0; i < edge.points.length; i += 2)
+          inside({ x: edge.points[i]!, y: edge.points[i + 1]!, width: 0, height: 0 }, v.media);
+      }
+      expect(drawn.heads).toEqual([1, 1, 1, 1]);
+      expect(drawn.dots.map((dot) => dot.opacity)).toEqual([0, 0, 0, 0]);
+      const report = await v.report(frame);
+      expect(report.items.filter((i) => i.overflow)).toEqual([]);
+      for (const item of report.items.filter((i) => i.text === 'body'))
+        expect(item.font! / v.unit).toBeGreaterThanOrEqual(TEXT_FLOOR.body - 0.1);
+      // On its way, each dot rides inside the frame's media region.
+      for (const [i, b] of d.beats.entries()) {
+        const mid = await diagramAt(v, v.frameAt(b.t + b.seconds / 2));
+        expect(mid.dots[i]!.opacity).toBe(1);
+        inside(mid.dots[i]!, v.media);
+      }
+      expect(v.errors).toEqual([]);
+    });
+});

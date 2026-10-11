@@ -8,12 +8,14 @@ import {
   arrangedSplit,
   arrowHead,
   DRAWN_ITEMS,
+  EDGE_STROKE,
   edgeRoute,
   fanBoxes,
   fanOut,
   legPoint,
   nodeBoxRect,
   nodeFans,
+  nodeSplits,
   packetSplit,
   pileGrid,
   pileGridWidth,
@@ -515,9 +517,11 @@ describe('a packet that splits', () => {
     expect(laid).toBeGreaterThan(200);
   });
 
-  it('fans out off a pill resting where its trip meets the node, at every pose, in more slots', () => {
-    let laid = 0;
-    let more = 0;
+  /**
+   * A packet resting against node slot `i` of a layout, its trip from or to slot `j`'s box: every
+   * pair of slots, arrived and leaving, for every count, in every frame.
+   */
+  function* restingCases() {
     for (const [name, width, height] of FRAMES) {
       const { unit, tall } = frame(width, height);
       const layouts = [
@@ -536,37 +540,94 @@ describe('a packet that splits', () => {
               for (const count of counts) {
                 const rests: Resting = { other, arrives, width: 420 * unit };
                 const where = `${name}, ${layout}, ${j}→${i}, ${arrives ? 'arrived' : 'leaving'}, ${count} pieces`;
-                const l = arrangedSplit(slot, unit, tall, count, rests);
-                // Wherever it fits not knowing where the pill is, it fits knowing it.
-                if (arrangedSplit(slot, unit, tall, count, true)) expect(l, where).toBeDefined();
-                if (!l) continue;
-                laid++;
-                if (!arrangedSplit(slot, unit, tall, count, true)) more++;
-                expect(l, where).toEqual(splitLayout(slot, unit, tall, count, rests));
-                expect(nodeBoxRect(slot, unit, tall, count, rests), where).toEqual(l.box);
-                // The pill, at its widest, rests where the edge between the boxes meets this one.
-                const at = arrives ? edgeRoute(other, l.box).at(-1)! : edgeRoute(l.box, other)[0]!;
-                const size = { width: 420 * unit, height: pillHeight(unit, tall) };
-                const pill = { x: at.x - size.width / 2, y: at.y - size.height / 2, ...size };
-                const fanned = fanBoxes(l.fan, l.origin, 1);
-                for (const r of [l.caption, ...fanned]) {
-                  expect(inside(r, slot), where).toBe(true);
-                  expect(overlap(r, l.box), where).toBe(false);
-                }
-                expect(overlap(l.caption, pill), where).toBe(false);
-                for (const k of POSES)
-                  for (const piece of fanBoxes(l.fan, l.origin, k))
-                    expect(overlap(piece, pill), `${where}, at ${k}`).toBe(false);
+                yield { slot, unit, tall, count, rests, where };
               }
           }
+    }
+  }
+  /**
+   * The leg of a resting packet's trip that meets `box`, as wide as the edge is drawn, and the
+   * side of the box it comes from.
+   */
+  const legAt = ({ other, arrives }: Resting, box: Rect, unit: number) => {
+    const route = arrives ? edgeRoute(other, box) : edgeRoute(box, other);
+    const [near, far] = arrives ? [route.at(-1)!, route.at(-2)!] : [route[0]!, route[1]!];
+    const half = (EDGE_STROKE / 2) * unit;
+    const leg = {
+      x: Math.min(near.x, far.x) - half,
+      y: Math.min(near.y, far.y) - half,
+      width: Math.abs(far.x - near.x) + 2 * half,
+      height: Math.abs(far.y - near.y) + 2 * half,
+    };
+    const side =
+      far.y >= box.y + box.height
+        ? 'below'
+        : far.y <= box.y
+          ? 'above'
+          : far.x <= box.x
+            ? 'left'
+            : far.x >= box.x + box.width
+              ? 'right'
+              : 'over';
+    return { leg, side };
+  };
+  /** Whether a layout's count, or any of its pieces at any pose, meets `r`. */
+  const meets = (l: SplitLayout, r: Rect) =>
+    overlap(l.caption, r) ||
+    POSES.some((k) => fanBoxes(l.fan, l.origin, k).some((piece) => overlap(piece, r)));
+
+  it('fans out off a pill resting where its trip meets the node, at every pose, in more slots', () => {
+    let laid = 0;
+    let more = 0;
+    for (const { slot, unit, tall, count, rests, where } of restingCases()) {
+      const l = arrangedSplit(slot, unit, tall, count, rests);
+      // Wherever it fits not knowing where the pill is, it fits knowing it, unless the edge the
+      // pill rests at runs through the pieces or the count that layout draws (a trip from below).
+      const blind = arrangedSplit(slot, unit, tall, count, true);
+      if (blind && !l) expect(meets(blind, legAt(rests, blind.box, unit).leg), where).toBe(true);
+      if (!l) continue;
+      laid++;
+      if (!blind) more++;
+      expect(l, where).toEqual(splitLayout(slot, unit, tall, count, rests));
+      expect(nodeBoxRect(slot, unit, tall, count, rests), where).toEqual(l.box);
+      // The pill, at its widest, rests where the edge between the boxes meets this one.
+      const { other, arrives } = rests;
+      const at = arrives ? edgeRoute(other, l.box).at(-1)! : edgeRoute(l.box, other)[0]!;
+      const size = { width: 420 * unit, height: pillHeight(unit, tall) };
+      const pill = { x: at.x - size.width / 2, y: at.y - size.height / 2, ...size };
+      const fanned = fanBoxes(l.fan, l.origin, 1);
+      for (const r of [l.caption, ...fanned]) {
+        expect(inside(r, slot), where).toBe(true);
+        expect(overlap(r, l.box), where).toBe(false);
+      }
+      expect(overlap(l.caption, pill), where).toBe(false);
+      for (const k of POSES)
+        for (const piece of fanBoxes(l.fan, l.origin, k))
+          expect(overlap(piece, pill), `${where}, at ${k}`).toBe(false);
     }
     expect(laid).toBeGreaterThan(1000);
     // Knowing where the pill rests finds room in many slots that keeping off every side does not.
     expect(more).toBeGreaterThan(200);
   });
 
-  it('keeps the worked example’s split beside the reader, where its packet rests', () => {
-    // s1 of references/direction.md: two parts and a warning, split; the packet rides.
+  it('keeps its pieces and its count off the edge its packet rests at, at every pose, from every side', () => {
+    // How many arrangements were checked with the edge meeting the box from each side.
+    const sides = new Map<string, number>();
+    for (const { slot, unit, tall, count, rests, where } of restingCases()) {
+      const l = arrangedSplit(slot, unit, tall, count, rests);
+      if (!l) continue;
+      const { leg, side } = legAt(rests, l.box, unit);
+      sides.set(side, (sides.get(side) ?? 0) + 1);
+      expect(meets(l, leg), `${where}, from ${side}`).toBe(false);
+    }
+    for (const side of ['below', 'above', 'left', 'right'])
+      expect(sides.get(side) ?? 0, side).toBeGreaterThan(300);
+  });
+
+  it('keeps the worked example’s split beside the reader, off where its packet rests and its edge', () => {
+    // s1 of references/direction.md: two parts and a warning, split; the packet rides, then
+    // splits against the reader into its four chunks.
+    const kept: string[] = [];
     for (const [name, width, height] of FRAMES) {
       const { regions, orientation, unit, tall } = frame(width, height);
       const shot: Pick<Shot, 'elements' | 'layout' | 'beats'> = {
@@ -579,16 +640,32 @@ describe('a packet that splits', () => {
         ],
         beats: [{ verb: 'flow', from: 'review', to: 'reader', packet: 'docs' }],
       };
-      const flow = { verb: 'flow', from: 'review', to: 'reader', packet: 'docs' } as const;
-      const placed = flowSlots(
-        shot,
-        [{ ...flow, t: 1, seconds: 1 }],
-        regions.media,
-        orientation,
-        28 * unit,
-        unit,
+      const beats: DirectionBeat[] = [
+        { verb: 'flow', from: 'review', to: 'reader', packet: 'docs', t: 1, seconds: 1 },
+        {
+          verb: 'split',
+          element: 'docs',
+          count: 4,
+          name: 'chunks',
+          side: 'base',
+          t: 2.5,
+          seconds: 1,
+        },
+      ];
+      const placed = flowSlots(shot, beats, regions.media, orientation, 28 * unit, unit);
+      const elements = shot.elements.map(
+        (e, i) => ({ ...e, rect: placed[i]! }) as DirectionElement,
       );
-      expect(arrangedSplit(placed[1]!, unit, tall, 4, true), name).toBeDefined();
+      // Where its pill rests is known, as the resolver and the render lay the reader out.
+      const rests = nodeSplits({ elements, beats }, unit, tall).get('reader')!.rests;
+      if (typeof rests !== 'object') throw new Error(`${name}: the pill's place is not known`);
+      const l = arrangedSplit(placed[1]!, unit, tall, 4, rests);
+      if (!l) continue;
+      kept.push(name);
+      expect(meets(l, legAt(rests, l.box, unit).leg), name).toBe(false);
     }
+    // It renders in 16:9 (the test that renders it), and keeps its split in 9:16 too. A square
+    // reader's slot has room beside the label only where the edge from the review runs through.
+    expect(kept).toEqual(expect.arrayContaining(['16:9', '9:16']));
   });
 });

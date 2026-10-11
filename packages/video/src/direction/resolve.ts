@@ -752,9 +752,9 @@ const piecesText = (count: number) => `${count} ${count === 1 ? 'piece' : 'piece
 /**
  * The splits that have room to fan out: a node's own, a packet's that rests against a node when
  * it splits, whose pieces fan out in that node's slot rather than over its label, clear of the
- * pill where it rests (`nodeSplits`), and a packet's in its own slot, past its pill. A split whose
- * slot has no arrangement for its pieces beside the label, or whose node another split fans out
- * of already (the first in time takes it), is left out, and said why.
+ * pill where it rests and the edge it rests at (`nodeSplits`), and a packet's in its own slot,
+ * past its pill. A split whose slot has no arrangement for its pieces beside the label, or whose
+ * node another split fans out of already (the first in time takes it), is left out, and said why.
  */
 function fanRoom(
   beats: readonly DirectionBeat[],

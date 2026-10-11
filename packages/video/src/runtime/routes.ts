@@ -16,6 +16,8 @@ export const DRAWN_ITEMS = 12;
 export const PER_LINE = 6;
 /** The smallest a pile's items are drawn, in design units: smaller, they read as dots. */
 export const PILE_ITEM_MIN = 24;
+/** How wide an edge is drawn, in design units. */
+export const EDGE_STROKE = 4;
 /** An edge's arrowhead, in design units… */
 export const ARROW_HEAD = 18;
 /**
@@ -292,11 +294,12 @@ export interface Resting {
  *
  * When the split is a packet's that `rests` against the node, its pieces come out past the box
  * and keep off the pill and its label. Known where it rests (`Resting`), an arrangement is kept
- * only if no piece meets the pill as it fans out, nor the count's room; under the box, the pieces
- * may also go half a pill's height lower, past a pill on its bottom side. Where it rests is not
- * known (`true`: the trip's other node also has a packet resting against it, whose box moves with
- * its own pill), the pieces go under the box only, half a pill's height lower, which keeps off a
- * pill resting anywhere on the box's sides or on its middle.
+ * only if no piece meets the pill as it fans out, nor the count's room, and neither meets the leg
+ * of the trip that brings the pill to the box (or takes it on), which is drawn under them; under
+ * the box, the pieces may also go half a pill's height lower, past a pill on its bottom side.
+ * Where it rests is not known (`true`: the trip's other node also has a packet resting against
+ * it, whose box moves with its own pill), the pieces go under the box only, half a pill's height
+ * lower, which keeps off a pill resting anywhere on the box's sides or on its middle.
  */
 export function splitLayout(
   slot: Rect,
@@ -380,8 +383,11 @@ interface Splitting {
   fixed: boolean;
   /** Half the height of a packet resting against the box, when one does; else 0. */
   clear: number;
-  /** Where that pill is, at its widest, for a given box: unknown, it may be anywhere on its sides. */
-  pill?: (box: Rect) => Rect;
+  /**
+   * For a given box, where that pill is, at its widest, and the leg of its trip that meets the
+   * box, as wide as the edge is drawn: unknown, the pill may be anywhere on its sides.
+   */
+  resting?: (box: Rect) => Rect[];
 }
 
 function nodeSplitting(
@@ -395,13 +401,23 @@ function nodeSplitting(
   const height = pillHeight(unit, tall);
   if (rests === true) return { whole, fixed: false, clear: height / 2 };
   const { other, arrives, width } = rests;
+  const half = (EDGE_STROKE / 2) * unit;
   return {
     whole,
     fixed: false,
     clear: height / 2,
-    pill(box) {
-      const at = arrives ? edgeRoute(other, box).at(-1)! : edgeRoute(box, other)[0]!;
-      return { x: at.x - width / 2, y: at.y - height / 2, width, height };
+    resting(box) {
+      const route = arrives ? edgeRoute(other, box) : edgeRoute(box, other);
+      const [at, far] = arrives ? [route.at(-1)!, route.at(-2)!] : [route[0]!, route[1]!];
+      return [
+        { x: at.x - width / 2, y: at.y - height / 2, width, height },
+        {
+          x: Math.min(at.x, far.x) - half,
+          y: Math.min(at.y, far.y) - half,
+          width: Math.abs(far.x - at.x) + 2 * half,
+          height: Math.abs(far.y - at.y) + 2 * half,
+        },
+      ];
     },
   };
 }
@@ -434,13 +450,16 @@ function sameSide(a: Rect, b: Rect, r: Rect): boolean {
 }
 
 /**
- * A layout whose pieces keep off `pill` from where they come out to fanned out (they move in a
- * straight line, so the poses between keep to the same side) and whose count's room does too.
+ * A layout whose pieces keep off each of `boxes` from where they come out to fanned out (they
+ * move in a straight line, so the poses between keep to the same side) and whose count's room
+ * does too.
  */
-function offPill(l: SplitLayout, pill: Rect): boolean {
+function keepsOff(l: SplitLayout, boxes: readonly Rect[]): boolean {
   const from = fanBoxes(l.fan, l.origin, 0);
   const to = fanBoxes(l.fan, l.origin, 1);
-  return sameSide(l.caption, l.caption, pill) && from.every((a, i) => sameSide(a, to[i]!, pill));
+  return boxes.every(
+    (r) => sameSide(l.caption, l.caption, r) && from.every((a, i) => sameSide(a, to[i]!, r)),
+  );
 }
 
 /** A split's best arrangement in its slot, if any has room, and the one when none has. */
@@ -448,7 +467,7 @@ function splitArrangements(
   slot: Rect,
   unit: number,
   count: number,
-  { whole, fixed, clear, pill }: Splitting,
+  { whole, fixed, clear, resting }: Splitting,
 ): { best: SplitLayout | undefined; squeezed: () => SplitLayout } {
   const u = (n: number) => n * unit;
   // A packet's pieces come out past the box (and the pill resting across it), off its label.
@@ -570,13 +589,14 @@ function splitArrangements(
   };
 
   // A pill taller than its slot has no room at all. Where a resting pill is known, every
-  // arrangement that keeps off it counts, the pieces right under the box first; where it is not,
-  // only the ones under the box, past half a pill's height (which keep off it wherever it is).
+  // arrangement that keeps off it and the edge it rests at counts, the pieces right under the box
+  // first; where it is not, only the ones under the box, past half a pill's height (which keep
+  // off it wherever it is).
   const candidates =
     fixed && whole.height > slot.height + 1e-9
       ? []
-      : pill
-        ? [...arrange(0, true), ...arrange(clear, false)].filter((l) => offPill(l, pill(l.box)))
+      : resting
+        ? [...arrange(0, true), ...arrange(clear, false)].filter((l) => keepsOff(l, resting(l.box)))
         : arrange(clear, clear === 0);
   const best = candidates.reduce<SplitLayout | undefined>(
     (a, b) => (a && shown(a) >= shown(b) - 1e-9 ? a : b),
@@ -676,10 +696,11 @@ export interface NodeSplit {
 
 /**
  * Every split that fans out of a node (`nodeFans`), with where a resting packet's pill is, so its
- * node's layout keeps off it: on the trip's other node's box as drawn, which is known unless a
- * packet rests against that node too (its box then moves with that pill; the split keeps off a
- * pill anywhere on the box's sides instead). The pill is at most as wide as the box of the node
- * its first trip leaves, unsplit, as the packet is drawn. Node slots are the elements' rects.
+ * node's layout keeps off it and the edge it rests at: on the trip's other node's box as drawn,
+ * which is known unless a packet rests against that node too (its box then moves with that pill;
+ * the split keeps off a pill anywhere on the box's sides instead). The pill is at most as wide as
+ * the box of the node its first trip leaves, unsplit, as the packet is drawn. Node slots are the
+ * elements' rects.
  */
 export function nodeSplits(
   direction: FlowShot,

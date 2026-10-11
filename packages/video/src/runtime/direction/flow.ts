@@ -19,6 +19,7 @@ import {
   ARROW_HEAD,
   arrowHead,
   center,
+  EDGE_STROKE,
   edgeRoute,
   type Fan,
   fanBoxes,
@@ -101,7 +102,7 @@ export interface NodeFan {
 /**
  * Every node a split fans out of, laid out in its slot so the pieces and their count keep off its
  * label: a node that splits, and a node a packet rests against when it splits, whose pieces also
- * keep off the pill where it rests (`nodeSplits`).
+ * keep off the pill where it rests and the edge it rests at (`nodeSplits`).
  */
 export function nodeFanLayouts(
   direction: SceneDirection,
@@ -215,7 +216,7 @@ export function mountFlows(
           d: points(route),
           fill: 'none',
           stroke: color,
-          'stroke-width': ctx.u(4).toFixed(2),
+          'stroke-width': ctx.u(EDGE_STROKE).toFixed(2),
           'stroke-linecap': 'round',
           'stroke-linejoin': 'round',
           'stroke-dasharray': length.toFixed(2),
@@ -425,9 +426,9 @@ function pieces(
  * A packet: a pill (with the agent's label, set as text) resting in its slot a little above the
  * middle, or travelling its edges. Split, it stays whole, its label readable, and its pieces come
  * out past it: in its own slot (`packetSplit`, which moves the pill to make room), or, resting
- * against a node, into the room that node's slot keeps for them under its box, clear of where the
- * pill rests (`spans.fan`). Merged, they go back into it. `follow` is where it is at any moment,
- * so the camera can keep it framed.
+ * against a node, into the room that node's slot keeps for them, under its box or beside it, clear
+ * of where the pill rests and of the edge it rests at (`spans.fan`). Merged, they go back into it.
+ * `follow` is where it is at any moment, so the camera can keep it framed.
  */
 export function packet(e: PacketElement, ctx: ComponentContext, spans: FlowSpans): Component {
   const u = ctx.u;

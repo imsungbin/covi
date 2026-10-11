@@ -16,7 +16,7 @@ Choose by what the change does. Each template beat's `verbs` (`covi templates sh
 | fixes that | the same staging after the change: the pieces `merge`, the pile is shorter, the counter lands on the new value |
 | shows a screen or prints output | the scene's `visual` (or a `capture`, an `output`) and a `camera` move to what changed |
 
-The key number is the largest thing on screen when it lands: make its `metric` the first element of a `"layout": "split"`, or give it a shot of its own. A split gives its first element half the region and the rest the other half; in a square frame a number takes 7 parts of the width to the next element's 6, and a `pile` goes in a row under them.
+The key number is the largest thing on screen when it lands: make its `metric` the first element of a `"layout": "split"`, or give it a shot of its own. A split gives its first element half the region and the rest the other half; in a square frame a number beside one other element takes the larger share, 7 parts of the width to its 6, and a `pile` goes in a row under them.
 
 ## Verbs
 
@@ -36,6 +36,8 @@ The key number is the largest thing on screen when it lands: make its `metric` t
 A `count` or a `count-up` lands on its phrase, so quote the words that say the number; every other verb starts on its phrase once what it acts on is in place (a morph may start earlier, so its new code can be read). Beats without `at` spread through the line in the order written. `flow`, `split`, `merge`, and `stack` are the flow verbs.
 
 A `count` or `count-up` of a metric you also `reveal` waits for the reveal, shortened so that it still lands on its phrase: start the reveal at least 2.1 s before that phrase for a full count (1.1 s at the least, for a count of 0.6 s), or leave the reveal out. A beat that cannot play where you put it (a split with no room beside its node's name and clear of its packet's pill, or, for a packet no flow carries, none past its pill in its own slot; a trip while its packet is split) is left out with a warning that says why.
+
+**What the beats sound like.** Covi gives a shot's motion its own quiet effects: a soft whoosh mid-way through each `camera` move that changes what the camera frames, ticks while a `count` or `count-up` runs (spaced like the number on screen, the last as it lands), a thump as a `merge`'s pieces meet, and a soft accent as an element's first `reveal` begins. `place`, `morph`, `flow`, `split`, and `stack` are silent. Only one counter ticks at a time, so stagger two counts rather than landing them on one phrase. Do not add a storyboard `cues` entry for a moment a beat already sounds.
 
 ## Elements
 

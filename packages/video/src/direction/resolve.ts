@@ -14,16 +14,17 @@ import {
   timelineLabels,
 } from '../timeline/build.ts';
 import { settledAt } from '../timeline/cues.ts';
-import type {
-  CodeLine,
-  DirectionBeat,
-  DirectionElement,
-  DroppedBeat,
-  ImageAsset,
-  Rect,
-  SceneDirection,
-  SceneStaging,
-  TimelineLabels,
+import {
+  type CodeLine,
+  type DirectionBeat,
+  type DirectionElement,
+  type DroppedBeat,
+  FLOW_VERBS,
+  type ImageAsset,
+  type Rect,
+  type SceneDirection,
+  type SceneStaging,
+  type TimelineLabels,
 } from '../timeline/types.ts';
 import {
   beatTargets,
@@ -766,8 +767,8 @@ function flowOrder(
   return { beats: kept, dropped };
 }
 
-/** Flow verbs that may take longer than their own length, and end before the shot settles. */
-const STRETCHES: ReadonlySet<DirectionBeat['verb']> = new Set(['flow', 'split', 'merge', 'stack']);
+/** Flow verbs, which may take longer than their own length, and end before the shot settles. */
+const STRETCHES: ReadonlySet<DirectionBeat['verb']> = new Set(FLOW_VERBS);
 /**
  * Flow verbs end at least this long before the scene starts to leave, so the frame QC reads it
  * settled at shows them done…

@@ -49,10 +49,11 @@ export type MetricShow = 'counter' | 'bars' | 'compare';
 
 /**
  * The verbs that stage a flow: a packet travelling an edge, one thing breaking into pieces and
- * the pieces pulling back together, a pile stacking up, a counter counting up from zero. A shot
- * with any of them leads as a flow.
+ * the pieces pulling back together, a pile stacking up. A shot with any of them leads as a flow;
+ * a count-up only counts a counter up from zero, so its shot leads with the counter, as with a
+ * count.
  */
-export const FLOW_VERBS = ['flow', 'split', 'merge', 'stack', 'count-up'] as const;
+export const FLOW_VERBS = ['flow', 'split', 'merge', 'stack'] as const;
 
 /** Which side of the change a count is from: before it (base) or after it (head). */
 export type ChangeSide = 'base' | 'head';

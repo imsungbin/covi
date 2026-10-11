@@ -58,6 +58,12 @@ describe('flows on the timeline', () => {
     };
     // The key number first, but the scene stages a flow: it reads as one.
     expect(leadKind(scene('s', 0, shot([counter, p], [split])))).toBe('flow');
+    // A count-up draws a counter, not a flow: the counter leads, as it would with a count, so the
+    // empty-frame check holds its card either way.
+    const up: DirectionBeat = { verb: 'count-up', element: 'm', value: 70406, t: 1, seconds: 1.6 };
+    const count: DirectionBeat = { verb: 'count', element: 'm', t: 3, seconds: 1.6 };
+    expect(leadKind(scene('s', 0, shot([counter], [up])))).toBe('metric');
+    expect(leadKind(scene('s', 0, shot([counter], [count])))).toBe('metric');
     // Three staged scenes in a row are a run like any other.
     expect(
       monotonyCheck({

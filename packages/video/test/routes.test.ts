@@ -11,6 +11,7 @@ import {
   nodeBoxRect,
   nodeFans,
   pileGrid,
+  pileGridWidth,
   pointAlong,
   restingAt,
   routeLength,
@@ -196,6 +197,18 @@ describe('splits and piles', () => {
     expect(pileGrid(4, { width: 900, height: 80 }, 10)).toEqual(line.slice(0, 4));
     // Where two lines draw them larger, they keep two.
     expect(pileGrid(28, { width: 900, height: 200 }, 10)[6]!.y).toBeGreaterThan(line[0]!.y);
+  });
+
+  it('give a pile row the width its items need at their least, in the lines its height allows', () => {
+    // Tall enough for two lines of 24-pixel items: six across. Too short: twelve across.
+    expect(pileGridWidth(130, 24, 10)).toBe(6 * 24 + 5 * 10);
+    expect(pileGridWidth(57, 24, 10)).toBe(12 * 24 + 11 * 10);
+    // At that width, the grid draws them at their least or larger.
+    for (const height of [24, 40, 57, 58, 130]) {
+      const width = pileGridWidth(height, 24, 10);
+      expect(pileGrid(12, { width, height }, 10)[0]!.width, `${height}`).toBeGreaterThanOrEqual(24);
+      expect(pileGrid(12, { width: width - 12, height }, 10)[0]!.width).toBeLessThan(24);
+    }
   });
 
   it('count a stack up to its true number, and fill rows one after another', () => {

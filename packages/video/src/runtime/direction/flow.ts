@@ -24,9 +24,9 @@ import {
   legPoint,
   legProgress,
   nodeFans,
-  PER_LINE,
   PILE_ITEM_MIN,
   pileGrid,
+  pileGridWidth,
   pointAlong,
   routeLength,
   type SplitLayout,
@@ -596,7 +596,6 @@ export function pile(e: PileElement, ctx: ComponentContext, spans: FlowSpans): C
   // smaller still, to the body floor, while it would leave the items less than their least size.
   // It is measured at the true count, so counting up never moves the items.
   const gap = u(10);
-  const least = PER_LINE * u(PILE_ITEM_MIN) + (PER_LINE - 1) * gap;
   const share = PILE_NUMBER_SHARE * (rows[0]?.row.clientWidth ?? 0);
   const floor = u(TEXT_FLOOR.body);
   largest(
@@ -606,7 +605,9 @@ export function pile(e: PileElement, ctx: ComponentContext, spans: FlowSpans): C
     },
     () =>
       nums.every((num) => num.scrollWidth <= share + 1) &&
-      rows.every((r) => r.grid.clientWidth >= least),
+      rows.every(
+        (r) => r.grid.clientWidth >= pileGridWidth(r.grid.clientHeight, u(PILE_ITEM_MIN), gap),
+      ),
     floor,
     Math.max(floor, Math.min(u(72), 0.55 * (rows[0]?.row.clientHeight ?? 0))),
   );

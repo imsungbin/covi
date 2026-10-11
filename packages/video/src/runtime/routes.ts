@@ -459,7 +459,7 @@ export function pileGrid(
   const two = Math.min((box.width - gap * (PER_LINE - 1)) / PER_LINE, (box.height - gap) / 2);
   const one = Math.min((box.width - gap * (DRAWN_ITEMS - 1)) / DRAWN_ITEMS, box.height);
   const lines = one > two ? 1 : 2;
-  const perLine = DRAWN_ITEMS / lines;
+  const perLine = lines === 1 ? DRAWN_ITEMS : PER_LINE;
   const size = Math.max(0, lines === 1 ? one : two);
   const left = (box.width - (perLine * size + (perLine - 1) * gap)) / 2;
   const top = (box.height - (lines * size + (lines - 1) * gap)) / 2;
@@ -469,6 +469,15 @@ export function pileGrid(
     width: size,
     height: size,
   }));
+}
+
+/**
+ * The width a pile row's grid box needs for `pileGrid` to draw its items at `least` or larger: two
+ * lines of six where the box is tall enough for two, else one line of twelve.
+ */
+export function pileGridWidth(height: number, least: number, gap: number): number {
+  const perLine = height >= 2 * least + gap ? PER_LINE : DRAWN_ITEMS;
+  return perLine * least + (perLine - 1) * gap;
 }
 
 /** The number a pile row shows `k` (0–1) of the way through its stack: up to the true count. */

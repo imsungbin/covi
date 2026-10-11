@@ -1,5 +1,12 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -8,6 +15,7 @@ import {
   loadMusicLibrary,
   parseScore,
   renderMusic,
+  tickTimes,
   writeWav,
 } from '@covi/audio';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -303,10 +311,40 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
         heard.some((e) => e.kind === cue.kind && Math.abs(e.t - cue.t) < 1e-3),
         `${cue.kind} at ${cue.t}`,
       ).toBe(true);
-    const tick = audio.effects.placed.find((p) => p.kind === 'count');
-    expect(tick).toMatchObject({ recipe: 'tick' });
-    expect(tick!.ticks).toBeGreaterThanOrEqual(2);
+    // The camera's move whooshes mid-way through its beat, a merge thumps inside its own, and each
+    // counter ticks a train as long as its count.
+    const beats = timeline.scenes.flatMap((s) =>
+      (s.direction?.beats ?? []).map((b) => ({ ...b, at: s.start + b.t })),
+    );
+    const camera = timeline.cues.find((c) => c.kind === 'camera');
+    expect(camera, 'a camera cue').toBeDefined();
+    expect(
+      beats.some((b) => b.verb === 'camera' && Math.abs(b.at + b.seconds / 2 - camera!.t) < 1e-6),
+    ).toBe(true);
+    expect(audio.effects.placed).toContainEqual(
+      expect.objectContaining({
+        kind: 'camera',
+        recipe: 'camera',
+        t: expect.closeTo(camera!.t, 3),
+      }),
+    );
+    for (const m of timeline.cues.filter((c) => c.kind === 'merge'))
+      expect(
+        beats.some((b) => b.verb === 'merge' && m.t > b.at && m.t <= b.at + b.seconds),
+        `merge at ${m.t}`,
+      ).toBe(true);
     expect(audio.effects.placed.find((p) => p.kind === 'merge')).toMatchObject({ recipe: 'thump' });
+    const ticks = audio.effects.placed.filter((p) => p.kind === 'count');
+    expect(ticks.length).toBeGreaterThan(0);
+    for (const tick of ticks) {
+      const count = counts.find((c) => Math.abs(c.t - tick.t) < 1e-3);
+      expect(count, `count at ${tick.t}`).toBeDefined();
+      expect(tick).toMatchObject({
+        recipe: 'tick',
+        seconds: expect.closeTo(count!.seconds, 3),
+        ticks: tickTimes(count!.seconds).length,
+      });
+    }
     expect(audio.levels.effectsBelowVoiceDb).toBeGreaterThanOrEqual(8);
     const qc = read<Qc>(run, 'video/qc.json');
     for (const id of ['audio', 'music-under-speech', 'music-jump', 'music-range', 'sound-effects'])
@@ -326,18 +364,26 @@ describe.skipIf(!available || !fullRenders)('sound', () => {
       expect(again.video.framesReused, flags.join(' ')).toBe(true);
       expect(bytes('video/timeline.json').equals(first.timeline), flags.join(' ')).toBe(true);
       expect(framesKey()).toBe(first.key);
+      // The remuxed video's sound is there, at its loudness, with headroom (the fixture score,
+      // written for another video, may jump on this one, so only the mix itself is graded).
+      const audioQc = read<Qc>(run, 'video/qc.json').checks.find((c) => c.id === 'audio');
+      expect(audioQc?.status, flags.join(' ')).toBe('pass');
       return read<{ effects: { enabled: boolean; placed: Effect[] }; music: { source: string } }>(
         run,
         'video/audio.json',
       );
     };
     expect(remix('--no-sound-effects').effects).toMatchObject({ enabled: false, placed: [] });
+    // The music is a stem of its own: the effects never touch it, and without music there is none.
+    expect(bytes('video/music.wav').equals(first.music)).toBe(true);
     expect(remix('--music', 'none').music.source).toBe('none');
+    expect(existsSync(join(run, 'video/music.wav'))).toBe(false);
     copyFileSync(
       join(import.meta.dirname, 'fixtures', 'score.json'),
       join(run, 'video', 'score.json'),
     );
     expect(remix('--music', 'compose').music.source).toBe('score');
+    expect(bytes('video/music.wav').equals(first.music)).toBe(false);
     // Back to the sound it was drafted with: the same effects and music, byte for byte.
     remix();
     expect(bytes('video/audio.json').equals(first.audio)).toBe(true);

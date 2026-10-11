@@ -849,7 +849,7 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
     .option('--workers <n>', 'parallel render workers', int(1, 64))
     .option(
       '--draft',
-      'render a fast draft (half size, 15 fps, the voice alone) into video/draft/ to check the motion; the video is left as it is',
+      'render a fast draft (half size, at most 15 fps, the voice alone) into video/draft/ to check the motion; the video is left as it is',
     )
     .action(async (o: RenderFlags, cmd: Command) => {
       const u = ui(cmd);

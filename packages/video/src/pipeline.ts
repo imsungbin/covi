@@ -150,8 +150,8 @@ export interface ProduceVideoInput {
    */
   direction?: 'auto' | 'off';
   /**
-   * Render a draft instead (`covi render --draft`): the same video at half size and 15 fps, with
-   * the voice alone, into `video/draft/`. The video's own files are left as they are.
+   * Render a draft instead (`covi render --draft`): the same video at half size and at most
+   * 15 fps, with the voice alone, into `video/draft/`. The video's own files are left as they are.
    */
   draftRender?: boolean;
 }

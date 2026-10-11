@@ -13,6 +13,7 @@ import {
   insetOf,
   layerTransform,
   lerpRect,
+  PULL_MARGIN,
   pullBack,
   restView,
   toWorld,
@@ -336,7 +337,7 @@ describe('the canvas camera', () => {
       [{ x: 0, y: H + gap }, 0.11],
       [{ x: 0, y: 1.5 * H + gap }, 0.115],
     ] as const) {
-      const back = pullBack({ x: 0, y: 0 }, to, media) * 0.92;
+      const back = pullBack({ x: 0, y: 0 }, to, media) * PULL_MARGIN;
       const [a, b] = [restView(pivot), toWorld(restView(pivot), to)];
       const scales = Array.from(
         { length: frames + 1 },

@@ -1210,5 +1210,9 @@ describe.skipIf(!available)('what a scene visibly draws', () => {
     // cannot cover it, so it is not reported.
     expect(await media(1)).toHaveLength(1);
     expect(await media(s3.end - s3.start - 0.6)).toHaveLength(2);
+    // Partway through its rise, still faint and short of its place, it is drawn, so reported.
+    const rises = Math.max(1.4, (s3.end - s3.start) * 0.42) - 0.2;
+    expect(await media(rises - 0.05)).toHaveLength(1);
+    expect(await media(rises + 0.1)).toHaveLength(2);
   });
 });

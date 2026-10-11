@@ -267,7 +267,7 @@ describe('shots on the frame', () => {
         ]),
       ).status,
     ).toBe('pass');
-    // Two elements in one slot (a `single` layout): the smaller is covered whole.
+    // Two elements set in one box (only a hand-built shot has this): the smaller is covered whole.
     expect(
       overlapCheck(
         t,

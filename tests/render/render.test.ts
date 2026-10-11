@@ -1701,8 +1701,9 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         expect(qc.checks.map((c) => c.id)).toEqual(expect.arrayContaining(motion));
         expect(qc.checks.filter((c) => motion.includes(c.id) && c.status !== 'pass')).toEqual([]);
         // Nothing else warns. Square has two layout defects outside motion, each let through only
-        // by its exact message: the summary card is too short for its text, and s2's code is
-        // under its floor.
+        // by its message: the summary card is too short for its text (that exact message), and
+        // s2's code is under its floor (at whatever size). Remove these once the card and the code
+        // slot are fixed: a passing check is not filtered, but the same defect back would pass.
         const known = (c: { id: string; message: string }) =>
           timeline.width === timeline.height &&
           ((c.id === 'text-fits' &&
@@ -2085,13 +2086,13 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
     expect(still.status).toBe('warn');
     expect(still.message).toMatch(/\bpixels \(/);
     // The code scene pushes in from its entrance through the gap before its pinned highlights.
-    expect(still.message).not.toMatch(/\b(open|type|code|compare) \(/);
+    expect(still.message).not.toMatch(/\b(open|type|code|compare|wrap) \(/);
     // The timeline plans the same hold: nothing moves in the static scene once its zoom has
     // settled, so `motion-gap` names it from the plan where `still` measures it in the pixels.
     const gap = qc.checks.find((c) => c.id === 'motion-gap')!;
     expect(gap.status).toBe('warn');
     expect(gap.message).toMatch(/\bpixels \(/);
-    expect(gap.message).not.toMatch(/\b(open|type|code|compare) \(/);
+    expect(gap.message).not.toMatch(/\b(open|type|code|compare|wrap) \(/);
     // Every scene rests on a capture or a hunk, and every statement of Covi's explanation cites.
     expect(status.grounding).toBe('pass');
     expect(

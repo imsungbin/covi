@@ -494,7 +494,7 @@ describe.skipIf(!available)('the token morph', () => {
     // On a card as large as the region, the fitted zoom would hold back to where the card's
     // header leaves the camera next to no room.
     const v = await morphed(grow, [follow, MORPH], held, 'static');
-    // From the end of its ease until the scene settles and the camera starts to linger.
+    // From the end of its ease until shortly after the morph has played.
     const cameras: Array<{ tx: number; ty: number; scale: number }> = [];
     const [from, to] = [
       v.at(follow.t + follow.seconds + 0.05),
@@ -506,6 +506,17 @@ describe.skipIf(!available)('the token morph', () => {
     // Only its position moves with the lines.
     expect(cameras.at(-1)!.ty).toBeLessThan(cameras[0]!.ty - 10);
     expect(v.errors).toEqual([]);
+    // There, the card stays whole across the frame all the same.
+    const full = await morphed(grow, [follow, MORPH], media, 'static');
+    for (const share of [0.3, 0.9]) {
+      const card = (await full.seek(
+        full.at(MORPH.t + MORPH.seconds * share),
+        `const r = document.querySelector('[data-element="m"] .code').getBoundingClientRect();
+         return { left: r.left, right: r.right };`,
+      )) as { left: number; right: number };
+      expect(card.left).toBeGreaterThanOrEqual(-1);
+      expect(card.right).toBeLessThanOrEqual(W + 1);
+    }
   });
 
   it('slows down rather than stopping dead as the lines it follows outgrow the view', async () => {

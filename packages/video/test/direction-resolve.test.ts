@@ -174,6 +174,26 @@ describe('element slots', () => {
       { x: 64, y: 250, width: 952, height: 343.2 },
       { x: 64, y: 621.2, width: 952, height: 228.8 },
     ]);
+    // Written before the packet, the pile still goes under the number as wide as the frame, and
+    // the packet shares the number's row; with no other element beside them, piles share the row
+    // under a number as wide as the frame.
+    const [number, packet, wide] = elementSlots(
+      ['metric', 'packet', 'pile'],
+      'split',
+      square,
+      'square',
+      28,
+    );
+    expect(elementSlots(['metric', 'pile', 'packet'], 'split', square, 'square', 28)).toEqual([
+      number,
+      wide,
+      packet,
+    ]);
+    expect(elementSlots(['metric', 'pile', 'pile'], 'split', square, 'square', 28)).toEqual([
+      { x: 64, y: 250, width: 952, height: 343.2 },
+      { x: 64, y: 621.2, width: 462, height: 228.8 },
+      { x: 554, y: 621.2, width: 462, height: 228.8 },
+    ]);
     // Any other one element shares the number's row, 7 parts to its 6 (`auto` splits two;
     // measured beside a packet: 127 units).
     const beside = [

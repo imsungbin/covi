@@ -79,9 +79,10 @@ function along(region: Rect, weights: readonly number[], axis: 'x' | 'y', gap: n
  * there: half the width would leave a counter under its floor. Beside one other element, the
  * number takes 7 parts to its 6, unless that element is a pile, which goes under the number as
  * wide as the frame: 7 parts to 6 side by side would leave the pile's items under their least
- * size. With more elements and a pile, the number shares a row with the next element (7 parts to
- * its 6), above the rest in a row of their own. Either way the number's row takes 3 parts of the
- * height to the pile's 2.
+ * size. With more elements and a pile, the number shares a row with the first element after it
+ * that is not a pile (7 parts to its 6; the row is the number's alone without one), above the rest
+ * in a row of their own, piles wherever they are written. Either way the number's row takes 3
+ * parts of the height to the pile's 2.
  */
 export function elementSlots(
   kinds: readonly ShotElement['kind'][],
@@ -123,10 +124,19 @@ export function elementSlots(
     kinds.includes('pile')
   ) {
     const [pair, rest] = along(region, SQUARE_STACK, 'y', gap) as [Rect, Rect];
-    slots = [
-      ...along(pair, [SQUARE_METRIC, WEIGHT.visual], 'x', gap),
-      ...along(rest, weights.slice(2), 'x', gap),
-    ];
+    // Beside the number, a pile's items would be under their least size, wherever it is written.
+    const beside = kinds.findIndex((k, i) => i > 0 && k !== 'pile');
+    const under = kinds.flatMap((_, i) => (i > 0 && i !== beside ? [i] : []));
+    const top = beside === -1 ? [pair] : along(pair, [SQUARE_METRIC, WEIGHT.visual], 'x', gap);
+    const bottom = along(
+      rest,
+      under.map((i) => weights[i]!),
+      'x',
+      gap,
+    );
+    slots = kinds.map((_, i) =>
+      i === 0 ? top[0]! : i === beside ? top[1]! : bottom[under.indexOf(i)]!,
+    );
   } else if (resolved === 'split') {
     const [first, rest] = along(region, [1, 1], tall ? 'y' : 'x', gap) as [Rect, Rect];
     slots = [first, ...along(rest, weights.slice(1), tall ? 'x' : 'y', gap)];

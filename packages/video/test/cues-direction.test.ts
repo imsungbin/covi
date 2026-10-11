@@ -13,6 +13,7 @@ import {
   visualShownFrom,
 } from '../src/timeline/cues.ts';
 import type {
+  CameraMove,
   DirectionBeat,
   DirectionElement,
   SceneDirection,
@@ -64,6 +65,16 @@ const directed = (
     direction: { whole: false, elements, beats },
     ...extra,
   });
+
+/** A camera beat of 0.8 s. */
+const camera = (t: number, move: CameraMove, to: string, zoom?: number): DirectionBeat => ({
+  verb: 'camera',
+  move,
+  to,
+  ...(zoom === undefined ? {} : { zoom }),
+  t,
+  seconds: 0.8,
+});
 
 const sounds = (cues: TimelineCue[]) =>
   cues.map((c) => [c.kind, +c.t.toFixed(6), ...(c.seconds === undefined ? [] : [c.seconds])]);
@@ -146,14 +157,6 @@ describe('the sounds of a directed scene', () => {
   });
 
   it('keep a pan silent toward the element the camera already frames', () => {
-    const camera = (t: number, move: 'zoom' | 'pan', to: string, zoom?: number): DirectionBeat => ({
-      verb: 'camera',
-      move,
-      to,
-      ...(zoom === undefined ? {} : { zoom }),
-      t,
-      seconds: 0.8,
-    });
     const shot = directed(
       0,
       [label('a'), label('b')],
@@ -170,6 +173,81 @@ describe('the sounds of a directed scene', () => {
       ['camera', 1.4],
       ['camera', 3.4],
       ['camera', 4.4],
+    ]);
+  });
+
+  it('keep the camera silent at rest: a pan or a zoom of 1 leaves it there', () => {
+    const shot = directed(
+      0,
+      [label('a'), label('b')],
+      [
+        camera(1, 'pan', 'a'),
+        camera(2, 'zoom', 'a', 1),
+        camera(3, 'follow', 'b', 1),
+        camera(4, 'zoom', 'b', 2),
+        camera(5, 'pan', 'a'),
+      ],
+    );
+    // Unmagnified, the stage keeps the view on its region whatever the camera aims at.
+    expect(sounds(beatCues(shot))).toEqual([
+      ['camera', 4.4],
+      ['camera', 5.4],
+    ]);
+  });
+
+  it('remember only the beats that move the camera', () => {
+    const shot = directed(
+      0,
+      [label('a'), label('b')],
+      [
+        camera(1, 'zoom', 'a', 2),
+        camera(2, 'pan', 'a'),
+        camera(3, 'zoom', 'a', 2),
+        camera(4, 'zoom', 'ghost', 2),
+        camera(5, 'zoom', 'a', 2),
+      ],
+    );
+    expect(sounds(beatCues(shot))).toEqual([['camera', 1.4]]);
+  });
+
+  it('whoosh for every beat that moves the camera, back to rest included', () => {
+    const shot = directed(
+      0,
+      [label('a'), label('b')],
+      [
+        camera(1, 'zoom', 'a', 2),
+        camera(2, 'zoom', 'a', 1),
+        camera(3, 'pan', 'b'),
+        camera(4, 'follow', 'b', 2),
+        camera(5, 'zoom', 'b', 2),
+        camera(6, 'pan', 'a'),
+      ],
+    );
+    // A pan at rest stays there; a follow frames its target its own way, so a zoom to it moves.
+    expect(sounds(beatCues(shot))).toEqual([
+      ['camera', 1.4],
+      ['camera', 2.4],
+      ['camera', 4.4],
+      ['camera', 5.4],
+      ['camera', 6.4],
+    ]);
+  });
+
+  it('accent only the first reveal of an element, the one the stage draws', () => {
+    const cues = beatCues(
+      directed(
+        0,
+        [label('a'), label('b')],
+        [
+          { verb: 'reveal', element: 'a', style: 'pop', t: 1, seconds: 0.5 },
+          { verb: 'reveal', element: 'b', style: 'pop', t: 2, seconds: 0.5 },
+          { verb: 'reveal', element: 'a', style: 'rise', t: 3, seconds: 0.5 },
+        ],
+      ),
+    );
+    expect(sounds(cues)).toEqual([
+      ['appear', 1],
+      ['appear', 2],
     ]);
   });
 

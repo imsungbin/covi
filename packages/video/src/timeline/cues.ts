@@ -884,15 +884,48 @@ export function visualShownFrom(scene: Pick<TimelineScene, 'direction'>): number
 type CameraBeat = Extract<DirectionBeat, { verb: 'camera' }>;
 
 /**
+ * What the camera frames inside a stop, as far as telling a move from none: the element it aims
+ * at, whether it follows that element, and its scale. A scale is the zoom a beat asked for, or,
+ * where only the stage can measure it (a zoom fitted to its target, a follow's framing), the beat
+ * that chose it. Unmagnified, the view rests on the stop's region, whatever it aims at.
+ */
+interface Framing {
+  to?: string;
+  follow?: boolean;
+  scale: number | string;
+}
+
+const AT_REST: Framing = { scale: 1 };
+
+/**
+ * Where a camera beat leaves the camera, as `beatView` and `follower` place it (the canvas maths
+ * shares a module with DOM helpers, so this file cannot import it): a pan keeps the scale, so it
+ * stays at rest when unmagnified, and a zoom or a follow takes its own, at least 1 (the direction
+ * schema already keeps a zoom within the stage's most).
+ */
+function framing(beat: CameraBeat, from: Framing): Framing {
+  if (beat.move === 'pan') return from.scale === 1 ? AT_REST : { to: beat.to, scale: from.scale };
+  if (beat.zoom !== undefined && beat.zoom <= 1) return AT_REST;
+  const scale =
+    beat.move === 'zoom' && beat.zoom !== undefined
+      ? beat.zoom
+      : `${beat.move} ${beat.to} ${beat.zoom ?? 'fit'}`;
+  return { to: beat.to, follow: beat.move === 'follow', scale };
+}
+
+const sameFraming = (a: Framing, b: Framing) =>
+  a.to === b.to && !!a.follow === !!b.follow && a.scale === b.scale;
+
+/**
  * How far into a merge its pieces have met: they ease in and out, so by then they are within half
  * a percent of one.
  */
 export const MERGE_MET = 0.9;
 
 /**
- * The least a merge's thump lands before the merge ends (s), so it stays clear of the beat that
- * follows: a stretched merge ends 0.15 s before it, and one that makes way for a count ends exactly
- * as the count starts.
+ * The least a merge's thump lands before the merge ends (s), unless that is before half way, so
+ * it stays clear of the beat that follows: a stretched merge ends 0.15 s before it, and one that
+ * makes way for a count ends exactly as the count starts.
  */
 export const MERGE_LEAD = 0.2;
 
@@ -901,10 +934,12 @@ export const MERGE_LEAD = 0.2;
  * whoosh mid-way through each camera move inside the scene's stop, a counter's ticks (one cue that
  * lasts the count, from `count` and `count-up` alike), a thump as merging pieces meet (at least
  * `MERGE_LEAD` before the merge ends, never before half way), and a soft accent as an element
- * starts to appear. The camera moves as the stage moves it: only on the canvas, toward an element
- * the shot has; a beat that repeats the move before it (the same move, target, and zoom), or pans
- * to the target the camera already frames (a pan keeps the scale), leaves the camera where it is,
- * so it makes no sound. Morphs, flows, splits, and stacks make none of their own.
+ * first appears (the stage draws only its first reveal). The camera moves as the stage moves it:
+ * only on the canvas, toward an element the shot has, and only when the beat changes what it
+ * frames. A pan or a zoom of 1 before anything zooms in leaves it at rest; a beat that frames the
+ * same element at the same scale as the camera does, or pans to the element it already frames,
+ * leaves it where it is; neither makes a sound. Morphs, flows, splits, and stacks make none of
+ * their own.
  */
 export function beatCues(
   scene: Pick<TimelineScene, 'id' | 'start' | 'stop' | 'direction'>,
@@ -912,23 +947,18 @@ export function beatCues(
   const d = scene.direction;
   if (!d) return [];
   const cues: TimelineCue[] = [];
-  let last: CameraBeat | undefined;
+  let framed = AT_REST;
+  const revealed = new Set<string>();
   for (const beat of d.beats) {
     const t = scene.start + beat.t;
     switch (beat.verb) {
       case 'camera': {
         if (!scene.stop || !d.elements.some((e) => e.id === beat.to)) break;
-        const still =
-          (last?.move === beat.move && last.to === beat.to && last.zoom === beat.zoom) ||
-          (beat.move === 'pan' && last?.to === beat.to);
-        last = beat;
-        if (!still)
-          cues.push({
-            t: t + beat.seconds / 2,
-            kind: 'camera',
-            scene: scene.id,
-            detail: beat.move,
-          });
+        if (beat.move === 'pan' && framed.to === beat.to) break;
+        const next = framing(beat, framed);
+        if (sameFraming(next, framed)) break;
+        framed = next;
+        cues.push({ t: t + beat.seconds / 2, kind: 'camera', scene: scene.id, detail: beat.move });
         break;
       }
       case 'count':
@@ -942,7 +972,8 @@ export function beatCues(
         break;
       }
       case 'reveal':
-        cues.push({ t, kind: 'appear', scene: scene.id });
+        if (!revealed.has(beat.element)) cues.push({ t, kind: 'appear', scene: scene.id });
+        revealed.add(beat.element);
         break;
       default:
         break;

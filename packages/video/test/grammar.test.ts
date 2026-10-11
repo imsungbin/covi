@@ -214,6 +214,26 @@ describe('the storyboard schema', () => {
     ]);
   });
 
+  it('bounds an API body’s lines, which are highlighted as code is', () => {
+    const answered = (body: string) => {
+      const sb = storyboard();
+      sb.scenes[1]!.visual = {
+        kind: 'api',
+        method: 'GET',
+        path: '/api/users',
+        before: { status: 200, body: '[]' },
+        after: { status: 200, body },
+      };
+      delete sb.scenes[1]!.sync;
+      return sb;
+    };
+    const line = (n: number) => `"${'x'.repeat(n - 1)}`;
+    expect(issues(answered(`{\n${line(CODE_LINE_CHARS)}\n}`))).toEqual([]);
+    expect(issues(answered(`{\n${line(CODE_LINE_CHARS + 1)}\n}`))).toEqual([
+      `scenes.1.visual.after.body: an API body line is at most ${CODE_LINE_CHARS} characters; cut a longer one (a minified response) to the part the scene is about`,
+    ]);
+  });
+
   it('rejects a second hero, naming the scene', () => {
     const sb = storyboard();
     sb.scenes[1]!.hero = true;

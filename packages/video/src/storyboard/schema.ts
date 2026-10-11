@@ -37,6 +37,13 @@ const ImageRefSchema = z.strictObject({ path: z.string().min(1), label: z.string
  */
 export const CODE_LINE_CHARS = 500;
 
+/** An API body: its lines are highlighted as code lines are, so each is bounded the same way. */
+const ApiBodySchema = z
+  .string()
+  .refine((body) => body.split('\n').every((line) => line.length <= CODE_LINE_CHARS), {
+    message: `an API body line is at most ${CODE_LINE_CHARS} characters; cut a longer one (a minified response) to the part the scene is about`,
+  });
+
 /** A phase name, as `sync` keys are written (bounded: names are untrusted input). */
 const PhaseNameSchema = z
   .string()
@@ -216,8 +223,8 @@ export const VisualSchema = z.discriminatedUnion('kind', [
     kind: z.literal('api'),
     method: z.string().default('GET'),
     path: z.string(),
-    before: z.strictObject({ status: z.number().int(), body: z.string() }).optional(),
-    after: z.strictObject({ status: z.number().int(), body: z.string() }),
+    before: z.strictObject({ status: z.number().int(), body: ApiBodySchema }).optional(),
+    after: z.strictObject({ status: z.number().int(), body: ApiBodySchema }),
   }),
   z.strictObject({
     kind: z.literal('findings'),

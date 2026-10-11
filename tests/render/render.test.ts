@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   cpSync,
   existsSync,
@@ -37,7 +38,11 @@ import { type Browser, chromium } from 'playwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { listExamples, materializeExample } from '../../packages/cli/src/examples.ts';
 import { DirectionSchema } from '../../packages/video/src/direction/schema.ts';
-import { contactSheetFrames, sheetColumns } from '../../packages/video/src/render/renderer.ts';
+import {
+  contactSheetFrames,
+  posterFrame,
+  sheetColumns,
+} from '../../packages/video/src/render/renderer.ts';
 import { tileLayout } from '../../packages/video/src/render/sheet.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import { TEXT_FLOOR } from '../../packages/video/src/runtime/sizing.ts';
@@ -47,6 +52,7 @@ import {
   interactionTiming,
   metricSettledAt,
   morphTiming,
+  openingSpan,
   sceneFrame,
   screenshotMarks,
   settledFrame,
@@ -1547,13 +1553,32 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         video: { rendered: boolean; qc: string; seconds: number };
       };
       expect(result.video.rendered).toBe(true);
-      expect(result.video.qc).not.toBe('fail');
-      // Every render is checked for small text, empty frames, and monotony.
       const qc = JSON.parse(readFileSync(join(result.runDir, 'video', 'qc.json'), 'utf8')) as {
-        checks: Array<{ id: string }>;
+        checks: Array<{ id: string; status: string; message: string }>;
       };
+      // The run is removed afterwards, so a failure names its checks.
+      expect(
+        result.video.qc,
+        qc.checks
+          .filter((c) => c.status === 'fail')
+          .map((c) => `${c.id}: ${c.message}`)
+          .join('\n'),
+      ).not.toBe('fail');
+      // Every render is checked for small text, empty frames, monotony, and motion.
       expect(qc.checks.map((c) => c.id)).toEqual(
-        expect.arrayContaining(['text-size', 'empty-frame', 'monotony', 'transition-variety']),
+        expect.arrayContaining([
+          'text-size',
+          'empty-frame',
+          'monotony',
+          'transition-variety',
+          'motion-gap',
+          'motion-busy',
+          'reading-time',
+          'empty-opening',
+          'overlap',
+          'out-of-frame',
+          'dropped-beats',
+        ]),
       );
       // Drawn on the canvas by Covi's default director: every story scene at a stop, the camera
       // travelling between them, no fades, and, from four moves, no entrance taking more than
@@ -1602,10 +1627,13 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         expect(count).toBeDefined();
         // The sheet shows it settled (landed, centered, its change in percent faded in), the very
         // frame QC reads the scene at.
-        expect(tiles).toContain(settledFrame(timeline, index));
-        expect(tiles).toContain(
-          sceneFrame(timeline, index, scene.start + metricSettledAt(scene.direction!, counter)),
+        const counted = sceneFrame(
+          timeline,
+          index,
+          scene.start + metricSettledAt(scene.direction!, counter),
         );
+        expect(tiles).toContain(settledFrame(timeline, index));
+        expect(tiles).toContain(counted);
         expect(metricSettledAt(scene.direction!, counter)).toBeGreaterThan(count.t + count.seconds);
         // The counter settles before the next scene starts to come in.
         expect(scene.start + metricSettledAt(scene.direction!, counter)).toBeLessThanOrEqual(
@@ -1632,6 +1660,10 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
         // into one, and the reader's steps pile up, 28 before and 10 after, beside the counter.
         const direction = scene.direction!;
         expect(direction.elements.map((e) => e.kind)).toEqual(['metric', 'packet', 'pile']);
+        // The pill says what splits, as the command's output named it.
+        expect(direction.elements.find((e) => e.kind === 'packet')).toMatchObject({
+          label: 'chunks',
+        });
         expect(direction.beats.map((b) => b.verb).sort()).toEqual([
           'count',
           'merge',
@@ -1654,6 +1686,38 @@ describe.skipIf(!available || !fullRenders)('covi video (full pipeline)', () => 
             { side: 'head', count: 10 },
           ],
         });
+        // The benchmark moves whenever it speaks and fills its frame as it comes in, so every
+        // motion check passes.
+        const motion = [
+          'still',
+          'motion-gap',
+          'motion-busy',
+          'reading-time',
+          'empty-opening',
+          'overlap',
+          'out-of-frame',
+          'dropped-beats',
+        ];
+        expect(qc.checks.map((c) => c.id)).toEqual(expect.arrayContaining(motion));
+        expect(qc.checks.filter((c) => motion.includes(c.id) && c.status !== 'pass')).toEqual([]);
+        // Nothing else warns. Square has two layout defects outside motion, each let through only
+        // by its message: the summary card is too short for its text (that exact message), and
+        // s2's code is under its floor (at whatever size). Remove these once the card and the code
+        // slot are fixed: a passing check is not filtered, but the same defect back would pass.
+        const known = (c: { id: string; message: string }) =>
+          timeline.width === timeline.height &&
+          ((c.id === 'text-fits' &&
+            /^Text is clipped in scene\(s\) s4; shorten the storyboard text\.$/.test(c.message)) ||
+            (c.id === 'text-size' &&
+              /^Text is too small to read at 1080p: code at [\d.]+ px in s2 \(/.test(c.message)));
+        expect(qc.checks.filter((c) => c.status !== 'pass' && !known(c))).toEqual([]);
+        // Its poster is where the byte count lands, the counter the largest thing on screen, not
+        // the scene's opening, where its pieces are still coming in.
+        expect(posterFrame(timeline)).toBe(counted);
+        const opening = openingSpan(timeline, index);
+        expect(opening).toBeDefined();
+        expect(posterFrame(timeline) / timeline.fps).toBeGreaterThanOrEqual(opening![1]);
+        expect(existsSync(join(result.runDir, 'video', 'poster.png'))).toBe(true);
       }
     }, 600_000);
   }
@@ -1671,6 +1735,160 @@ const covi = (args: string[]) =>
     }),
   ) as { runId: string; runDir: string; video: { rendered: boolean; qc: string } };
 const read = <T>(run: string, rel: string) => JSON.parse(readFileSync(join(run, rel), 'utf8')) as T;
+
+describe.skipIf(!available || !fullRenders)('covi render --draft (full pipeline)', () => {
+  /** Every file of a run but run.json and the draft, with its hash. */
+  const files = (run: string) =>
+    readdirSync(run, { recursive: true, withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => join(e.parentPath, e.name).slice(run.length + 1))
+      .filter((rel) => rel !== 'run.json' && !rel.startsWith(join('video', 'draft')))
+      .sort()
+      .map(
+        (rel) =>
+          `${rel} ${createHash('sha256')
+            .update(readFileSync(join(run, rel)))
+            .digest('hex')}`,
+      );
+
+  it('drafts the benchmark beside its video: half size, 15 fps, the same moments', async () => {
+    const dir = await materializeExample(
+      (await listExamples()).find((e) => e.name === 'backend-slim-request')!,
+    );
+    dirs.push(dir);
+    const video = covi(['video', '--repo', dir, '--standard']) as ReturnType<typeof covi> & {
+      video: { reason: string };
+    };
+    expect(video.video.rendered).toBe(true);
+    const run = video.runDir;
+    const before = files(run);
+    const outcome = () => read<{ outcome: { video: unknown } }>(run, 'run.json').outcome.video;
+    const rendered = outcome();
+    // The run keeps what the renders before the draft warned about, some since fixed: the draft's
+    // result must say only what the draft found.
+    const manifest = read<{ warnings: string[] }>(run, 'run.json');
+    manifest.warnings.push(
+      'Video QC warn: a check an earlier render warned about, fixed since.',
+      'Direction: shot 1 (scene s1) leaves out a merge: the merge of "packet" starts before its split.',
+    );
+    writeFileSync(join(run, 'run.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    // An earlier round's file is gone once the next draft is written.
+    mkdirSync(join(run, 'video', 'draft'), { recursive: true });
+    writeFileSync(join(run, 'video', 'draft', 'an-earlier-round.png'), '');
+
+    const draft = covi(['render', '--repo', dir, '--run', video.runId, '--draft']) as ReturnType<
+      typeof covi
+    > & {
+      video: { draft: { qc: string; width: number; height: number; fps: number } };
+      warnings: string[];
+    };
+    expect(draft.video).toMatchObject({
+      rendered: false,
+      draft: { width: 960, height: 540, fps: 15 },
+    });
+    expect(draft.video.draft.qc).not.toBe('fail');
+    const checked = read<{ status: string; checks: Array<{ id: string; status: string }> }>(
+      run,
+      'video/draft/qc.json',
+    );
+    const flagged = checked.checks.filter((c) => c.status !== 'pass').map((c) => c.id);
+    expect(draft.warnings).toEqual(
+      flagged.length
+        ? [`Draft QC ${checked.status}: ${flagged.join(', ')}; see video/draft/qc.json.`]
+        : [],
+    );
+    // …and leaves the run's warnings as they were: they describe the video. It ran as a draft.
+    const after = read<{ warnings: string[]; stages: Array<{ name: string; status: string }> }>(
+      run,
+      'run.json',
+    );
+    expect(after.warnings).toEqual(manifest.warnings);
+    expect(after.stages.at(-1)).toMatchObject({ name: 'draft', status: 'ok' });
+    // Nothing of the video was touched, and the run still describes the video.
+    expect(files(run)).toEqual(before);
+    expect(outcome()).toEqual(rendered);
+    expect(readdirSync(join(run, 'video', 'draft')).sort()).toEqual([
+      'composition',
+      'contact-sheet.jpg',
+      'poster.png',
+      'preview.mp4',
+      'qc.json',
+      'timeline.json',
+    ]);
+
+    const media = await Media.locate();
+    const probe = await media.probe(join(run, 'video', 'draft', 'preview.mp4'));
+    expect(probe).toMatchObject({ width: 960, height: 540 });
+    expect(probe.fps).toBeCloseTo(15, 2);
+    if (video.video.reason.startsWith('narrated')) expect(probe.audioCodec).toBeTruthy();
+
+    // A scaled view of the same video: the same moments and shots, every position at half.
+    const full = read<Timeline>(run, 'video/timeline.json');
+    const half = read<Timeline>(run, 'video/draft/timeline.json');
+    const moments = (t: Timeline) => ({
+      duration: t.duration,
+      captions: t.captions,
+      cues: t.cues,
+      scenes: t.scenes.map((s) => ({
+        id: s.id,
+        start: s.start,
+        end: s.end,
+        transition: s.transition,
+        beats: s.direction?.beats,
+        // Left-out beats are decided by the room a slot has; their reasons hold no pixels.
+        dropped: s.direction?.dropped,
+        kinds: s.direction?.elements.map((e) => e.kind),
+      })),
+    });
+    expect(moments(half)).toEqual(moments(full));
+    const positions = (t: Timeline, k: number) =>
+      t.scenes
+        .flatMap((s) => [
+          ...(s.stop ? [s.stop.x, s.stop.y] : []),
+          ...(s.direction?.elements ?? []).flatMap((e) => [
+            e.rect.x,
+            e.rect.y,
+            e.rect.width,
+            e.rect.height,
+          ]),
+        ])
+        .map((v) => v * k);
+    const [big, small] = [positions(full, 1), positions(half, 2)];
+    expect(small).toHaveLength(big.length);
+    for (const [i, v] of small.entries()) expect(v).toBeCloseTo(big[i]!, 1);
+    expect(half.mouth).toHaveLength(half.frames);
+    // Its poster shows the video's moment.
+    expect(
+      Math.abs(posterFrame(half) / half.fps - posterFrame(full) / full.fps),
+    ).toBeLessThanOrEqual(1 / 15 + 1e-9);
+
+    // The draft is checked like the video, motion and all, and says what the video's checks say:
+    // a draft that passed where the video warns, or the reverse, would mislead whoever revises it.
+    const statuses = (rel: string) =>
+      new Map(
+        read<{ checks: Array<{ id: string; status: string }> }>(run, rel).checks.map((c) => [
+          c.id,
+          c.status,
+        ]),
+      );
+    const [shown, drafted] = [statuses('video/qc.json'), statuses('video/draft/qc.json')];
+    for (const id of [
+      'still',
+      'motion-gap',
+      'motion-busy',
+      'reading-time',
+      'empty-opening',
+      'overlap',
+      'out-of-frame',
+      'dropped-beats',
+    ]) {
+      expect(drafted.get(id), id).toBeDefined();
+      expect(drafted.get(id), id).toBe(shown.get(id));
+    }
+    // Only the sound is left out of a draft, and with it the checks of the music and effects.
+    for (const [id, status] of drafted) expect(status, id).toBe(shown.get(id));
+  }, 900_000);
+});
 
 describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)', () => {
   it('renders a storyboard that uses every timing field', async () => {
@@ -1868,10 +2086,18 @@ describe.skipIf(!available || !fullRenders)('the timing grammar (full pipeline)'
     expect(still.status).toBe('warn');
     expect(still.message).toMatch(/\bpixels \(/);
     // The code scene pushes in from its entrance through the gap before its pinned highlights.
-    expect(still.message).not.toMatch(/\b(open|type|code|compare) \(/);
+    expect(still.message).not.toMatch(/\b(open|type|code|compare|wrap) \(/);
+    // The timeline plans the same hold: nothing moves in the static scene once its zoom has
+    // settled, so `motion-gap` names it from the plan where `still` measures it in the pixels.
+    const gap = qc.checks.find((c) => c.id === 'motion-gap')!;
+    expect(gap.status).toBe('warn');
+    expect(gap.message).toMatch(/\bpixels \(/);
+    expect(gap.message).not.toMatch(/\b(open|type|code|compare|wrap) \(/);
     // Every scene rests on a capture or a hunk, and every statement of Covi's explanation cites.
     expect(status.grounding).toBe('pass');
-    expect(qc.checks.filter((c) => c.id !== 'still' && c.status !== 'pass')).toEqual([]);
+    expect(
+      qc.checks.filter((c) => !['still', 'motion-gap'].includes(c.id) && c.status !== 'pass'),
+    ).toEqual([]);
     expect(existsSync(join(run, 'video', 'contact-sheet.jpg'))).toBe(true);
   }, 900_000);
 

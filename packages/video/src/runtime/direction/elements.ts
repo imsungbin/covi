@@ -51,6 +51,8 @@ export interface ShotComponent extends Component {
   frame(id: string): Rect | undefined;
   /** Where an element that moves is laid out `t` seconds into the scene: what `follow` frames. */
   track(id: string, t: number): Rect | undefined;
+  /** Every element on screen and the box around all it draws, as last drawn (QC's shot report). */
+  placed(): Array<{ id: string; rect: Rect }>;
 }
 
 type Reveal = Extract<DirectionBeat, { verb: 'reveal' }>;
@@ -161,6 +163,17 @@ export function mountShot(
       const d = drawn.find((x) => x.element.id === id);
       return d?.component.follow?.(elementTime(d, t));
     },
+    // On screen as `report` counts it; a focus ring marks an element, it is not part of it.
+    placed: () =>
+      drawn
+        .filter((d) => !d.reveal || now > d.reveal.t)
+        .flatMap((d) => {
+          const boxes = d.component
+            .report()
+            .filter((item) => item.role !== 'focus')
+            .map((item) => item.rect);
+          return boxes.length ? [{ id: d.element.id, rect: union(boxes) }] : [];
+        }),
   };
 }
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { videoQuestion } from '@covi/video';
@@ -443,6 +443,89 @@ describe('covi CLI', () => {
         ],
       });
     }
+  });
+
+  it('refuses a draft render the way it refuses a render, and writes no draft', async () => {
+    const dir = await example('bugfix-cli-slugify');
+    const json = covi(['video', '--repo', dir, '--draft', '--force', '--json']).json() as {
+      runId: string;
+      runDir: string;
+      artifacts: Record<string, string>;
+    };
+    expect(covi(['render', '--help']).stdout).toMatch(/--draft\s+render a fast draft/);
+    writeFileSync(
+      json.artifacts.direction!,
+      JSON.stringify({ shots: [{ scene: 'nope', elements: [{ id: 'v', kind: 'visual' }] }] }),
+    );
+    // An earlier round's draft, on disk and in run.json: its checks describe another direction.
+    const runJson = join(json.runDir, 'run.json');
+    mkdirSync(join(json.runDir, 'video', 'draft'));
+    writeFileSync(join(json.runDir, 'video', 'draft', 'qc.json'), '{"status":"pass","checks":[]}');
+    const earlier = JSON.parse(readFileSync(runJson, 'utf8')) as { artifacts: unknown[] };
+    earlier.artifacts.push({ path: 'video/draft/qc.json', kind: 'draft', sha256: '0', bytes: 2 });
+    writeFileSync(runJson, JSON.stringify(earlier));
+    const draft = covi(['render', '--repo', dir, '--run', json.runId, '--draft', '--json']);
+    expect(draft.code).toBe(2);
+    expect((draft.json() as { error: string }).error).toMatch(
+      /video\/direction\.json does not fit this run/,
+    );
+    expect(existsSync(join(json.runDir, 'video', 'draft'))).toBe(false);
+    // The refusal is the draft's, not the video's.
+    const manifest = JSON.parse(readFileSync(runJson, 'utf8')) as {
+      stages: Array<{ name: string; status: string }>;
+      errors: Array<{ stage: string }>;
+      artifacts: Array<{ path: string }>;
+    };
+    expect(manifest.stages.at(-1)).toMatchObject({ name: 'draft', status: 'failed' });
+    expect(manifest.errors.at(-1)).toMatchObject({ stage: 'draft' });
+    expect(manifest.artifacts.filter((a) => a.path.startsWith('video/draft/'))).toEqual([]);
+    // A refused draft is a round of the critique loop, not a part of the run that failed.
+    expect(covi(['report', '--repo', dir, '--run', json.runId, '--json']).code).toBe(0);
+    expect(
+      (JSON.parse(readFileSync(runJson, 'utf8')) as { outcome: { status: string } }).outcome.status,
+    ).toBe('success');
+  });
+
+  it('reports a draft render as a preview, never as the video', async () => {
+    const session = {
+      run: { id: 'run-1', has: async () => true, path: (rel: string) => `/run/${rel}` },
+      language: { language: 'en' },
+    } as unknown as Parameters<typeof applyVideoResult>[0];
+    const result = baseResult('render');
+    const produced = {
+      video: '/run/video/draft/preview.mp4',
+      duration: 36,
+      qc: {
+        status: 'warn',
+        checks: [
+          { id: 'still', status: 'pass', message: 'Something moves.' },
+          { id: 'motion-gap', status: 'warn', message: 'Nothing moves in s1 ("Timed out").' },
+          { id: 'reading-time', status: 'warn', message: 'Words leave the screen.' },
+        ],
+        measured: {},
+      },
+      narration: { enabled: true, provider: 'say', voice: 'Samantha', reason: '' },
+      draft: { width: 960, height: 540, fps: 15 },
+    } as unknown as Parameters<typeof applyVideoResult>[2];
+    await applyVideoResult(session, result, produced);
+    expect(result.video).toMatchObject({
+      rendered: false,
+      draft: { path: '/run/video/draft/preview.mp4', qc: 'warn', width: 960, fps: 15 },
+    });
+    expect(result.video!.reason).toContain('open video/draft/contact-sheet.jpg');
+    expect(result.artifacts).toMatchObject({
+      draftPreview: '/run/video/draft/preview.mp4',
+      draftPoster: '/run/video/draft/poster.png',
+      draftContactSheet: '/run/video/draft/contact-sheet.jpg',
+      draftQc: '/run/video/draft/qc.json',
+      draftTimeline: '/run/video/draft/timeline.json',
+    });
+    expect(result.artifacts.video).toBeUndefined();
+    // What the draft's checks flagged, by id: their messages quote the agent's words, which reach
+    // only video/draft/qc.json and the log.
+    expect(result.warnings).toEqual([
+      'Draft QC warn: motion-gap, reading-time; see video/draft/qc.json.',
+    ]);
   });
 
   it('declines a video for an internal change and still produces the review', async () => {

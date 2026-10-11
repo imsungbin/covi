@@ -43,7 +43,7 @@ const FLOWING: ReadonlySet<string> = new Set(FLOW_VERBS);
  * frame (a metric's card fills its slot). A capture keeps its image's aspect ratio, and title and
  * summary cards are laid out around the fox.
  */
-const CARDS: ReadonlySet<LeadKind> = new Set([
+export const CARDS: ReadonlySet<LeadKind> = new Set([
   'code',
   'terminal',
   'api',
@@ -60,14 +60,15 @@ const percent = (share: number) => `${Math.round(100 * share)}%`;
 const tenths = (share: number) => `${Math.floor(1000 * share + 1e-9) / 10}%`;
 
 /** The first three of `names`, and an ellipsis for the rest. */
-const listed = (names: readonly string[]) =>
-  `${names.slice(0, 3).join(', ')}${names.length > 3 ? ', …' : ''}`;
+export const listed = (names: readonly string[], sep = ', ') =>
+  `${names.slice(0, 3).join(sep)}${names.length > 3 ? `${sep}…` : ''}`;
 
 /**
  * Reports sampled while a story scene had settled and was alone on screen, and at the frame before
- * a directed scene's first camera beat, where its stop is at rest at its own scale.
+ * a directed scene's first camera beat, where its stop is at its own scale but for the push-in
+ * (at most 2%).
  */
-function settledReports(
+export function settledReports(
   timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps'>,
   layouts: readonly LayoutReport[],
 ): Array<{ scene: TimelineScene; report: LayoutReport }> {
@@ -95,7 +96,8 @@ const units = (size: number) => Math.round(10 * size) / 10;
 /**
  * Code and terminal text at least 24 px and body text at least 28 px at 1080p, as drawn at the
  * settled frames and before a camera beat zooms in, relative to the frame's short side. Chips,
- * file paths, and small labels are exempt.
+ * file paths, and small labels are exempt. The push-in has magnified both by up to 2%, so text that
+ * close under its floor can pass.
  */
 export function textSizeCheck(
   timeline: DensityTimeline,
@@ -137,10 +139,10 @@ export function textSizeCheck(
   };
 }
 
-const area = (r: Rect) => Math.max(0, r.width) * Math.max(0, r.height);
+export const area = (r: Rect) => Math.max(0, r.width) * Math.max(0, r.height);
 
 /** The part of `a` inside `b`, if any. */
-function clip(a: Rect, b: Rect): Rect | undefined {
+export function clip(a: Rect, b: Rect): Rect | undefined {
   const x = Math.max(a.x, b.x);
   const y = Math.max(a.y, b.y);
   const right = Math.min(a.x + a.width, b.x + b.width);

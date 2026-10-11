@@ -16,6 +16,13 @@ export const DRAWN_ITEMS = 12;
 export const PER_LINE = 6;
 /** The smallest a pile's items are drawn, in design units: smaller, they read as dots. */
 export const PILE_ITEM_MIN = 24;
+/** An edge's arrowhead, in design units… */
+export const ARROW_HEAD = 18;
+/**
+ * …and the shortest edge between two nodes a flow joins: three arrowheads, so the dot that
+ * travels it is seen to move, not covered by the arrowhead it arrives at.
+ */
+export const EDGE_MIN = 3 * ARROW_HEAD;
 
 export function center(r: Rect): Point {
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };

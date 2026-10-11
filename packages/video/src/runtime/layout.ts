@@ -98,6 +98,21 @@ export function computeRegions(t: Pick<Timeline, 'width' | 'height' | 'orientati
   };
 }
 
+/**
+ * The room the layout leaves around the band a scene owns (the media region, or the full frame
+ * for a card without a header), in px: the least of the gaps above it, to the header or the
+ * progress bar, and below it, to the captions. What fades past a band stays within it.
+ */
+export function clearance(r: Regions): number {
+  const below = (b: Rect) => b.y + b.height;
+  return Math.min(
+    r.media.y - below(r.header),
+    r.captions.y - below(r.media),
+    r.full.y - below(r.progress),
+    r.captions.y - below(r.full),
+  );
+}
+
 /** Fits an image of size (w, h) inside a box, centered (CSS object-fit: contain, computed). */
 export function contain(w: number, h: number, box: Rect): Rect {
   const scale = Math.min(box.width / w, box.height / h);

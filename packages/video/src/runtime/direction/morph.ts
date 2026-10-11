@@ -1,4 +1,4 @@
-import { MORPH_PHASES, MORPH_SETTLE, type Span } from '../../timeline/cues.ts';
+import { keptTokens, MORPH_PHASES, MORPH_SETTLE, type Span } from '../../timeline/cues.ts';
 import type { MorphRow, MorphToken, MorphVisual, Rect, TokenTone } from '../../timeline/types.ts';
 import { easeInCubic, easeInOutCubic, easeOutCubic, lerp, rise, seg } from '../anim.ts';
 import { lerpRect } from '../canvas.ts';
@@ -206,6 +206,7 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
     );
   const forward = new Map(v.rows);
   const backward = new Map(v.rows.map(([b, h]) => [h, b] as const));
+  const stays = keptTokens(v);
   const sides = [
     {
       base: true,
@@ -214,7 +215,7 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
       path: paths(before, after, forward, true),
       links: forward,
       twins: { rows: v.head, laid: after },
-      kept: new Set(v.tokens.map(([b, i]) => `${b}:${i}`)),
+      kept: stays.base,
       cut: cutOf(v.base, before),
     },
     {
@@ -224,7 +225,7 @@ export function morph(v: MorphVisual, ctx: ComponentContext, span: Span): Compon
       path: paths(after, before, backward, false),
       links: backward,
       twins: { rows: v.base, laid: before },
-      kept: new Set(v.tokens.map(([, , h, j]) => `${h}:${j}`)),
+      kept: stays.head,
       cut: cutOf(v.head, after),
     },
   ];

@@ -159,7 +159,9 @@ export function printResult(result: WorkflowResult, options: UiOptions, extra?: 
       '',
       result.video.rendered
         ? `${c.green('Video')} ${result.video.path} ${c.dim(`(${result.video.seconds?.toFixed(1)}s · QC ${result.video.qc} · ${result.video.reason})`)}`
-        : `${c.dim('No video:')} ${result.video.reason}`,
+        : result.video.draft
+          ? `${c.green('Draft')} ${result.video.draft.path} ${c.dim(`(${result.video.draft.seconds?.toFixed(1)}s · QC ${result.video.draft.qc} · ${result.video.reason})`)}`
+          : `${c.dim('No video:')} ${result.video.reason}`,
     );
     if (result.video.music?.hint) out.push(c.dim(result.video.music.hint));
   }

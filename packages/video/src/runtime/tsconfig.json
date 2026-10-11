@@ -8,6 +8,7 @@
     "./**/*.ts",
     "../timeline/types.ts",
     "../timeline/cues.ts",
+    "../timeline/motion.ts",
     "../../../brand/src/**/*.ts"
   ],
   "exclude": []

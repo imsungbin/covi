@@ -372,6 +372,14 @@ function addVideo(cmd: Command): Command {
     );
 }
 
+/** `covi render`'s own options. */
+interface RenderFlags {
+  run: string;
+  storyboard?: string;
+  workers?: string;
+  draft?: boolean;
+}
+
 function selection(cmd: Command, range: string | undefined) {
   const o = cmd.opts<{
     base?: string;
@@ -433,23 +441,29 @@ async function finish(
 ): Promise<void> {
   const u = ui(cmd);
   if (s) {
-    result.warnings.push(...s.run.manifest.warnings.filter((w) => !result.warnings.includes(w)));
+    // A draft's result already holds its own warnings; the run's are the video's.
+    if (!result.video?.draft)
+      result.warnings.push(...s.run.manifest.warnings.filter((w) => !result.warnings.includes(w)));
+    // A refused draft is a round of the critique loop, not a part of the run that failed.
+    const failed = s.run.manifest.errors.filter((e) => e.stage !== 'draft');
     const status: RunOutcome['status'] =
       result.exitCode === ExitCode.gate
         ? 'gated'
         : result.ok
-          ? s.run.manifest.errors.length
+          ? failed.length
             ? 'partial'
             : 'success'
           : 'failed';
-    const video = result.video
-      ? {
-          rendered: result.video.rendered,
-          reason: result.video.reason,
-          path: result.video.path ? relative(s.run.dir, result.video.path) : undefined,
-          seconds: result.video.seconds,
-        }
-      : undefined;
+    // A draft is a preview: the run's outcome keeps describing the video.
+    const video =
+      result.video && !result.video.draft
+        ? {
+            rendered: result.video.rendered,
+            reason: result.video.reason,
+            path: result.video.path ? relative(s.run.dir, result.video.path) : undefined,
+            seconds: result.video.seconds,
+          }
+        : undefined;
     if (!s.run.manifest.finishedAt) {
       await s.run.finish({
         status,
@@ -833,7 +847,11 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
       'storyboard to render (default: video/storyboard.json in the run)',
     )
     .option('--workers <n>', 'parallel render workers', int(1, 64))
-    .action(async (o: { run: string; storyboard?: string; workers?: string }, cmd: Command) => {
+    .option(
+      '--draft',
+      'render a fast draft (half size, at most 15 fps, the voice alone) into video/draft/ to check the motion; the video is left as it is',
+    )
+    .action(async (o: RenderFlags, cmd: Command) => {
       const u = ui(cmd);
       const s = await openSession(o.run, {
         repo: repoPath(u.flags.repo),
@@ -866,6 +884,7 @@ Exit codes: 0 ok · 1 review gate failed · 2 usage or invalid input · 3 enviro
         storyboardPath: o.storyboard ? resolve(o.storyboard) : undefined,
         workers: o.workers ? Number(o.workers) : undefined,
         musicDefault,
+        draft: Boolean(o.draft),
       });
       await finish(cmd, result, s);
     });

@@ -19,8 +19,8 @@ import { type DirectionInput, DirectionSchema } from '../src/direction/schema.ts
 import { directionSources } from '../src/direction/sources.ts';
 import { sceneEvidence } from '../src/grounding.ts';
 import { computeRegions } from '../src/runtime/layout.ts';
-import { arrangedSplit, nodeBoxRect, textBoxRect } from '../src/runtime/routes.ts';
-import { resolveVideoSpec } from '../src/spec.ts';
+import { arrangedSplit, EDGE_MIN, nodeBoxRect, textBoxRect } from '../src/runtime/routes.ts';
+import { orientationOf, resolveVideoSpec } from '../src/spec.ts';
 import { type Scene, SceneSchema } from '../src/storyboard/schema.ts';
 import { layoutScenes, pacingFor, phraseMoment } from '../src/timeline/build.ts';
 import type { Rect, SceneDirection } from '../src/timeline/types.ts';
@@ -129,6 +129,19 @@ const crowded = (beats: unknown[]) => {
     redact: (value) => value,
   })[1]!.direction;
   return { shot: plan.shots[0]!, direction };
+};
+/**
+ * A node's slot in a landscape shot that asks for a flow: clear of the slots beside it, so the
+ * edge between two side by side is at least `EDGE_MIN` long.
+ */
+const flowing = (slot: Rect, unit = regions.unit): Rect => {
+  const by = ((EDGE_MIN - 28) / 2) * unit;
+  return {
+    x: slot.x + by,
+    y: slot.y + by,
+    width: slot.width - 2 * by,
+    height: slot.height - 2 * by,
+  };
 };
 /** Where each beat ends. */
 const ends = (beats: ReadonlyArray<{ t: number; seconds: number }>) =>
@@ -296,7 +309,11 @@ describe('flow verbs in the direction file', () => {
       'landscape',
       28 * regions.unit,
     );
-    expect(['a', 'b', 'r', 'm', 'h'].map((e) => byId.get(e)!.rect)).toEqual(slots);
+    expect(['a', 'b', 'r', 'm', 'h'].map((e) => byId.get(e)!.rect)).toEqual([
+      flowing(slots[0]!),
+      flowing(slots[1]!),
+      ...slots.slice(2),
+    ]);
     const beats = s2!.direction.beats;
     expect(beats.find((b) => b.verb === 'split')).toMatchObject({
       element: 'p',
@@ -327,9 +344,14 @@ describe('flow verbs in the direction file', () => {
     const options = { ...captionOptionsFor('landscape'), language: 'en' as const };
     const timing = layout.scenes[1]!;
     const said = (phrase: string) => phraseMoment(NARRATION, phrase, timing, options)!;
-    // Where the spacing starts: no beat without a phrase starts before it.
-    const first =
-      timing.speechStart - timing.start + 0.15 * (timing.speechEnd - timing.speechStart);
+    // Where flow verbs' spacing starts, as the shot lands or its line starts: no flow verb
+    // without a phrase starts before it.
+    const end = timing.speechEnd - timing.start;
+    const first = Math.max(
+      0.5,
+      layout.scenes[0]!.end - timing.start,
+      timing.speechStart - timing.start,
+    );
     // The default director's staging of the benchmark: spaced, the merge and the stack would
     // still be moving while the request bytes count down.
     const [, s2] = resolve(
@@ -374,7 +396,7 @@ describe('flow verbs in the direction file', () => {
     expect(crossed.t).toBeLessThan(landed);
     expect(crossed.t + crossed.seconds).toBeGreaterThan(landed - BEAT_SECONDS.count);
     // Nor before what it acts on is in place: ending as the count starts, this stack would start
-    // before its pile is revealed, so it keeps its spaced slot, after the reveal.
+    // before its pile is revealed, so it keeps its spaced slot, or waits for the reveal.
     const waits = resolve(
       shot(STAGE, [
         { verb: 'reveal', element: 'r', at: 'before and after' },
@@ -386,12 +408,8 @@ describe('flow verbs in the direction file', () => {
     const early = said('request bytes') - BEAT_SECONDS.count - BEAT_SECONDS.stack;
     expect(early).toBeGreaterThan(first);
     expect(early).toBeLessThan(shown);
-    const spaced =
-      timing.speechStart -
-      timing.start +
-      (timing.speechEnd - timing.speechStart) * (0.15 + 0.85 / 3);
-    expect(spaced).toBeGreaterThan(shown);
-    expect(waits.find((b) => b.verb === 'stack')!.t).toBeCloseTo(spaced, 3);
+    const spaced = first + (end - first) / 3;
+    expect(waits.find((b) => b.verb === 'stack')!.t).toBeCloseTo(Math.max(spaced, shown), 3);
     // Nor does one make way into another count: between the two, the stack and the merge keep
     // their spaced slots.
     const [, twice] = resolve(
@@ -406,10 +424,7 @@ describe('flow verbs in the direction file', () => {
         ],
       ),
     );
-    const slot = (i: number) =>
-      timing.speechStart -
-      timing.start +
-      (timing.speechEnd - timing.speechStart) * (0.15 + (0.85 * i) / 5);
+    const slot = (i: number) => first + ((end - first) * i) / 5;
     const of = (verb: string) => twice!.direction.beats.find((b) => b.verb === verb)!;
     expect(of('stack').t).toBeCloseTo(slot(2), 3);
     expect(of('merge').t).toBeCloseTo(slot(3), 3);
@@ -514,6 +529,60 @@ describe('flow verbs in the direction file', () => {
     expect(reveal.t + reveal.seconds).toBeGreaterThan(LIMIT - BEAT_SECONDS.count);
     expect(count.t).toBeCloseTo(reveal.t + reveal.seconds, 3);
     expect(count.t + count.seconds).toBeGreaterThan(LIMIT);
+  });
+
+  it('start flow verbs without a phrase as the shot lands, spread through the rest of its line', () => {
+    // The staged scene opens the video, its line starting before its elements have risen into
+    // place; or it follows another, its line starting after the camera has arrived.
+    const opening = [
+      SceneSchema.parse({ ...scenes[1], id: 's1' }),
+      SceneSchema.parse({ ...scenes[0], id: 's2' }),
+    ];
+    for (const [story, k] of [
+      [opening, 0],
+      [scenes, 1],
+    ] as const) {
+      const timed = layoutScenes(story, new Map(), new Map(), 'en', pacingFor(spec));
+      const timing = timed.scenes[k]!;
+      const entrance = k === 0 ? 0 : timed.scenes[k - 1]!.end - timing.start;
+      const from = timing.speechStart - timing.start;
+      const end = timing.speechEnd - timing.start;
+      const spaced = from + 0.15 * (end - from);
+      // Once the camera has arrived and the elements have risen into place, and the line has
+      // started: waiting for 15% of it would hold the frame still under its opening words.
+      const lands = Math.max(0.5, entrance, from);
+      expect(lands).toBeLessThan(spaced - 0.5);
+      const beats = resolveDirection({
+        plan: DirectionSchema.parse({
+          shots: [
+            {
+              scene: story[k]!.id,
+              elements: STAGE,
+              beats: [
+                { verb: 'split', element: 'p', count: id('chunks'), side: 'base' },
+                { verb: 'stack', element: 'r' },
+                { verb: 'merge', element: 'p' },
+                { verb: 'camera', move: 'zoom', to: 'm' },
+              ],
+            },
+          ],
+        }),
+        scenes: story,
+        layout: timed,
+        spec,
+        language: 'en',
+        sources,
+        image: () => ({ src: '', width: 1, height: 1 }),
+        seed: 5,
+        redact: (value) => value,
+      })[k]!.direction.beats;
+      const at = (verb: string) => beats.find((b) => b.verb === verb)!.t;
+      expect(at('split'), story[k]!.id).toBeCloseTo(lands, 2);
+      expect(at('stack')).toBeCloseTo(lands + (end - lands) / 4, 2);
+      expect(at('merge')).toBeCloseTo(lands + (end - lands) / 2, 2);
+      // Every other beat without a phrase keeps its place from 15% of the line.
+      expect(at('camera')).toBeCloseTo(spaced + (end - spaced) * (3 / 4), 2);
+    }
   });
 
   it('stretch flows, splits, merges, and stacks toward the next beat, up to three times their length', () => {
@@ -949,14 +1018,16 @@ describe('flow verbs in the direction file', () => {
       node('b'),
       { id: 'p', kind: 'packet', label: 'Request' },
     ];
-    // Where a packet no flow carries goes: beside the nodes, in a slot of its own.
-    const alone = elementSlots(
+    // Where a packet no flow carries goes: beside the nodes (a flow asked for, they keep an
+    // edge's room), in a slot of its own.
+    const [a, b, own] = elementSlots(
       ['node', 'node', 'packet'],
       'auto',
       regions.media,
       'landscape',
       28 * regions.unit,
-    );
+    ) as [Rect, Rect, Rect];
+    const alone = [flowing(a), flowing(b), own];
     const overlaps = (a: Rect, b: Rect) =>
       Math.min(a.x + a.width, b.x + b.width) > Math.max(a.x, b.x) &&
       Math.min(a.y + a.height, b.y + b.height) > Math.max(a.y, b.y);
@@ -1041,6 +1112,71 @@ describe('flow verbs in the direction file', () => {
     const box = nodeBoxRect(byId.get('a')!.rect, regions.unit, false, 4);
     expect(box).not.toEqual(textBoxRect(byId.get('a')!.rect, regions.unit, false));
     expect(byId.get('p')!.rect).toEqual(box);
+  });
+
+  it('keep nodes a flow joins an edge’s room apart, where their boxes would fill their slots', () => {
+    // Square and tall frames give side-by-side nodes slots no wider than their boxes: the gap
+    // between the slots alone would leave an edge the arrowhead all but covers.
+    const narrow = (spec: typeof SQUARE, count: number, beats: unknown[]) => {
+      const plan = DirectionSchema.parse({
+        shots: [
+          {
+            scene: 's2',
+            elements: CROWD.slice(0, count),
+            beats,
+          },
+        ],
+      });
+      const r = computeRegions({ ...spec, orientation: orientationOf(spec.width, spec.height) });
+      const d = resolveDirection({
+        plan,
+        scenes,
+        layout: layoutScenes(scenes, new Map(), new Map(), 'en', pacingFor(spec)),
+        spec,
+        language: 'en',
+        sources,
+        image: () => ({ src: '', width: 1, height: 1 }),
+        seed: 5,
+        redact: (value) => value,
+      })[1]!.direction;
+      const tall = spec.height > spec.width;
+      return { d, r, boxes: d.elements.map((e) => textBoxRect(e.rect, r.unit, tall)) };
+    };
+    /** The room between two boxes side by side, or one above the other. */
+    const between = (a: Rect, b: Rect) =>
+      Math.max(
+        b.x - (a.x + a.width),
+        a.x - (b.x + b.width),
+        b.y - (a.y + a.height),
+        a.y - (b.y + b.height),
+      );
+    const TALL = resolveVideoSpec(DEFAULT_CONFIG, { mode: 'custom', width: 1080, height: 1920 });
+    for (const spec of [SQUARE, TALL])
+      for (const count of [2, 4]) {
+        const flows = [
+          { verb: 'flow', from: 'a', to: 'b' },
+          ...(count > 2 ? [{ verb: 'flow', from: 'c', to: 'd' }] : []),
+        ];
+        const { d, r, boxes } = narrow(spec, count, flows);
+        expect(d.beats.filter((b) => b.verb === 'flow')).toHaveLength(flows.length);
+        for (const [i, a] of boxes.entries())
+          for (const b of boxes.slice(i + 1))
+            expect(
+              between(a, b) / r.unit,
+              `${spec.width}×${spec.height}, ${count} nodes`,
+            ).toBeGreaterThanOrEqual(EDGE_MIN - 1e-6);
+        // Without a flow there is no edge to make room for: the nodes keep their slots.
+        const still = narrow(spec, count, []);
+        expect(still.d.elements.map((e) => e.rect)).toEqual(
+          elementSlots(
+            Array(count).fill('node'),
+            'auto',
+            still.r.media,
+            orientationOf(spec.width, spec.height),
+            28 * still.r.unit,
+          ),
+        );
+      }
   });
 
   it('leave out a node’s split, or a resting packet’s, when the slot has no room for its pieces', () => {

@@ -8,7 +8,7 @@ import {
   metricSource,
 } from '@covi/core';
 import { sceneEvidence } from '../grounding.ts';
-import { formatNumber, percentChange } from '../runtime/numbers.ts';
+import { formatNumber, metricChange, percentChange } from '../runtime/numbers.ts';
 import type { Orientation } from '../spec.ts';
 import { findPhrase, parseEmphasis } from '../storyboard/grammar.ts';
 import type { Scene } from '../storyboard/schema.ts';
@@ -23,6 +23,8 @@ import { type MetricSource, terminalNumber } from './sources.ts';
  */
 
 export type MetricShotElement = Extract<ShotElement, { kind: 'metric' }>;
+
+export { metricChange } from '../runtime/numbers.ts';
 
 /**
  * A change of a hundredfold or more says more as its two values than as a percentage, whose digits
@@ -145,19 +147,6 @@ export function resolveMetric(
 
 /** A counter needs at least this many printable steps between its values to tick; fewer compare. */
 export const COUNTER_STEPS = 10;
-
-/** A value on a log scale that keeps its sign, so a change through zero spans both sides. */
-const signedLog = (v: number) => Math.sign(v) * Math.log1p(Math.abs(v));
-
-/**
- * How much a metric changed, for choosing the one to show: how many times larger or smaller its
- * magnitude became, each plus one (a fold change with a pseudocount), so `1 → 0` (one timeout
- * gone) does not outrank `70406 → 9907` (the request shrank sevenfold). A value that changes sign
- * travels through zero, so `−5 → 5` is a change, not none.
- */
-export function metricChange(base: number, head: number): number {
-  return Math.abs(signedLog(head) - signedLog(base));
-}
 
 /**
  * The metrics a terminal scene's command measured, in the registry's order: none for a scene that

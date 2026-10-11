@@ -1,10 +1,12 @@
-import { metricSettled } from '../runtime/numbers.ts';
+import { COMPARE_RISE, metricSettled } from '../runtime/numbers.ts';
 import {
   type CodeLine,
+  type DirectionBeat,
   type DirectionElement,
   type FrameMark,
   HERO_PHASE,
   type HighlightGroup,
+  type MorphVisual,
   type SceneDirection,
   type Timeline,
   type TimelineCue,
@@ -664,6 +666,22 @@ export function sceneFrame(
   return Math.max(0, Math.min(timeline.frames - 1, first, last));
 }
 
+/**
+ * When scene `index` is on screen but still coming in, in seconds from the start of the video:
+ * from the end of its entrance to where it has settled (see `settledSpan`). Absent when it has
+ * settled by the time its entrance ends.
+ */
+export function openingSpan(
+  timeline: Pick<Timeline, 'scenes' | 'transition'>,
+  index: number,
+): Span | undefined {
+  const scene = timeline.scenes[index];
+  const settled = settledSpan(timeline, index);
+  if (!scene || !settled) return undefined;
+  const from = scene.start + entranceSeconds(timeline, index);
+  return settled[0] - from > 1e-6 ? [from, settled[0]] : undefined;
+}
+
 /** The frame QC reads a settled scene at: the first frame of its settled span (`sceneFrame`). */
 export function settledFrame(
   timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames'>,
@@ -674,10 +692,10 @@ export function settledFrame(
 }
 
 /**
- * The last frame before a directed scene's first camera beat, where its stop is at rest at its
- * own scale: a beat's zoom magnifies what QC measures at the settled frame, so text sizes are read
- * here too. None without a camera beat, or when the beat starts before the scene has entered and
- * the reveals before it have played.
+ * The last frame before a directed scene's first camera beat, where its stop is at its own scale
+ * but for the push-in (at most 2%): a beat's zoom magnifies what QC measures at the settled frame,
+ * so text sizes are read here too. None without a camera beat, or when the beat starts before the
+ * scene has entered and the reveals before it have played.
  */
 export function restFrame(
   timeline: Pick<Timeline, 'scenes' | 'transition' | 'fps' | 'frames'>,
@@ -715,33 +733,96 @@ export const MORPH_PHASES = {
 export const MORPH_SETTLE = 0.5;
 
 /**
- * When a directed scene's choreography is done: every element has entered and played its own (the
- * storyboard visual on the scene's phases, the others from their reveal; a morph once its added
- * tokens have settled, a metric once its value and its change are in), and every beat has ended.
+ * The tokens a morph keeps, on each side, as `row:token` keys: they travel from the base to the
+ * head. Every other base token is removed, and every other head token is added.
+ */
+export function keptTokens(morph: Pick<MorphVisual, 'tokens'>): {
+  base: Set<string>;
+  head: Set<string>;
+} {
+  return {
+    base: new Set(morph.tokens.map(([b, i]) => `${b}:${i}`)),
+    head: new Set(morph.tokens.map(([, , h, j]) => `${h}:${j}`)),
+  };
+}
+
+/**
+ * A part of a directed scene that moves: an element entering and playing its own choreography,
+ * or a beat.
+ */
+export interface ShotMotion {
+  /** The element's id, or the beat's verb. */
+  name: string;
+  beat: boolean;
+  /** Seconds since the scene started. */
+  span: Span;
+}
+
+/**
+ * When each part of a directed scene moves: every element from its reveal until it has entered
+ * and played its own choreography (the storyboard visual on the scene's phases, code typing in, a
+ * metric landing when nothing counts it), and every beat. The beat a morph plays lasts until its
+ * added tokens have settled, and the one a metric's value lands on (its count, else its count-up)
+ * until the value has centered and its change has faded in; a compare's arrow comes in just
+ * before its count. A node, a label, a packet, or a pile is in place half a second after it
+ * enters, and its verbs are beats.
+ */
+export function shotMotion(
+  scene: Pick<TimelineScene, 'visual' | 'direction' | 'phases' | 'start' | 'end'>,
+): ShotMotion[] {
+  const d = scene.direction;
+  if (!d) return [];
+  const duration = scene.end - scene.start;
+  const own = (verb: 'reveal' | 'morph' | 'count' | 'count-up', id: string) =>
+    d.beats.find((b) => b.verb === verb && 'element' in b && b.element === id);
+  // Where a beat ends once what it moved has settled, when that is after the beat itself.
+  const settles = new Map<DirectionBeat, number>();
+  const elements = d.elements.flatMap((e): ShotMotion[] => {
+    const at = own('reveal', e.id)?.t ?? 0;
+    const until = (end: number): ShotMotion[] => [{ name: e.id, beat: false, span: [at, end] }];
+    if (e.kind === 'visual')
+      return until(Math.max(at, settledAt(scene.visual, duration, scene.phases)));
+    if (e.kind === 'code' || e.kind === 'output' || e.kind === 'capture')
+      return until(at + settledAt(e.visual, Math.max(0.1, duration - at)));
+    // As the runtime does, an element plays its first morph, count, or count-up; a later one only
+    // takes its time.
+    if (e.kind === 'morph') {
+      const beat = own('morph', e.id);
+      if (beat) settles.set(beat, beat.t + beat.seconds + MORPH_SETTLE);
+    }
+    if (e.kind === 'metric') {
+      const beat = own('count', e.id) ?? own('count-up', e.id);
+      if (!beat) return until(metricSettledAt(d, e));
+      settles.set(beat, Math.max(beat.t + beat.seconds, metricSettledAt(d, e)));
+      // A compare's arrow comes in over the moment before its count starts (`compareLands`).
+      if (e.show === 'compare' && beat.verb === 'count')
+        return [
+          ...until(at + 0.5),
+          { name: e.id, beat: false, span: [Math.max(at, beat.t - COMPARE_RISE), beat.t] },
+        ];
+    }
+    return until(at + 0.5);
+  });
+  const beats = d.beats.map(
+    (b): ShotMotion => ({
+      name: b.verb,
+      beat: true,
+      span: [b.t, settles.get(b) ?? b.t + b.seconds],
+    }),
+  );
+  // Beats first: at the same moment, a beat is what a viewer sees start.
+  return [...beats, ...elements];
+}
+
+/**
+ * When a directed scene's choreography is done: every element has entered and played its own,
+ * and every beat has ended (see `shotMotion`).
  */
 export function shotSettledAt(
   scene: Pick<TimelineScene, 'visual' | 'direction' | 'phases' | 'start' | 'end'>,
 ): number {
-  const duration = scene.end - scene.start;
-  const d = scene.direction;
-  if (!d) return settledAt(scene.visual, duration, scene.phases);
-  const revealedAt = (id: string) =>
-    d.beats.find((b) => b.verb === 'reveal' && b.element === id)?.t ?? 0;
-  const elements = d.elements.map((e) => {
-    if (e.kind === 'visual') return settledAt(scene.visual, duration, scene.phases);
-    const at = revealedAt(e.id);
-    if (e.kind === 'morph') {
-      const beat = d.beats.find((b) => b.verb === 'morph' && b.element === e.id);
-      return Math.max(at + 0.5, beat ? beat.t + beat.seconds + MORPH_SETTLE : 0);
-    }
-    if (e.kind === 'metric') return metricSettledAt(d, e);
-    // A packet or a pile is in place half a second after it enters; its verbs end with the beats.
-    if (e.kind === 'packet' || e.kind === 'pile') return at + 0.5;
-    return e.kind === 'node' || e.kind === 'label'
-      ? at + 0.5
-      : at + settledAt(e.visual, Math.max(0.1, duration - at));
-  });
-  return Math.max(0, ...elements, ...d.beats.map((b) => b.t + b.seconds));
+  if (!scene.direction) return settledAt(scene.visual, scene.end - scene.start, scene.phases);
+  return Math.max(0, ...shotMotion(scene).map((m) => m.span[1]));
 }
 
 /**

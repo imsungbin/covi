@@ -1,3 +1,5 @@
+import type { Rect } from '../timeline/types.ts';
+
 export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -65,4 +67,101 @@ export function svg<K extends keyof SVGElementTagNameMap>(
   for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
   parent?.appendChild(node);
   return node;
+}
+
+/** A color with nothing to show: `transparent`, or an alpha of zero. */
+const clear = (color: string) => color === 'transparent' || /,\s*0\)$/.test(color);
+
+/** Whether an element paints a box of its own: a fill, an image, a shadow, or a border. */
+function paints(style: CSSStyleDeclaration): boolean {
+  return (
+    !clear(style.backgroundColor) ||
+    style.backgroundImage !== 'none' ||
+    style.boxShadow !== 'none' ||
+    (['Top', 'Right', 'Bottom', 'Left'] as const).some(
+      (side) =>
+        Number.parseFloat(style[`border${side}Width`]) > 0 && !clear(style[`border${side}Color`]),
+    )
+  );
+}
+
+/**
+ * Elements whose own box is what they draw: images and media, and SVG shapes. An `<svg>` is a
+ * container like any other (a shot's flow layer spans the whole stage, its edges inside it).
+ */
+const DRAWN = new Set([
+  'IMG',
+  'CANVAS',
+  'VIDEO',
+  'path',
+  'rect',
+  'circle',
+  'ellipse',
+  'line',
+  'polyline',
+  'polygon',
+  'text',
+  'image',
+  'use',
+]);
+
+/**
+ * The boxes `root` visibly draws, in stage pixels: text, images, and boxes with a fill, a border,
+ * or a shadow, at an opacity (its own times every ancestor's up to `root`) above a tenth.
+ * Containers that draw nothing are left out, and so are parts hidden by their opacity, `display`,
+ * or `visibility` (an entrance still to come). A part revealed by a dash or a clip path (an edge
+ * drawing itself, a wipe) counts as drawn whole from the start, so these are close to what a
+ * viewer sees of the scene, not where its parts are laid out.
+ */
+export function drawnRects(root: HTMLElement): Rect[] {
+  const rects: Rect[] = [];
+  const add = (r: DOMRect) => {
+    if (r.width > 0 && r.height > 0)
+      rects.push({ x: r.left, y: r.top, width: r.width, height: r.height });
+  };
+  const range = document.createRange();
+  const walk = (node: Element, opacity: number) => {
+    const style = getComputedStyle(node);
+    if (style.display === 'none') return;
+    const shown = opacity * Number.parseFloat(style.opacity || '1');
+    if (shown < 0.1) return;
+    const visible = style.visibility !== 'hidden';
+    if (DRAWN.has(node.tagName)) {
+      if (visible) add(node.getBoundingClientRect());
+      return;
+    }
+    if (visible && node !== root && paints(style)) add(node.getBoundingClientRect());
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.ELEMENT_NODE) walk(child as Element, shown);
+      else if (visible && child.nodeType === Node.TEXT_NODE && child.textContent?.trim()) {
+        range.selectNodeContents(child);
+        for (const r of range.getClientRects()) add(r);
+      }
+    }
+  };
+  walk(root, 1);
+  return rects;
+}
+
+/** The box around the parts of `drawn` (see `drawnRects`) inside `clip`, if any lies inside it. */
+export function drawnBox(drawn: readonly Rect[], clip: Rect): Rect | undefined {
+  let box: { left: number; top: number; right: number; bottom: number } | undefined;
+  for (const r of drawn) {
+    const left = Math.max(r.x, clip.x);
+    const top = Math.max(r.y, clip.y);
+    const right = Math.min(r.x + r.width, clip.x + clip.width);
+    const bottom = Math.min(r.y + r.height, clip.y + clip.height);
+    if (right <= left || bottom <= top) continue;
+    box = box
+      ? {
+          left: Math.min(box.left, left),
+          top: Math.min(box.top, top),
+          right: Math.max(box.right, right),
+          bottom: Math.max(box.bottom, bottom),
+        }
+      : { left, top, right, bottom };
+  }
+  return (
+    box && { x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }
+  );
 }

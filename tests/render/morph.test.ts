@@ -6,6 +6,7 @@ import {
   buildTimeline,
   type DirectionBeat,
   type LayoutReport,
+  layoutChecks,
   layoutScenes,
   type MorphRow,
   pacingFor,
@@ -78,13 +79,32 @@ const grow: DiffLine[] = [
 ];
 
 /**
- * A two-scene 640×360 composition whose second scene morphs `lines` on `beats` (seconds since that
- * scene started) in a card laid out in `rect`, opened in Chromium.
+ * A card a little narrower than the media region and laid out 30 px down it: a modest zoom holds
+ * back to keep it whole, and its header row leaves the camera room to move before it reaches the
+ * region's top.
  */
-async function morphed(lines: DiffLine[], beats: DirectionBeat[] = [MORPH], rect: Rect = media) {
+const held: Rect = {
+  x: media.x + 0.05 * media.width,
+  y: media.y + 30,
+  width: 0.9 * media.width,
+  height: media.height - 30,
+};
+
+/**
+ * A two-scene composition (640×360 unless `size` says otherwise) whose second scene morphs `lines`
+ * on `beats` (seconds since that scene started) in a card laid out in `rect`, opened in Chromium;
+ * a `static` view holds that scene's camera still (no push-in).
+ */
+async function morphed(
+  lines: DiffLine[],
+  beats: DirectionBeat[] = [MORPH],
+  rect: Rect = media,
+  view?: 'static',
+  size = { width: W, height: H },
+) {
   const dir = mkdtempSync(join(tmpdir(), 'covi-morph-'));
   dirs.push(dir);
-  const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', width: W, height: H });
+  const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', ...size });
   const scenes = StoryboardSchema.parse({
     title: 'Send only the ids',
     template: 'bug-fix',
@@ -101,6 +121,7 @@ async function morphed(lines: DiffLine[], beats: DirectionBeat[] = [MORPH], rect
         narration: 'Now it sends only the ids, and the reader fetches each document itself.',
         minSeconds: 7,
         visual: { kind: 'callout', title: 'After' },
+        ...(view ? { camera: view } : {}),
       },
     ],
   }).scenes;
@@ -144,7 +165,7 @@ async function morphed(lines: DiffLine[], beats: DirectionBeat[] = [MORPH], rect
   });
   const composition = join(dir, 'composition');
   await writeComposition(composition, timeline, new Map());
-  const page = await browser!.newPage({ viewport: { width: W, height: H } });
+  const page = await browser!.newPage({ viewport: size });
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`file://${join(composition, 'index.html')}`);
@@ -231,7 +252,8 @@ describe.skipIf(!available)('the token morph', () => {
   });
 
   it('settles on the code after the change, reported as code for QC', async () => {
-    const v = await morphed(refs);
+    // Held still: the push-in would magnify the size QC reads.
+    const v = await morphed(refs, [MORPH], media, 'static');
     const frame = v.at(MORPH.t + MORPH.seconds + 0.6);
     const card = (await v.report(frame)).items.find((i) => i.text === 'code')!;
     // Its text is the size a code card holding both sides gets, above the floor where it fits.
@@ -381,9 +403,102 @@ describe.skipIf(!available)('the token morph', () => {
         expect(bar.bottom).toBeLessThanOrEqual(media.y + media.height + 1);
       }
     }
-    // Zoomed in, and moving with the lines: no two of these frames share a camera.
-    for (const c of cameras) expect(c.scale).toBeCloseTo(1.25, 2);
+    // Zoomed in, and moving with the lines: no two of these frames share a camera. The card is
+    // as wide as the region, so 1.25× would cut its sides off: the follow holds back to where it
+    // fits the frame under the push-in, which runs under the beats and grows the zoom by at most
+    // its 2%.
+    const whole = W / media.width / 1.02;
+    for (const c of cameras) {
+      expect(c.scale).toBeGreaterThanOrEqual(whole - 1e-3);
+      expect(c.scale).toBeLessThanOrEqual(whole * 1.02 + 1e-3);
+    }
     expect(new Set(cameras.map((c) => c.ty.toFixed(1))).size).toBe(3);
+  });
+
+  it('keeps the card it follows whole across the frame, its header row below the header', async () => {
+    const follow: DirectionBeat = {
+      verb: 'camera',
+      move: 'follow',
+      to: 'm',
+      zoom: 1.25,
+      t: 1,
+      seconds: 0.8,
+    };
+    for (const size of [
+      { width: W, height: H },
+      { width: H, height: W },
+    ]) {
+      const regions = computeRegions({
+        ...size,
+        orientation: size.width > size.height ? 'landscape' : 'vertical',
+      });
+      const v = await morphed(refs, [follow, MORPH], regions.media, undefined, size);
+      const name = `${size.width}×${size.height}`;
+      let zoomed = 0;
+      for (const share of [0.3, 0.6, 0.9, 1.3]) {
+        const frame = v.at(MORPH.t + MORPH.seconds * share);
+        if ((await v.camera(frame)).scale > 1.05) zoomed++;
+        const drawn = (await v.seek(
+          frame,
+          `const box = (q) => { const r = document.querySelector('[data-element="m"] ' + q).getBoundingClientRect();
+             return { left: r.left, right: r.right, top: r.top }; };
+           return { card: box('.code'), head: box('.code-head') };`,
+        )) as Record<'card' | 'head', { left: number; right: number; top: number }>;
+        expect(drawn.card.left, name).toBeGreaterThanOrEqual(-1);
+        expect(drawn.card.right, name).toBeLessThanOrEqual(size.width + 1);
+        expect(drawn.head.top, name).toBeGreaterThanOrEqual(regions.media.y - 1);
+      }
+      expect(zoomed, name).toBe(4);
+      expect(v.errors).toEqual([]);
+    }
+  });
+
+  it('never draws the card it zooms toward under the captions, even while the zoom eases in', async () => {
+    // A lone card as tall as the region, a modest zoom: magnified, its foot passes the region's
+    // bottom by more than the room above the captions, before the viewport has closed to its band.
+    const follow: DirectionBeat = {
+      verb: 'camera',
+      move: 'follow',
+      to: 'm',
+      zoom: 1.1,
+      t: 1,
+      seconds: 0.8,
+    };
+    // The changed lines at the top of a tall card: following them, the camera keeps the card's
+    // top row in view, so all the zoom adds below it goes past the region's foot.
+    const tall: DiffLine[] = [
+      context('async function load(ids) {', 1),
+      del('  return send(parts);', 2),
+      add('  return send(parts.map((p) => p.id));', 2),
+      ...Array.from({ length: 11 }, (_, i) => context(`  log(part${i}.id);`, i + 3)),
+    ];
+    for (const size of [
+      { width: W, height: H },
+      { width: H, height: W },
+    ]) {
+      const regions = computeRegions({
+        ...size,
+        orientation: size.width > size.height ? 'landscape' : 'vertical',
+      });
+      const v = await morphed(tall, [follow, MORPH], regions.media, undefined, size);
+      const reports: LayoutReport[] = [];
+      for (let frame = v.at(follow.t); frame <= v.at(MORPH.t + MORPH.seconds + 0.5); frame++)
+        reports.push(await v.report(frame));
+      const name = `${size.width}×${size.height}`;
+      expect(reports.filter((r) => r.captions).length, name).toBeGreaterThan(10);
+      const check = layoutChecks(v.timeline, reports).find(
+        (c) => c.id === 'captions-clear-of-content',
+      )!;
+      expect(check.status, `${name}: ${check.message}`).toBe('pass');
+      // Nor within its tolerance, nor between two lines, when no caption shows: the card ends
+      // above the captions' band at every frame.
+      for (const r of reports)
+        for (const item of r.items.filter((i) => i.role !== 'text'))
+          expect(item.rect.y + item.rect.height, `${name} @${r.frame}`).toBeLessThanOrEqual(
+            regions.captions.y + 0.01,
+          );
+      expect(v.errors).toEqual([]);
+    }
   });
 
   it('follows a long changed line only as far as the text column, where it ends', async () => {
@@ -424,8 +539,11 @@ describe.skipIf(!available)('the token morph', () => {
 
   it('holds one scale while it follows changed lines that grow, when no zoom is given', async () => {
     const follow: DirectionBeat = { verb: 'camera', move: 'follow', to: 'm', t: 1, seconds: 0.8 };
-    const v = await morphed(grow, [follow, MORPH]);
-    // From the end of its ease until the scene settles and the camera starts to linger.
+    // Held still, so the scale measured is the follow's own: the push-in grows it under the beats.
+    // On a card as large as the region, the fitted zoom would hold back to where the card's
+    // header leaves the camera next to no room.
+    const v = await morphed(grow, [follow, MORPH], held, 'static');
+    // From the end of its ease until shortly after the morph has played.
     const cameras: Array<{ tx: number; ty: number; scale: number }> = [];
     const [from, to] = [
       v.at(follow.t + follow.seconds + 0.05),
@@ -437,6 +555,17 @@ describe.skipIf(!available)('the token morph', () => {
     // Only its position moves with the lines.
     expect(cameras.at(-1)!.ty).toBeLessThan(cameras[0]!.ty - 10);
     expect(v.errors).toEqual([]);
+    // There, the card stays whole across the frame all the same.
+    const full = await morphed(grow, [follow, MORPH], media, 'static');
+    for (const share of [0.3, 0.9]) {
+      const card = (await full.seek(
+        full.at(MORPH.t + MORPH.seconds * share),
+        `const r = document.querySelector('[data-element="m"] .code').getBoundingClientRect();
+         return { left: r.left, right: r.right };`,
+      )) as { left: number; right: number };
+      expect(card.left).toBeGreaterThanOrEqual(-1);
+      expect(card.right).toBeLessThanOrEqual(W + 1);
+    }
   });
 
   it('slows down rather than stopping dead as the lines it follows outgrow the view', async () => {
@@ -448,7 +577,8 @@ describe.skipIf(!available)('the token morph', () => {
       t: 1,
       seconds: 0.8,
     };
-    const v = await morphed(grow, [follow, MORPH]);
+    // Held still, so the camera measured is the follow's own: the push-in moves it under the beats.
+    const v = await morphed(grow, [follow, MORPH], media, 'static');
     const ty: number[] = [];
     for (let frame = v.at(MORPH.t); frame <= v.at(MORPH.t + MORPH.seconds); frame++)
       ty.push((await v.camera(frame)).ty);
@@ -473,19 +603,34 @@ describe.skipIf(!available)('the token morph', () => {
       t: 1,
       seconds: 0.5,
     };
-    const follow: DirectionBeat = {
+    const follow = (zoom: number): DirectionBeat => ({
       verb: 'camera',
       move: 'follow',
       to: 'm',
-      zoom: 1.25,
+      zoom,
       t: 1.5,
       seconds: 0.4,
-    };
-    const v = await morphed(refs, [reveal, follow, MORPH]);
-    const ty = async (share: number) => (await v.camera(v.at(MORPH.t + MORPH.seconds * share))).ty;
-    // Still moving with the lines while they travel: on the scene's clock it would be a second
-    // ahead, and done before they are.
-    expect(Math.abs((await ty(0.3)) - (await ty(0.9)))).toBeGreaterThan(1);
-    expect(v.errors).toEqual([]);
+    });
+    // A close-up of the lines on a card as large as the region, and a modest zoom held back.
+    for (const [zoom, rect] of [
+      [2, media],
+      [1.25, held],
+    ] as const) {
+      const v = await morphed(refs, [reveal, follow(zoom), MORPH], rect);
+      const at = (share: number) => v.at(MORPH.t + MORPH.seconds * share);
+      const [early, late] = [await v.camera(at(0.3)), await v.camera(at(0.9))];
+      // Still moving with the lines while they travel: on the scene's clock it would be a second
+      // ahead, and done before they are.
+      expect(Math.abs(early.ty - late.ty), `zoom ${zoom}`).toBeGreaterThan(1);
+      if (zoom < 2) {
+        expect(late.scale).toBeLessThan(1.25);
+        const head = (await v.seek(
+          at(0.9),
+          `return document.querySelector('[data-element="m"] .code-head').getBoundingClientRect().top;`,
+        )) as number;
+        expect(head).toBeGreaterThanOrEqual(media.y - 1);
+      }
+      expect(v.errors).toEqual([]);
+    }
   });
 });

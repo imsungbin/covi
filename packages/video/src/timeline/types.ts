@@ -33,6 +33,11 @@ export type TransitionKind = 'fade' | 'cut' | 'push' | 'wipe' | 'zoom-through' |
  * there, `zoom` pulls back to show both stops and pushes into the next. Only direction gives them.
  */
 export const CAMERA_TRANSITIONS = ['pan', 'zoom'] as const satisfies readonly TransitionKind[];
+export type CameraKind = (typeof CAMERA_TRANSITIONS)[number];
+
+export function isCameraMove(kind: TransitionKind): kind is CameraKind {
+  return (CAMERA_TRANSITIONS as readonly TransitionKind[]).includes(kind);
+}
 
 /** A scene's stop on the canvas: the top-left corner of its frame-sized region, in world pixels. */
 export interface Stop {
@@ -498,6 +503,16 @@ export interface LayoutItem {
   text?: 'code' | 'body' | 'meta';
 }
 
+/**
+ * A directed scene's elements as its stop lays them out, the camera aside: each element's box
+ * around all it draws, and the region the scene owns, in stage pixels (where they are on screen
+ * when the camera is at rest).
+ */
+export interface ShotReport {
+  region: Rect;
+  elements: Array<{ id: string; rect: Rect }>;
+}
+
 export interface LayoutReport {
   frame: number;
   scene?: string;
@@ -512,6 +527,13 @@ export interface LayoutReport {
   /** The scene header's lines of text. */
   headerText?: Rect[];
   imagesLoaded: boolean;
+  /** A directed scene's elements and region, while no camera move between stops is under way. */
+  shot?: ShotReport;
+  /**
+   * The box around what the scene in front visibly draws in its region, as drawn (hidden parts
+   * and empty containers left out): how much of the frame a viewer sees filled.
+   */
+  content?: Rect;
   /** Font families with a declared face that failed to load. */
   fontsFailed?: string[];
 }

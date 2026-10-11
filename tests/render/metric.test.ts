@@ -7,6 +7,7 @@ import {
   type DirectionBeat,
   type DirectionElement,
   type LayoutReport,
+  layoutChecks,
   layoutScenes,
   pacingFor,
   type Rect,
@@ -121,12 +122,15 @@ interface Read {
 
 /**
  * A two-scene composition whose second scene shows a metric beside the terminal it came from (the
- * shot the default director gives a terminal scene), opened at `size`.
+ * shot the default director gives a terminal scene), opened at `size`. A `static` camera holds
+ * the shot still, for a test that measures where the metric's parts are drawn across frames: the
+ * push-in moves everything in it.
  */
 async function staged(
   make: (rect: Rect) => Metric = (rect) => bytes(rect),
   beats: DirectionBeat[] = [COUNT],
   size: Size = LANDSCAPE,
+  camera?: 'static',
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'covi-metric-'));
   dirs.push(dir);
@@ -149,6 +153,7 @@ async function staged(
           'Here is the same command before and after, and it now prints request bytes: 9907.',
         minSeconds: 6,
         visual: terminal,
+        ...(camera ? { camera } : {}),
       },
     ],
   }).scenes;
@@ -294,7 +299,12 @@ describe.skipIf(!available)('a metric on screen', () => {
     });
 
   it('keeps the value in place while it counts, its unit beside it held to the body floor', async () => {
-    const v = await staged((rect) => bytes(rect, { name: 'request size', unit: 'bytes' }));
+    const v = await staged(
+      (rect) => bytes(rect, { name: 'request size', unit: 'bytes' }),
+      [COUNT],
+      LANDSCAPE,
+      'static',
+    );
     const reads: Read[] = [];
     for (const frame of through(v)) reads.push(await v.read(frame));
     // It counts: one value per frame or so.
@@ -368,7 +378,12 @@ describe.skipIf(!available)('a metric on screen', () => {
   });
 
   it('draws the compare’s arrow as a shape, and keeps both values in place while one counts', async () => {
-    const v = await staged((rect) => bytes(rect, { show: 'compare' }));
+    const v = await staged(
+      (rect) => bytes(rect, { show: 'compare' }),
+      [COUNT],
+      LANDSCAPE,
+      'static',
+    );
     const reads: Read[] = [];
     for (const frame of through(v)) reads.push(await v.read(frame));
     const [first] = reads;
@@ -391,6 +406,43 @@ describe.skipIf(!available)('a metric on screen', () => {
     expect(read.name).toBe(name);
     expect((await v.report(landed)).items.some((i) => i.overflow)).toBe(false);
     for (const part of read.parts) expect(inside(part, read.card!)).toBe(true);
+  });
+
+  it('reports a counter its card is too short to hold whole, however short the card', async () => {
+    // A wide, short card: the counter shrinks to keep its value and name whole while it can, and
+    // QC hears of it when it cannot, even where the card squeezes a part down to nothing.
+    const { media, unit } = computeRegions({ ...LANDSCAPE, orientation: 'landscape' });
+    const fits = async (height: number) => {
+      const v = await staged(
+        () => bytes({ ...media, height: height * unit }),
+        [COUNT],
+        LANDSCAPE,
+        'static',
+      );
+      const report = await v.report(v.frameAt(COUNT.t + COUNT.seconds + 0.4));
+      expect(v.errors).toEqual([]);
+      return layoutChecks(v.timeline, [report]).find((c) => c.id === 'text-fits')!.status;
+    };
+    expect(await fits(286)).toBe('pass');
+    for (const height of [200, 150, 120, 90]) expect(await fits(height), `${height}`).toBe('warn');
+  });
+
+  it('reports only the part its card cuts: a value too long for a narrow card, not its name', async () => {
+    const { media, unit } = computeRegions({ ...LANDSCAPE, orientation: 'landscape' });
+    const parts = async (width: number, height: number, to: number) => {
+      const v = await staged(
+        () => bytes({ ...media, width: width * unit, height: height * unit }, { to }),
+        [COUNT],
+        LANDSCAPE,
+        'static',
+      );
+      const report = await v.report(v.frameAt(COUNT.t + COUNT.seconds + 0.4));
+      // The name, then the value's row.
+      return report.items.filter((i) => i.role === 'text').map((i) => i.overflow);
+    };
+    expect((await parts(240, 286, 990712345)).slice(0, 2)).toEqual([false, true]);
+    // A card too short for either cuts both.
+    expect((await parts(1728, 120, 9907)).slice(0, 2)).toEqual([true, true]);
   });
 
   it('shows one value alone without a change, and its name as text, whatever it holds', async () => {

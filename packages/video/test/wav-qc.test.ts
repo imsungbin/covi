@@ -71,6 +71,49 @@ describe('QC', () => {
     ).toBe('fail');
   });
 
+  it('holds captions and the narrator to the same tolerances at any size, as a draft needs', () => {
+    // `reach`: how far (in pixels at 1080p) content reaches into the captions and the fox's box,
+    // and the captions twice as far out of the frame.
+    const verdicts = (k: number, reach: number) => {
+      const timeline = {
+        width: 1920 * k,
+        height: 1080 * k,
+        orientation: 'landscape',
+        captions: [],
+        scenes: [],
+      } as unknown as Timeline;
+      const at = (x: number, y: number, width: number, height: number) => ({
+        x: x * k,
+        y: y * k,
+        width: width * k,
+        height: height * k,
+      });
+      const captionsY = 960 + 2 * reach;
+      const checks = layoutChecks(timeline, [
+        {
+          frame: 1,
+          scene: 's1',
+          captions: at(400, captionsY, 1120, 120),
+          narrator: at(1690, 56, 142, 142),
+          items: [
+            { role: 'media', rect: at(300, 300, 1000, captionsY + reach - 300) },
+            { role: 'text', rect: at(1500, 100, 190 + reach, 40) },
+          ],
+          imagesLoaded: true,
+        },
+      ]);
+      const status = (id: string) => checks.find((c) => c.id === id)!.status;
+      return ['captions-clear-of-content', 'captions-in-frame', 'narrator-clear-of-content'].map(
+        status,
+      );
+    };
+    expect(verdicts(1, 3)).toEqual(['fail', 'fail', 'warn']);
+    expect(verdicts(1, 1)).toEqual(['pass', 'pass', 'pass']);
+    // The same layout drawn at half size, as a draft draws it, gets the same verdicts.
+    expect(verdicts(0.5, 3)).toEqual(verdicts(1, 3));
+    expect(verdicts(0.5, 1)).toEqual(verdicts(1, 1));
+  });
+
   it('flags clipped text, captions outside the frame, and failed images', () => {
     const checks = layoutChecks(timeline, [
       {

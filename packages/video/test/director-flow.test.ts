@@ -247,7 +247,7 @@ describe('the default director’s counts', () => {
           evidence: 'metric:terminal-1:request-bytes',
           show: 'counter',
         },
-        { id: 'packet', kind: 'packet' },
+        { id: 'packet', kind: 'packet', label: 'chunks' },
         { id: 'pile', kind: 'pile', evidence: 'metric:terminal-1:reader-steps' },
       ],
       beats: [
@@ -270,7 +270,7 @@ describe('the default director’s counts', () => {
           evidence: 'metric:terminal-1:request-bytes',
           show: 'counter',
         },
-        { id: 'packet', kind: 'packet' },
+        { id: 'packet', kind: 'packet', label: 'workers' },
       ],
       beats: [
         { verb: 'split', element: 'packet', count: 'metric:terminal-1:workers', side: 'head' },
@@ -279,6 +279,17 @@ describe('the default director’s counts', () => {
     });
     const piled = measured('request bytes: 9000\nretries: 8', 'request bytes: 1000\nretries: 2');
     expect(staged(piled.evidence)?.elements.map((e) => e.kind)).toEqual(['metric', 'pile']);
+  });
+
+  it('labels the packet with what its split counts, unless that name is no label', () => {
+    // A pill with no words reads as an empty shape; the run's own name says what splits.
+    const packet = (name: string) =>
+      staged(
+        measured(`request bytes: 70406\n${name}: 4`, `request bytes: 9907\n${name}: 1`).evidence,
+      )?.elements.find((e) => e.kind === 'packet');
+    expect(packet('chunks')).toEqual({ id: 'packet', kind: 'packet', label: 'chunks' });
+    // Digits would be a number the run did not measure as one: the pill stays unlabeled.
+    expect(packet('http2 frames')).toEqual({ id: 'packet', kind: 'packet' });
   });
 
   it('keeps the counter beside the output when the command counted nothing else', () => {

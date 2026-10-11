@@ -1,12 +1,5 @@
-import {
-  CAMERA_TRANSITIONS,
-  type CameraMove,
-  type Point,
-  type Rect,
-  type Stop,
-  type TransitionKind,
-} from '../timeline/types.ts';
-import { clamp, easeInOutCubic, lerp } from './anim.ts';
+import type { CameraKind, CameraMove, Point, Rect, Stop } from '../timeline/types.ts';
+import { clamp, easeInOutCubic, lerp, seg } from './anim.ts';
 
 /*
  * The canvas: every story scene sits at its stop, a frame-sized region of one large world, and
@@ -20,8 +13,6 @@ export interface View {
   y: number;
   scale: number;
 }
-
-export type CameraKind = (typeof CAMERA_TRANSITIONS)[number];
 
 /**
  * A camera beat inside a stop: from `t` (seconds since the scene started) for `seconds`, toward
@@ -40,10 +31,6 @@ const FIT = 0.9;
 /** A zoom between stops pulls back a little further than both regions need, so they breathe. */
 export const PULL_MARGIN = 0.92;
 
-export function isCameraMove(kind: TransitionKind): kind is CameraKind {
-  return (CAMERA_TRANSITIONS as readonly TransitionKind[]).includes(kind);
-}
-
 /** The view at rest in a stop, in stop-local coordinates: its own region, unmagnified. */
 export function restView(pivot: Point): View {
   return { x: pivot.x, y: pivot.y, scale: 1 };
@@ -59,7 +46,7 @@ export function withPush(view: View, push: number): View {
   return { ...view, scale: view.scale * (1 + push) };
 }
 
-function lerpView(a: View, b: View, k: number): View {
+export function lerpView(a: View, b: View, k: number): View {
   return { x: lerp(a.x, b.x, k), y: lerp(a.y, b.y, k), scale: lerp(a.scale, b.scale, k) };
 }
 
@@ -126,63 +113,130 @@ function softMin(a: number, b: number, k: number): number {
 }
 
 /**
+ * A follow framing a card (a morph's code) holds back to keep the card whole while its zoom asks
+ * for at most this many times the scale that would: closer, it would cut only a sliver off the
+ * card's sides or its header row, which reads as a mistake…
+ */
+const HOLD_BACK = 1.25;
+/**
+ * …and from there it eases toward the zoom asked, so a little more zoom never flips the framing,
+ * until, at this many times that scale, it is a close-up of the lines alone.
+ */
+const CLOSE_UP = 1.6;
+
+/**
+ * The card a follow frames its target in, kept whole: its box (stop-local), the frame's width,
+ * and how far the push-in may magnify the view on top of the follow.
+ */
+export interface FollowedCard {
+  rect: Rect;
+  width: number;
+  push: number;
+}
+
+/**
+ * The scale at which a card stays whole across the frame, with its top row and the lowest box
+ * its target takes inside the region, even once the push-in has magnified it.
+ */
+function wholeScale(card: FollowedCard, bounds: Rect, region: Rect): number {
+  const below = bounds.y + bounds.height - card.rect.y;
+  const rows = below > 0 ? region.height / below : Number.POSITIVE_INFINITY;
+  return Math.min(card.width / card.rect.width, rows) / (1 + card.push);
+}
+
+/**
  * How a follow beat frames a target that moves (stop-local): at one scale for the whole beat, the
  * beat's zoom, else what fits `bounds` (every box the target takes), so only the position tracks
  * it. As in `beatView`, a target that fits is centered, one that outgrows the view shows its start,
  * and the view stays inside `region`; here each of those clamps eases in, so the camera slows down
- * rather than stopping dead as the target grows past the view or nears the region's edge.
+ * rather than stopping dead as the target grows past the view or nears the region's edge. With a
+ * `card`, a modest zoom holds back to where the card stays whole (see `HOLD_BACK`), and the view
+ * then also keeps the card across the frame and its top row below the region's top, so its header
+ * never slides under the header band; a closer zoom eases from that framing to the close-up.
  */
 export function follower(
   bounds: Rect,
   zoom: number | undefined,
   region: Rect,
   pivot: Point,
+  card?: FollowedCard,
 ): (target: Rect) => View {
-  const scale = clamp(zoom ?? fitted(bounds, region), 1, MAX_ZOOM);
+  const asked = clamp(zoom ?? fitted(bounds, region), 1, MAX_ZOOM);
+  const free = framing(asked, region, pivot);
+  if (!card) return free;
+  const whole = wholeScale(card, bounds, region);
+  const loose = easeInOutCubic(seg(asked / whole, HOLD_BACK, CLOSE_UP));
+  if (loose >= 1) return free;
+  const held = framing(clamp(whole, 1, asked), region, pivot, card);
+  // Both views stay inside the region, and so does any blend of them: the view's room there only
+  // widens as its scale grows.
+  return loose <= 0 ? held : (target) => lerpView(held(target), free(target), loose);
+}
+
+/** A follow's framing at one `scale`, kept inside the region and, given a `card`, the card whole. */
+function framing(
+  scale: number,
+  region: Rect,
+  pivot: Point,
+  card?: FollowedCard,
+): (target: Rect) => View {
+  // The scale the push-in may reach, at which the card's bounds must still hold.
+  const most = scale * (1 + (card?.push ?? 0));
+  /** Where the view's center may go on one axis: inside the region, as `clampView` keeps it. */
+  const range = (regionStart: number, regionSize: number, p: number): [number, number] => [
+    regionStart + (p - regionStart) / scale,
+    regionStart + regionSize - (regionStart + regionSize - p) / scale,
+  ];
+  /** The same range narrowed to `[lo, hi]`, never past the region's. */
+  const within = ([a, b]: [number, number], lo: number, hi: number): [number, number] => {
+    const from = clamp(Math.max(a, lo), a, b);
+    return [from, clamp(Math.min(b, hi), from, b)];
+  };
+  let xs = range(region.x, region.width, pivot.x);
+  let ys = range(region.y, region.height, pivot.y);
+  if (card) {
+    const c = card.rect;
+    xs = within(xs, c.x + c.width - (card.width - pivot.x) / most, c.x + pivot.x / most);
+    ys = within(ys, Number.NEGATIVE_INFINITY, c.y + (pivot.y - region.y) / most);
+  }
   const axis = (
     start: number,
     size: number,
     regionStart: number,
     regionSize: number,
     p: number,
+    [lo, hi]: [number, number],
   ) => {
     const k = (regionSize / scale) * EASE_IN;
     // How far past its start the view centers on the target: its middle, or, once it outgrows the
     // view, where its start meets the region's.
-    const lead = (p - regionStart) / scale;
-    const focus = start + softMin(size / 2, lead, k);
-    const lo = regionStart + lead;
-    const hi = regionStart + regionSize - (regionStart + regionSize - p) / scale;
-    // Kept inside the region as `clampView` keeps it, each end rounded within at most half the
-    // room, so the two roundings never meet and the view never leaves the region.
+    const focus = start + softMin(size / 2, (p - regionStart) / scale, k);
+    // Kept inside its range as `clampView` keeps it inside the region, each end rounded within at
+    // most half the room, so the two roundings never meet and the view never leaves the range.
     const edge = Math.min(k, (hi - lo) / 2);
     return softMin(-softMin(-focus, -lo, edge), hi, edge);
   };
   return (target) => ({
-    x: axis(target.x, target.width, region.x, region.width, pivot.x),
-    y: axis(target.y, target.height, region.y, region.height, pivot.y),
+    x: axis(target.x, target.width, region.x, region.width, pivot.x, xs),
+    y: axis(target.y, target.height, region.y, region.height, pivot.y, ys),
     scale,
   });
 }
 
 /**
- * The view at `t` (seconds since the scene started): each beat eases from where the camera was
- * when it started, which is where the beat before it had got to by then. `steps` must be in time
- * order: the walk stops at the first step that has not started. A beat that follows a moving
- * target keeps up with it once it has eased in, until the next beat starts.
+ * The view at `t` (seconds since the scene started): each beat eases from the view the beats
+ * before it give at that same moment. So a beat that starts while another is still moving takes
+ * over from wherever that one has the camera, and the one before keeps moving underneath while
+ * this one eases in: the camera's speed carries over rather than dropping to rest. `steps` must
+ * be in time order: the walk stops at the first step that has not started. A beat that follows a
+ * moving target keeps up with it once it has eased in, until the next beat has eased in too.
  */
 export function viewAt(steps: readonly CameraStep[], t: number, rest: View): View {
   let view = rest;
-  for (const [i, step] of steps.entries()) {
+  for (const step of steps) {
     if (t < step.t) break;
-    const next = steps[i + 1];
-    const until = next && next.t < t ? next.t : t;
-    const to = typeof step.to === 'function' ? step.to(until) : step.to;
-    view = lerpView(
-      view,
-      to,
-      easeInOutCubic(clamp((until - step.t) / Math.max(step.seconds, 1e-6))),
-    );
+    const to = typeof step.to === 'function' ? step.to(t) : step.to;
+    view = lerpView(view, to, easeInOutCubic(clamp((t - step.t) / Math.max(step.seconds, 1e-6))));
   }
   return view;
 }
@@ -198,12 +252,16 @@ export function pullBack(a: Stop, b: Stop, region: Rect): number {
 
 /**
  * The camera `k` (0–1) of the way from one stop's view to the next's (world coordinates). A pan
- * glides; a zoom glides too while it pulls back to `back` at the middle and pushes in again.
+ * glides; a zoom glides too while it pulls back to `back` halfway there and pushes in again.
  */
 export function between(kind: CameraKind, from: View, to: View, k: number, back: number): View {
-  const view = lerpView(from, to, easeInOutCubic(clamp(k)));
+  const travel = easeInOutCubic(clamp(k));
+  const view = lerpView(from, to, travel);
   if (kind === 'pan') return view;
-  const dip = Math.sin(Math.PI * clamp(k)) ** 2;
+  // The dip follows the travel, not the clock: on the clock it would pull back while the camera
+  // has barely moved, sweeping the frame behind the stop it leaves. It pulls back in proportion
+  // to the travel from the start, so it never has to catch up where the travel is fastest.
+  const dip = 4 * travel * (1 - travel);
   return { ...view, scale: lerp(view.scale, back, dip) };
 }
 
@@ -228,6 +286,20 @@ export function drawnRect(rect: Rect, view: View, stop: Stop, pivot: Point): Rec
   };
 }
 
+/**
+ * A box drawn on screen through a stop-local `view`, back where the stop lays it out: what it
+ * covers when the camera is at rest. The inverse of `drawnRect`, which draws stop point p at
+ * pivot + scale · (p − view).
+ */
+export function unview(rect: Rect, view: View, pivot: Point): Rect {
+  return {
+    x: view.x + (rect.x - pivot.x) / view.scale,
+    y: view.y + (rect.y - pivot.y) / view.scale,
+    width: rect.width / view.scale,
+    height: rect.height / view.scale,
+  };
+}
+
 export function lerpRect(a: Rect, b: Rect, k: number): Rect {
   return {
     x: lerp(a.x, b.x, k),
@@ -241,6 +313,45 @@ export function lerpRect(a: Rect, b: Rect, k: number): Rect {
 export function insetOf(clip: Rect, width: number, height: number): string {
   const px = (n: number) => `${Math.max(0, n).toFixed(2)}px`;
   return `inset(${px(clip.y)} ${px(width - clip.x - clip.width)} ${px(height - clip.y - clip.height)} ${px(clip.x)})`;
+}
+
+/**
+ * A viewport clip feathered `feather` px past its top and bottom edges, as far as the frame
+ * allows: `clip-path` reaches that far, and a mask fades the picture out over the reach, so what
+ * passes out of the clip fades rather than being cut. The clip spans the frame's width, so its
+ * sides need none.
+ */
+export function featherOf(
+  clip: Rect,
+  feather: number,
+  width: number,
+  height: number,
+): { clip: string; mask: string } {
+  const bottom = clip.y + clip.height;
+  const above = Math.min(feather, clip.y);
+  const below = Math.min(feather, height - bottom);
+  const px = (n: number) => `${n.toFixed(2)}px`;
+  return {
+    clip: insetOf(
+      { ...clip, y: clip.y - above, height: clip.height + above + below },
+      width,
+      height,
+    ),
+    mask: `linear-gradient(to bottom, transparent ${px(clip.y - above)}, #000 ${px(clip.y)}, #000 ${px(bottom)}, transparent ${px(bottom + below)})`,
+  };
+}
+
+/**
+ * How closed (0–1) a stop's viewport must be for what `view` (stop-local) draws of its `region` to
+ * stay out of the captions, which start `room` px below the region: open while the region's foot is
+ * drawn less than half the room past it, closed once it is drawn the whole room past, when the band
+ * cuts it (feathered within the room). What a stop lays out lies inside its region, so until then
+ * nothing of it reaches the captions, however open the viewport is.
+ */
+export function captionsClosure(view: View, region: Rect, pivot: Point, room: number): number {
+  const foot = region.y + region.height;
+  const past = pivot.y + (foot - view.y) * view.scale - foot;
+  return room > 0 ? clamp((2 * past) / room - 1) : past > 0 ? 1 : 0;
 }
 
 /** The part of a box inside the clip, or nothing when none of it is. */

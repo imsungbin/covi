@@ -1,10 +1,26 @@
 // The score format agents write (`covi schema score`); the CLI reaches the audio package here.
 export { type Score, ScoreSchema } from '@covi/audio';
 export { buildCaptions, captionOptionsFor, chunkCaption, toSrt, toVtt } from './captions.ts';
+export {
+  BUSY_BEATS,
+  BUSY_MOVES,
+  type ChoreographyTimeline,
+  choreographyChecks,
+  droppedBeatsCheck,
+  emptyOpeningCheck,
+  motionBusyCheck,
+  motionGapCheck,
+  OVERLAP_SHARE,
+  outOfFrameCheck,
+  overlapCheck,
+  readingTimeCheck,
+  STILL_SECONDS,
+} from './choreography.ts';
 export { AssetCollector, fontFiles, writeComposition } from './composition/build.ts';
 export { imageSize } from './composition/images.ts';
 export { runtimeScript } from './composition/runtime-bundle.ts';
 export {
+  CARDS,
   type DensityTimeline,
   densityChecks,
   EMPTY_SHARE,
@@ -13,6 +29,7 @@ export {
   leadKind,
   MAX_RUN,
   monotonyCheck,
+  settledReports,
   TRANSITION_MIN,
   TRANSITION_SHARE,
   textSizeCheck,
@@ -34,6 +51,7 @@ export {
   type ShotElement,
 } from './direction/schema.ts';
 export { type DirectionSources, directionSources } from './direction/sources.ts';
+export { DRAFT_DIR, DRAFT_FPS, DRAFT_PATHS, DRAFT_SCALE, draftSpec } from './draft.ts';
 export {
   localeLanguage,
   normalizeSpeech,
@@ -88,6 +106,7 @@ export {
   canReuseFrames,
   type FramesRecord,
   framesKey,
+  posterFrame,
   type RenderOptions,
   type RenderResult,
   remuxAudio,
@@ -148,4 +167,6 @@ export {
   timelineLabels,
 } from './timeline/build.ts';
 export { buildCues, outroSettle } from './timeline/cues.ts';
+export { posterTime } from './timeline/motion.ts';
+export { MORPH_READING, READING, readingSeconds } from './timeline/reading.ts';
 export type * from './timeline/types.ts';

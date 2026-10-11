@@ -13,6 +13,7 @@ import {
   highlightStarts,
   interactionPointer,
   interactionTiming,
+  keptTokens,
   screenshotPointer,
   screenshotTiming,
   settledAt,
@@ -315,5 +316,19 @@ describe('phases move events to the words', () => {
       ['finding', +(11 + findingLanding(0)).toFixed(6)],
       ['finding', +(11 + findingLanding(1, { finding2: 3 })).toFixed(6)],
     ]);
+  });
+});
+
+describe('a morph’s kept tokens', () => {
+  it('are keyed on each side by that side’s row and token, so a token that changes rows matches', () => {
+    // The base's row 0, token 2 travels to the head's row 1, token 0; row 3's token 1 stays put.
+    const kept = keptTokens({
+      tokens: [
+        [0, 2, 1, 0],
+        [3, 1, 3, 1],
+      ],
+    });
+    expect([...kept.base]).toEqual(['0:2', '3:1']);
+    expect([...kept.head]).toEqual(['1:0', '3:1']);
   });
 });

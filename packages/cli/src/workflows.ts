@@ -67,6 +67,8 @@ import {
 } from '@covi/core';
 import type { PlatformContext } from '@covi/platforms';
 import {
+  DIRECTION_PATH,
+  DRAFT_PATHS,
   decideVideo,
   Media,
   type ProduceVideoResult,
@@ -138,6 +140,15 @@ export interface WorkflowResult {
     music?: { use: string; source: string; hint?: string };
     /** Only the sound changed, so the rendered frames were kept. */
     framesReused?: boolean;
+    /** `covi render --draft`: a preview in `video/draft/`; the video itself was not rendered. */
+    draft?: {
+      path: string;
+      seconds?: number;
+      qc?: string;
+      width: number;
+      height: number;
+      fps: number;
+    };
   };
   warnings: string[];
   message?: string;
@@ -973,6 +984,36 @@ export async function applyVideoResult(
     };
     return;
   }
+  if (produced.draft && produced.video) {
+    const { width, height, fps } = produced.draft;
+    result.video = {
+      rendered: false,
+      reason: `Draft rendered at ${width}×${height}, ${fps} fps: open ${DRAFT_PATHS.contactSheet} and ${DRAFT_PATHS.poster}, read ${DRAFT_PATHS.qc}, revise ${DIRECTION_PATH}, then run \`covi render --run ${session.run.id}\` for the video.`,
+      draft: {
+        path: produced.video,
+        seconds: produced.duration,
+        qc: produced.qc?.status,
+        width,
+        height,
+        fps,
+      },
+    };
+    for (const [name, rel] of Object.entries({
+      draftPreview: DRAFT_PATHS.preview,
+      draftPoster: DRAFT_PATHS.poster,
+      draftContactSheet: DRAFT_PATHS.contactSheet,
+      draftQc: DRAFT_PATHS.qc,
+      draftTimeline: DRAFT_PATHS.timeline,
+    }))
+      if (await session.run.has(rel)) artifact(session, result, name, rel);
+    // Ids only: the messages quote what the agent wrote, which reaches only qc.json and the log.
+    const flagged = (produced.qc?.checks ?? []).filter((c) => c.status !== 'pass');
+    if (produced.qc && flagged.length)
+      result.warnings.push(
+        `Draft QC ${produced.qc.status}: ${flagged.map((c) => c.id).join(', ')}; see ${DRAFT_PATHS.qc}.`,
+      );
+    return;
+  }
   result.video = {
     rendered: Boolean(produced.video),
     reason: produced.narration.enabled
@@ -1021,6 +1062,8 @@ export async function renderWorkflow(
     workers?: number;
     /** Nobody chose the music, at draft time or now: the result says how to change it. */
     musicDefault?: boolean;
+    /** `--draft`: a fast preview into `video/draft/` instead of the video. */
+    draft?: boolean;
   },
 ): Promise<WorkflowResult> {
   const result = baseResult('render', session);
@@ -1048,7 +1091,10 @@ export async function renderWorkflow(
   const demo = (await run.has(DEMO_PATHS.captures))
     ? await run.readJson<Demonstration>(DEMO_PATHS.captures)
     : undefined;
-  const produced = await run.stage('video', () =>
+  // What the run held before this command opened it: the warnings of the renders before.
+  const known = session.warningsAtOpen ?? run.manifest.warnings.length;
+  // A draft is not the video: its stage, and a failure in it, are recorded as a draft.
+  const produced = await run.stage(options.draft ? 'draft' : 'video', () =>
     produceVideo({
       run,
       change,
@@ -1078,8 +1124,12 @@ export async function renderWorkflow(
       evidence,
       subject: () => loadSubjectSnapshot(run),
       direction: session.config.video.direction,
+      draftRender: options.draft,
     }),
   );
+  // A draft's result says what this command raised, never what the renders before it warned about:
+  // the run keeps those for the video (`finish` leaves them out of a draft's result).
+  if (produced.draft) result.warnings.push(...run.manifest.warnings.slice(known));
   await applyVideoResult(session, result, produced, { musicDefault: options.musicDefault });
   return result;
 }

@@ -256,10 +256,13 @@ Renders, or re-renders, a run's storyboard into a video. It uses the run's expla
 | `--run <id>` | Run id, run directory, or `latest` (default). |
 | `--storyboard <file>` | Storyboard to render. Default: `video/storyboard.json` in the run. |
 | `--workers <n>` | Parallel render workers, 1–64. |
+| `--draft` | Render a fast draft into `video/draft/` instead of the video: half size, at most 15 fps, the voice alone, with its own poster and contact sheet. The video's own files and the run's outcome are left as they are. See [Draft renders](video.md#draft-renders). |
 
 Plus video options. Without a storyboard, it exits 2 and suggests `covi video --draft`.
 
 `covi render` keeps the settings chosen when the storyboard was drafted (the spec in `video/decision.json`, music, its placement, and the outro included), so `covi video --standard --draft` followed by `covi render` renders a standard video. Video flags change those settings; a different mode also resets the size, length, and style that came with the old one. Rendering updates only the video part of the run's outcome in `run.json`.
+
+With `--draft`, `covi render` checks the storyboard and the direction exactly as a render does (a direction that does not fit the run exits 2 and writes no draft), then writes `video/draft/preview.mp4`, `poster.png`, `contact-sheet.jpg`, `qc.json`, and `timeline.json`. The result has `video.rendered: false` and a `video.draft` object (`path`, `seconds`, `qc`, `width`, `height`, `fps`), and its artifacts are `draftPreview`, `draftPoster`, `draftContactSheet`, `draftQc`, and `draftTimeline`. `run.json` records a `draft` stage (a refused draft fails it, not the `video` stage) and keeps the run's outcome as it was. When a check does not pass, the result's warnings say `Draft QC <status>: <ids>; see video/draft/qc.json.`, and the log has each check's message; none of the draft's warnings, nor the beats its direction left out, become the run's warnings. (`covi video --draft` is different: it writes the storyboard and direction drafts and stops.)
 
 `covi render` also reads the run's `video/direction.json` unless `video.direction` is `off`; an agent's direction that does not fit the storyboard or the evidence exits 2 with every problem listed. The direction mode itself is not kept from the draft: pass `--direction off` (or set `video.direction`) at each command. The result lists the direction as `artifacts.direction`.
 

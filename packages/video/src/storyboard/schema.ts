@@ -29,6 +29,21 @@ const FocusSchema = z
 /** Images are paths relative to the run directory (e.g. `demo/screenshots/home-after.png`). */
 const ImageRefSchema = z.strictObject({ path: z.string().min(1), label: z.string().optional() });
 
+/**
+ * The most characters a code line holds. Highlighting rescans the rest of a line from every quote
+ * or block comment that does not close on it, so a long line costs its length squared, again on
+ * each frame a morph types it in; a card shows far fewer characters than this (Covi cuts its own
+ * lines at 96).
+ */
+export const CODE_LINE_CHARS = 500;
+
+/** An API body: its lines are highlighted as code lines are, so each is bounded the same way. */
+const ApiBodySchema = z
+  .string()
+  .refine((body) => body.split('\n').every((line) => line.length <= CODE_LINE_CHARS), {
+    message: `an API body line is at most ${CODE_LINE_CHARS} characters; cut a longer one (a minified response) to the part the scene is about`,
+  });
+
 /** A phase name, as `sync` keys are written (bounded: names are untrusted input). */
 const PhaseNameSchema = z
   .string()
@@ -118,7 +133,12 @@ export const VisualSchema = z.discriminatedUnion('kind', [
       .array(
         z.strictObject({
           type: z.enum(['add', 'del', 'context']),
-          text: z.string(),
+          text: z
+            .string()
+            .max(
+              CODE_LINE_CHARS,
+              `a code line is at most ${CODE_LINE_CHARS} characters; cut a longer one (a minified line, a long string) to the part the scene is about`,
+            ),
           number: z
             .number()
             .int()
@@ -203,8 +223,8 @@ export const VisualSchema = z.discriminatedUnion('kind', [
     kind: z.literal('api'),
     method: z.string().default('GET'),
     path: z.string(),
-    before: z.strictObject({ status: z.number().int(), body: z.string() }).optional(),
-    after: z.strictObject({ status: z.number().int(), body: z.string() }),
+    before: z.strictObject({ status: z.number().int(), body: ApiBodySchema }).optional(),
+    after: z.strictObject({ status: z.number().int(), body: ApiBodySchema }),
   }),
   z.strictObject({
     kind: z.literal('findings'),

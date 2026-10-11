@@ -17,6 +17,7 @@ import {
   type LayoutReport,
   layoutChecks,
   layoutScenes,
+  outOfFrameCheck,
   pacingFor,
   type Rect,
   resolveVideoSpec,
@@ -36,7 +37,7 @@ import {
 import { resolveDirection } from '../../packages/video/src/direction/resolve.ts';
 import { type DirectionInput, DirectionSchema } from '../../packages/video/src/direction/schema.ts';
 import { directionSources, type SourcesInput } from '../../packages/video/src/direction/sources.ts';
-import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
+import { clearance, computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import {
   settledFrame,
   settledSpan,
@@ -76,6 +77,7 @@ interface Drawn {
   opacity: string;
   transform: string | null;
   clip: string | null;
+  mask: string | null;
   header: string | null;
 }
 
@@ -89,10 +91,10 @@ function camera(transform: string | null) {
 const insetTop = (clip: string | null) => Number(/inset\(([\d.]+)px/.exec(clip ?? '')![1]);
 
 /**
- * Builds a directed 640×360 composition the way the pipeline does (default director, the given
- * shots over it, entrances, timing, resolution) and opens it. `off` builds it as 0.2.0 did;
- * `language` is the narration's; `edit` changes the timeline before it is written; `capture` puts
- * a 640×400 capture at demo/a.png.
+ * Builds a directed composition (640×360 unless `size` says otherwise) the way the pipeline does
+ * (default director, the given shots over it, entrances, timing, resolution) and opens it. `off`
+ * builds it as 0.2.0 did; `language` is the narration's; `edit` changes the timeline before it is
+ * written; `capture` puts a 640×400 capture at demo/a.png.
  */
 async function directed(
   scenes: StoryboardInput['scenes'],
@@ -103,8 +105,10 @@ async function directed(
     sources?: SourcesInput;
     edit?: (timeline: Timeline) => void;
     capture?: boolean;
+    size?: { width: number; height: number };
   } = {},
 ) {
+  const size = options.size ?? { width: W, height: H };
   const dir = mkdtempSync(join(tmpdir(), 'covi-canvas-'));
   dirs.push(dir);
   if (options.capture) {
@@ -116,7 +120,7 @@ async function directed(
     await capture.screenshot({ path: join(dir, 'demo', 'a.png') });
     await capture.close();
   }
-  const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', width: W, height: H });
+  const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', ...size });
   const title = 'Send only the ids';
   const parsed = StoryboardSchema.parse({ title, template: 'bug-fix', scenes }).scenes;
   const seed = seedFrom(title);
@@ -159,7 +163,7 @@ async function directed(
   options.edit?.(timeline);
   const composition = join(dir, 'composition');
   await writeComposition(composition, timeline, assets.files);
-  const page = await browser!.newPage({ viewport: { width: W, height: H } });
+  const page = await browser!.newPage({ viewport: size });
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`file://${join(composition, 'index.html')}`);
@@ -179,6 +183,7 @@ async function directed(
          opacity: s.style.opacity,
          transform: s.querySelector(':scope > .stop-view > .layer')?.style.transform ?? null,
          clip: s.querySelector(':scope > .stop-view')?.style.clipPath ?? null,
+         mask: s.querySelector(':scope > .stop-view')?.style.maskImage ?? null,
          header: s.querySelector(':scope > .scene-header')?.style.opacity ?? null,
        }));`,
     ) as Promise<Drawn[]>;
@@ -351,6 +356,40 @@ describe.skipIf(!available)('the canvas', () => {
     expect(travelling.size).toBe(3);
   });
 
+  it('carries the dots on from a drifting capture across an entrance that does not travel', async () => {
+    const page = {
+      id: 's2',
+      beat: 'problem',
+      eyebrow: 'The page',
+      narration: 'The page waited for every document to arrive.',
+      visual: { kind: 'screenshot', image: { path: 'demo/a.png' }, device: 'desktop' },
+    } satisfies StoryboardInput['scenes'][number];
+    const fade: DirectionInput['shots'] = [
+      { scene: 's2', enter: 'pan', elements: [{ id: 'visual', kind: 'visual' }] },
+      { scene: 's3', enter: 'fade', elements: [{ id: 'visual', kind: 'visual' }] },
+    ];
+    const v = await directed([story[0]!, page, story[2]!, story[3]!], fade, { capture: true });
+    expect(v.scene('s3').transition!.kind).toBe('fade');
+    const at = (position: string) => position.split(' ').map((p) => Number.parseFloat(p));
+    const seen: Array<{ position: number[]; size: number }> = [];
+    for (let frame = v.frameAt('s3', -0.3); frame <= v.frameAt('s3', 0.8); frame++) {
+      const g = (await v.grid(frame))!;
+      seen.push({ position: at(g.position), size: Number.parseFloat(g.size) });
+    }
+    // The capture has drifted in 2% by its end, and the code starts at rest: the dots get there
+    // over the fade, never by a jump (a position is a remainder of the dot spacing, so it wraps).
+    expect(seen[0]!.size).toBeGreaterThan(seen.at(-1)!.size * 1.015);
+    for (const [k, now] of seen.entries()) {
+      if (k === 0) continue;
+      const was = seen[k - 1]!;
+      expect(Math.abs(now.size - was.size)).toBeLessThan(0.1);
+      for (const axis of [0, 1]) {
+        const d = Math.abs(now.position[axis]! - was.position[axis]!) % now.size;
+        expect(Math.min(d, now.size - d)).toBeLessThan(1);
+      }
+    }
+  });
+
   it('is deterministic: the same timeline renders the same frame bytes', async () => {
     const [a, b] = [await directed(story, moves), await directed(story, moves)];
     for (const [id, seconds] of [
@@ -466,6 +505,45 @@ describe.skipIf(!available)('the canvas', () => {
     }
   });
 
+  it('feathers the clip’s top and bottom edges while it is closed, and masks nothing at rest', async () => {
+    for (const size of [
+      { width: W, height: H },
+      { width: H, height: W },
+    ]) {
+      const v = await directed(story, moves, { size });
+      const name = `${size.width}×${size.height}`;
+      const r = computeRegions({
+        ...size,
+        orientation: size.width > size.height ? 'landscape' : 'vertical',
+      });
+      const beat = v.scene('s3').direction!.beats[0]!;
+      const at = async (id: string, seconds: number) =>
+        v.of(await v.state(v.frameAt(id, seconds)), id);
+      for (const [id, seconds] of [
+        ['s2', 1],
+        ['s3', 1.2],
+      ] as const) {
+        const rest = await at(id, seconds);
+        expect([rest.clip, rest.mask], name).toEqual(['', '']);
+      }
+      // Mid-move and while a beat magnifies the stop, the picture fades out past the clip's edges.
+      expect((await at('s3', 0.45)).mask, name).toContain('linear-gradient');
+      const zoomed = await at('s3', beat.t + beat.seconds + 0.1);
+      const stops = [...(zoomed.mask ?? '').matchAll(/(-?[\d.]+)px/g)].map((m) => Number(m[1]));
+      // The region's rows are drawn whole; the fade fills the room the layout leaves above and
+      // below them (16 units at 16:9, 36 at 9:16), so a card passing under the header fades away,
+      // and it never reaches the header or the captions.
+      const m = r.media;
+      const feather = clearance(r);
+      expect(stops, name).toHaveLength(4);
+      for (const [k, y] of [m.y - feather, m.y, m.y + m.height, m.y + m.height + feather].entries())
+        expect(stops[k], name).toBeCloseTo(y, 1);
+      expect(insetTop(zoomed.clip), name).toBeCloseTo(m.y - feather, 1);
+      expect(stops[0], name).toBeGreaterThanOrEqual(r.header.y + r.header.height - 0.5);
+      expect(stops[3], name).toBeLessThanOrEqual(r.captions.y + 0.5);
+    }
+  });
+
   it('hands the header over across a camera move: two are never on screen at once', async () => {
     const pan = moves.map((s) => (s.scene === 's3' ? { ...s, enter: 'pan' as const } : s));
     for (const shots of [moves, pan]) {
@@ -494,6 +572,24 @@ describe.skipIf(!available)('the canvas', () => {
       );
       expect(Number(eyebrow)).toBeCloseTo(1, 2);
     }
+  });
+
+  it('brings a header in with its scene after a card without one, and after the old one otherwise', async () => {
+    const v = await directed(story, moves);
+    const header = async (id: string, seconds: number) =>
+      (await v.seek(
+        v.frameAt(id, seconds),
+        `return [...document.querySelector('[data-scene="${id}"] > .scene-header').children]
+           .map((c) => Number.parseFloat(c.style.opacity));`,
+      )) as number[];
+    // The title card has no header to make way for: the callout's comes in as the camera sets off.
+    expect(v.scene('s1').visual.kind).toBe('title');
+    expect((await header('s2', 0.45))[0]).toBeCloseTo(1, 2);
+    for (const opacity of await header('s2', 0.6)) expect(opacity).toBeCloseTo(1, 2);
+    // The callout's own header goes over the zoom's first 40% before the code's comes in.
+    const lead = 0.4 * v.scene('s3').transition!.seconds;
+    expect((await header('s3', lead))[0]).toBeLessThan(0.05);
+    expect((await header('s3', lead + 0.45))[0]).toBeCloseTo(1, 2);
   });
 
   it('eases the narrator in from a card with its own fox, and out into one', async () => {
@@ -1006,5 +1102,117 @@ describe.skipIf(!available)('a shot’s elements', () => {
     expect(ring.opacity).toBeGreaterThan(0.05);
     expect(Math.abs(ring.x - pivot.x)).toBeLessThan(1);
     expect(Math.abs(ring.y - pivot.y)).toBeLessThan(1);
+  });
+});
+
+describe.skipIf(!available)('a shot reported to QC', () => {
+  it('reports each element where its stop lays it out, whatever the camera does', async () => {
+    const v = await directed(
+      story,
+      [
+        {
+          scene: 's3',
+          layout: 'row',
+          elements,
+          beats: [{ verb: 'camera', move: 'zoom', to: 'note', at: 'and nothing else' }],
+        },
+      ],
+      { sources: run },
+    );
+    const s3 = v.scene('s3');
+    const beat = s3.direction!.beats.find((b) => b.verb === 'camera')!;
+    const zoomed = v.frameAt('s3', beat.t + beat.seconds + 0.1);
+    expect(camera(v.of(await v.state(zoomed), 's3').transform).scale).toBeGreaterThan(1.5);
+    const before = (await v.report(v.frameAt('s3', beat.t - 0.05))).shot!;
+    const after = (await v.report(zoomed)).shot!;
+    expect(after.region).toEqual(regions.media);
+    expect(after.elements.map((e) => e.id)).toEqual(['req', 'note', 'out']);
+    for (const [i, e] of after.elements.entries()) {
+      // The zoom and the push-in are undone: the same box before and after the camera moved.
+      const was = before.elements[i]!.rect;
+      for (const k of ['x', 'y', 'width', 'height'] as const)
+        expect(Math.abs(e.rect[k] - was[k]), `${e.id} ${k}`).toBeLessThan(0.5);
+      // Inside its own slot.
+      const slot = s3.direction!.elements.find((x) => x.id === e.id)!.rect;
+      expect(e.rect.x, e.id).toBeGreaterThanOrEqual(slot.x - 0.5);
+      expect(e.rect.x + e.rect.width, e.id).toBeLessThanOrEqual(slot.x + slot.width + 0.5);
+    }
+    // A storyboard visual shown alone is drawn as without direction: no shot to report.
+    expect((await v.report(v.frameAt('s2', 1.5))).shot).toBeUndefined();
+  });
+
+  it('fails a label pushed past the frame, and passes it where the layout put it', async () => {
+    const single: DirectionInput['shots'] = [
+      { scene: 's3', elements: [{ id: 'note', kind: 'label', text: 'Much smaller' }] },
+    ];
+    const check = async (v: Awaited<ReturnType<typeof directed>>) => {
+      const index = v.timeline.scenes.findIndex((s) => s.id === 's3');
+      return outOfFrameCheck(v.timeline, [await v.report(settledFrame(v.timeline, index)!)]);
+    };
+    expect((await check(await directed(story, single))).status).toBe('pass');
+    const pushed = await directed(story, single, {
+      edit: (timeline) => {
+        const note = timeline.scenes.find((s) => s.id === 's3')!.direction!.elements[0]!;
+        note.rect = { ...note.rect, x: note.rect.x + 0.6 * note.rect.width };
+      },
+    });
+    const failed = await check(pushed);
+    expect(failed.status).toBe('fail');
+    expect(failed.message).toContain('"note" in s3');
+  });
+});
+
+describe.skipIf(!available)('what a scene visibly draws', () => {
+  it('leaves out an element still to come, and counts it once it is in', async () => {
+    const v = await directed(
+      story,
+      [
+        {
+          scene: 's3',
+          layout: 'row',
+          elements,
+          beats: [{ verb: 'reveal', element: 'out', style: 'rise', at: 'and nothing else' }],
+        },
+      ],
+      { sources: run },
+    );
+    const s3 = v.scene('s3');
+    const reveal = s3.direction!.beats.find((b) => b.verb === 'reveal')!;
+    const slot = s3.direction!.elements.find((e) => e.id === 'out')!.rect;
+    const right = (r: { x: number; width: number }) => r.x + r.width;
+    const before = (await v.report(v.frameAt('s3', reveal.t - 0.1))).content!;
+    const after = (await v.report(v.frameAt('s3', reveal.t + reveal.seconds + 0.1))).content!;
+    // Its slot is laid out from the start, but nothing of it is drawn before its reveal.
+    expect(right(before)).toBeLessThan(slot.x);
+    expect(right(after)).toBeGreaterThan(slot.x + slot.width / 2);
+    for (const box of [before, after]) {
+      expect(box.x).toBeGreaterThanOrEqual(regions.media.x - 0.5);
+      expect(right(box)).toBeLessThanOrEqual(right(regions.media) + 0.5);
+    }
+  });
+
+  it('reports a card’s parts to the layout checks only once they are drawn', async () => {
+    const terminal = {
+      kind: 'terminal',
+      command: 'node scripts/measure.js',
+      before: 'request bytes: 70406',
+      output: 'request bytes: 9907',
+    } as const;
+    const v = await directed(
+      story.map((s) => (s.id === 's3' ? { ...s, visual: terminal } : s)),
+      [],
+      { off: true },
+    );
+    const s3 = v.scene('s3');
+    const media = async (t: number) =>
+      (await v.report(v.frameAt('s3', t))).items.filter((i) => i.role === 'media');
+    // The after run rises 42% of the way in, laid out from the start: until then the captions
+    // cannot cover it, so it is not reported.
+    expect(await media(1)).toHaveLength(1);
+    expect(await media(s3.end - s3.start - 0.6)).toHaveLength(2);
+    // Partway through its rise, still faint and short of its place, it is drawn, so reported.
+    const rises = Math.max(1.4, (s3.end - s3.start) * 0.42) - 0.2;
+    expect(await media(rises - 0.05)).toHaveLength(1);
+    expect(await media(rises + 0.1)).toHaveLength(2);
   });
 });

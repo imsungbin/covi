@@ -16,6 +16,7 @@ import {
 import { el, fitText, place, svg } from '../dom.ts';
 import { type CountSpan, formatNumber } from '../numbers.ts';
 import {
+  ARROW_HEAD,
   arrowHead,
   edgeRoute,
   type Fan,
@@ -219,7 +220,7 @@ export function mountFlows(
       const head = svg(
         'polygon',
         {
-          points: arrowHead(route, ctx.u(18))
+          points: arrowHead(route, ctx.u(ARROW_HEAD))
             .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
             .join(' '),
           fill: color,

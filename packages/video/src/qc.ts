@@ -1,6 +1,12 @@
 import { EFFECTS_UNDER_VOICE_DB, MUSIC_JUMP_DB } from '@covi/audio';
 import { LANGUAGE_NAME } from '@covi/core';
-import { densityChecks } from './density.ts';
+import {
+  choreographyChecks,
+  onlyCameraMoves,
+  STILL_SECONDS,
+  spokenStills,
+} from './choreography.ts';
+import { densityChecks, listed } from './density.ts';
 import { localeLanguage, type SpeechRecord, unspokenAcronyms } from './narration/speech.ts';
 import { suggestedVoice } from './narration/tts.ts';
 import type { Media } from './render/ffmpeg.ts';
@@ -160,8 +166,8 @@ export function durationCheck(seconds: number, window: VideoSpec['duration']): Q
   };
 }
 
-/** How long the picture may freeze under narration before the scene reads as a slide (s). */
-export const STILL_SECONDS = 1.5;
+// One rule for frozen pixels and the timeline's planned stills: `motion-gap` keeps the value.
+export { STILL_SECONDS };
 /** ffmpeg freezedetect's noise tolerance: −60 dB, its default. A 2% drift is never frozen. */
 export const STILL_NOISE = 0.001;
 
@@ -200,41 +206,34 @@ export function mediaCrop(timeline: Pick<Timeline, 'width' | 'height' | 'orienta
 
 /**
  * The picture keeps moving while the narration speaks: a freeze of the media region that covers
- * 1.5 s or more of the lines (summed over the lines it spans) is a still, named by its scene.
+ * 1.5 s or more of the lines (summed over the lines it spans) is a still, named by its scene, and
+ * said to be a stretch the plan moved only with the camera's slow push-in when it was. Pinning a
+ * beat is advised only for a scene with a direction, which has beats.
  */
 export function stillCheck(
-  timeline: Pick<Timeline, 'scenes'>,
+  timeline: Pick<Timeline, 'scenes' | 'transition'>,
   freezes: readonly Freeze[],
 ): QcCheck {
-  const stills: Array<{ scene: string; seconds: number; at: number }> = [];
-  for (const f of freezes) {
-    let spoken = 0;
-    let scene: string | undefined;
-    for (const s of storyScenes(timeline.scenes)) {
-      if (!s.speech) continue;
-      const overlap = Math.min(f.end, s.speech.end) - Math.max(f.start, s.speech.start);
-      if (overlap <= 0) continue;
-      spoken += overlap;
-      scene ??= s.id;
-    }
-    if (scene && spoken >= STILL_SECONDS - 1e-6)
-      stills.push({ scene, seconds: spoken, at: f.start });
-  }
+  const stills = spokenStills(timeline, freezes);
   if (!stills.length)
     return {
       id: 'still',
       status: 'pass',
       message: 'The picture keeps moving while the narration speaks.',
     };
+  const named = stills.map(
+    (s) =>
+      `${s.scene} (${s.seconds.toFixed(1)} s from ${s.at.toFixed(1)} s)${
+        // The plan moved only the camera there, and too slowly to see.
+        onlyCameraMoves(timeline, s) ? ", where only the camera's slow push-in moves" : ''
+      }`,
+  );
+  // Only a scene with a direction has beats to pin.
+  const directed = stills.some((s) => timeline.scenes.find((c) => c.id === s.scene)?.direction);
   return {
     id: 'still',
     status: 'warn',
-    message: `The picture holds still while the narration continues in ${stills
-      .slice(0, 3)
-      .map((s) => `${s.scene} (${s.seconds.toFixed(1)} s from ${s.at.toFixed(1)} s)`)
-      .join(
-        ', ',
-      )}${stills.length > 3 ? ', …' : ''}. Split the scene, sync its visual to the line, or let the camera drift.`,
+    message: `The picture holds still while the narration continues in ${listed(named)}. Split the scene, sync its visual to the line, ${directed ? 'pin a beat to a phrase there, ' : ''}or let the camera drift.`,
   };
 }
 
@@ -246,7 +245,7 @@ export function stillCheck(
 export async function measureStill(
   media: Pick<Media, 'analyze'>,
   video: string,
-  timeline: Pick<Timeline, 'scenes' | 'width' | 'height' | 'orientation'>,
+  timeline: Pick<Timeline, 'scenes' | 'transition' | 'width' | 'height' | 'orientation'>,
   duration: number,
 ): Promise<QcCheck> {
   let frozen: string;
@@ -558,7 +557,7 @@ function musicAudibleCheck(record: AudioRecord): QcCheck {
   };
 }
 
-function intersects(a: Rect, b: Rect, tolerance = 2): boolean {
+function intersects(a: Rect, b: Rect, tolerance: number): boolean {
   return (
     a.x + tolerance < b.x + b.width &&
     b.x + tolerance < a.x + a.width &&
@@ -567,7 +566,7 @@ function intersects(a: Rect, b: Rect, tolerance = 2): boolean {
   );
 }
 
-function within(inner: Rect, outer: Rect, tolerance = 4): boolean {
+function within(inner: Rect, outer: Rect, tolerance: number): boolean {
   return (
     inner.x >= outer.x - tolerance &&
     inner.y >= outer.y - tolerance &&
@@ -581,6 +580,10 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
   const checks: QcCheck[] = [];
   const frame = { x: 0, y: 0, width: timeline.width, height: timeline.height };
   const regions = computeRegions(timeline);
+  // A couple of pixels at 1080p are forgiven, in design units: a frame drawn smaller (a draft, at
+  // half size) gets the video's verdict.
+  const overlaps = (a: Rect, b: Rect) => intersects(a, b, 2 * regions.unit);
+  const fits = (inner: Rect, outer: Rect) => within(inner, outer, 4 * regions.unit);
   const covered: string[] = [];
   const outside: number[] = [];
   const spilled: number[] = [];
@@ -594,10 +597,10 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
     imagesLoaded &&= report.imagesLoaded;
     for (const family of report.fontsFailed ?? []) fontsFailed.add(family);
     if (report.captions) {
-      if (!within(report.captions, frame)) outside.push(report.frame);
+      if (!fits(report.captions, frame)) outside.push(report.frame);
       if (report.captionOverflow) spilled.push(report.frame);
       for (const item of report.items) {
-        if (item.role !== 'text' && intersects(report.captions, item.rect))
+        if (item.role !== 'text' && overlaps(report.captions, item.rect))
           covered.push(`${report.scene ?? '?'}@${report.frame}`);
       }
     }
@@ -606,7 +609,7 @@ export function layoutChecks(timeline: Timeline, layouts: readonly LayoutReport[
     // The fox's real shapes: its tail can reach past its box, but only into empty space.
     const fox = report.narratorParts ?? (report.narrator ? [report.narrator] : []);
     const covers = (rects: readonly Rect[], what: string) => {
-      if (fox.some((part) => rects.some((rect) => intersects(part, rect)))) {
+      if (fox.some((part) => rects.some((rect) => overlaps(part, rect)))) {
         const scenes = narratorOverlap.get(what) ?? new Set<string>();
         scenes.add(report.scene ?? '?');
         narratorOverlap.set(what, scenes);
@@ -919,6 +922,7 @@ export async function runQc(input: QcInput): Promise<QcReport> {
   checks.push(
     ...layoutChecks(input.timeline, input.layouts),
     ...densityChecks(input.timeline, input.layouts),
+    ...choreographyChecks(input.timeline, input.layouts),
     ...timingChecks(input.timeline, input.speech),
     ...speechChecks(input.speech),
   );

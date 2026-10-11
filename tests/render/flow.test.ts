@@ -9,7 +9,11 @@ import {
   defaultDirection,
   directionSources,
   type LayoutReport,
+  layoutChecks,
   layoutScenes,
+  OVERLAP_SHARE,
+  outOfFrameCheck,
+  overlapCheck,
   pacingFor,
   type Rect,
   resolveDirection,
@@ -24,9 +28,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { elementSlots } from '../../packages/video/src/direction/layout.ts';
 import { computeRegions } from '../../packages/video/src/runtime/layout.ts';
 import {
+  EDGE_MIN,
   edgeRoute,
   PILE_ITEM_MIN,
   pointAlong,
+  routeLength,
   splitLayout,
   stackCount,
   stackRows,
@@ -192,7 +198,9 @@ type Staged = Awaited<ReturnType<typeof staged>>;
 interface Drawn {
   /** Drawn boxes by selector, in screen pixels; the visible ones only for pieces and items. */
   nodes: Record<string, Rect>;
-  packet: (Rect & { opacity: number; label: string | null; children: number }) | null;
+  packet:
+    | (Rect & { opacity: number; label: string | null; labelOpacity: number; children: number })
+    | null;
   pieces: Rect[];
   badges: Array<{ opacity: number; side: string; name: string; num: string; children: number }>;
   /** The count captions on screen. */
@@ -241,7 +249,7 @@ const read = (v: Staged, frame: number) =>
      const dot = scene.querySelector('.fdot');
      return {
        nodes,
-       packet: pill ? { ...box(pill), opacity: op(pill), label: pill.querySelector('.nlabel')?.textContent ?? null, children: pill.querySelector('.nlabel')?.children.length ?? 0 } : null,
+       packet: pill ? { ...box(pill), opacity: op(pill), label: pill.querySelector('.nlabel')?.textContent ?? null, labelOpacity: pill.querySelector('.nlabel') ? op(pill.querySelector('.nlabel')) : 0, children: pill.querySelector('.nlabel')?.children.length ?? 0 } : null,
        pieces: [...scene.querySelectorAll('.fpiece')].filter((n) => op(n) > 0).map(box),
        badges: [...scene.querySelectorAll('.fbadge')].map((badge) => ({ opacity: op(badge), side: badge.querySelector('.fside').textContent,
          name: badge.querySelector('.fname').textContent, num: badge.querySelector('.fnum').textContent, children: badge.querySelector('.fname').children.length })),
@@ -291,6 +299,22 @@ describe.skipIf(!available)('packets on edges', () => {
     const after = await read(v, v.frameAt(FLOW.t + FLOW.seconds + 0.3));
     expect(near(center(after.packet!), route(after).at(-1)!)).toBeLessThan(1.5);
     expect(after.edge).toMatchObject({ offset: 0, head: 1 });
+    expect(v.errors).toEqual([]);
+  });
+
+  it('rests on the node its trip ends at where QC reads it, which is no collision', async () => {
+    const v = await staged(twoNodes(true), [FLOW]);
+    const index = v.timeline.scenes.findIndex((s) => s.id === 's2');
+    const report = await v.report(settledFrame(v.timeline, index)!);
+    const at = new Map(report.shot!.elements.map((e) => [e.id, e.rect]));
+    const [b, p] = [at.get('b')!, at.get('p')!];
+    // Half the pill lies over the node's side: between any other two elements, a collision.
+    const w = Math.min(b.x + b.width, p.x + p.width) - Math.max(b.x, p.x);
+    const h = Math.min(b.y + b.height, p.y + p.height) - Math.max(b.y, p.y);
+    expect((w * h) / (p.width * p.height)).toBeGreaterThan(10 * OVERLAP_SHARE);
+    expect(overlapCheck(v.timeline, [report])).toMatchObject({ status: 'pass' });
+    expect(overlapCheck(v.timeline, [report]).message).not.toContain('No shot');
+    expect(outOfFrameCheck(v.timeline, [report]).status).toBe('pass');
     expect(v.errors).toEqual([]);
   });
 
@@ -344,6 +368,23 @@ describe.skipIf(!available)('packets on edges', () => {
   });
 });
 
+describe.skipIf(!available)('a packet’s layout report', () => {
+  it('keeps a label squeezed to no width, so the words it cannot hold still count as cut', async () => {
+    const v = await staged(
+      (r) => [{ id: 'q', kind: 'packet', rect: { ...r.media, width: 0 }, label: 'chunks' }],
+      [],
+    );
+    const report = await v.report(v.frameAt(2));
+    // Nothing drawn can overlap a box with no area, which would leave it out at every frame.
+    const label = report.items.find((i) => i.role === 'text');
+    expect(label?.rect.width).toBe(0);
+    expect(label?.overflow).toBe(true);
+    expect(layoutChecks(v.timeline, [report]).find((c) => c.id === 'text-fits')!.status).toBe(
+      'warn',
+    );
+  });
+});
+
 describe.skipIf(!available)('splits and merges', () => {
   it('breaks a packet into as many pieces as its count, with the true count under them', async () => {
     const v = await staged(alone, [chunks(4)]);
@@ -392,6 +433,29 @@ describe.skipIf(!available)('splits and merges', () => {
       [0, 'Before', 'chunks', '4'],
       [1, 'After', 'chunks', '1'],
     ]);
+  });
+
+  it('brings a packet back from its merge with its label, even where its caption names the same', async () => {
+    const MERGE = {
+      verb: 'merge',
+      element: 'q',
+      into: { count: 1, name: 'chunks', side: 'head' },
+      t: 3,
+      seconds: 0.8,
+    } as const;
+    const v = await staged(
+      (r) => [{ id: 'q', kind: 'packet', rect: r.media, label: 'chunks' }],
+      [chunks(4), MERGE],
+    );
+    const label = (d: Drawn) => d.packet!.labelOpacity * d.packet!.opacity;
+    expect(label(await read(v, v.frameAt(0.5)))).toBe(1);
+    // A pill with no words over its caption would read as an empty shape: it comes back named.
+    const merged = await read(v, v.frameAt(4.1));
+    expect(merged.packet).toMatchObject({ opacity: 1, label: 'chunks' });
+    expect(label(merged)).toBe(1);
+    const texts = (await v.report(v.frameAt(4.1))).items.filter((i) => i.role === 'text');
+    // Its label and the caption's three parts.
+    expect(texts).toHaveLength(4);
   });
 
   it('fans a node’s pieces out below it, the node staying where it is', async () => {
@@ -1115,9 +1179,10 @@ describe.skipIf(!available)('the default director’s staged counts', () => {
 
 /**
  * A diagram scene as the storyboard drafter writes one (every area changed, its line counts as
- * details, no edge labels), directed by Covi and resolved as a render does, opened at `size`.
+ * details, no edge labels), directed by Covi and resolved as a render does, opened at `size`: four
+ * areas, or (`pair`) the first two and the edge between them.
  */
-async function draftedDiagram(size: Size) {
+async function draftedDiagram(size: Size, pair = false) {
   const orientation = orientationOf(size.width, size.height);
   const spec = resolveVideoSpec(resolveConfig([]).config, { mode: 'custom', ...size });
   const title = 'Play the theme under every video';
@@ -1149,13 +1214,13 @@ async function draftedDiagram(size: Size) {
             area('n1', 'packages/video', '+48 −20'),
             area('n2', 'packages/core', '+4 −1'),
             area('n3', 'packages/audio', '+96 −0'),
-          ],
+          ].slice(0, pair ? 2 : 4),
           edges: [
             { from: 'n0', to: 'n1' },
             { from: 'n0', to: 'n2' },
             { from: 'n1', to: 'n2' },
             { from: 'n1', to: 'n3' },
-          ],
+          ].slice(0, pair ? 1 : 4),
         },
       },
     ],
@@ -1260,5 +1325,29 @@ describe.skipIf(!available)('the default director’s staged diagrams', () => {
         inside(mid.dots[i]!, v.media);
       }
       expect(v.errors).toEqual([]);
+    });
+
+  for (const [name, size] of [
+    ['a square frame', { width: 1080, height: 1080 }],
+    ['a tall frame', { width: 1080, height: 1920 }],
+  ] as const)
+    it(`keeps every edge three arrowheads long between nodes side by side, in ${name}`, async () => {
+      for (const pair of [true, false]) {
+        const v = await draftedDiagram(size, pair);
+        expect(v.direction.dropped).toBeUndefined();
+        const frame = settledFrame(v.timeline, 1)!;
+        const drawn = await diagramAt(v, frame);
+        expect(drawn.edges).toHaveLength(pair ? 1 : 4);
+        for (const edge of drawn.edges) {
+          const route = [];
+          for (let i = 0; i < edge.points.length; i += 2)
+            route.push({ x: edge.points[i]!, y: edge.points[i + 1]! });
+          expect(routeLength(route) / v.unit).toBeGreaterThanOrEqual(EDGE_MIN - 0.5);
+        }
+        // The nodes give the edges their room and still hold their names whole.
+        const fits = layoutChecks(v.timeline, [await v.report(frame)]);
+        expect(fits.find((c) => c.id === 'text-fits')!.status).toBe('pass');
+        expect(v.errors).toEqual([]);
+      }
     });
 });
